@@ -36,8 +36,8 @@ func TestRace_sameSlot_oneWins(t *testing.T) {
 	defer pool.Close()
 	ctx := context.Background()
 
-	// Fixture mínima: usuario barbero + salón (upsert para re-ejecución).
-	_, _ = pool.Exec(ctx, `INSERT INTO users(id,name,email,pass_hash) VALUES('barb-it','Barb IT','barbit@test.com','x') ON CONFLICT (id) DO NOTHING`)
+	// Fixture mínima: usuario profesional + salón (upsert para re-ejecución).
+	_, _ = pool.Exec(ctx, `INSERT INTO users(id,name,email,pass_hash) VALUES('prof-it','Prof IT','profit@test.com','x') ON CONFLICT (id) DO NOTHING`)
 	_, _ = pool.Exec(ctx, `INSERT INTO salons(id,slug,name) VALUES('s-it','s-it','Salón IT') ON CONFLICT (id) DO NOTHING`)
 	_, _ = pool.Exec(ctx, `DELETE FROM bookings WHERE salon_id='s-it'`)
 	// 002 debe estar aplicada (migrate del main la aplica al arrancar).
@@ -57,7 +57,7 @@ func TestRace_sameSlot_oneWins(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			b, err := domain.NewBooking("s-it", "barb-it", "Cliente", "", start, end)
+			b, err := domain.NewBooking("s-it", "prof-it", "Cliente", "", start, end)
 			if err != nil {
 				errs[i] = err
 				return

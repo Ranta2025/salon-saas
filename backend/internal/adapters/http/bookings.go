@@ -34,11 +34,11 @@ func (h BookingHandler) Create(c *gin.Context) {
 		return
 	}
 	var in struct {
-		BarberID    string `json:"barber_id"`
-		ClientName  string `json:"client_name"`
-		ClientPhone string `json:"client_phone"`
-		StartsAt    string `json:"starts_at"`
-		EndsAt      string `json:"ends_at"`
+		ProfessionalID string `json:"professional_id"`
+		ClientName     string `json:"client_name"`
+		ClientPhone    string `json:"client_phone"`
+		StartsAt       string `json:"starts_at"`
+		EndsAt         string `json:"ends_at"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "body inválido"})
@@ -50,13 +50,13 @@ func (h BookingHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "fechas RFC3339 inválidas"})
 		return
 	}
-	b, err := h.Bookings.CreateBooking(actor, salonID, in.BarberID, in.ClientName, in.ClientPhone, startsAt, endsAt)
+	b, err := h.Bookings.CreateBooking(actor, salonID, in.ProfessionalID, in.ClientName, in.ClientPhone, startsAt, endsAt)
 	if err != nil {
 		c.JSON(statusOf(err), gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{
-		"id": b.ID, "barber_id": b.BarberID, "client_name": b.ClientName,
+		"id": b.ID, "professional_id": b.ProfessionalID, "client_name": b.ClientName,
 		"starts_at": b.StartsAt.Format(time.RFC3339), "ends_at": b.EndsAt.Format(time.RFC3339),
 		"status": string(b.Status),
 	})
@@ -96,7 +96,7 @@ func (h BookingHandler) List(c *gin.Context) {
 	out := make([]gin.H, 0, len(list))
 	for _, b := range list {
 		out = append(out, gin.H{
-			"id": b.ID, "barber_id": b.BarberID, "client_name": b.ClientName,
+			"id": b.ID, "professional_id": b.ProfessionalID, "client_name": b.ClientName,
 			"starts_at": b.StartsAt.Format(time.RFC3339), "ends_at": b.EndsAt.Format(time.RFC3339),
 			"status": string(b.Status),
 		})

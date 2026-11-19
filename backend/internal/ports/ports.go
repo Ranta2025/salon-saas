@@ -42,9 +42,9 @@ type TokenIssuer interface {
 
 type BookingRepository interface {
 	Save(b domain.Booking) error
-	// FindOverlapping trae activas del barbero que pisan [start,end).
+	// FindOverlapping trae activas del profesional que pisan [start,end).
 	// El caso de uso la usa como filtro amable; la EXCLUDE de la DB decide.
-	FindOverlapping(salonID, barberID string, start, end time.Time) ([]domain.Booking, error)
+	FindOverlapping(salonID, professionalID string, start, end time.Time) ([]domain.Booking, error)
 	// ListRange trae todo lo del salón en [from,to) para el calendario.
 	ListRange(salonID string, from, to time.Time) ([]domain.Booking, error)
 }

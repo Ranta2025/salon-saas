@@ -6,11 +6,14 @@ import "fmt"
 type Role string
 
 const (
-	RoleOwner     Role = "owner"
-	RoleAdmin     Role = "admin"
-	RoleBarber    Role = "barber"
-	RoleReception Role = "reception"
-	RoleClient    Role = "client"
+	RoleOwner Role = "owner"
+	RoleAdmin Role = "admin"
+	// RoleProfessional es quien atiende: profesional, estilista, peluquera,
+	// colorista, manicurista. El oficio va en los servicios, no en el rol:
+	// el rol dice QUÉ puede hacer en el sistema, el servicio dice QUÉ sabe hacer.
+	RoleProfessional Role = "professional"
+	RoleReception    Role = "reception"
+	RoleClient       Role = "client"
 )
 
 // Membership une un User con un Salon + su Role.
@@ -27,7 +30,7 @@ func NewMembership(userID, salonID string, role Role) (Membership, error) {
 		return Membership{}, fmt.Errorf("%w: user y salón son obligatorios", ErrValidation)
 	}
 	switch role {
-	case RoleOwner, RoleAdmin, RoleBarber, RoleReception, RoleClient:
+	case RoleOwner, RoleAdmin, RoleProfessional, RoleReception, RoleClient:
 		return Membership{UserID: userID, SalonID: salonID, Role: role}, nil
 	default:
 		return Membership{}, fmt.Errorf("%w: rol desconocido %q", ErrValidation, role)

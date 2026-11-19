@@ -16,30 +16,30 @@ type BookingService struct {
 	Memberships ports.MembershipRepository
 }
 
-// puedeAgendar: recepción y superiores agendan a cualquiera; el barbero solo a sí mismo.
-func puedeAgendar(actor domain.Membership, barberID string) bool {
+// puedeAgendar: recepción y superiores agendan a cualquiera; el profesional solo a sí mismo.
+func puedeAgendar(actor domain.Membership, professionalID string) bool {
 	if actor.Role == domain.RoleOwner || actor.Role == domain.RoleAdmin || actor.Role == domain.RoleReception {
 		return true
 	}
-	return actor.Role == domain.RoleBarber && actor.UserID == barberID
+	return actor.Role == domain.RoleProfessional && actor.UserID == professionalID
 }
 
 // CreateBooking agenda un turno. actor debe ser miembro del salón.
-func (s BookingService) CreateBooking(actor domain.Membership, salonID, barberID, clientName, clientPhone string, startsAt, endsAt time.Time) (domain.Booking, error) {
+func (s BookingService) CreateBooking(actor domain.Membership, salonID, professionalID, clientName, clientPhone string, startsAt, endsAt time.Time) (domain.Booking, error) {
 	if actor.SalonID != salonID {
 		return domain.Booking{}, domain.ErrForbidden
 	}
 	if _, err := s.Memberships.Find(actor.UserID, salonID); err != nil {
 		return domain.Booking{}, domain.ErrForbidden
 	}
-	if !puedeAgendar(actor, barberID) {
+	if !puedeAgendar(actor, professionalID) {
 		return domain.Booking{}, domain.ErrForbidden
 	}
-	b, err := domain.NewBooking(salonID, barberID, clientName, clientPhone, startsAt, endsAt)
+	b, err := domain.NewBooking(salonID, professionalID, clientName, clientPhone, startsAt, endsAt)
 	if err != nil {
 		return domain.Booking{}, err
 	}
-	busy, err := s.Bookings.FindOverlapping(salonID, barberID, startsAt, endsAt)
+	busy, err := s.Bookings.FindOverlapping(salonID, professionalID, startsAt, endsAt)
 	if err != nil {
 		return domain.Booking{}, err
 	}

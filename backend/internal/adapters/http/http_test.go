@@ -135,9 +135,9 @@ func TestHTTP_flujo_auth_salon(t *testing.T) {
 type mb struct{ all []domain.Booking }
 
 func (f *mb) Save(b domain.Booking) error { f.all = append(f.all, b); return nil }
-func (f *mb) FindOverlapping(salonID, barberID string, start, end time.Time) ([]domain.Booking, error) {
+func (f *mb) FindOverlapping(salonID, professionalID string, start, end time.Time) ([]domain.Booking, error) {
 	var out []domain.Booking
-	probe := domain.Booking{SalonID: salonID, BarberID: barberID, StartsAt: start, EndsAt: end, Status: domain.BookingBooked}
+	probe := domain.Booking{SalonID: salonID, ProfessionalID: professionalID, StartsAt: start, EndsAt: end, Status: domain.BookingBooked}
 	for _, b := range f.all {
 		if b.Status == domain.BookingBooked && b.Overlaps(probe) {
 			out = append(out, b)
@@ -175,14 +175,14 @@ func TestHTTP_bookings(t *testing.T) {
 		t.Fatalf("salón: %s", ws.Body.String())
 	}
 	p := "/api/v1/salons/" + created.ID + "/bookings"
-	b10 := `{"barber_id":"barb1","client_name":"Lía","starts_at":"2026-12-03T10:00:00Z","ends_at":"2026-12-03T11:00:00Z"}`
+	b10 := `{"professional_id":"prof1","client_name":"Lía","starts_at":"2026-12-03T10:00:00Z","ends_at":"2026-12-03T11:00:00Z"}`
 	if w := doReq(r, "POST", p, b10, lt.Token); w.Code != http.StatusCreated {
 		t.Fatalf("crear: %d %s", w.Code, w.Body.String())
 	}
 	if w := doReq(r, "POST", p, b10, lt.Token); w.Code != http.StatusConflict {
 		t.Fatalf("solape debe dar 409, dio %d %s", w.Code, w.Body.String())
 	}
-	b11 := `{"barber_id":"barb1","client_name":"Ana","starts_at":"2026-12-03T11:00:00Z","ends_at":"2026-12-03T12:00:00Z"}`
+	b11 := `{"professional_id":"prof1","client_name":"Ana","starts_at":"2026-12-03T11:00:00Z","ends_at":"2026-12-03T12:00:00Z"}`
 	if w := doReq(r, "POST", p, b11, lt.Token); w.Code != http.StatusCreated {
 		t.Fatalf("adyacente: %d %s", w.Code, w.Body.String())
 	}

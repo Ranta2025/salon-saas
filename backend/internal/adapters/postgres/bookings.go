@@ -29,7 +29,7 @@ func exclusion(err error) error {
 func scanBooking(scan func(...interface{}) error) (domain.Booking, error) {
 	var b domain.Booking
 	var status string
-	err := scan(&b.ID, &b.SalonID, &b.BarberID, &b.ClientName, &b.ClientPhone,
+	err := scan(&b.ID, &b.SalonID, &b.ProfessionalID, &b.ClientName, &b.ClientPhone,
 		&b.StartsAt, &b.EndsAt, &status, &b.CreatedAt)
 	if err != nil {
 		return domain.Booking{}, err
@@ -47,20 +47,20 @@ type Bookings struct{ Pool *pgxpool.Pool }
 
 func (r Bookings) Save(b domain.Booking) error {
 	_, err := r.Pool.Exec(context.Background(),
-		`INSERT INTO bookings(id,salon_id,barber_id,client_name,client_phone,starts_at,ends_at,status,created_at)
+		`INSERT INTO bookings(id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,created_at)
 		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		b.ID, b.SalonID, b.BarberID, b.ClientName, b.ClientPhone,
+		b.ID, b.SalonID, b.ProfessionalID, b.ClientName, b.ClientPhone,
 		b.StartsAt, b.EndsAt, string(b.Status), b.CreatedAt)
 	return exclusion(err)
 }
 
-func (r Bookings) FindOverlapping(salonID, barberID string, start, end time.Time) ([]domain.Booking, error) {
+func (r Bookings) FindOverlapping(salonID, professionalID string, start, end time.Time) ([]domain.Booking, error) {
 	rows, err := r.Pool.Query(context.Background(),
-		`SELECT id,salon_id,barber_id,client_name,client_phone,starts_at,ends_at,status,created_at
+		`SELECT id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,created_at
 		 FROM bookings
-		 WHERE salon_id=$1 AND barber_id=$2 AND status='booked'
+		 WHERE salon_id=$1 AND professional_id=$2 AND status='booked'
 		   AND tstzrange(starts_at,ends_at) && tstzrange($3,$4)`,
-		salonID, barberID, start, end)
+		salonID, professionalID, start, end)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (r Bookings) FindOverlapping(salonID, barberID string, start, end time.Time
 
 func (r Bookings) ListRange(salonID string, from, to time.Time) ([]domain.Booking, error) {
 	rows, err := r.Pool.Query(context.Background(),
-		`SELECT id,salon_id,barber_id,client_name,client_phone,starts_at,ends_at,status,created_at
+		`SELECT id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,created_at
 		 FROM bookings
 		 WHERE salon_id=$1 AND starts_at >= $2 AND starts_at < $3
 		 ORDER BY starts_at`,

@@ -19,14 +19,20 @@ CREATE TABLE IF NOT EXISTS bookings (
   CHECK (ends_at > starts_at)
 );
 
-ALTER TABLE bookings
-  DROP CONSTRAINT IF EXISTS bookings_no_overlap;
-ALTER TABLE bookings
-  ADD CONSTRAINT bookings_no_overlap EXCLUDE USING gist (
-    salon_id WITH =,
-    barber_id WITH =,
-    tstzrange(starts_at, ends_at) WITH &&
-  ) WHERE (status = 'booked');
+-- Idempotente: migrate() re-ejecuta todo en cada boot. Usa barber_id porque en
+-- una DB fresca 002 corre antes que 003 (que renombra y el constraint la sigue).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'bookings_no_overlap') THEN
+    ALTER TABLE bookings
+      ADD CONSTRAINT bookings_no_overlap EXCLUDE USING gist (
+        salon_id WITH =,
+        barber_id WITH =,
+        tstzrange(starts_at, ends_at) WITH &&
+      ) WHERE (status = 'booked');
+  END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS bookings_agenda_idx
-  ON bookings (salon_id, barber_id, starts_at);
+-- Nota: el índice de agenda vive en 003 (después del rename). No crear índices
+-- estáticos acá sobre columnas que otra migración renombra: el parser valida
+-- columnas antes que IF NOT EXISTS, y el boot moriría.
