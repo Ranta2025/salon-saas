@@ -7,6 +7,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"sort"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,21 +30,37 @@ func mustPool() *pgxpool.Pool {
 }
 
 func migrate(pool *pgxpool.Pool) {
-	candidates := []string{"migrations/001_init.sql", "/migrations/001_init.sql", "backend/migrations/001_init.sql"}
-	var sql []byte
-	var err error
-	for _, p := range candidates {
-		sql, err = os.ReadFile(p)
-		if err == nil {
+	// Aplica todas las migraciones en orden léxico desde el primer dir que exista.
+	dirs := []string{"migrations", "/migrations", "backend/migrations"}
+	var files []string
+	for _, d := range dirs {
+		entries, err := os.ReadDir(d)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if !e.IsDir() && len(e.Name()) > 4 && e.Name()[len(e.Name())-4:] == ".sql" {
+				files = append(files, d+"/"+e.Name())
+			}
+		}
+		if len(files) > 0 {
 			break
 		}
 	}
-	if err != nil {
-		log.Printf("migrate: no leí migraciones (%v), sigo", err)
+	if len(files) == 0 {
+		log.Print("migrate: sin migraciones, sigo")
 		return
 	}
-	if _, err := pool.Exec(context.Background(), string(sql)); err != nil {
-		log.Fatalf("migrate: %v", err)
+	sort.Strings(files)
+	for _, f := range files {
+		sql, err := os.ReadFile(f)
+		if err != nil {
+			log.Fatalf("migrate: leer %s: %v", f, err)
+		}
+		if _, err := pool.Exec(context.Background(), string(sql)); err != nil {
+			log.Fatalf("migrate: aplicar %s: %v", f, err)
+		}
+		log.Printf("migrate: aplicada %s", f)
 	}
 }
 
@@ -60,6 +77,7 @@ func main() {
 
 	authSvc := app.AuthService{Users: users, Hasher: hasher, Tokens: tokens}
 	tenSvc := app.TenantService{Salons: salons, Memberships: mems}
+	bookSvc := app.BookingService{Bookings: pgstore.Bookings{Pool: pool}, Memberships: mems}
 
 	r := gin.Default()
 	r.GET("/health", func(c *gin.Context) {
@@ -68,6 +86,7 @@ func main() {
 	httpapi.RegisterRoutes(r, httpapi.Deps{
 		Auth:        httpapi.AuthHandler{Auth: authSvc},
 		Tenants:     httpapi.TenantsHandler{Tenants: tenSvc, Memberships: mems},
+		Bookings:    httpapi.BookingHandler{Bookings: bookSvc, Memberships: mems},
 		TokenIssuer: tokens,
 	})
 

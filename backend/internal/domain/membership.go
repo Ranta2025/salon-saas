@@ -6,11 +6,11 @@ import "fmt"
 type Role string
 
 const (
-	RoleOwner      Role = "owner"
-	RoleAdmin      Role = "admin"
-	RoleBarber     Role = "barber"
-	RoleReception  Role = "reception"
-	RoleClient     Role = "client"
+	RoleOwner     Role = "owner"
+	RoleAdmin     Role = "admin"
+	RoleBarber    Role = "barber"
+	RoleReception Role = "reception"
+	RoleClient    Role = "client"
 )
 
 // Membership une un User con un Salon + su Role.
