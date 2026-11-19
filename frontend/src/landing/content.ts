@@ -111,7 +111,7 @@ export type SalonPhoto = {
 /** Verified Wikimedia Commons photos (see docs/assets/images.md). */
 export const PHOTOS = {
   hero: {
-    src: '/img/hero-atwork.jpg',
+    src: '/img/hero-atwork.webp',
     alt: 'Estilista acomodando el cabello trenzado de una clienta en el salón',
     caption: 'Estilista trabajando en el salón',
     title: 'Hairdresser at work.jpg',
@@ -120,7 +120,7 @@ export const PHOTOS = {
     commons: 'https://commons.wikimedia.org/wiki/File:Hairdresser_at_work.jpg',
   },
   interior: {
-    src: '/img/gallery-02-iran01.jpg',
+    src: '/img/gallery-02-iran01.webp',
     alt: 'Estilista atendiendo a un cliente con capa de rayas en el interior del salón',
     caption: 'Atención personalizada',
     title: 'Haircut or hair Salon From Iran- Canon Photography- Mostafa Meraji- fashion Photo 01.jpg',
@@ -130,7 +130,7 @@ export const PHOTOS = {
       'https://commons.wikimedia.org/wiki/File:Haircut_or_hair_Salon_From_Iran-_Canon_Photography-_Mostafa_Meraji-_fashion_Photo_01.jpg',
   },
   stylistDetail: {
-    src: '/img/gallery-01-iran09.jpg',
+    src: '/img/gallery-01-iran09.webp',
     alt: 'Barbero recortando el cabello de un cliente con tijera y máquina',
     caption: 'Corte a tijera',
     title: 'Haircut or hair Salon From Iran- Canon Photography- Mostafa Meraji- fashion Photo 09.jpg',
@@ -140,7 +140,7 @@ export const PHOTOS = {
       'https://commons.wikimedia.org/wiki/File:Haircut_or_hair_Salon_From_Iran-_Canon_Photography-_Mostafa_Meraji-_fashion_Photo_09.jpg',
   },
   salonWide: {
-    src: '/img/gallery-03-iran04.jpg',
+    src: '/img/gallery-03-iran04.webp',
     alt: 'Cliente en el sillón mientras le cortan el cabello frente a los espejos del salón',
     caption: 'Sillón y espejos',
     title: 'Haircut or hair Salon From Iran- Canon Photography- Mostafa Meraji- fashion Photo 04.jpg',
@@ -150,7 +150,7 @@ export const PHOTOS = {
       'https://commons.wikimedia.org/wiki/File:Haircut_or_hair_Salon_From_Iran-_Canon_Photography-_Mostafa_Meraji-_fashion_Photo_04.jpg',
   },
   beardTrim: {
-    src: '/img/gallery-04-iran06.jpg',
+    src: '/img/gallery-04-iran06.webp',
     alt: 'Detalle de un barbero perfilando el corte y la barba de un cliente',
     caption: 'Detalle y precisión',
     title: 'Haircut or hair Salon From Iran- Canon Photography- Mostafa Meraji- fashion Photo 06.jpg',
@@ -160,7 +160,7 @@ export const PHOTOS = {
       'https://commons.wikimedia.org/wiki/File:Haircut_or_hair_Salon_From_Iran-_Canon_Photography-_Mostafa_Meraji-_fashion_Photo_06.jpg',
   },
   stylistWide: {
-    src: '/img/gallery-05-iran08.jpg',
+    src: '/img/gallery-05-iran08.webp',
     alt: 'Barbero trabajando el corte de un cliente junto a una planta del salón',
     caption: 'Oficio en el salón',
     title: 'Haircut or hair Salon From Iran- Canon Photography- Mostafa Meraji- fashion Photo 08.jpg',
@@ -170,7 +170,7 @@ export const PHOTOS = {
       'https://commons.wikimedia.org/wiki/File:Haircut_or_hair_Salon_From_Iran-_Canon_Photography-_Mostafa_Meraji-_fashion_Photo_08.jpg',
   },
   coloring: {
-    src: '/img/gallery-06-coloring.jpg',
+    src: '/img/gallery-06-coloring.webp',
     alt: 'Estilista aplicando mechas con papel aluminio sobre cabello rubio',
     caption: 'Mechas y coloración',
     title: 'Hair coloring at hair salon (51213255633).jpg',
@@ -179,18 +179,8 @@ export const PHOTOS = {
     commons:
       'https://commons.wikimedia.org/wiki/File:Hair_coloring_at_hair_salon_(51213255633).jpg',
   },
-  selfie: {
-    src: '/img/gallery-07-completing.jpg',
-    alt: 'Clienta tomándose una selfie frente al espejo mientras le hacen trenzas',
-    caption: 'El resultado se presume',
-    title: 'Hairdresser completing her task on a client.jpg',
-    author: 'Wame Mandedu',
-    license: 'CC BY-SA 4.0',
-    commons:
-      'https://commons.wikimedia.org/wiki/File:Hairdresser_completing_her_task_on_a_client.jpg',
-  },
   makeup: {
-    src: '/img/gallery-08-makeup.jpg',
+    src: '/img/gallery-08-makeup.webp',
     alt: 'Maquillista aplicando sombra en el ojo de una clienta',
     caption: 'Maquillaje de cerca',
     title: 'Makeup Technician.jpg',
@@ -199,7 +189,7 @@ export const PHOTOS = {
     commons: 'https://commons.wikimedia.org/wiki/File:Makeup_Technician.jpg',
   },
   portrait: {
-    src: '/img/gallery-09-portrait.jpg',
+    src: '/img/gallery-09-portrait.webp',
     alt: 'Retrato de una mujer de cabello largo y oscuro con una flor blanca en el cabello',
     caption: 'Retrato con styling',
     title: 'Ishitta R Chowdhary.jpg',
@@ -208,7 +198,7 @@ export const PHOTOS = {
     commons: 'https://commons.wikimedia.org/wiki/File:Ishitta_R_Chowdhary.jpg',
   },
   lipLiner: {
-    src: '/img/gallery-10-lip.jpg',
+    src: '/img/gallery-10-lip.webp',
     alt: 'Acercamiento de una maquillista delineando los labios de una clienta',
     caption: 'Delineado perfecto',
     title: 'Applying lip liner in a beauty setting during a makeup session.jpg',
@@ -218,7 +208,7 @@ export const PHOTOS = {
       'https://commons.wikimedia.org/wiki/File:Applying_lip_liner_in_a_beauty_setting_during_a_makeup_session.jpg',
   },
   nails: {
-    src: '/img/gallery-11-nails.jpg',
+    src: '/img/gallery-11-nails.webp',
     alt: 'Manicurista dibujando un diseño en la uña de una clienta con un pincel',
     caption: 'Nail art a mano alzada',
     title: 'Nail technician applies a nail design at a manicure table during a salon appointment.jpg',
@@ -242,7 +232,6 @@ export const GALLERY: readonly GalleryEntry[] = [
   { ...PHOTOS.salonWide, variant: 'wide' },
   { ...PHOTOS.lipLiner, variant: 'small' },
   { ...PHOTOS.stylistWide, variant: 'tall' },
-  { ...PHOTOS.selfie, variant: 'small' },
   { ...PHOTOS.beardTrim, variant: 'small' },
 ]
 
@@ -255,7 +244,6 @@ export const ATTRIBUTION: readonly SalonPhoto[] = [
   PHOTOS.beardTrim,
   PHOTOS.stylistWide,
   PHOTOS.coloring,
-  PHOTOS.selfie,
   PHOTOS.makeup,
   PHOTOS.portrait,
   PHOTOS.lipLiner,
