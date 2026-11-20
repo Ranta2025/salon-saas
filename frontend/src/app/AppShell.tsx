@@ -1,7 +1,12 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { SALON } from '../landing/content'
+import { purgeOfflineApiCache } from '../lib/pwa'
 import { clearToken } from '../lib/session'
+import { NotificationCenter } from './components/NotificationCenter'
+import { OfflineBanner, SyncStatusChip } from './components/SyncStatus'
+import { NotificationsProvider } from './NotificationsContext'
+import { OfflineProvider } from './OfflineContext'
 import { SalonProvider, useSalon } from './SalonContext'
 
 const NAV = [
@@ -9,6 +14,8 @@ const NAV = [
   { to: '/panel/calendario', label: 'Calendario', end: false },
   { to: '/panel/pos', label: 'Ventas', end: false },
   { to: '/panel/servicios', label: 'Servicios', end: false },
+  { to: '/panel/clientes', label: 'Clientes', end: false },
+  { to: '/panel/avisos', label: 'Avisos', end: false },
 ] as const
 
 function SalonSwitcher() {
@@ -67,6 +74,7 @@ function ShellChrome() {
 
   const handleLogout = () => {
     clearToken()
+    purgeOfflineApiCache()
     navigate('/login', { replace: true })
   }
 
@@ -106,11 +114,18 @@ function ShellChrome() {
 
       <div className="shell__main">
         <header className="shell__topbar">
-          <SalonSwitcher />
-          <p className="shell__hint">
-            Los montos se muestran en pesos mexicanos (MXN), en centavos en la API.
-          </p>
+          <div className="shell__topbar-main">
+            <SalonSwitcher />
+            <p className="shell__hint">
+              Los montos se muestran en pesos mexicanos (MXN), en centavos en la API.
+            </p>
+          </div>
+          <div className="shell__topbar-actions">
+            <SyncStatusChip />
+            <NotificationCenter />
+          </div>
         </header>
+        <OfflineBanner />
         <main className="shell__content" id="contenido-panel">
           <Outlet />
         </main>
@@ -119,10 +134,19 @@ function ShellChrome() {
   )
 }
 
+/**
+ * Providers of the internal app: the active salon, the notification stream and
+ * the offline queue/connectivity state. Order matters: notifications need the
+ * salon id, the offline queue is independent.
+ */
 export function AppShell() {
   return (
     <SalonProvider>
-      <ShellChrome />
+      <NotificationsProvider>
+        <OfflineProvider>
+          <ShellChrome />
+        </OfflineProvider>
+      </NotificationsProvider>
     </SalonProvider>
   )
 }

@@ -1,16 +1,40 @@
 import { useCallback, useEffect, useState } from 'react'
-import { createSale, fetchSales, fetchServices } from '../lib/api'
+import { createSale, fetchSales, fetchServices, NetworkError } from '../lib/api'
 import { dayRange } from '../lib/datetime'
 import { formatCents } from '../lib/money'
+import { newClientOpId, type QueuedOperation } from '../lib/offlineQueue'
 import { addItem, type Cart } from '../lib/posCart'
-import { SALE_METHODS, type Sale, type SaleCreated, type SaleInput, type Service } from '../types'
+import {
+  SALE_METHODS,
+  type Sale,
+  type SaleInput,
+  type SaleOutcome,
+  type Service,
+} from '../types'
 import { useSalon } from './SalonContext'
+import { useOffline } from './OfflineContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
 import { PageHeader } from './components/PageHeader'
 import { POSPanel } from './components/POSPanel'
 
+function pendingSalePayload(operation: QueuedOperation): SaleInput {
+  return operation.payload as SaleInput
+}
+
+function pendingSaleTotal(operation: QueuedOperation): number {
+  return pendingSalePayload(operation).items.reduce(
+    (total, item) => total + item.unit_price_cents * item.qty,
+    0,
+  )
+}
+
+function pendingSaleItems(operation: QueuedOperation): number {
+  return pendingSalePayload(operation).items.reduce((count, item) => count + item.qty, 0)
+}
+
 export function PosPage() {
   const { salonId } = useSalon()
+  const { online, pending, enqueueSale, syncedTotal } = useOffline()
   const [services, setServices] = useState<Service[]>([])
   const [sales, setSales] = useState<Sale[]>([])
   const [cart, setCart] = useState<Cart>([])
@@ -40,9 +64,16 @@ export function PosPage() {
         setLoaded(true)
       })
       .catch((err: unknown) => {
-        if (active) {
-          setError(err instanceof Error ? err.message : 'No pudimos cargar el punto de venta.')
+        if (!active) {
+          return
         }
+        setError(
+          !online
+            ? 'Sin conexión: no pudimos traer las ventas del servidor. Puedes cobrar igual y la venta se sincroniza al volver la red.'
+            : err instanceof Error
+              ? err.message
+              : 'No pudimos cargar el punto de venta.',
+        )
       })
       .finally(() => {
         if (active) {
@@ -52,13 +83,40 @@ export function PosPage() {
     return () => {
       active = false
     }
-  }, [salonId, reloadKey])
+  }, [salonId, reloadKey, online])
 
-  const handleSubmit = async (input: SaleInput): Promise<SaleCreated> => {
+  // A queued sale reached the server: refresh the confirmed list.
+  useEffect(() => {
+    if (syncedTotal > 0) {
+      reload()
+    }
+  }, [syncedTotal, reload])
+
+  /**
+   * Tries the API first; when the request cannot reach the server the sale is
+   * queued locally with a `client_op_id` and shown as "pending sync" until the
+   * queue confirms it. The amount is always the server's when it answers.
+   */
+  const handleSubmit = async (input: SaleInput): Promise<SaleOutcome> => {
     if (!salonId) {
       throw new Error('Falta el salón activo.')
     }
-    return createSale(salonId, input)
+    const clientOpId = newClientOpId()
+    const saleInput: SaleInput = { ...input, client_op_id: clientOpId }
+    if (!online) {
+      enqueueSale(salonId, saleInput)
+      return { kind: 'queued', client_op_id: clientOpId }
+    }
+    try {
+      const created = await createSale(salonId, saleInput)
+      return { kind: 'confirmed', server: created }
+    } catch (err) {
+      if (err instanceof NetworkError) {
+        enqueueSale(salonId, saleInput)
+        return { kind: 'queued', client_op_id: clientOpId }
+      }
+      throw err
+    }
   }
 
   if (!salonId) {
@@ -81,12 +139,16 @@ export function PosPage() {
       )
     : sellable
 
+  const pendingSales = pending.filter(
+    (operation) => operation.kind === 'sale' && operation.salon_id === salonId,
+  )
+
   return (
     <>
       <PageHeader
         eyebrow="Punto de venta"
         title="Cobrar servicios"
-        description="El total que ves se calcula en la interfaz; el servidor recalcula y es la autoridad."
+        description="El total que ves se calcula en la interfaz; el servidor recalcula y es la autoridad. Sin conexión, la venta queda pendiente en este dispositivo."
         actions={
           <button type="button" className="btn btn--quiet btn--sm" onClick={reload}>
             Actualizar
@@ -148,15 +210,18 @@ export function PosPage() {
               onCartChange={setCart}
               onSubmit={handleSubmit}
               onCompleted={reload}
+              pendingCount={pendingSales.length}
             />
           </aside>
 
           <section className="panel-card pos-sales" aria-labelledby="pos-sales-title">
             <div className="panel-card__head">
               <h2 id="pos-sales-title">Ventas de hoy</h2>
-              <span className="panel-card__meta">{sales.length} registradas</span>
+              <span className="panel-card__meta">
+                {sales.length} confirmadas · {pendingSales.length} por sincronizar
+              </span>
             </div>
-            {sales.length === 0 ? (
+            {sales.length === 0 && pendingSales.length === 0 ? (
               <p className="muted">Todavía no hay ventas hoy.</p>
             ) : (
               <div className="table-wrap">
@@ -169,15 +234,38 @@ export function PosPage() {
                       <th scope="col" className="table__num">
                         Total
                       </th>
+                      <th scope="col">Estado</th>
                     </tr>
                   </thead>
                   <tbody>
+                    {pendingSales.map((operation) => {
+                      const payload = pendingSalePayload(operation)
+                      return (
+                        <tr key={operation.client_op_id} data-pending="true">
+                          <td>
+                            {payload.client_name}{' '}
+                            <span className="table__id">
+                              {operation.client_op_id.slice(0, 8)}
+                            </span>
+                          </td>
+                          <td>{SALE_METHODS[payload.method] ?? payload.method}</td>
+                          <td>{pendingSaleItems(operation)}</td>
+                          <td className="table__num">{formatCents(pendingSaleTotal(operation))}</td>
+                          <td>
+                            <span className="pill pill--pending">Pendiente de sincronizar</span>
+                          </td>
+                        </tr>
+                      )
+                    })}
                     {sales.map((sale) => (
                       <tr key={sale.id}>
                         <td>{sale.client_name}</td>
                         <td>{SALE_METHODS[sale.method] ?? sale.method}</td>
                         <td>{sale.items.reduce((count, item) => count + item.qty, 0)}</td>
                         <td className="table__num">{formatCents(sale.total_cents)}</td>
+                        <td>
+                          <span className="pill pill--on">Registrada</span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

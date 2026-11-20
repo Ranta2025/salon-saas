@@ -1,26 +1,40 @@
 import { useState, type FormEvent } from 'react'
 import { formatCents } from '../../lib/money'
 import { changeQty, itemCount, lineSubtotal, removeItem, totalCents, type Cart } from '../../lib/posCart'
-import { SALE_METHODS, type SaleCreated, type SaleInput, type SaleMethod } from '../../types'
+import {
+  SALE_METHODS,
+  type SaleInput,
+  type SaleMethod,
+  type SaleOutcome,
+} from '../../types'
 
 type POSPanelProps = {
   cart: Cart
   onCartChange: (cart: Cart) => void
-  onSubmit: (input: SaleInput) => Promise<SaleCreated>
+  onSubmit: (input: SaleInput) => Promise<SaleOutcome>
   onCompleted: () => void
+  /** Sales of this device still waiting in the offline queue. */
+  pendingCount?: number
 }
 
 /**
  * Cart + checkout. The UI computes a display total from integer cents, but the
- * amount that counts is the one the server returns.
+ * amount that counts is the one the server returns. When the network is down the
+ * parent queues the sale and returns a `queued` outcome instead.
  */
-export function POSPanel({ cart, onCartChange, onSubmit, onCompleted }: POSPanelProps) {
+export function POSPanel({
+  cart,
+  onCartChange,
+  onSubmit,
+  onCompleted,
+  pendingCount = 0,
+}: POSPanelProps) {
   const [clientName, setClientName] = useState('')
   const [professionalId, setProfessionalId] = useState('')
   const [method, setMethod] = useState<SaleMethod>('cash')
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
-  const [receipt, setReceipt] = useState<{ server: SaleCreated; uiTotal: number } | null>(null)
+  const [receipt, setReceipt] = useState<{ outcome: SaleOutcome; uiTotal: number } | null>(null)
 
   const uiTotal = totalCents(cart)
 
@@ -52,8 +66,8 @@ export function POSPanel({ cart, onCartChange, onSubmit, onCompleted }: POSPanel
     }
     setPending(true)
     try {
-      const created = await onSubmit(input)
-      setReceipt({ server: created, uiTotal })
+      const outcome = await onSubmit(input)
+      setReceipt({ outcome, uiTotal })
       onCartChange([])
       setClientName('')
       onCompleted()
@@ -173,16 +187,33 @@ export function POSPanel({ cart, onCartChange, onSubmit, onCompleted }: POSPanel
       ) : null}
 
       {receipt ? (
-        <div className="notice notice--success" role="status">
-          <p>
-            Venta <strong>{receipt.server.sale_id}</strong> registrada. El servidor calculó{' '}
-            <strong>{formatCents(receipt.server.total)}</strong>; la interfaz mostró{' '}
-            {formatCents(receipt.uiTotal)}.
-            {receipt.server.total !== receipt.uiTotal
-              ? ' El total del servidor es el que vale: revisa el catálogo.'
-              : ''}
-          </p>
-        </div>
+        receipt.outcome.kind === 'confirmed' ? (
+          <div className="notice notice--success" role="status">
+            <p>
+              Venta <strong>{receipt.outcome.server.sale_id}</strong> registrada. El servidor
+              calculó <strong>{formatCents(receipt.outcome.server.total)}</strong>; la interfaz
+              mostró {formatCents(receipt.uiTotal)}.
+              {receipt.outcome.server.total !== receipt.uiTotal
+                ? ' El total del servidor es el que vale: revisa el catálogo.'
+                : ''}
+            </p>
+          </div>
+        ) : (
+          <div className="notice notice--info" role="status">
+            <p>
+              <strong>Venta guardada en este dispositivo.</strong> Todavía no está en el
+              servidor: se enviará sola al volver la conexión. Referencia{' '}
+              <code>{receipt.outcome.client_op_id.slice(0, 8)}</code>.
+            </p>
+          </div>
+        )
+      ) : null}
+
+      {pendingCount > 0 ? (
+        <p className="pos-panel__pending" role="status">
+          {pendingCount} {pendingCount === 1 ? 'venta espera' : 'ventas esperan'} sincronizarse
+          desde este dispositivo.
+        </p>
       ) : null}
 
       <button type="submit" className="btn btn--wine pos-panel__submit" disabled={pending}>
