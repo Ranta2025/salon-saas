@@ -1,6 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, NetworkError, API_BASE, fetchMe, fetchPublicSalon, fetchStaff, request } from './api.ts'
+import {
+  ApiError,
+  NetworkError,
+  API_BASE,
+  fetchMe,
+  fetchPublicSalon,
+  fetchStaff,
+  friendlyApiMessage,
+  request,
+} from './api.ts'
 import { clearToken, getToken, setToken } from './session.ts'
 
 type Call = { url: string; headers: Record<string, string>; body: string | undefined }
@@ -270,4 +279,15 @@ test('fetchPublicSalon reports a 404 with the Spanish message of the API', async
   } finally {
     stub.restore()
   }
+})
+
+test('friendlyApiMessage explains a 403 in the UI instead of showing the raw server text', () => {
+  const forbidden = friendlyApiMessage(new ApiError(403, 'sin acceso al salón'), 'No pudimos cargar.')
+  assert.match(forbidden, /rol no permite/)
+  assert.equal(friendlyApiMessage(new ApiError(400, 'correo inválido'), 'No pudimos cargar.'), 'correo inválido')
+  assert.equal(
+    friendlyApiMessage(new NetworkError('No pudimos conectar con el servidor.'), 'No pudimos cargar.'),
+    'No pudimos conectar con el servidor.',
+  )
+  assert.equal(friendlyApiMessage('boom', 'No pudimos cargar.'), 'No pudimos cargar.')
 })

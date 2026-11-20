@@ -78,6 +78,8 @@ export type RequestOptions = {
   timeoutMs?: number
   /** `none` sends the request without the Authorization header (public endpoints). */
   auth?: 'auto' | 'none'
+  /** Fetch implementation (tests inject a stub; production keeps the global one). */
+  fetchImpl?: typeof fetch
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -102,6 +104,27 @@ async function errorMessage(response: Response): Promise<string> {
   } catch {
     return fallback
   }
+}
+
+/**
+ * Copy for a failed request. A 403 is a permission problem the person cannot fix
+ * by retrying, so it gets an explanation instead of the raw server text; every
+ * other status keeps the Spanish message of the API.
+ */
+export function friendlyApiMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiError) {
+    if (error.status === 403) {
+      return 'Tu rol no permite esta acción. Pídele a la administración del salón que revise tu acceso.'
+    }
+    return error.message
+  }
+  if (error instanceof NetworkError) {
+    return error.message
+  }
+  if (error instanceof Error && error.message.trim() !== '') {
+    return error.message
+  }
+  return fallback
 }
 
 function signalUnauthorized(): void {
@@ -153,9 +176,10 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     init.body = JSON.stringify(options.body)
   }
 
+  const doFetch = options.fetchImpl ?? fetch
   let response: Response
   try {
-    response = await fetch(`${API_BASE}${path}`, init)
+    response = await doFetch(`${API_BASE}${path}`, init)
   } catch (error) {
     cleanup()
     if (external?.aborted) {

@@ -11,6 +11,8 @@ import {
   toDateInputValue,
   fromDateInputValue,
   overlapLayout,
+  toDateTimeIso,
+  addMinutesToIso,
 } from './datetime.ts'
 
 const TZ = 'America/Mexico_City'
@@ -92,4 +94,22 @@ test('overlapLayout pushes overlapping appointments into separate columns', () =
     ['b', 1, 2],
     ['c', 0, 1],
   ])
+})
+
+test('toDateTimeIso turns a date and a local time into the matching UTC instant', () => {
+  assert.equal(toDateTimeIso('2025-03-14', '16:30', TZ), '2025-03-14T22:30:00.000Z')
+  assert.equal(toDateTimeIso('2025-03-14', '00:15', TZ), '2025-03-14T06:15:00.000Z')
+  assert.equal(toDateTimeIso('2025-03-14', '16:30', 'UTC'), '2025-03-14T16:30:00.000Z')
+  assert.equal(toDateTimeIso('2025-03-14', '11:00', 'America/Bogota'), '2025-03-14T16:00:00.000Z')
+})
+
+test('toDateTimeIso rejects an unusable date or time instead of sending NaN to the API', () => {
+  assert.throws(() => toDateTimeIso('14/03/2025', '16:30', TZ), TypeError)
+  assert.throws(() => toDateTimeIso('2025-03-14', '25:00', TZ), TypeError)
+  assert.throws(() => toDateTimeIso('2025-03-14', '16:75', TZ), TypeError)
+})
+
+test('addMinutesToIso keeps the calendar of the appointment', () => {
+  assert.equal(addMinutesToIso('2025-03-14T22:30:00.000Z', 90), '2025-03-15T00:00:00.000Z')
+  assert.equal(addMinutesToIso('2025-03-14T16:00:00Z', 45), '2025-03-14T16:45:00.000Z')
 })

@@ -126,6 +126,47 @@ export function fromDateInputValue(value: string, timeZone: string = TIME_ZONE):
   return localMidnightUtc(Number(year), Number(month), Number(day), timeZone).toISOString()
 }
 
+/**
+ * RFC3339 instant of a local wall clock (`<input type="date">` + `<input type="time">`).
+ * Throws on unusable values instead of sending `Invalid Date` to the API.
+ */
+export function toDateTimeIso(
+  dateValue: string,
+  timeValue: string,
+  timeZone: string = TIME_ZONE,
+): string {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue)
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(timeValue)
+  if (!dateMatch) {
+    throw new TypeError(`Fecha inválida: ${dateValue}`)
+  }
+  if (!timeMatch) {
+    throw new TypeError(`Hora inválida: ${timeValue}`)
+  }
+  const year = Number(dateMatch[1])
+  const month = Number(dateMatch[2])
+  const day = Number(dateMatch[3])
+  const hour = Number(timeMatch[1])
+  const minute = Number(timeMatch[2])
+  if (hour > 23 || minute > 59) {
+    throw new TypeError(`Hora inválida: ${timeValue}`)
+  }
+  const guess = Date.UTC(year, month - 1, day, hour, minute)
+  const firstOffset = offsetMs(new Date(guess), timeZone)
+  const candidate = new Date(guess - firstOffset)
+  const secondOffset = offsetMs(candidate, timeZone)
+  return new Date(secondOffset === firstOffset ? candidate : new Date(guess - secondOffset)).toISOString()
+}
+
+/** Adds whole minutes to an RFC3339 instant (used for `ends_at` when rescheduling). */
+export function addMinutesToIso(iso: string, minutes: number): string {
+  const base = Date.parse(iso)
+  if (Number.isNaN(base)) {
+    throw new TypeError(`Fecha inválida: ${iso}`)
+  }
+  return new Date(base + minutes * 60_000).toISOString()
+}
+
 /** Minutes elapsed since local midnight (used for timeline geometry). */
 export function minutesFromMidnight(iso: string, timeZone: string = TIME_ZONE): number {
   const wall = wallClock(new Date(iso), timeZone)
