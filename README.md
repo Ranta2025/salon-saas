@@ -135,7 +135,7 @@ Compose arma `DATABASE_URL` solo con las piezas `POSTGRES_*`; las variables de
 | `MEDIA_DIR` | `./media` (código) / `/media` (Compose) | api | carpeta de fotos del adaptador local |
 | `PORT` | `8080` | api | puerto HTTP dentro del contenedor |
 | `GIN_MODE` | `debug` | api | `debug` \| `release` \| `test` |
-| `VITE_API_URL` | `http://localhost:8080/api/v1` | frontend (build) | base de la API que se hornea en el build |
+| `VITE_API_URL` | `http://localhost:8080` | frontend (build) | origen de la API que se hornea en el build (sin `/api/v1`: el frontend ya lo agrega) |
 | `API_PORT`, `WEB_PORT`, `POSTGRES_PORT`, `REDIS_PORT`, `MAILPIT_PORT`, `MAILPIT_SMTP_PORT` | `8080`, `8081`, `5432`, `6379`, `8025`, `1025` | Compose | puertos del host |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `salon` | Compose | credenciales de la base local |
 | `POSTGRES_IMAGE`, `REDIS_IMAGE`, `MAILPIT_IMAGE` | `postgres:16`, `redis:7`, `axllent/mailpit:latest` | Compose | imágenes de servicios |

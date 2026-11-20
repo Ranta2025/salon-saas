@@ -33,8 +33,9 @@ PORT=8080
 CORS_ORIGINS=http://localhost:8081,http://localhost:5173,http://localhost:4173
 MEDIA_DIR=/data/media
 
-# Frontend (build arg): URL pública de la API tal como la ve el navegador.
-VITE_API_URL=http://localhost:8080/api/v1
+# Frontend (build arg): origen público de la API tal como lo ve el navegador,
+# SIN el sufijo /api/v1 (el frontend ya agrega /api/v1 a cada ruta).
+VITE_API_URL=http://localhost:8080
 
 # Puertos del host
 API_PORT=8080
