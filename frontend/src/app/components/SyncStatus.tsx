@@ -1,0 +1,87 @@
+import { useOffline } from '../OfflineContext'
+
+/** Compact pending counter for the app header; always visible when work is waiting. */
+export function SyncStatusChip() {
+  const { online, pendingCount, syncing } = useOffline()
+  if (pendingCount === 0 && online) {
+    return null
+  }
+  const label =
+    pendingCount === 0
+      ? 'Sin conexión'
+      : `${pendingCount} ${pendingCount === 1 ? 'operación pendiente' : 'operaciones pendientes'}`
+  return (
+    <span className={`sync-chip${online ? '' : ' sync-chip--offline'}`} role="status">
+      <span className="sync-chip__dot" aria-hidden="true" />
+      {label}
+      {syncing ? ' · sincronizando' : ''}
+    </span>
+  )
+}
+
+/**
+ * Banner under the app header. Explains the offline mode, how many operations
+ * are waiting and warns when the queue had to drop something for good.
+ */
+export function OfflineBanner() {
+  const { online, pendingCount, dropped, syncing, syncNow, dismissDropped } = useOffline()
+
+  if (online && pendingCount === 0 && dropped.length === 0) {
+    return null
+  }
+
+  return (
+    <div
+      className={`offline-banner${online ? '' : ' offline-banner--offline'}`}
+      role="status"
+    >
+      <p className="offline-banner__title">
+        {!online
+          ? 'Estás sin conexión'
+          : pendingCount > 0
+            ? 'Sincronización pendiente'
+            : 'Operaciones sin enviar'}
+      </p>
+      <p className="offline-banner__text">
+        {online
+          ? `${pendingCount} ${pendingCount === 1 ? 'operación espera' : 'operaciones esperan'} al servidor.`
+          : 'Puedes seguir cobrando: las ventas se guardan en este dispositivo y se envían solas al volver la red.'}
+        {!online && pendingCount > 0
+          ? ` ${pendingCount} ${pendingCount === 1 ? 'operación pendiente' : 'operaciones pendientes'}.`
+          : ''}
+      </p>
+      {online && pendingCount > 0 ? (
+        <button
+          type="button"
+          className="btn btn--quiet btn--sm"
+          onClick={() => void syncNow()}
+          disabled={syncing}
+        >
+          {syncing ? 'Sincronizando…' : 'Sincronizar ahora'}
+        </button>
+      ) : null}
+
+      {dropped.length > 0 ? (
+        <div className="offline-banner__dropped">
+          <p>
+            <strong>Atención:</strong> {dropped.length}{' '}
+            {dropped.length === 1 ? 'operación se descartó' : 'operaciones se descartaron'} sin
+            llegar al servidor (se agotaron los intentos).
+          </p>
+          <ul>
+            {dropped.map((operation) => (
+              <li key={operation.client_op_id}>
+                <code>{operation.client_op_id.slice(0, 8)}</code>{' '}
+                {operation.kind === 'sale' ? 'venta' : 'reserva'} ·{' '}
+                {operation.last_error ?? 'error desconocido'}
+              </li>
+            ))}
+          </ul>
+          <button type="button" className="btn btn--quiet btn--sm" onClick={dismissDropped}>
+            Entendido
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
+}

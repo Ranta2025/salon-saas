@@ -82,3 +82,27 @@ func (r Memberships) Find(userID, salonID string) (domain.Membership, error) {
 	}
 	return domain.NewMembership(userID, salonID, domain.Role(role))
 }
+
+// ListByUser trae los salones de un usuario con su rol. Lo usan las features
+// que solo tienen el JWT: rooms del websocket y "marcar notificación leída".
+func (r Memberships) ListByUser(userID string) ([]domain.Membership, error) {
+	rows, err := r.Pool.Query(context.Background(),
+		`SELECT salon_id, role FROM memberships WHERE user_id=$1 ORDER BY salon_id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Membership
+	for rows.Next() {
+		var salonID, role string
+		if err := rows.Scan(&salonID, &role); err != nil {
+			return nil, err
+		}
+		m, err := domain.NewMembership(userID, salonID, domain.Role(role))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

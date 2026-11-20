@@ -44,12 +44,12 @@ func TestNewSalon_slug(t *testing.T) {
 }
 
 func TestMembership_roles(t *testing.T) {
-	m, err := NewMembership("u1", "s1", RoleBarber)
+	m, err := NewMembership("u1", "s1", RoleProfessional)
 	if err != nil {
 		t.Fatalf("inesperado: %v", err)
 	}
 	if m.CanManage() {
-		t.Fatal("barbero no debe poder configurar el salón")
+		t.Fatal("profesional no debe poder configurar el salón")
 	}
 	o, _ := NewMembership("u1", "s1", RoleOwner)
 	if !o.CanManage() {

@@ -3,7 +3,11 @@
 // Esto es DIP: app depende de abstracciones, no de Gin ni SQL.
 package ports
 
-import "salon-saas/internal/domain"
+import (
+	"time"
+
+	"salon-saas/internal/domain"
+)
 
 // --- Repositorios (puertos de salida hacia persistencia) ---
 
@@ -22,6 +26,16 @@ type MembershipRepository interface {
 	Find(userID, salonID string) (domain.Membership, error)
 }
 
+// MembershipLister: los salones a los que pertenece un usuario. Es el puerto
+// de las features que solo reciben el JWT y no un :salon_id en la ruta: el hub
+// de websockets (rooms por salón) y "marcar notificación leída".
+//
+// Va aparte de MembershipRepository (ISP): los repos de reservas o ventas no
+// tienen por qué implementar listados que nadie les pide.
+type MembershipLister interface {
+	ListByUser(userID string) ([]domain.Membership, error)
+}
+
 // --- Seguridad (puertos de salida hacia crypto/tokens) ---
 
 type PasswordHasher interface {
@@ -32,4 +46,131 @@ type PasswordHasher interface {
 type TokenIssuer interface {
 	Issue(userID string) (string, error)
 	Parse(token string) (string, error) // devuelve userID
+}
+
+// --- Reservas ---
+
+type BookingRepository interface {
+	Save(b domain.Booking) error
+	// FindByClientOpID busca una reserva ya registrada por su operation id.
+	FindByClientOpID(salonID, clientOpID string) (domain.Booking, error)
+	// FindOverlapping trae activas del profesional que pisan [start,end).
+	// El caso de uso la usa como filtro amable; la EXCLUDE de la DB decide.
+	FindOverlapping(salonID, professionalID string, start, end time.Time) ([]domain.Booking, error)
+	// ListRange trae todo lo del salón en [from,to) para el calendario.
+	ListRange(salonID string, from, to time.Time) ([]domain.Booking, error)
+}
+
+// --- Catálogo de servicios ---
+
+type ServiceRepository interface {
+	// Save inserta o actualiza por id. Rechaza nombre activo duplicado por
+	// salón (índice único sobre lower(name) WHERE active).
+	Save(s domain.Service) error
+	FindByID(salonID, id string) (domain.Service, error)
+	List(salonID string, includeInactive bool) ([]domain.Service, error)
+}
+
+// --- POS: ventas y caja ---
+
+type SaleRepository interface {
+	Save(s domain.Sale) error
+	// FindByClientOpID busca una venta ya registrada por su operation id.
+	// Es la base de la idempotencia de la cola offline del cliente.
+	FindByClientOpID(salonID, clientOpID string) (domain.Sale, error)
+	// ListRange trae las ventas del salón en [from,to) con sus ítems.
+	ListRange(salonID string, from, to time.Time) ([]domain.Sale, error)
+	// SumCents suma totales en [from,to). method vacío suma todos los métodos;
+	// MethodCash es lo que el cierre de caja espera encontrar en el cajón.
+	SumCents(salonID string, from, to time.Time, method domain.PaymentMethod) (int, error)
+	// TopServices ranking de servicios vendidos en [from,to), de mayor a menor.
+	TopServices(salonID string, from, to time.Time, limit int) ([]domain.TopService, error)
+}
+
+type CashCloseRepository interface {
+	Save(c domain.CashClose) error
+	// Last es el cierre más reciente del salón (ErrNotFound si nunca cerró):
+	// marca la apertura del turno actual.
+	Last(salonID string) (domain.CashClose, error)
+	List(salonID string) ([]domain.CashClose, error)
+}
+
+// --- Agregados de lectura para el dashboard ---
+// Puertos chicos y específicos (ISP): el dashboard no obliga a los repos de
+// reservas o de membresías a cargar con métodos que nadie más usa.
+
+// AgendaStats: cuántos turnos y cuántos minutos reservados hay en una ventana.
+type AgendaStats interface {
+	StatsRange(salonID string, from, to time.Time) (appointments int, bookedMinutes int, err error)
+}
+
+// StaffCounter: capacidad instalada del salón (profesionales que atienden).
+type StaffCounter interface {
+	CountProfessionals(salonID string) (int, error)
+}
+
+// --- Realtime ---
+
+// Event es lo que se publica a los clientes conectados de UN salón.
+// Type viaja tal cual al frontend ("booking.created", "notify", ...) y Data es
+// el payload que ya viene listo para serializar.
+type Event struct {
+	Type    string
+	SalonID string
+	Data    any
+	TS      time.Time
+}
+
+// EventPublisher es el puerto de salida del realtime. Los casos de uso avisan
+// "pasó algo en este salón" sin saber que atrás hay websockets (o mañana Redis
+// pub/sub, o nada): el hub es un adaptador más.
+type EventPublisher interface {
+	Publish(ev Event) error
+}
+
+// --- Notificaciones ---
+
+// NotificationRepository: avisos persistidos del salón. Las queries del salón
+// (List/MarkRead/UnreadCount) reciben userID porque un aviso puede ser para una
+// persona o para todo el salón (user_id NULL).
+type NotificationRepository interface {
+	Save(n domain.Notification) error
+	List(salonID, userID string, limit int) ([]domain.Notification, error)
+	MarkRead(salonID, userID, id string) error
+	UnreadCount(salonID, userID string) (int, error)
+}
+
+// --- Clientes y adjuntos ---
+
+// ClientRepository: fichas de clientes del salón y sus fotos.
+// Toda query va scopeada por salon_id: el id de otro tenant no existe acá.
+type ClientRepository interface {
+	Save(c domain.Client) error
+	FindByID(salonID, id string) (domain.Client, error)
+	List(salonID string) ([]domain.Client, error)
+	SavePhoto(p domain.ClientPhoto) error
+	ListPhotos(salonID, clientID string) ([]domain.ClientPhoto, error)
+	DeletePhoto(salonID, clientID, id string) error
+	// FindPhoto resuelve una foto con el scope completo (salón + cliente).
+	FindPhoto(salonID, clientID, id string) (domain.ClientPhoto, error)
+	// PhotoByID resuelve por id solo: lo usa el streaming /photos/:pid, donde
+	// el id aleatorio es la capability que el navegador usa en <img src>.
+	PhotoByID(id string) (domain.ClientPhoto, error)
+}
+
+// PhotoStorage guarda los binarios fuera de la DB. Hoy el adaptador es el
+// filesystem local; la interfaz es la misma que usaría S3/MinIO, así que pasar
+// de uno a otro es una línea en el composition root.
+type PhotoStorage interface {
+	// Put guarda data bajo key y devuelve la ruta estable a persistir en la DB.
+	Put(key string, data []byte, contentType string) (storedPath string, err error)
+	Get(path string) ([]byte, error)
+	Delete(path string) error
+}
+
+// ImageProcessor normaliza la subida: devuelve la variante que se persiste
+// (WebP, lado mayor acotado) y sus dimensiones reales. Es un puerto porque el
+// día que haya que usar otra herramienta, cambia el adaptador y nada más.
+type ImageProcessor interface {
+	ToWebP(data []byte) (out []byte, width, height int, err error)
 }

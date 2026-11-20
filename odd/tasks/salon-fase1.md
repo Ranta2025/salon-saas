@@ -22,6 +22,14 @@
 - [x] T4: postgres real + migraciones + compose infra + smoke e2e contra DB real.
 - T5: frontend base con paleta salón + landing pública (Fase 3, después).
 
+## Fase 2: reservas con anti-solape + calendario (rama feat/fase2)
+- [x] T1-F2: dominio Booking + Overlaps + migración 002 con EXCLUDE (btree_gist).
+- [x] T2-F2: BookingService.CreateBooking/List con permisos + tests con fakes.
+- [x] T3-F2: pgstore Bookings (23P01->409, 23503->400, UTC en borde) + test de carrera real.
+- [x] T4-F2: HTTP POST/GET /salons/:id/bookings + migrate multi-archivo + smoke e2e.
+
 ## Log
 - L1: usuario pide hexagonal+SOLID, parte por parte con pruebas y aprendizaje;
   diseño web profesional con paleta de salón cuando toque frontend.
+- L2: Fase 2 cerrada en feat/fase2: carrera real probada (1 gana + 1 va a 409),
+  smoke e2e verde, FK inexistente mapea a 400 sin fugar SQL, horas normalizadas a UTC.

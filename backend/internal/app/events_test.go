@@ -1,0 +1,111 @@
+package app
+
+import (
+	"testing"
+	"time"
+
+	"salon-saas/internal/domain"
+)
+
+// Los casos de uso que ya existían (reserva, venta, cierre) publican su evento
+// en el bus del salón: el frontend se entera sin polling. Además dejan un aviso
+// persistido en los casos que valen la pena (turno nuevo, cierre de caja).
+
+func TestBookingService_publica_booking_created(t *testing.T) {
+	bookings := &fb{}
+	mems := &fakeMemberships{}
+	events := &fakeEvents{}
+	notifier := &fakeNotifier{}
+	svc := BookingService{Bookings: bookings, Memberships: mems, Events: events, Notifier: notifier}
+	rec := recepcionista(mems)
+	day := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+
+	b, err := svc.CreateBooking(rec, "s1", "prof1", "Lía", "555", day.Add(10*time.Hour), day.Add(11*time.Hour))
+	if err != nil {
+		t.Fatalf("reserva: %v", err)
+	}
+	ev, count := events.typed("booking.created")
+	if count != 1 {
+		t.Fatalf("esperaba 1 booking.created, dio %d (%+v)", count, events.all)
+	}
+	if ev.SalonID != "s1" {
+		t.Fatalf("el evento debe ir al salón de la reserva, dio %q", ev.SalonID)
+	}
+	data, ok := ev.Data.(map[string]any)
+	if !ok || data["id"] != b.ID {
+		t.Fatalf("el evento debe llevar la reserva creada, dio %+v", ev.Data)
+	}
+	// Aviso persistido para el salón (bandeja del equipo).
+	if notifier.calls != 1 {
+		t.Fatalf("esperaba 1 aviso por la reserva nueva, dio %d", notifier.calls)
+	}
+}
+
+func TestBookingService_solape_no_publica_evento(t *testing.T) {
+	bookings := &fb{}
+	mems := &fakeMemberships{}
+	events := &fakeEvents{}
+	svc := BookingService{Bookings: bookings, Memberships: mems, Events: events}
+	rec := recepcionista(mems)
+	day := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+	_, _ = svc.CreateBooking(rec, "s1", "prof1", "Lía", "", day.Add(10*time.Hour), day.Add(11*time.Hour))
+	before, _ := events.typed("booking.created")
+	if _, err := svc.CreateBooking(rec, "s1", "prof1", "Ana", "", day.Add(10*time.Hour), day.Add(11*time.Hour)); err == nil {
+		t.Fatal("el solape debe fallar")
+	}
+	after, count := events.typed("booking.created")
+	if count != 1 || after.Type != before.Type {
+		t.Fatalf("un alta rechazada no publica evento, dio %d (%+v)", count, events.all)
+	}
+}
+
+func TestSaleService_publica_sale_created(t *testing.T) {
+	sales := &fakeSales{}
+	services := &fakeServices{}
+	mems := &fakeMemberships{}
+	events := &fakeEvents{}
+	svc := SaleService{Sales: sales, Services: services, Memberships: mems, Events: events}
+	catalogo(t, services, "s1")
+	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
+	corte := svcIDByName(t, services, "s1", "Corte")
+
+	sale, err := svc.RegisterSale(recep, "s1", "prof1", "Lía",
+		[]domain.SaleItem{{ServiceID: corte, Qty: 2, UnitPriceCents: 150000}}, domain.MethodCash)
+	if err != nil {
+		t.Fatalf("venta: %v", err)
+	}
+	ev, count := events.typed("sale.created")
+	if count != 1 {
+		t.Fatalf("esperaba 1 sale.created, dio %d (%+v)", count, events.all)
+	}
+	data, ok := ev.Data.(map[string]any)
+	if !ok || data["id"] != sale.ID || data["total_cents"] != 300000 {
+		t.Fatalf("el evento debe llevar el total calculado en el servidor: %+v", ev.Data)
+	}
+}
+
+func TestCashCloseService_publica_cash_closed_y_avisa(t *testing.T) {
+	closes := &fakeCashCloses{}
+	sales := &fakeSales{}
+	mems := &fakeMemberships{}
+	events := &fakeEvents{}
+	notifier := &fakeNotifier{}
+	svc := CashCloseService{CashCloses: closes, Sales: sales, Memberships: mems, Events: events, Notifier: notifier}
+	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
+
+	close, err := svc.CloseCash(owner, "s1", 10000, "sin novedad")
+	if err != nil {
+		t.Fatalf("cierre: %v", err)
+	}
+	ev, count := events.typed("cash_closed")
+	if count != 1 || ev.SalonID != "s1" {
+		t.Fatalf("esperaba 1 cash_closed de s1, dio %d (%+v)", count, events.all)
+	}
+	data, ok := ev.Data.(map[string]any)
+	if !ok || data["id"] != close.ID || data["difference_cents"] != 10000 {
+		t.Fatalf("el evento debe llevar la diferencia del cierre: %+v", ev.Data)
+	}
+	if notifier.calls != 1 {
+		t.Fatalf("el cierre deja un aviso para el salón, dio %d", notifier.calls)
+	}
+}

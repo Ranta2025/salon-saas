@@ -61,6 +61,17 @@ func (f *fakeMemberships) Find(userID, salonID string) (domain.Membership, error
 	return m, nil
 }
 
+// ListByUser: puerto MembershipLister (rooms del websocket y marcar leídas).
+func (f *fakeMemberships) ListByUser(userID string) ([]domain.Membership, error) {
+	var out []domain.Membership
+	for _, m := range f.byKey {
+		if m.UserID == userID {
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
 type fakeHasher struct{}
 
 func (fakeHasher) Hash(plain string) (string, error) { return "h:" + plain, nil }
@@ -112,11 +123,11 @@ func TestTenants_Create_Add(t *testing.T) {
 		t.Fatalf("sin owner debe dar Unauthorized, dio %v", err)
 	}
 	owner, _ := mems.Find("u-owner", s.ID)
-	if err := svc.AddMember(owner, "u-barb", s.ID, domain.RoleBarber); err != nil {
-		t.Fatalf("owner agrega barbero: %v", err)
+	if err := svc.AddMember(owner, "u-prof", s.ID, domain.RoleProfessional); err != nil {
+		t.Fatalf("owner agrega profesional: %v", err)
 	}
-	barb, _ := mems.Find("u-barb", s.ID)
+	barb, _ := mems.Find("u-prof", s.ID)
 	if err := svc.AddMember(barb, "u-x", s.ID, domain.RoleClient); !errors.Is(err, domain.ErrForbidden) {
-		t.Fatalf("barbero no debe agregar, dio %v", err)
+		t.Fatalf("profesional no debe agregar, dio %v", err)
 	}
 }
