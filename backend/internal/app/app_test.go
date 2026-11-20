@@ -112,11 +112,11 @@ func TestTenants_Create_Add(t *testing.T) {
 		t.Fatalf("sin owner debe dar Unauthorized, dio %v", err)
 	}
 	owner, _ := mems.Find("u-owner", s.ID)
-	if err := svc.AddMember(owner, "u-barb", s.ID, domain.RoleBarber); err != nil {
-		t.Fatalf("owner agrega barbero: %v", err)
+	if err := svc.AddMember(owner, "u-prof", s.ID, domain.RoleProfessional); err != nil {
+		t.Fatalf("owner agrega profesional: %v", err)
 	}
-	barb, _ := mems.Find("u-barb", s.ID)
+	barb, _ := mems.Find("u-prof", s.ID)
 	if err := svc.AddMember(barb, "u-x", s.ID, domain.RoleClient); !errors.Is(err, domain.ErrForbidden) {
-		t.Fatalf("barbero no debe agregar, dio %v", err)
+		t.Fatalf("profesional no debe agregar, dio %v", err)
 	}
 }

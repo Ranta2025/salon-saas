@@ -9,6 +9,7 @@ import (
 type Deps struct {
 	Auth        AuthHandler
 	Tenants     TenantsHandler
+	Bookings    BookingHandler
 	TokenIssuer ports.TokenIssuer
 }
 
@@ -20,4 +21,6 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 
 	authed := v1.Group("", AuthMiddleware(d.TokenIssuer))
 	authed.POST("/salons", d.Tenants.CreateSalon)
+	authed.POST("/salons/:id/bookings", d.Bookings.Create)
+	authed.GET("/salons/:id/bookings", d.Bookings.List)
 }

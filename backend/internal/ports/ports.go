@@ -3,7 +3,11 @@
 // Esto es DIP: app depende de abstracciones, no de Gin ni SQL.
 package ports
 
-import "salon-saas/internal/domain"
+import (
+	"time"
+
+	"salon-saas/internal/domain"
+)
 
 // --- Repositorios (puertos de salida hacia persistencia) ---
 
@@ -32,4 +36,15 @@ type PasswordHasher interface {
 type TokenIssuer interface {
 	Issue(userID string) (string, error)
 	Parse(token string) (string, error) // devuelve userID
+}
+
+// --- Reservas ---
+
+type BookingRepository interface {
+	Save(b domain.Booking) error
+	// FindOverlapping trae activas del profesional que pisan [start,end).
+	// El caso de uso la usa como filtro amable; la EXCLUDE de la DB decide.
+	FindOverlapping(salonID, professionalID string, start, end time.Time) ([]domain.Booking, error)
+	// ListRange trae todo lo del salón en [from,to) para el calendario.
+	ListRange(salonID string, from, to time.Time) ([]domain.Booking, error)
 }
