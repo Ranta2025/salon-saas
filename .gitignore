@@ -6,3 +6,4 @@ bin/
 pgdata/
 media/
 backend/media/
+backend/api

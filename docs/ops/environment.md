@@ -55,6 +55,16 @@ POSTGRES_DB=salon
 REDIS_IMAGE=redis:7
 MAILPIT_IMAGE=axllent/mailpit:latest
 
+# Fotos en S3/MinIO (opcional). Vacío = se guardan en el volumen local.
+# Con el perfil "files" de Compose: S3_ENDPOINT=http://minio:9000
+# Con el MinIO suelto en tu máquina, desde Docker: http://host.docker.internal:9000
+# Sin Docker (go run): http://127.0.0.1:9000
+S3_ENDPOINT=
+S3_ACCESS_KEY=salon
+S3_SECRET_KEY=change-me-minio-secret
+S3_BUCKET=salon-media
+S3_USE_SSL=false
+
 # Opcional: perfil "files" (ver docs/ops/minio.md)
 MINIO_IMAGE=pgsty/minio:latest
 MINIO_ROOT_USER=salon
