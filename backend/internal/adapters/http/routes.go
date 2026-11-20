@@ -19,6 +19,11 @@ type Deps struct {
 	Me            MeHandler
 	Staff         StaffHandler
 	Public        PublicHandler
+	Settings      SettingsHandler
+	Members       MemberHandler
+	// PublicBookingLimit limita por IP el POST público de reservas (nil = sin
+	// límite, como en los tests unitarios del router).
+	PublicBookingLimit gin.HandlerFunc
 	// WS es el handler del websocket (el hub de realtime). Va como
 	// gin.HandlerFunc para que este paquete no conozca gorilla/websocket:
 	// el composition root monta el adaptador concreto.
@@ -37,6 +42,14 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 
 	// Vidriera pública del salón: la landing no tiene login.
 	v1.GET("/public/salons/:slug", d.Public.GetSalon)
+	v1.GET("/public/salons/:slug/availability", d.Public.Availability)
+	// La reserva pública se limita por IP (como /auth): es la única escritura
+	// sin autenticación. El GET de arriba no pasa por el limiter.
+	publicBooking := []gin.HandlerFunc{d.Public.CreateBooking}
+	if d.PublicBookingLimit != nil {
+		publicBooking = append([]gin.HandlerFunc{d.PublicBookingLimit}, publicBooking...)
+	}
+	v1.POST("/public/salons/:slug/bookings", publicBooking...)
 
 	authed := v1.Group("", AuthMiddleware(d.TokenIssuer))
 	// Quién soy y en qué salones estoy (el frontend elige el salón activo).
@@ -46,6 +59,16 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	// Agenda
 	authed.POST("/salons/:id/bookings", d.Bookings.Create)
 	authed.GET("/salons/:id/bookings", d.Bookings.List)
+	authed.PATCH("/salons/:id/bookings/:bid", d.Bookings.Update)
+
+	// Configuración operativa del salón (zona horaria, horario, paso)
+	authed.GET("/salons/:id/settings", d.Settings.Get)
+	authed.PUT("/salons/:id/settings", d.Settings.Update)
+
+	// Equipo del salón (alta/baja de miembros, solo owner/admin)
+	authed.GET("/salons/:id/members", d.Members.List)
+	authed.POST("/salons/:id/members", d.Members.Add)
+	authed.DELETE("/salons/:id/members/:uid", d.Members.Remove)
 
 	// Equipo del salón (select de profesional de la agenda)
 	authed.GET("/salons/:id/staff", d.Staff.List)

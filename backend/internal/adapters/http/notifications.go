@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -52,10 +53,14 @@ func (h NotificationHandler) List(c *gin.Context) {
 	}
 	// El contador va en la misma respuesta: el badge del frontend no necesita
 	// otra vuelta a la API (campo extra, aditivo al contrato).
+	//
+	// R4-003: si el conteo falla, el listado NO se cae. Los avisos ya están
+	// leídos y son lo que la persona necesita ver; el badge es cosmético, así
+	// que va a 0 y el detalle queda en el log.
 	unread, err := h.Notifications.UnreadCount(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
-		return
+		log.Printf("unread count %s: %v", salonID, err)
+		unread = 0
 	}
 	c.JSON(http.StatusOK, gin.H{"notifications": out, "unread": unread})
 }

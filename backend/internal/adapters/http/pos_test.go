@@ -151,6 +151,11 @@ type posEnv struct {
 	store    *mstorage
 	events   *mevents
 	hub      *realtime.Hub
+	// Ronda 2: configuración del salón, administración del equipo y firma de
+	// las URLs de fotos.
+	settings *msettings
+	members  *mmembers
+	signer   ports.PhotoURLSigner
 	d        Deps
 }
 
@@ -172,7 +177,9 @@ func newPOSEnv() *posEnv {
 		clients:  &mclients{},
 		store:    &mstorage{},
 		events:   &mevents{},
+		settings: &msettings{},
 	}
+	env.members = &mmembers{mems: env.mems, users: env.users}
 	hasher := security.BcryptHasher{}
 	tokens := security.JWTIssuer{Secret: "test-secret"}
 	authSvc := app.AuthService{Users: env.users, Hasher: hasher, Tokens: tokens}
@@ -187,6 +194,11 @@ func newPOSEnv() *posEnv {
 	meSvc := app.MeService{Users: env.users, Salons: env.salons, Members: env.mems}
 	staffSvc := app.StaffService{Staff: env.mems, Memberships: env.mems}
 	publicSvc := app.PublicSalonService{Salons: env.salons, Services: env.services}
+	settingsSvc := app.SettingsService{Settings: env.settings, Memberships: env.mems}
+	memberSvc := app.MemberService{Members: env.members, Memberships: env.mems, Users: env.users}
+	availabilitySvc := app.AvailabilityService{Salons: env.salons, Services: env.services, Settings: env.settings, Staff: env.mems, Bookings: env.bookings}
+	publicBookingSvc := app.PublicBookingService{Salons: env.salons, Services: env.services, Settings: env.settings, Staff: env.mems, Bookings: env.bookings, Events: env.events, Notifier: notifSvc}
+	env.signer = security.NewPhotoSigner("test-secret")
 	hub := realtime.NewHub(tokens, env.mems, realtime.HubOrigins("http://localhost:5173"))
 	env.hub = hub
 
@@ -199,10 +211,12 @@ func newPOSEnv() *posEnv {
 		CashCloses:    CashCloseHandler{CashCloses: cashSvc, Memberships: env.mems},
 		Dashboard:     DashboardHandler{Dashboard: dashSvc, Memberships: env.mems},
 		Notifications: NotificationHandler{Notifications: notifSvc, Memberships: env.mems},
-		Clients:       ClientHandler{Clients: clientSvc, Memberships: env.mems},
+		Clients:       ClientHandler{Clients: clientSvc, Memberships: env.mems, Photos: env.signer},
 		Me:            MeHandler{Me: meSvc},
 		Staff:         StaffHandler{Staff: staffSvc, Memberships: env.mems},
-		Public:        PublicHandler{Public: publicSvc},
+		Public:        PublicHandler{Public: publicSvc, Avail: availabilitySvc, Bookings: publicBookingSvc},
+		Settings:      SettingsHandler{Settings: settingsSvc, Memberships: env.mems},
+		Members:       MemberHandler{Members: memberSvc, Memberships: env.mems},
 		WS:            hub.ServeWS,
 		TokenIssuer:   tokens,
 	}

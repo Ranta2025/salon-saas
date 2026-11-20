@@ -189,6 +189,28 @@ func (f *mb) FindOverlapping(salonID, professionalID string, start, end time.Tim
 	}
 	return out, nil
 }
+
+// FindByID: el scope por salón es la autorización del PATCH.
+func (f *mb) FindByID(salonID, id string) (domain.Booking, error) {
+	for _, b := range f.all {
+		if b.SalonID == salonID && b.ID == id {
+			return b, nil
+		}
+	}
+	return domain.Booking{}, domain.ErrNotFound
+}
+
+// Update reemplaza la reserva por id (misma semántica que el UPDATE de pgstore).
+func (f *mb) Update(b domain.Booking) error {
+	for i := range f.all {
+		if f.all[i].ID == b.ID && f.all[i].SalonID == b.SalonID {
+			f.all[i] = b
+			return nil
+		}
+	}
+	return domain.ErrNotFound
+}
+
 func (f *mb) ListRange(salonID string, from, to time.Time) ([]domain.Booking, error) {
 	var out []domain.Booking
 	for _, b := range f.all {

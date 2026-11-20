@@ -64,6 +64,73 @@ func (h BookingHandler) Create(c *gin.Context) {
 	})
 }
 
+// publicBookingJSON es la forma de la reserva pública: el frontend de la
+// landing solo necesita esto.
+func publicBookingJSON(b domain.Booking) gin.H {
+	return gin.H{
+		"id":              b.ID,
+		"professional_id": b.ProfessionalID,
+		"starts_at":       b.StartsAt.Format(time.RFC3339),
+		"ends_at":         b.EndsAt.Format(time.RFC3339),
+		"status":          string(b.Status),
+	}
+}
+
+// bookingJSON es la reserva completa (calendario del salón y PATCH).
+func bookingJSON(b domain.Booking) gin.H {
+	out := publicBookingJSON(b)
+	out["client_name"] = b.ClientName
+	return out
+}
+
+// Update: PATCH /salons/:id/bookings/:bid
+// Body: {"status":"cancelled|no_show|done"} y/o {"starts_at","ends_at",
+// "professional_id"} para reprogramar. Respuesta 200 {booking}. Publica
+// booking.updated (lo hace el caso de uso).
+func (h BookingHandler) Update(c *gin.Context) {
+	salonID := c.Param("id")
+	actor, ok := h.loadActor(c, salonID)
+	if !ok {
+		return
+	}
+	var in struct {
+		Status         *string `json:"status"`
+		StartsAt       *string `json:"starts_at"`
+		EndsAt         *string `json:"ends_at"`
+		ProfessionalID *string `json:"professional_id"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		badBody(c)
+		return
+	}
+	patch := app.BookingPatch{ProfessionalID: in.ProfessionalID}
+	if in.Status != nil {
+		status := domain.BookingStatus(*in.Status)
+		patch.Status = &status
+	}
+	for _, item := range []struct {
+		src   *string
+		dst   **time.Time
+		field string
+	}{{in.StartsAt, &patch.StartsAt, "starts_at"}, {in.EndsAt, &patch.EndsAt, "ends_at"}} {
+		if item.src == nil {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, *item.src)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": item.field + " inválido (RFC3339)"})
+			return
+		}
+		*item.dst = &t
+	}
+	b, err := h.Bookings.Update(actor, salonID, c.Param("bid"), patch)
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"booking": bookingJSON(b)})
+}
+
 // List: GET /salons/:id/bookings?from=...&to=... (por defecto, hoy UTC)
 func (h BookingHandler) List(c *gin.Context) {
 	salonID := c.Param("id")

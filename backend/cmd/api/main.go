@@ -23,6 +23,7 @@ import (
 	"salon-saas/internal/adapters/storage"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/ports"
 )
 
 // Timeouts del servidor (B-11): sin ellos un cliente lento ocupa una conexión
@@ -75,6 +76,7 @@ func main() {
 
 	router, deps := buildRouter(cfg, pool)
 	log.Printf("media: %s", cfg.MediaDir)
+	log.Printf("storage: s3 endpoint=%q bucket=%q ssl=%v", cfg.S3Endpoint, cfg.S3Bucket, cfg.S3UseSSL)
 	log.Printf("cors: %v", cfg.CORSOrigins)
 	_ = deps
 
@@ -117,6 +119,22 @@ func main() {
 	}
 }
 
+// photoStorage elige el adaptador de fotos por configuración: S3/MinIO si
+// S3_ENDPOINT está definido, filesystem local si no. Aislado para poder probar
+// la selección sin arrancar el servidor.
+func photoStorage(cfg config) (ports.PhotoStorage, error) {
+	if cfg.S3Endpoint == "" {
+		return storage.Local{Root: cfg.MediaDir}, nil
+	}
+	return storage.NewS3(storage.S3Config{
+		Endpoint:  cfg.S3Endpoint,
+		AccessKey: cfg.S3AccessKey,
+		SecretKey: cfg.S3SecretKey,
+		Bucket:    cfg.S3Bucket,
+		UseSSL:    cfg.S3UseSSL,
+	})
+}
+
 // buildRouter arma los adaptadores y monta las rutas. Devuelve el router y las
 // dependencias (los tests de humo lo usan).
 func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps) {
@@ -140,17 +158,23 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps) {
 	notifications := pgstore.Notifications{Pool: pool}
 	notifSvc := app.NotificationService{Notifications: notifications, Salons: mems, Events: hub}
 
-	// Adjuntos: filesystem local detrás de ports.PhotoStorage (misma interfaz
-	// que usaría S3: cambiar de adapter es esta línea y nada más).
-	store := storage.Local{Root: cfg.MediaDir}
+	// Adjuntos: S3 si S3_ENDPOINT está definido; si no, filesystem local. El
+	// puerto es el mismo (ports.PhotoStorage): cambiar de adapter es esta línea.
+	store, err := photoStorage(cfg)
+	if err != nil {
+		log.Fatalf("storage: %v", err)
+	}
+	// Firma de las URLs de fotos (24 h): clave derivada del secreto del proceso.
+	photoSigner := security.NewPhotoSigner(cfg.JWTSecret)
 
 	bookSvc := app.BookingService{Bookings: bookings, Memberships: mems, Events: hub, Notifier: notifSvc}
 	svcSvc := app.ServiceService{Services: servicesRepo, Memberships: mems}
 	saleSvc := app.SaleService{Sales: salesRepo, Services: servicesRepo, Memberships: mems, Events: hub}
 	// Tx: el cierre corre en una transacción con advisory lock por salón (B-09).
+	// Settings: la ventana del cierre es el día LOCAL del salón (su zona), no UTC.
 	cashCloseSvc := app.CashCloseService{
 		CashCloses: closesRepo, Sales: salesRepo, Memberships: mems, Tx: closesRepo,
-		Events: hub, Notifier: notifSvc,
+		Settings: salons, Events: hub, Notifier: notifSvc,
 	}
 	dashSvc := app.DashboardService{Sales: salesRepo, Agenda: bookings, Staff: mems, Memberships: mems}
 	clientSvc := app.ClientService{
@@ -162,6 +186,13 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps) {
 	meSvc := app.MeService{Users: users, Salons: salons, Members: mems}
 	staffSvc := app.StaffService{Staff: mems, Memberships: mems}
 	publicSvc := app.PublicSalonService{Salons: salons, Services: servicesRepo}
+	settingsSvc := app.SettingsService{Settings: salons, Memberships: mems}
+	memberSvc := app.MemberService{Members: mems, Memberships: mems, Users: users}
+	availabilitySvc := app.AvailabilityService{Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems, Bookings: bookings}
+	publicBookingSvc := app.PublicBookingService{
+		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems, Bookings: bookings,
+		Events: hub, Notifier: notifSvc,
+	}
 
 	router := gin.New()
 	// Recuperación de panics + log de acceso con token redactado (B-08).
@@ -193,12 +224,17 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps) {
 		CashCloses:    httpapi.CashCloseHandler{CashCloses: cashCloseSvc, Memberships: mems},
 		Dashboard:     httpapi.DashboardHandler{Dashboard: dashSvc, Memberships: mems},
 		Notifications: httpapi.NotificationHandler{Notifications: notifSvc, Memberships: mems},
-		Clients:       httpapi.ClientHandler{Clients: clientSvc, Memberships: mems},
+		Clients:       httpapi.ClientHandler{Clients: clientSvc, Memberships: mems, Photos: photoSigner},
 		Me:            httpapi.MeHandler{Me: meSvc},
 		Staff:         httpapi.StaffHandler{Staff: staffSvc, Memberships: mems},
-		Public:        httpapi.PublicHandler{Public: publicSvc},
-		WS:            hub.ServeWS,
-		TokenIssuer:   tokens,
+		Public:        httpapi.PublicHandler{Public: publicSvc, Avail: availabilitySvc, Bookings: publicBookingSvc},
+		Settings:      httpapi.SettingsHandler{Settings: settingsSvc, Memberships: mems},
+		Members:       httpapi.MemberHandler{Members: memberSvc, Memberships: mems},
+		// La reserva pública es la única escritura sin auth: rate limit por IP
+		// como en /auth (el GET de disponibilidad no pasa por acá).
+		PublicBookingLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/salons/"),
+		WS:                 hub.ServeWS,
+		TokenIssuer:        tokens,
 	}
 	httpapi.RegisterRoutes(router, deps)
 	return router, deps

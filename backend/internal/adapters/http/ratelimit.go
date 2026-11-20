@@ -52,7 +52,22 @@ func (rl *IPRateLimiter) Allow(ip string) bool {
 // Middleware aplica el límite solo a las rutas que empiezan con alguno de los
 // prefijos (p. ej. /api/v1/auth/): el resto de la API no se toca.
 func (rl *IPRateLimiter) Middleware(prefixes ...string) gin.HandlerFunc {
+	return rl.middleware("", prefixes...)
+}
+
+// MiddlewareFor aplica el límite solo cuando el método coincide. Sirve para
+// limitar un POST público sin castigar los GET del mismo prefijo (la landing
+// lee disponibilidad y vidriera muchas veces por visita).
+func (rl *IPRateLimiter) MiddlewareFor(method string, prefixes ...string) gin.HandlerFunc {
+	return rl.middleware(method, prefixes...)
+}
+
+func (rl *IPRateLimiter) middleware(method string, prefixes ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if method != "" && c.Request.Method != method {
+			c.Next()
+			return
+		}
 		if !hasPrefix(c.Request.URL.Path, prefixes) {
 			c.Next()
 			return
@@ -70,6 +85,13 @@ func (rl *IPRateLimiter) Middleware(prefixes ...string) gin.HandlerFunc {
 //	router.Use(RateLimit(10, time.Minute, "/api/v1/auth/"))
 func RateLimit(limit int, window time.Duration, prefixes ...string) gin.HandlerFunc {
 	return NewIPRateLimiter(limit, window).Middleware(prefixes...)
+}
+
+// RateLimitFor es RateLimit pero solo para un método HTTP:
+//
+//	router.POST(path, RateLimitFor(20, time.Minute, "POST", "/api/v1/public/salons/"), handler)
+func RateLimitFor(limit int, window time.Duration, method string, prefixes ...string) gin.HandlerFunc {
+	return NewIPRateLimiter(limit, window).MiddlewareFor(method, prefixes...)
 }
 
 func hasPrefix(path string, prefixes []string) bool {

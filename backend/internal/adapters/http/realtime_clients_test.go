@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -413,7 +414,10 @@ func TestHTTP_photos_flujo(t *testing.T) {
 		} `json:"photo"`
 	}
 	mustJSON(t, w.Body.Bytes(), &up)
-	if up.Photo.ID == "" || up.Photo.URL != "/api/v1/photos/"+up.Photo.ID {
+	// Ronda 2: la url viene firmada con vencimiento (24 h). El frontend la usa
+	// tal cual; el id solo ya no sirve.
+	if up.Photo.ID == "" || !strings.HasPrefix(up.Photo.URL, "/api/v1/photos/"+up.Photo.ID+"?exp=") ||
+		!strings.Contains(up.Photo.URL, "&sig=") {
 		t.Fatalf("respuesta de subida: %s", w.Body.String())
 	}
 	if up.Photo.W != 1280 || up.Photo.H != 960 || up.Photo.Bytes == 0 {
@@ -452,12 +456,21 @@ func TestHTTP_photos_flujo(t *testing.T) {
 		t.Fatal("conviene cachear la foto (Cache-Control)")
 	}
 
-	// Foto inexistente: 404 en JSON (no un body vacío).
-	req = httptest.NewRequest("GET", "/api/v1/photos/no-existe", nil)
+	// Foto inexistente con firma válida: 404 en JSON (no un body vacío). Sin
+	// firma la respuesta es 403 y no confirma si el id existe (ronda 2).
+	expNoExiste := photoURLNow().Add(time.Hour).Unix()
+	noExiste := "/api/v1/photos/no-existe?exp=" + strconv.FormatInt(expNoExiste, 10) + "&sig=" + env.signer.Sign("no-existe", expNoExiste)
+	req = httptest.NewRequest("GET", noExiste, nil)
 	rec = httptest.NewRecorder()
 	env.r.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("foto inexistente: %d", rec.Code)
+	}
+	req = httptest.NewRequest("GET", "/api/v1/photos/no-existe", nil)
+	rec = httptest.NewRecorder()
+	env.r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("sin firma debe dar 403, dio %d", rec.Code)
 	}
 
 	// Borrar: 204, la galería queda vacía y la url deja de servir.

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	httpapi "salon-saas/internal/adapters/http"
@@ -22,6 +23,13 @@ type config struct {
 	MediaDir    string
 	Port        string
 	GinMode     string
+	// Almacenamiento de fotos: si S3_ENDPOINT está definido se usa S3/MinIO.
+	// Sin endpoint, el adaptador de disco local (MEDIA_DIR).
+	S3Endpoint  string
+	S3AccessKey string
+	S3SecretKey string
+	S3Bucket    string
+	S3UseSSL    bool
 }
 
 // loadConfig lee la configuración desde getenv (os.Getenv en producción; un
@@ -34,6 +42,19 @@ func loadConfig(getenv func(string) string) (config, error) {
 		Port:        envOr(getenv, "PORT", "8080"),
 		GinMode:     getenv("GIN_MODE"),
 		CORSOrigins: httpapi.ParseOrigins(getenv("CORS_ORIGINS")),
+		S3Endpoint:  strings.TrimSpace(getenv("S3_ENDPOINT")),
+		S3AccessKey: strings.TrimSpace(getenv("S3_ACCESS_KEY")),
+		S3SecretKey: strings.TrimSpace(getenv("S3_SECRET_KEY")),
+		S3Bucket:    envOr(getenv, "S3_BUCKET", "salon-media"),
+	}
+	useSSL, err := envBool(getenv, "S3_USE_SSL", false)
+	if err != nil {
+		return config{}, err
+	}
+	cfg.S3UseSSL = useSSL
+	// Con endpoint S3, el bucket no puede quedar vacío (S3_BUCKET="" explícito).
+	if cfg.S3Endpoint != "" && strings.TrimSpace(cfg.S3Bucket) == "" {
+		return config{}, fmt.Errorf("S3_BUCKET es obligatoria cuando S3_ENDPOINT está definida")
 	}
 	if cfg.JWTSecret == "" {
 		return config{}, fmt.Errorf("JWT_SECRET es obligatoria: sin secreto no se pueden emitir ni validar tokens")
@@ -49,6 +70,20 @@ func loadConfig(getenv func(string) string) (config, error) {
 // isDevMode dice si el proceso corre en modo desarrollo (debug o test).
 func isDevMode(ginMode string) bool {
 	return ginMode == "debug" || ginMode == "test"
+}
+
+// envBool lee un booleano ("true"/"false", "1"/"0") con default. Un valor
+// inválido es un error de configuración, no un default silencioso.
+func envBool(getenv func(string) string, k string, def bool) (bool, error) {
+	v := strings.TrimSpace(getenv(k))
+	if v == "" {
+		return def, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("%s debe ser true o false (dio %q)", k, v)
+	}
+	return b, nil
 }
 
 // envOr devuelve la variable o el default si está vacía.

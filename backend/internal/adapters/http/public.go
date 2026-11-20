@@ -2,17 +2,24 @@ package httpapi
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"salon-saas/internal/app"
 )
 
-// PublicHandler: GET /api/v1/public/salons/:slug. La vidriera de la landing,
-// SIN auth: solo nombre, slug y la carta de servicios activos.
+// PublicHandler: las tres rutas de la landing, SIN auth.
+//   - GET  /public/salons/:slug                (vidriera)
+//   - GET  /public/salons/:slug/availability   (huecos libres)
+//   - POST /public/salons/:slug/bookings       (reserva)
 type PublicHandler struct {
-	Public app.PublicSalonService
+	Public   app.PublicSalonService
+	Avail    app.AvailabilityService
+	Bookings app.PublicBookingService
 }
 
+// GetSalon: GET /api/v1/public/salons/:slug. Solo nombre, slug y la carta de
+// servicios activos.
 func (h PublicHandler) GetSalon(c *gin.Context) {
 	p, err := h.Public.Public(c.Param("slug"))
 	if err != nil {
@@ -32,4 +39,62 @@ func (h PublicHandler) GetSalon(c *gin.Context) {
 		"salon":    gin.H{"id": p.Salon.ID, "slug": p.Salon.Slug, "name": p.Salon.Name},
 		"services": services,
 	})
+}
+
+// Availability: GET /api/v1/public/salons/:slug/availability?date=&service_id=
+// [&professional_id=] -> {"date","slots":[{"professional_id","starts_at","ends_at"}]}
+func (h PublicHandler) Availability(c *gin.Context) {
+	day, err := h.Avail.Day(c.Param("slug"), c.Query("date"), c.Query("service_id"), c.Query("professional_id"))
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	slots := make([]gin.H, 0, len(day.Slots))
+	for _, s := range day.Slots {
+		slots = append(slots, gin.H{
+			"professional_id": s.ProfessionalID,
+			"starts_at":       s.StartsAt.Format(time.RFC3339),
+			"ends_at":         s.EndsAt.Format(time.RFC3339),
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"date": day.Date, "slots": slots})
+}
+
+// CreateBooking: POST /api/v1/public/salons/:slug/bookings -> 201 {booking}.
+// La duración la pone el servicio y el hueco lo arbitra la DB (409).
+func (h PublicHandler) CreateBooking(c *gin.Context) {
+	var in struct {
+		ServiceID      string `json:"service_id"`
+		ProfessionalID string `json:"professional_id"`
+		ClientName     string `json:"client_name"`
+		ClientPhone    string `json:"client_phone"`
+		StartsAt       string `json:"starts_at"`
+		ClientOpID     string `json:"client_op_id"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		badBody(c)
+		return
+	}
+	if in.StartsAt == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "falta el horario del turno (starts_at)"})
+		return
+	}
+	startsAt, err := time.Parse(time.RFC3339, in.StartsAt)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "starts_at inválido (RFC3339)"})
+		return
+	}
+	b, err := h.Bookings.Book(c.Param("slug"), app.PublicBookingInput{
+		ServiceID:      in.ServiceID,
+		ProfessionalID: in.ProfessionalID,
+		ClientName:     in.ClientName,
+		ClientPhone:    in.ClientPhone,
+		StartsAt:       startsAt,
+		ClientOpID:     in.ClientOpID,
+	})
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"booking": publicBookingJSON(b)})
 }

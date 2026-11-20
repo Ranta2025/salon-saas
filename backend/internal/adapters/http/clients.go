@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -21,7 +22,16 @@ import (
 type ClientHandler struct {
 	Clients     app.ClientService
 	Memberships ports.MembershipRepository
+	// Photos firma la url de cada foto con vencimiento (24 h). Sin firma válida
+	// el streaming responde 403: la capability ya no es solo el id aleatorio.
+	Photos ports.PhotoURLSigner
 }
+
+// photoURLTTL es el vencimiento de la url firmada.
+const photoURLTTL = 24 * time.Hour
+
+// photoURLNow es el reloj de la firma (variable para tests deterministas).
+var photoURLNow = time.Now
 
 func (h ClientHandler) loadActor(c *gin.Context, salonID string) (domain.Membership, bool) {
 	uid, _ := c.Get("userID")
@@ -45,17 +55,24 @@ func clientJSON(c domain.Client) gin.H {
 	}
 }
 
-// photoURL es la ruta pública de la imagen. Es relativa a propósito: el
-// frontend la usa tal cual en <img src> y funciona en cualquier host.
-func photoURL(p domain.ClientPhoto) string { return "/api/v1/photos/" + p.ID }
+// photoURL es la ruta pública de la imagen, firmada y con vencimiento. Es
+// relativa a propósito: el frontend la usa tal cual en <img src> y funciona en
+// cualquier host. Vencida, el frontend vuelve a pedir el listado.
+func (h ClientHandler) photoURL(p domain.ClientPhoto) string {
+	if h.Photos == nil {
+		return "/api/v1/photos/" + p.ID
+	}
+	exp := photoURLNow().Add(photoURLTTL).Unix()
+	return fmt.Sprintf("/api/v1/photos/%s?exp=%d&sig=%s", p.ID, exp, h.Photos.Sign(p.ID, exp))
+}
 
 // photoJSON: {id, url, w, h, bytes} del contrato + el detalle de la ficha.
-func photoJSON(p domain.ClientPhoto) gin.H {
+func (h ClientHandler) photoJSON(p domain.ClientPhoto) gin.H {
 	return gin.H{
 		"id":           p.ID,
 		"salon_id":     p.SalonID,
 		"client_id":    p.ClientID,
-		"url":          photoURL(p),
+		"url":          h.photoURL(p),
 		"w":            p.Width,
 		"h":            p.Height,
 		"bytes":        p.Bytes,
@@ -126,7 +143,7 @@ func (h ClientHandler) AddPhoto(c *gin.Context) {
 		respondErr(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"photo": photoJSON(photo)})
+	c.JSON(http.StatusCreated, gin.H{"photo": h.photoJSON(photo)})
 }
 
 // ListPhotos: GET /api/v1/salons/:id/clients/:cid/photos -> {photos:[...]}
@@ -143,7 +160,7 @@ func (h ClientHandler) ListPhotos(c *gin.Context) {
 	}
 	out := make([]gin.H, 0, len(list))
 	for _, p := range list {
-		out = append(out, photoJSON(p))
+		out = append(out, h.photoJSON(p))
 	}
 	c.JSON(http.StatusOK, gin.H{"photos": out})
 }
@@ -162,12 +179,22 @@ func (h ClientHandler) DeletePhoto(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// StreamPhoto: GET /api/v1/photos/:pid -> la imagen.
-// Sin Authorization a propósito: un <img src> no puede mandar headers, así que
-// el id aleatorio de 128 bits ES la capability (no se puede adivinar ni
-// enumerar, y el listado/borrado siguen scopeados por salón).
+// StreamPhoto: GET /api/v1/photos/:pid?exp=<unix>&sig=<hmac> -> la imagen.
+// Sin Authorization a propósito: un <img src> no puede mandar headers. La
+// capability es la URL firmada con vencimiento (24 h): sin firma válida o
+// vencida, 403. El id solo ya no alcanza.
 func (h ClientHandler) StreamPhoto(c *gin.Context) {
-	photo, data, err := h.Clients.Photo(c.Param("pid"))
+	photoID := c.Param("pid")
+	if h.Photos == nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "firma de la foto inválida o vencida"})
+		return
+	}
+	exp, err := strconv.ParseInt(c.Query("exp"), 10, 64)
+	if err != nil || !h.Photos.Verify(photoID, exp, c.Query("sig")) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "firma de la foto inválida o vencida"})
+		return
+	}
+	photo, data, err := h.Clients.Photo(photoID)
 	if err != nil {
 		respondErr(c, err)
 		return
@@ -198,7 +225,9 @@ func readUpload(c *gin.Context) ([]byte, string, error) {
 	// servidor lo procesa entero. El +1 MB es el overhead del propio multipart
 	// (boundaries + headers); el archivo sigue acotado por MaxPhotoBytes.
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, domain.MaxPhotoBytes+(1<<20))
-	ct := c.GetHeader("Content-Type")
+	// R3-002: el Content-Type se compara sin distinguir mayúsculas ("IMAGE/PNG"
+	// es un image/png válido y algunos clientes lo mandan así).
+	ct := strings.ToLower(strings.TrimSpace(c.GetHeader("Content-Type")))
 	switch {
 	case strings.HasPrefix(ct, "multipart/form-data"):
 		file, header, err := multipartFile(c)
