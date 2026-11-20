@@ -59,6 +59,14 @@ func (f *fakeSales) Save(s domain.Sale) error {
 	f.all = append(f.all, s)
 	return nil
 }
+func (f *fakeSales) FindByClientOpID(salonID, clientOpID string) (domain.Sale, error) {
+	for _, s := range f.all {
+		if s.SalonID == salonID && s.ClientOpID != "" && s.ClientOpID == clientOpID {
+			return s, nil
+		}
+	}
+	return domain.Sale{}, domain.ErrNotFound
+}
 
 func (f *fakeSales) ListRange(salonID string, from, to time.Time) ([]domain.Sale, error) {
 	var out []domain.Sale

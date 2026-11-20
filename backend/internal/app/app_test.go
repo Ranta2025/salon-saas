@@ -61,6 +61,17 @@ func (f *fakeMemberships) Find(userID, salonID string) (domain.Membership, error
 	return m, nil
 }
 
+// ListByUser: puerto MembershipLister (rooms del websocket y marcar leídas).
+func (f *fakeMemberships) ListByUser(userID string) ([]domain.Membership, error) {
+	var out []domain.Membership
+	for _, m := range f.byKey {
+		if m.UserID == userID {
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
 type fakeHasher struct{}
 
 func (fakeHasher) Hash(plain string) (string, error) { return "h:" + plain, nil }
