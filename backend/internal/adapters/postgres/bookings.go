@@ -51,6 +51,38 @@ func (r Bookings) FindByClientOpID(salonID, clientOpID string) (domain.Booking, 
 	return b, nil
 }
 
+// FindByID resuelve un turno scopeado por salón: el id de otro tenant no
+// existe (404). Es la autorización del PATCH.
+func (r Bookings) FindByID(salonID, id string) (domain.Booking, error) {
+	row := r.Pool.QueryRow(context.Background(),
+		`SELECT id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at
+		 FROM bookings WHERE salon_id=$1 AND id=$2`, salonID, id)
+	b, err := scanBooking(row.Scan)
+	if err != nil {
+		return domain.Booking{}, notFound(err)
+	}
+	return b, nil
+}
+
+// Update persiste estado/horario de un turno existente. El WHERE lleva el
+// salon_id (un id de otro tenant no se toca) y la EXCLUDE sigue siendo el
+// árbitro del solape: 23P01 -> ErrAlreadyExists -> 409.
+func (r Bookings) Update(b domain.Booking) error {
+	tag, err := r.Pool.Exec(context.Background(),
+		`UPDATE bookings
+		 SET professional_id=$3, client_name=$4, client_phone=$5, starts_at=$6, ends_at=$7, status=$8
+		 WHERE salon_id=$1 AND id=$2`,
+		b.SalonID, b.ID, b.ProfessionalID, b.ClientName, b.ClientPhone,
+		b.StartsAt, b.EndsAt, string(b.Status))
+	if err != nil {
+		return pgError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
 func (r Bookings) FindOverlapping(salonID, professionalID string, start, end time.Time) ([]domain.Booking, error) {
 	rows, err := r.Pool.Query(context.Background(),
 		`SELECT id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at

@@ -226,3 +226,33 @@ func escribirChunk(buf *bytes.Buffer, tipo string, datos []byte) {
 	binary.BigEndian.PutUint32(c[:], crc)
 	buf.Write(c[:])
 }
+
+// R3-001: una imagen con cabecera válida pero datos corruptos hace fallar a
+// cwebp. El archivo lo subió el usuario, así que es un 400 (ErrValidation) y no
+// un 500: antes salía como error interno y el frontend no podía explicarlo.
+func TestWebP_R3_001_cwebp_falla_es_validation(t *testing.T) {
+	requireCwebp(t)
+	png := pngBytes(t, 40, 30)
+	// Firma + chunk IHDR: DecodeConfig lee el tamaño, cwebp no puede decodificar.
+	truncado := png[:33]
+	if _, _, err := image.DecodeConfig(bytes.NewReader(truncado)); err != nil {
+		t.Fatalf("el recorte debe conservar la cabecera: %v", err)
+	}
+	conv := WebP{MaxSide: 1280}
+	if _, _, _, err := conv.ToWebP(truncado); !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("cwebp sobre un archivo corrupto debe ser ErrValidation (400), dio %v", err)
+	}
+}
+
+// R3-001 (contraprueba): si falta el binario cwebp el problema es del servidor,
+// no del archivo: NO se puede mentir con un 400.
+func TestWebP_R3_001_binario_ausente_no_es_validacion(t *testing.T) {
+	conv := WebP{Bin: "/no-existe-cwebp"}
+	_, _, _, err := conv.ToWebP(jpegBytes(t, 20, 20))
+	if err == nil {
+		t.Fatal("sin binario debe fallar")
+	}
+	if errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("un problema de infraestructura no es 400, dio %v", err)
+	}
+}

@@ -87,6 +87,34 @@ func (r Salons) FindByID(id string) (domain.Salon, error) {
 	return s, nil
 }
 
+// Settings lee la configuración operativa del salón (ports.SalonSettingsRepository).
+// Una fila ausente es ErrNotFound: el caso de uso decide el default.
+func (r Salons) Settings(salonID string) (domain.SalonSettings, error) {
+	var s domain.SalonSettings
+	err := r.Pool.QueryRow(context.Background(),
+		`SELECT id, timezone, open_time, close_time, slot_step_min FROM salons WHERE id=$1`, salonID,
+	).Scan(&s.SalonID, &s.Timezone, &s.OpenTime, &s.CloseTime, &s.SlotStepMin)
+	if err != nil {
+		return domain.SalonSettings{}, notFound(err)
+	}
+	return s, nil
+}
+
+// SaveSettings actualiza la configuración. El UPDATE es la autorización: si el
+// salón no existe no se afecta ninguna fila (ErrNotFound, nunca un upsert).
+func (r Salons) SaveSettings(s domain.SalonSettings) error {
+	tag, err := r.Pool.Exec(context.Background(),
+		`UPDATE salons SET timezone=$2, open_time=$3, close_time=$4, slot_step_min=$5 WHERE id=$1`,
+		s.SalonID, s.Timezone, s.OpenTime, s.CloseTime, s.SlotStepMin)
+	if err != nil {
+		return pgError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
 type Memberships struct{ Pool *pgxpool.Pool }
 
 func (r Memberships) Save(m domain.Membership) error {

@@ -12,10 +12,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/jpeg" // registra el decoder JPEG para DecodeConfig
 	_ "image/png"  // registra el decoder PNG
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -119,7 +121,14 @@ func (w WebP) convert(data []byte, width, height int) ([]byte, error) {
 		if msg == "" {
 			msg = err.Error()
 		}
-		return nil, fmt.Errorf("no se pudo convertir la imagen a webp: %s", msg)
+		// R3-001: cwebp falla con archivos que tienen cabecera válida pero datos
+		// corruptos (un JPEG/PNG truncado). Eso es culpa del archivo subido: 400
+		// con un mensaje claro, no un 500. Si el binario no existe o no se puede
+		// ejecutar, el problema es del servidor y se propaga tal cual (500).
+		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%w: no se pudo convertir la imagen a webp (¿está dañada?): %s", domain.ErrValidation, msg)
 	}
 	return os.ReadFile(dst)
 }
