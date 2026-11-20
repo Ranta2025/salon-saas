@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"salon-saas/internal/adapters/realtime"
 	"salon-saas/internal/adapters/security"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
@@ -57,6 +58,14 @@ type msale struct {
 }
 
 func (f *msale) Save(s domain.Sale) error { f.all = append(f.all, s); return nil }
+func (f *msale) FindByClientOpID(salonID, clientOpID string) (domain.Sale, error) {
+	for _, s := range f.all {
+		if s.SalonID == salonID && s.ClientOpID != "" && s.ClientOpID == clientOpID {
+			return s, nil
+		}
+	}
+	return domain.Sale{}, domain.ErrNotFound
+}
 
 func (f *msale) ListRange(salonID string, from, to time.Time) ([]domain.Sale, error) {
 	var out []domain.Sale
@@ -137,6 +146,10 @@ type posEnv struct {
 	sales    *msale
 	closes   *mclose
 	bookings *mb
+	notifs   *mnotif
+	clients  *mclients
+	store    *mstorage
+	events   *mevents
 }
 
 func newPOSEnv() *posEnv {
@@ -149,27 +162,37 @@ func newPOSEnv() *posEnv {
 		sales:    &msale{},
 		closes:   &mclose{},
 		bookings: &mb{},
+		notifs:   &mnotif{},
+		clients:  &mclients{},
+		store:    &mstorage{},
+		events:   &mevents{},
 	}
 	hasher := security.BcryptHasher{}
 	tokens := security.JWTIssuer{Secret: "test-secret"}
 	authSvc := app.AuthService{Users: env.users, Hasher: hasher, Tokens: tokens}
 	tenSvc := app.TenantService{Salons: env.salons, Memberships: env.mems}
-	bookSvc := app.BookingService{Bookings: env.bookings, Memberships: env.mems}
+	notifSvc := app.NotificationService{Notifications: env.notifs, Salons: env.mems, Events: env.events}
+	bookSvc := app.BookingService{Bookings: env.bookings, Memberships: env.mems, Events: env.events, Notifier: notifSvc}
 	svcSvc := app.ServiceService{Services: env.services, Memberships: env.mems}
-	saleSvc := app.SaleService{Sales: env.sales, Services: env.services, Memberships: env.mems}
-	cashSvc := app.CashCloseService{CashCloses: env.closes, Sales: env.sales, Memberships: env.mems}
+	saleSvc := app.SaleService{Sales: env.sales, Services: env.services, Memberships: env.mems, Events: env.events}
+	cashSvc := app.CashCloseService{CashCloses: env.closes, Sales: env.sales, Memberships: env.mems, Events: env.events, Notifier: notifSvc}
 	dashSvc := app.DashboardService{Sales: env.sales, Agenda: env.bookings, Staff: env.mems, Memberships: env.mems}
+	clientSvc := app.ClientService{Clients: env.clients, Memberships: env.mems, Photos: env.store, Images: mimages{}}
+	hub := realtime.NewHub(tokens, env.mems)
 
 	env.r = gin.New()
 	RegisterRoutes(env.r, Deps{
-		Auth:        AuthHandler{Auth: authSvc},
-		Tenants:     TenantsHandler{Tenants: tenSvc, Memberships: env.mems},
-		Bookings:    BookingHandler{Bookings: bookSvc, Memberships: env.mems},
-		Services:    ServiceHandler{Services: svcSvc, Memberships: env.mems},
-		Sales:       SaleHandler{Sales: saleSvc, Memberships: env.mems},
-		CashCloses:  CashCloseHandler{CashCloses: cashSvc, Memberships: env.mems},
-		Dashboard:   DashboardHandler{Dashboard: dashSvc, Memberships: env.mems},
-		TokenIssuer: tokens,
+		Auth:          AuthHandler{Auth: authSvc},
+		Tenants:       TenantsHandler{Tenants: tenSvc, Memberships: env.mems},
+		Bookings:      BookingHandler{Bookings: bookSvc, Memberships: env.mems},
+		Services:      ServiceHandler{Services: svcSvc, Memberships: env.mems},
+		Sales:         SaleHandler{Sales: saleSvc, Memberships: env.mems},
+		CashCloses:    CashCloseHandler{CashCloses: cashSvc, Memberships: env.mems},
+		Dashboard:     DashboardHandler{Dashboard: dashSvc, Memberships: env.mems},
+		Notifications: NotificationHandler{Notifications: notifSvc, Memberships: env.mems},
+		Clients:       ClientHandler{Clients: clientSvc, Memberships: env.mems},
+		WS:            hub.ServeWS,
+		TokenIssuer:   tokens,
 	})
 	return env
 }
@@ -598,5 +621,41 @@ func TestHTTP_dashboard(t *testing.T) {
 	day := dayStart.Format(time.RFC3339)
 	if w := doReq(env.r, "GET", "/api/v1/salons/"+salonID+"/bookings?from="+day+"&to="+dayStart.Add(24*time.Hour).Format(time.RFC3339), "", ownerTok); w.Code != http.StatusOK {
 		t.Fatalf("bookings sigue funcionando: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// TestHTTP_sale_replay: reintento offline con el mismo client_op_id.
+// El segundo POST debe devolver 201 con el MISMO sale_id (no 409, no duplicado).
+func TestHTTP_sale_replay(t *testing.T) {
+	env := newPOSEnv()
+	ownerTok, _ := env.register(t, "owner@mail.com")
+	salonID := env.salon(t, ownerTok, "replay")
+	base := "/api/v1/salons/" + salonID + "/sales"
+	svcID := env.seedService(t, ownerTok, salonID, "Corte", 150000)
+
+	body := `{"professional_id":"prof1","client_name":"Lía","method":"cash","client_op_id":"op-abc",` +
+		`"items":[{"service_id":"` + svcID + `","qty":1,"unit_price_cents":150000}]}`
+	w1 := doReq(env.r, "POST", base, body, ownerTok)
+	w2 := doReq(env.r, "POST", base, body, ownerTok)
+	if w1.Code != http.StatusCreated || w2.Code != http.StatusCreated {
+		t.Fatalf("reintento debe dar 201/201, dio %d/%d (%s | %s)", w1.Code, w2.Code, w1.Body.String(), w2.Body.String())
+	}
+	var o1, o2 struct {
+		SaleID string `json:"sale_id"`
+	}
+	mustJSON(t, w1.Body.Bytes(), &o1)
+	mustJSON(t, w2.Body.Bytes(), &o2)
+	if o1.SaleID == "" || o1.SaleID != o2.SaleID {
+		t.Fatalf("el replay debe devolver el mismo sale_id: %q vs %q", o1.SaleID, o2.SaleID)
+	}
+	w := doReq(env.r, "GET", base, "", ownerTok)
+	var list struct {
+		Sales []struct {
+			ID string `json:"id"`
+		} `json:"sales"`
+	}
+	mustJSON(t, w.Body.Bytes(), &list)
+	if len(list.Sales) != 1 {
+		t.Fatalf("debe existir una sola venta, hay %d", len(list.Sales))
 	}
 }

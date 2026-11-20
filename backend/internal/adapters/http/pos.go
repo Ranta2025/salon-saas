@@ -167,6 +167,8 @@ func (h SaleHandler) Create(c *gin.Context) {
 		ProfessionalID string `json:"professional_id"`
 		ClientName     string `json:"client_name"`
 		Method         string `json:"method"`
+		// ClientOpID es opcional: lo manda la cola offline para idempotencia.
+		ClientOpID string `json:"client_op_id"`
 		Items          []struct {
 			ServiceID      string `json:"service_id"`
 			Qty            int    `json:"qty"`
@@ -185,7 +187,7 @@ func (h SaleHandler) Create(c *gin.Context) {
 			UnitPriceCents: it.UnitPriceCents,
 		})
 	}
-	sale, err := h.Sales.RegisterSale(actor, salonID, in.ProfessionalID, in.ClientName, items, domain.PaymentMethod(in.Method))
+	sale, err := h.Sales.RegisterSaleWithOp(actor, salonID, in.ProfessionalID, in.ClientName, items, domain.PaymentMethod(in.Method), in.ClientOpID)
 	if err != nil {
 		c.JSON(statusOf(err), gin.H{"error": err.Error()})
 		return

@@ -21,9 +21,9 @@ func (r Sales) Save(s domain.Sale) error {
 	defer func() { _ = tx.Rollback(ctx) }() // no-op si ya commiteó
 
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO sales(id,salon_id,professional_id,client_name,total_cents,method,created_at)
-		 VALUES($1,$2,$3,$4,$5,$6,$7)`,
-		s.ID, s.SalonID, s.ProfessionalID, s.ClientName, s.TotalCents, string(s.Method), s.CreatedAt); err != nil {
+		`INSERT INTO sales(id,salon_id,professional_id,client_name,total_cents,method,client_op_id,created_at)
+		 VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+		s.ID, s.SalonID, s.ProfessionalID, s.ClientName, s.TotalCents, string(s.Method), s.ClientOpID, s.CreatedAt); err != nil {
 		return pgError(err)
 	}
 	for _, it := range s.Items {
@@ -37,7 +37,39 @@ func (r Sales) Save(s domain.Sale) error {
 	return tx.Commit(ctx)
 }
 
-const saleColumns = `id,salon_id,professional_id,client_name,total_cents,method,created_at`
+// FindByClientOpID busca una venta ya registrada por su operation id.
+// Base de la idempotencia de la cola offline (ver FindByClientOpID de Bookings).
+func (r Sales) FindByClientOpID(salonID, clientOpID string) (domain.Sale, error) {
+	var s domain.Sale
+	var method string
+	err := r.Pool.QueryRow(context.Background(),
+		`SELECT `+saleColumns+` FROM sales
+		 WHERE salon_id=$1 AND client_op_id=$2 AND client_op_id <> ''`,
+		salonID, clientOpID).Scan(&s.ID, &s.SalonID, &s.ProfessionalID, &s.ClientName,
+		&s.TotalCents, &method, &s.ClientOpID, &s.CreatedAt)
+	if err != nil {
+		return domain.Sale{}, notFound(err)
+	}
+	s.Method = domain.PaymentMethod(method)
+	s.CreatedAt = s.CreatedAt.UTC()
+	rows, err := r.Pool.Query(context.Background(),
+		`SELECT service_id, qty, unit_price_cents FROM sale_items WHERE sale_id=$1 ORDER BY id`,
+		s.ID)
+	if err != nil {
+		return domain.Sale{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var it domain.SaleItem
+		if err := rows.Scan(&it.ServiceID, &it.Qty, &it.UnitPriceCents); err != nil {
+			return domain.Sale{}, err
+		}
+		s.Items = append(s.Items, it)
+	}
+	return s, rows.Err()
+}
+
+const saleColumns = `id,salon_id,professional_id,client_name,total_cents,method,client_op_id,created_at`
 
 func (r Sales) ListRange(salonID string, from, to time.Time) ([]domain.Sale, error) {
 	ctx := context.Background()
@@ -54,7 +86,7 @@ func (r Sales) ListRange(salonID string, from, to time.Time) ([]domain.Sale, err
 	for rows.Next() {
 		var s domain.Sale
 		var method string
-		if err := rows.Scan(&s.ID, &s.SalonID, &s.ProfessionalID, &s.ClientName, &s.TotalCents, &method, &s.CreatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.SalonID, &s.ProfessionalID, &s.ClientName, &s.TotalCents, &method, &s.ClientOpID, &s.CreatedAt); err != nil {
 			return nil, err
 		}
 		s.Method = domain.PaymentMethod(method)
