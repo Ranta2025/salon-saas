@@ -5,6 +5,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"salon-saas/internal/domain"
@@ -15,6 +16,10 @@ type CashCloseService struct {
 	CashCloses  ports.CashCloseRepository
 	Sales       ports.SaleRepository
 	Memberships ports.MembershipRepository
+	// Events y Notifier son opcionales (nil = no avisa): el cierre queda
+	// igual en la DB; el realtime es una comodidad, no un requisito.
+	Events   ports.EventPublisher
+	Notifier Notifier
 }
 
 // CloseCash cierra el turno actual. La ventana arranca en el cierre anterior
@@ -49,6 +54,22 @@ func (s CashCloseService) CloseCash(actor domain.Membership, salonID string, cou
 	if err := s.CashCloses.Save(c); err != nil {
 		return domain.CashClose{}, err
 	}
+	// El turno cerró: el equipo se entera sin refrescar (y queda el aviso).
+	publish(s.Events, ports.Event{
+		Type:    "cash_closed",
+		SalonID: salonID,
+		Data: map[string]any{
+			"id":                c.ID,
+			"system_cash_cents": c.SystemCashCents,
+			"counted_cents":     c.CountedCents,
+			"difference_cents":  c.DifferenceCents,
+		},
+		TS: c.ClosedAt,
+	})
+	notify(s.Notifier, salonID, "", "Cierre de caja",
+		fmt.Sprintf("Esperado %s · contado %s · diferencia %s",
+			FormatCents(c.SystemCashCents), FormatCents(c.CountedCents), FormatCents(c.DifferenceCents)),
+		domain.KindCash)
 	return c, nil
 }
 

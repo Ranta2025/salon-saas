@@ -74,6 +74,17 @@ func (f *mm) CountProfessionals(salonID string) (int, error) {
 	return n, nil
 }
 
+// ListByUser: puerto MembershipLister (rooms del websocket y avisos leídos).
+func (f *mm) ListByUser(userID string) ([]domain.Membership, error) {
+	var out []domain.Membership
+	for _, m := range f.byKey {
+		if m.UserID == userID {
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
 // testRouter arma el router completo con fakes en memoria (ver pos_test.go).
 func testRouter() *gin.Engine { return newPOSEnv().r }
 
@@ -129,6 +140,14 @@ func TestHTTP_flujo_auth_salon(t *testing.T) {
 type mb struct{ all []domain.Booking }
 
 func (f *mb) Save(b domain.Booking) error { f.all = append(f.all, b); return nil }
+func (f *mb) FindByClientOpID(salonID, clientOpID string) (domain.Booking, error) {
+	for _, b := range f.all {
+		if b.SalonID == salonID && b.ClientOpID != "" && b.ClientOpID == clientOpID {
+			return b, nil
+		}
+	}
+	return domain.Booking{}, domain.ErrNotFound
+}
 func (f *mb) FindOverlapping(salonID, professionalID string, start, end time.Time) ([]domain.Booking, error) {
 	var out []domain.Booking
 	probe := domain.Booking{SalonID: salonID, ProfessionalID: professionalID, StartsAt: start, EndsAt: end, Status: domain.BookingBooked}
