@@ -1,0 +1,195 @@
+/*
+ * Aurelia · service worker (vanilla, no dependencies).
+ *
+ * - precaches the app shell and the hashed build assets referenced by it
+ * - network-first for API GETs, with a cached copy as fallback
+ * - never intercepts or caches non-GET requests: mutations are queued by the app
+ *   (`src/lib/offlineQueue.ts`) so the server keeps deduplicating by client_op_id
+ * - cache-first for same-origin static assets (JS/CSS/fonts/images)
+ */
+
+const VERSION = 'salon-v1'
+const SHELL_CACHE = `${VERSION}-shell`
+const STATIC_CACHE = `${VERSION}-static`
+const API_CACHE = `${VERSION}-api`
+const KEEP = new Set([SHELL_CACHE, STATIC_CACHE, API_CACHE])
+
+const SHELL_URLS = [
+  '/',
+  '/index.html',
+  '/manifest.webmanifest',
+  '/icons/icon.svg',
+  '/icons/icon-maskable.svg',
+  '/icons/favicon.svg',
+]
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(precacheShell().then(() => self.skipWaiting()))
+})
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    (async () => {
+      const names = await caches.keys()
+      await Promise.all(
+        names.filter((name) => !KEEP.has(name)).map((name) => caches.delete(name)),
+      )
+      await self.clients.claim()
+    })(),
+  )
+})
+
+async function precacheShell() {
+  const cache = await caches.open(SHELL_CACHE)
+  await Promise.all(
+    SHELL_URLS.map(async (url) => {
+      try {
+        const response = await fetch(new Request(url, { cache: 'reload' }))
+        if (response.ok) {
+          await cache.put(url, response)
+        }
+      } catch {
+        // offline install: keep whatever was already available
+      }
+    }),
+  )
+
+  // Warm the hashed assets of the current build (index.html references them).
+  try {
+    const response = await fetch('/index.html', { cache: 'reload' })
+    if (!response.ok) {
+      return
+    }
+    await cache.put('/index.html', response.clone())
+    const html = await response.text()
+    const assets = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map(
+      (match) => match[1],
+    )
+    await Promise.all(
+      assets.map(async (asset) => {
+        try {
+          const assetResponse = await fetch(new Request(asset, { cache: 'reload' }))
+          if (assetResponse.ok) {
+            await cache.put(asset, assetResponse)
+          }
+        } catch {
+          // a missing asset must not break the install
+        }
+      }),
+    )
+  } catch {
+    // no shell to warm
+  }
+}
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event
+  // Mutations always go straight to the network; the offline queue owns retries.
+  if (request.method !== 'GET') {
+    return
+  }
+
+  let url
+  try {
+    url = new URL(request.url)
+  } catch {
+    return
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return
+  }
+  if (url.pathname === '/api/v1/ws') {
+    return
+  }
+
+  if (url.pathname.startsWith('/api/v1/')) {
+    event.respondWith(networkFirstApi(request))
+    return
+  }
+  if (request.mode === 'navigate') {
+    event.respondWith(networkFirstShell(request))
+    return
+  }
+  if (url.origin === self.location.origin) {
+    event.respondWith(cacheFirstStatic(request))
+  }
+})
+
+async function networkFirstApi(request) {
+  const cache = await caches.open(API_CACHE)
+  const key = apiCacheKey(request)
+  try {
+    const response = await fetch(request)
+    if (response.ok) {
+      await cache.put(key, response.clone())
+    }
+    return response
+  } catch {
+    const cached = await cache.match(key)
+    if (cached) {
+      return cached
+    }
+    return new Response(
+      JSON.stringify({
+        error:
+          'Sin conexión y sin copia guardada de estos datos. Reintenta cuando vuelva la red.',
+      }),
+      { status: 503, headers: { 'Content-Type': 'application/json' } },
+    )
+  }
+}
+
+async function networkFirstShell(request) {
+  const cache = await caches.open(SHELL_CACHE)
+  try {
+    const response = await fetch(request)
+    if (response.ok) {
+      // Every SPA route is served by the same index.html.
+      await cache.put('/index.html', response.clone())
+    }
+    return response
+  } catch {
+    const cached = await cache.match('/index.html')
+    if (cached) {
+      return cached
+    }
+    return new Response('<h1>Sin conexión</h1><p>Vuelve a intentar cuando recuperes la red.</p>', {
+      status: 503,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    })
+  }
+}
+
+async function cacheFirstStatic(request) {
+  const cache = await caches.open(STATIC_CACHE)
+  const cached = await cache.match(request)
+  if (cached) {
+    return cached
+  }
+  const response = await fetch(request)
+  if (response.ok && response.type === 'basic') {
+    await cache.put(request, response.clone())
+  }
+  return response
+}
+
+/** The cache key includes a hash of the token so another account cannot read it. */
+function apiCacheKey(request) {
+  const url = new URL(request.url)
+  url.searchParams.set('__auth', hashToken(request.headers.get('Authorization') || 'anon'))
+  return new Request(url.toString(), { method: 'GET' })
+}
+
+function hashToken(value) {
+  let hash = 5381
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) + hash + value.charCodeAt(index)) >>> 0
+  }
+  return `u${hash.toString(36)}`
+}
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'salon:clear-api-cache') {
+    event.waitUntil(caches.delete(API_CACHE))
+  }
+})

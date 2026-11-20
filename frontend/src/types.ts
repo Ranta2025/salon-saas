@@ -54,6 +54,18 @@ export type SaleInput = {
   client_name: string
   method: SaleMethod
   items: { service_id: string; qty: number; unit_price_cents: number }[]
+  /** Idempotency key of the offline queue; the server deduplicates on it. */
+  client_op_id?: string
+}
+
+/** Body accepted by POST bookings. */
+export type BookingInput = {
+  professional_id: string
+  client_name: string
+  starts_at: string
+  ends_at: string
+  /** Idempotency key of the offline queue; the server deduplicates on it. */
+  client_op_id?: string
 }
 
 /**
@@ -64,6 +76,14 @@ export type SaleCreated = {
   sale_id: string
   total: number
 }
+
+/**
+ * What the POS gets back: the server confirmation or the local queue receipt
+ * (offline). A queued sale is not on the server until the queue flushes.
+ */
+export type SaleOutcome =
+  | { kind: 'confirmed'; server: SaleCreated }
+  | { kind: 'queued'; client_op_id: string }
 
 export type CashClose = {
   id: string
@@ -89,4 +109,23 @@ export type AuthUser = {
   id: string
   name: string
   email: string
+}
+
+/** Client row of GET /api/v1/salons/:id/clients. */
+export type Client = {
+  id: string
+  name: string
+  phone: string | null
+  email: string | null
+  created_at: string | null
+}
+
+/** Photo row of GET/POST /api/v1/salons/:id/clients/:cid/photos. */
+export type ClientPhoto = {
+  id: string
+  url: string
+  width: number | null
+  height: number | null
+  bytes: number | null
+  created_at: string | null
 }

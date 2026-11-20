@@ -1,0 +1,28 @@
+{
+  "name": "Aurelia · Panel del salón",
+  "short_name": "Aurelia",
+  "description": "Agenda, ventas, servicios, clientes y avisos del salón Aurelia, con modo sin conexión para cobrar.",
+  "lang": "es-MX",
+  "dir": "ltr",
+  "start_url": "/panel",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#FAF5EF",
+  "theme_color": "#3B1E33",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -2,19 +2,27 @@ import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { AppShell } from './app/AppShell'
 import { CalendarPage } from './app/CalendarPage'
+import { ClientDetailPage } from './app/ClientDetailPage'
+import { ClientsPage } from './app/ClientsPage'
 import { DashboardPage } from './app/DashboardPage'
 import { LoginPage } from './app/LoginPage'
+import { NotificationsPage } from './app/NotificationsPage'
 import { PosPage } from './app/PosPage'
 import { RequireAuth } from './app/RequireAuth'
 import { ServicesPage } from './app/ServicesPage'
 import { LandingPage } from './landing/LandingPage'
 import { UNAUTHORIZED_EVENT } from './lib/api'
+import { purgeOfflineApiCache } from './lib/pwa'
 
 /** A 401 anywhere in the app sends the user back to /login. */
 function UnauthorizedRedirect() {
   const navigate = useNavigate()
   useEffect(() => {
-    const onUnauthorized = () => navigate('/login', { replace: true })
+    const onUnauthorized = () => {
+      // Another account must never read cached salon responses of this session.
+      purgeOfflineApiCache()
+      navigate('/login', { replace: true })
+    }
     window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
   }, [navigate])
@@ -60,13 +68,16 @@ export function App() {
           <Route path="calendario" element={<CalendarPage />} />
           <Route path="pos" element={<PosPage />} />
           <Route path="servicios" element={<ServicesPage />} />
+          <Route path="clientes" element={<ClientsPage />} />
+          <Route path="clientes/:clientId" element={<ClientDetailPage />} />
+          <Route path="avisos" element={<NotificationsPage />} />
         </Route>
 
         {/* Old shell routes from the scaffold keep working. */}
         <Route path="/dashboard" element={<Navigate to="/panel" replace />} />
         <Route path="/calendar" element={<Navigate to="/panel/calendario" replace />} />
         <Route path="/pos" element={<Navigate to="/panel/pos" replace />} />
-        <Route path="/clients" element={<Navigate to="/panel" replace />} />
+        <Route path="/clients" element={<Navigate to="/panel/clientes" replace />} />
 
         <Route path="*" element={<NotFound />} />
       </Routes>
