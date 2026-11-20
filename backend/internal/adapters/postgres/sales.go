@@ -2,8 +2,11 @@ package pgstore
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/domain"
 )
@@ -134,24 +137,52 @@ func (r Sales) ListRange(salonID string, from, to time.Time) ([]domain.Sale, err
 }
 
 // SumCents suma totales en [from,to). method vacío = todos los métodos.
+//
+// SUM::bigint (B-03): la suma de muchas ventas grandes NO entra en INTEGER y
+// Postgres devolvía 22003 ("integer out of range"), con lo que el dashboard y
+// el cierre de caja quedaban rotos para siempre. En bigint entra cualquier
+// ventana real; solo se traduce a int después, con guarda explícita.
 func (r Sales) SumCents(salonID string, from, to time.Time, method domain.PaymentMethod) (int, error) {
-	var total int
-	var err error
-	if method == "" {
-		err = r.Pool.QueryRow(context.Background(),
-			`SELECT COALESCE(SUM(total_cents),0)::int FROM sales
-			 WHERE salon_id=$1 AND created_at >= $2 AND created_at < $3`,
-			salonID, from, to).Scan(&total)
-	} else {
-		err = r.Pool.QueryRow(context.Background(),
-			`SELECT COALESCE(SUM(total_cents),0)::int FROM sales
-			 WHERE salon_id=$1 AND created_at >= $2 AND created_at < $3 AND method=$4`,
-			salonID, from, to, string(method)).Scan(&total)
-	}
+	total, err := r.sumCents(context.Background(), r.Pool, salonID, from, to, method)
 	if err != nil {
 		return 0, err
 	}
 	return total, nil
+}
+
+// querier es lo que comparten *pgxpool.Pool y pgx.Tx: la suma corre igual
+// dentro o fuera de una transacción.
+type querier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func (r Sales) sumCents(ctx context.Context, q querier, salonID string, from, to time.Time, method domain.PaymentMethod) (int, error) {
+	var total int64
+	var err error
+	if method == "" {
+		err = q.QueryRow(ctx,
+			`SELECT COALESCE(SUM(total_cents),0)::bigint FROM sales
+			 WHERE salon_id=$1 AND created_at >= $2 AND created_at < $3`,
+			salonID, from, to).Scan(&total)
+	} else {
+		err = q.QueryRow(ctx,
+			`SELECT COALESCE(SUM(total_cents),0)::bigint FROM sales
+			 WHERE salon_id=$1 AND created_at >= $2 AND created_at < $3 AND method=$4`,
+			salonID, from, to, string(method)).Scan(&total)
+	}
+	if err != nil {
+		return 0, pgError(err)
+	}
+	return bigintToInt(total, "el total de la ventana")
+}
+
+// bigintToInt baja una suma de Postgres a int con guarda de overflow: en 64 bits
+// nunca se activa, pero deja el límite explícito en vez de truncar en silencio.
+func bigintToInt(v int64, what string) (int, error) {
+	if v < 0 || v > math.MaxInt {
+		return 0, fmt.Errorf("%w: %s supera el máximo representable", domain.ErrValidation, what)
+	}
+	return int(v), nil
 }
 
 // TopServices: ranking por cantidad vendida; el ingreso del servicio desempata.
@@ -160,7 +191,7 @@ func (r Sales) TopServices(salonID string, from, to time.Time, limit int) ([]dom
 		limit = 5
 	}
 	rows, err := r.Pool.Query(context.Background(),
-		`SELECT si.service_id, sv.name, SUM(si.qty)::int, SUM(si.qty * si.unit_price_cents)::int
+		`SELECT si.service_id, sv.name, SUM(si.qty)::int, SUM(si.qty * si.unit_price_cents)::bigint
 		 FROM sale_items si
 		 JOIN sales s ON s.id = si.sale_id
 		 JOIN services sv ON sv.id = si.service_id AND sv.salon_id = s.salon_id
@@ -176,7 +207,14 @@ func (r Sales) TopServices(salonID string, from, to time.Time, limit int) ([]dom
 	var out []domain.TopService
 	for rows.Next() {
 		var t domain.TopService
-		if err := rows.Scan(&t.ServiceID, &t.Name, &t.Qty, &t.RevenueCents); err != nil {
+		var revenue int64
+		if err := rows.Scan(&t.ServiceID, &t.Name, &t.Qty, &revenue); err != nil {
+			return nil, err
+		}
+		// El ingreso de un servicio puede superar el techo de una venta suelta:
+		// se baja a int con guarda, sin truncar.
+		t.RevenueCents, err = bigintToInt(revenue, "el ingreso del servicio")
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, t)

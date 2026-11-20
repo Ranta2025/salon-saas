@@ -27,7 +27,20 @@ func (r Users) Save(u domain.User) error {
 		 VALUES($1,$2,$3,$4,$5)
 		 ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name`,
 		u.ID, u.Name, u.Email, u.PasswordHash, u.CreatedAt)
-	return err
+	// Email duplicado (23505) es un 409, no un 500: el índice único decide.
+	return pgError(err)
+}
+
+// FindByID resuelve el usuario del token (GET /me).
+func (r Users) FindByID(id string) (domain.User, error) {
+	var u domain.User
+	err := r.Pool.QueryRow(context.Background(),
+		`SELECT id,name,email,pass_hash,created_at FROM users WHERE id=$1`, id,
+	).Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.CreatedAt)
+	if err != nil {
+		return domain.User{}, notFound(err)
+	}
+	return u, nil
 }
 
 func (r Users) FindByEmail(email string) (domain.User, error) {
@@ -55,6 +68,18 @@ func (r Salons) FindBySlug(slug string) (domain.Salon, error) {
 	var s domain.Salon
 	err := r.Pool.QueryRow(context.Background(),
 		`SELECT id,slug,name,created_at FROM salons WHERE slug=$1`, slug,
+	).Scan(&s.ID, &s.Slug, &s.Name, &s.CreatedAt)
+	if err != nil {
+		return domain.Salon{}, notFound(err)
+	}
+	return s, nil
+}
+
+// FindByID resuelve el salón de una membership (GET /me).
+func (r Salons) FindByID(id string) (domain.Salon, error) {
+	var s domain.Salon
+	err := r.Pool.QueryRow(context.Background(),
+		`SELECT id,slug,name,created_at FROM salons WHERE id=$1`, id,
 	).Scan(&s.ID, &s.Slug, &s.Name, &s.CreatedAt)
 	if err != nil {
 		return domain.Salon{}, notFound(err)

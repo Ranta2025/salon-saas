@@ -354,7 +354,10 @@ func TestDashboard_IT(t *testing.T) {
 		t.Fatalf("otro salón debe tener 0, dio %d (%v)", n, err)
 	}
 
-	day := time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC)
+	// B-18: no se agendan turnos en el pasado, así que el día de prueba es
+	// futuro (relativo a "hoy", no una fecha fija que se vence).
+	now := time.Now().UTC()
+	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).Add(48 * time.Hour)
 	mk := func(start, end time.Time, status domain.BookingStatus) domain.Booking {
 		b, err := domain.NewBooking("s-it-pos", "u-it-pos", "Cliente IT", "", start, end)
 		if err != nil {
