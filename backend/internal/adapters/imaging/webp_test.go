@@ -2,7 +2,9 @@ package imaging
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -178,4 +180,49 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// TestWebP_rechaza_bomba_de_pixeles: un PNG de pocos bytes que declara
+// dimensiones gigantes (100000x100000) debe rechazarse por validación ANTES
+// de pasarlo a cwebp. Sin la guarda, cwebp intentaría decodificar 10 gigapíxeles
+// (OOM o minutos de CPU por request). Solo se escribe la cabecera IHDR: basta
+// para que cualquier decoder crea que la imagen es enorme.
+func TestWebP_rechaza_bomba_de_pixeles(t *testing.T) {
+	data := pngCabeceraGigante(t, 100000, 100000)
+	if len(data) > 1<<20 {
+		t.Fatalf("el fixture debe ser chico, pesa %d", len(data))
+	}
+	_, _, _, err := WebP{}.ToWebP(data)
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("bomba de píxeles debe dar ErrValidation, dio %v", err)
+	}
+}
+
+// pngCabeceraGigante arma un PNG válido de solo-cabecera con las dimensiones
+// pedidas (firma + IHDR con CRC correcto + IEND). image.DecodeConfig lo lee
+// sin necesitar los píxeles.
+func pngCabeceraGigante(t *testing.T, w, h uint32) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	buf.WriteString("\x89PNG\r\n\x1a\n")
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:4], w)
+	binary.BigEndian.PutUint32(ihdr[4:8], h)
+	ihdr[8] = 8 // bit depth
+	ihdr[9] = 2 // truecolor
+	escribirChunk(&buf, "IHDR", ihdr)
+	escribirChunk(&buf, "IEND", nil)
+	return buf.Bytes()
+}
+
+func escribirChunk(buf *bytes.Buffer, tipo string, datos []byte) {
+	var l [4]byte
+	binary.BigEndian.PutUint32(l[:], uint32(len(datos)))
+	buf.Write(l[:])
+	buf.WriteString(tipo)
+	buf.Write(datos)
+	crc := crc32.ChecksumIEEE(append([]byte(tipo), datos...))
+	var c [4]byte
+	binary.BigEndian.PutUint32(c[:], crc)
+	buf.Write(c[:])
 }

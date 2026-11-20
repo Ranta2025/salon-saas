@@ -192,6 +192,12 @@ var uploadFields = []string{"photo", "file"}
 // cliente. El límite de 8 MB se aplica al leer (no se carga un archivo enorme
 // en memoria para después rechazarlo).
 func readUpload(c *gin.Context) ([]byte, string, error) {
+	// Tope del BODY antes de parsear nada (R4-001): c.Request.FormFile parsea y
+	// spoolea TODO el multipart en memoria/disco sin límite propio. Sin esta
+	// línea, un body de 1 GB con un archivo chico adentro se acepta y el
+	// servidor lo procesa entero. El +1 MB es el overhead del propio multipart
+	// (boundaries + headers); el archivo sigue acotado por MaxPhotoBytes.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, domain.MaxPhotoBytes+(1<<20))
 	ct := c.GetHeader("Content-Type")
 	switch {
 	case strings.HasPrefix(ct, "multipart/form-data"):
