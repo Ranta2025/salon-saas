@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { SALON } from '../landing/content'
+import { activeRole, isManager } from '../lib/permissions'
 import { purgeOfflineApiCache } from '../lib/pwa'
 import { clearSalonId, clearToken, clearUserId } from '../lib/session'
 import { NotificationCenter } from './components/NotificationCenter'
@@ -9,14 +10,24 @@ import { OfflineProvider, offlineQueue } from './OfflineContext'
 import { RealtimeProvider } from './RealtimeContext'
 import { SalonProvider, useSalon } from './SalonContext'
 
-const NAV = [
+type NavEntry = {
+  to: string
+  label: string
+  end: boolean
+  /** Only owner/admin see it; the page itself also guards the role. */
+  managerOnly?: boolean
+}
+
+const NAV: readonly NavEntry[] = [
   { to: '/panel', label: 'Panel', end: true },
   { to: '/panel/calendario', label: 'Calendario', end: false },
   { to: '/panel/pos', label: 'Ventas', end: false },
   { to: '/panel/servicios', label: 'Servicios', end: false },
   { to: '/panel/clientes', label: 'Clientes', end: false },
   { to: '/panel/avisos', label: 'Avisos', end: false },
-] as const
+  { to: '/panel/equipo', label: 'Equipo', end: false, managerOnly: true },
+  { to: '/panel/ajustes', label: 'Ajustes', end: false, managerOnly: true },
+]
 
 function SalonSwitcher() {
   const { salonId, salons, loading, error, updateSalonId, refresh } = useSalon()
@@ -74,6 +85,12 @@ function SalonSwitcher() {
 
 function ShellChrome() {
   const navigate = useNavigate()
+  const { salonId, salons } = useSalon()
+  const role = activeRole(salons, salonId)
+  // While `/me` is unknown (loading or failed) the entries stay visible; the page
+  // behind them guards the role and explains a 403 instead of crashing.
+  const showManagerEntries = isManager(role) || role === null
+  const navItems = NAV.filter((item) => !item.managerOnly || showManagerEntries)
 
   const handleLogout = () => {
     clearToken()
@@ -101,7 +118,7 @@ function ShellChrome() {
 
         <nav className="shell__nav" aria-label="Navegación del panel">
           <ul>
-            {NAV.map((item) => (
+            {navItems.map((item) => (
               <li key={item.to}>
                 <NavLink to={item.to} end={item.end}>
                   {item.label}

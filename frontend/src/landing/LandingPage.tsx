@@ -62,7 +62,7 @@ export function LandingPage() {
         <GallerySection />
         <WhyUsSection />
         <TestimonialsSection />
-        <BookingCta services={services} preselected={preselected} />
+        <BookingCta slug={slug ?? DEFAULT_SLUG} services={services} preselected={preselected} />
       </main>
       <SiteFooter />
     </>

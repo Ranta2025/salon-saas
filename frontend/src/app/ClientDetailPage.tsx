@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   deleteClientPhoto,
@@ -36,6 +36,9 @@ export function ClientDetailPage() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+  // The photo url is a signed URL that expires: a failed load triggers exactly one
+  // refetch of the list, which comes back with fresh signatures.
+  const signatureRefresh = useRef(false)
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
 
@@ -59,6 +62,7 @@ export function ClientDetailPage() {
         setClient(clients.find((item) => item.id === clientId) ?? null)
         setPhotos(photoList)
         setLoaded(true)
+        signatureRefresh.current = false
       })
       .catch((err: unknown) => {
         if (active && !controller.signal.aborted) {
@@ -75,6 +79,15 @@ export function ClientDetailPage() {
       controller.abort()
     }
   }, [salonId, clientId, reloadKey])
+
+  const handlePhotoError = useCallback((): void => {
+    if (signatureRefresh.current) {
+      return
+    }
+    signatureRefresh.current = true
+    setNotice('El enlace de la foto venció. Pedimos la lista otra vez con enlaces nuevos.')
+    reload()
+  }, [reload])
 
   const handleUpload = useCallback(
     async (file: File): Promise<void> => {
@@ -198,7 +211,15 @@ export function ClientDetailPage() {
               return (
                 <li key={photo.id}>
                   <figure className="photo-card">
-                    <img className="photo-card__img" src={photo.url} alt={label} loading="lazy" />
+                    <img
+                      className="photo-card__img"
+                      src={photo.url}
+                      alt={label}
+                      loading="lazy"
+                      width={photo.width ?? undefined}
+                      height={photo.height ?? undefined}
+                      onError={handlePhotoError}
+                    />
                     <figcaption className="photo-card__meta">
                       <span>{label}</span>
                       <span>{photoSizeLabel(photo)}</span>
