@@ -45,7 +45,7 @@ func CORS(origins ...string) gin.HandlerFunc {
 		allowed[strings.TrimRight(strings.TrimSpace(o), "/")] = struct{}{}
 	}
 	const (
-		allowMethods = "GET, POST, PUT, DELETE, OPTIONS"
+		allowMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 		allowHeaders = "Authorization, Content-Type"
 		maxAge       = "600"
 	)

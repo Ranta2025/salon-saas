@@ -237,3 +237,33 @@ func TestRespondErr_500_generico(t *testing.T) {
 		t.Fatalf("el detalle debe ir al log: %q", buf.String())
 	}
 }
+
+// TestCORS_permite_todos_los_metodos_registrados: el preflight tiene que
+// aceptar CADA método HTTP que el router expone. Un navegador bloquea en el
+// cliente cualquier método que falte en Allow-Methods (el PATCH de turnos
+// quedó así y no lo cazó ningún test con curl). Si mañana se agrega una ruta
+// con otro método, este test la cubre solo.
+func TestCORS_permite_todos_los_metodos_registrados(t *testing.T) {
+	r := newHardenedRouter([]string{"http://localhost:5173"})
+
+	metodos := map[string]bool{}
+	for _, route := range r.Routes() {
+		if route.Method != "OPTIONS" && route.Method != "HEAD" {
+			metodos[route.Method] = true
+		}
+	}
+	if !metodos["PATCH"] {
+		t.Fatal("el router debería exponer PATCH (turnos); si no, este test perdió sentido")
+	}
+	for metodo := range metodos {
+		req := httptest.NewRequest("OPTIONS", "/api/v1/auth/login", nil)
+		req.Header.Set("Origin", "http://localhost:5173")
+		req.Header.Set("Access-Control-Request-Method", metodo)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		permitidos := w.Header().Get("Access-Control-Allow-Methods")
+		if !strings.Contains(permitidos, metodo) {
+			t.Errorf("el preflight no permite %s (Allow-Methods = %q): el navegador bloquearía esas llamadas", metodo, permitidos)
+		}
+	}
+}
