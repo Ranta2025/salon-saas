@@ -169,7 +169,7 @@ func (h SaleHandler) Create(c *gin.Context) {
 		Method         string `json:"method"`
 		// ClientOpID es opcional: lo manda la cola offline para idempotencia.
 		ClientOpID string `json:"client_op_id"`
-		Items          []struct {
+		Items      []struct {
 			ServiceID      string `json:"service_id"`
 			Qty            int    `json:"qty"`
 			UnitPriceCents int    `json:"unit_price_cents"`
