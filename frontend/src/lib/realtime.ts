@@ -115,11 +115,30 @@ export function buildWebSocketUrl(
     wsBase = `wss://${trimmed.slice('https://'.length)}`
   } else if (trimmed.startsWith('http://')) {
     wsBase = `ws://${trimmed.slice('http://'.length)}`
-  } else {
+  } else if (trimmed.startsWith('ws://') || trimmed.startsWith('wss://')) {
     wsBase = trimmed
+  } else {
+    // Same-origin API (Vite proxy / nginx): resolve against the page origin.
+    const origin =
+      typeof window !== 'undefined' && window.location.origin !== 'null'
+        ? window.location.origin
+        : 'http://localhost:8080'
+    wsBase = origin.startsWith('https://')
+      ? `wss://${origin.slice('https://'.length)}`
+      : origin.startsWith('http://')
+        ? `ws://${origin.slice('http://'.length)}`
+        : origin
   }
-  const suffix = path.startsWith('/') ? path : `/${path}`
+  const suffix = path === '' ? '' : path.startsWith('/') ? path : `/${path}`
   return `${wsBase}${suffix}?token=${encodeURIComponent(token)}`
+}
+
+/** Close codes that mean "this token is not valid", plus the missing-token case. */
+function isAuthenticationFailure(code: number, token: string | null): boolean {
+  if (!token) {
+    return true
+  }
+  return code === 1008 || code === 4401 || code === 4403
 }
 
 /** Parses one frame; returns null for unknown or unrenderable payloads. */
@@ -274,12 +293,19 @@ export class RealtimeClient {
       this.attempts = 0
       this.setStatus('open')
     }
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       if (this.socket !== socket) {
         return
       }
       this.socket = null
       if (!this.started) {
+        return
+      }
+      if (isAuthenticationFailure(event.code, this.token())) {
+        // A rejected token will never work on retry: stop instead of hammering
+        // the server with the same credentials until the user signs in again.
+        this.started = false
+        this.setStatus('stopped')
         return
       }
       if (!this.onlineCheck()) {

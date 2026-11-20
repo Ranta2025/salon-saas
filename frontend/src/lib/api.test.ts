@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, NetworkError, API_BASE, request } from './api.ts'
+import { ApiError, NetworkError, API_BASE, fetchMe, fetchPublicSalon, fetchStaff, request } from './api.ts'
 import { clearToken, getToken, setToken } from './session.ts'
 
 type Call = { url: string; headers: Record<string, string>; body: string | undefined }
@@ -141,5 +141,133 @@ test('request reports network failures as NetworkError, not as an HTTP error', a
     )
   } finally {
     globalThis.fetch = original
+  }
+})
+
+test('a request that never answers times out as NetworkError so the POS can queue it', async () => {
+  clearToken()
+  const original = globalThis.fetch
+  globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        reject(new DOMException('Aborted', 'AbortError'))
+      })
+    })) as typeof globalThis.fetch
+  try {
+    await assert.rejects(
+      () =>
+        request('/api/v1/salons/s1/sales', {
+          method: 'POST',
+          body: {},
+          timeoutMs: 10,
+        }),
+      (err: unknown) => {
+        assert.ok(err instanceof NetworkError)
+        assert.match(err.message, /tardó/)
+        return true
+      },
+    )
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+test('fetchMe reads the identity endpoint for the current session', async () => {
+  const stub = stubFetch(() =>
+    json({
+      user: { id: 'u1', name: 'Ana', email: 'ana@salon.mx' },
+      salons: [{ id: 's1', slug: 'aurelia', name: 'Aurelia', role: 'owner' }],
+    }),
+  )
+  try {
+    setToken('jwt-me')
+    const me = await fetchMe()
+    assert.equal(stub.calls[0]?.url, `${API_BASE}/api/v1/me`)
+    assert.equal(stub.calls[0]?.headers.Authorization, 'Bearer jwt-me')
+    assert.equal(me.user.id, 'u1')
+    assert.equal(me.salons[0]?.slug, 'aurelia')
+  } finally {
+    stub.restore()
+    clearToken()
+  }
+})
+
+test('fetchMe surfaces the server message when the identity call fails', async () => {
+  clearToken()
+  const stub = stubFetch(() => json({ error: 'sesión no válida' }, 401))
+  try {
+    setToken('stale')
+    await assert.rejects(
+      () => fetchMe(),
+      (err: unknown) => {
+        assert.ok(err instanceof ApiError)
+        assert.equal(err.status, 401)
+        assert.equal(err.message, 'sesión no válida')
+        return true
+      },
+    )
+  } finally {
+    stub.restore()
+    clearToken()
+  }
+})
+
+test('fetchStaff reads the salon team and keeps the API order', async () => {
+  const stub = stubFetch(() =>
+    json({
+      staff: [
+        { id: 'u1', name: 'Ana', role: 'owner' },
+        { id: 'u2', name: 'Beto', role: 'professional' },
+      ],
+    }),
+  )
+  try {
+    setToken('jwt-staff')
+    const staff = await fetchStaff('s1')
+    assert.equal(stub.calls[0]?.url, `${API_BASE}/api/v1/salons/s1/staff`)
+    assert.equal(stub.calls[0]?.headers.Authorization, 'Bearer jwt-staff')
+    assert.deepEqual(
+      staff.map((member) => member.id),
+      ['u1', 'u2'],
+    )
+  } finally {
+    stub.restore()
+    clearToken()
+  }
+})
+
+test('fetchPublicSalon reads services without an Authorization header', async () => {
+  const stub = stubFetch(() =>
+    json({
+      salon: { id: 's1', slug: 'aurelia', name: 'Aurelia' },
+      services: [{ id: 'svc-1', name: 'Corte', duration_min: 45, price_cents: 38000 }],
+    }),
+  )
+  try {
+    clearToken()
+    const salon = await fetchPublicSalon('aurelia')
+    assert.equal(stub.calls[0]?.url, `${API_BASE}/api/v1/public/salons/aurelia`)
+    assert.equal(stub.calls[0]?.headers.Authorization, undefined)
+    assert.equal(salon.services[0]?.priceCents, 38000)
+  } finally {
+    stub.restore()
+  }
+})
+
+test('fetchPublicSalon reports a 404 with the Spanish message of the API', async () => {
+  clearToken()
+  const stub = stubFetch(() => json({ error: 'Salón no encontrado' }, 404))
+  try {
+    await assert.rejects(
+      () => fetchPublicSalon('nope'),
+      (err: unknown) => {
+        assert.ok(err instanceof ApiError)
+        assert.equal(err.status, 404)
+        assert.equal(err.message, 'Salón no encontrado')
+        return true
+      },
+    )
+  } finally {
+    stub.restore()
   }
 })

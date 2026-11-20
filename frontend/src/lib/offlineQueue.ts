@@ -12,6 +12,16 @@ import type { BookingInput, SaleInput } from '../types'
 
 export const QUEUE_STORAGE_KEY = 'salon.offline_queue'
 const QUEUE_STORAGE_VERSION = 1
+
+/**
+ * Storage key of a user's queue. Operations of one account are isolated from
+ * another account that signs in later on the same browser.
+ */
+export function scopedStorageKey(scope: string | null): string {
+  const trimmed = scope?.trim() ?? ''
+  return trimmed === '' ? QUEUE_STORAGE_KEY : `${QUEUE_STORAGE_KEY}:${trimmed}`
+}
+
 /** After this many failed attempts the operation is dropped instead of looping. */
 export const MAX_ATTEMPTS = 8
 export const BASE_BACKOFF_MS = 5_000
@@ -33,6 +43,9 @@ export type QueuedOperation = {
   last_error: string | null
 }
 
+/** What to do with a failed send: retry with backoff, drop it, or pause the queue. */
+export type FailureKind = 'retry' | 'drop' | 'pause'
+
 export type DroppedOperation = QueuedOperation & {
   dropped_at: number
   reason: string
@@ -45,6 +58,8 @@ export type QueueSnapshot = {
   syncing: boolean
   /** Operations confirmed in this session (not persisted). */
   syncedTotal: number
+  /** True after a 401: the queue waits for a new session without using attempts. */
+  paused: boolean
 }
 
 export type FlushResult = {
@@ -77,6 +92,10 @@ export type OfflineQueueOptions = {
   maxAttempts?: number
   baseBackoffMs?: number
   maxBackoffMs?: number
+  /** User id that owns this queue (null before login). */
+  scope?: string | null
+  /** Classifies a send failure; by default it reads the `status` of API errors. */
+  classifyError?: (error: unknown) => FailureKind
 }
 
 const memoryFallback = new Map<string, string>()
@@ -163,6 +182,30 @@ function errorMessage(error: unknown): string {
     : 'No pudimos sincronizar la operación.'
 }
 
+/**
+ * Default policy for a failed send, based on the HTTP status the API client puts
+ * on `ApiError`:
+ * - 401 → pause (session expired): keep the operation and do not use an attempt.
+ * - other 4xx except 408/429 → drop: the server will reject it every time.
+ * - network errors, 5xx, 408 and 429 → retry with backoff.
+ */
+function defaultClassifyError(error: unknown): FailureKind {
+  const status =
+    typeof error === 'object' && error !== null && 'status' in error
+      ? (error as { status?: unknown }).status
+      : undefined
+  if (typeof status !== 'number') {
+    return 'retry'
+  }
+  if (status === 401) {
+    return 'pause'
+  }
+  if (status >= 400 && status < 500 && status !== 408 && status !== 429) {
+    return 'drop'
+  }
+  return 'retry'
+}
+
 /** Delay before retry number `attempts` (1 → base, 2 → 2×base, capped). */
 export function nextBackoffMs(
   attempts: number,
@@ -206,12 +249,16 @@ export class OfflineQueue {
   private readonly maxAttempts: number
   private readonly baseBackoffMs: number
   private readonly maxBackoffMs: number
+  private readonly classifyFailure: (error: unknown) => FailureKind
 
+  private scope: string | null
+  private storageKey: string
   private operations: QueuedOperation[] = []
   private droppedOperations: DroppedOperation[] = []
   private listeners = new Set<(snapshot: QueueSnapshot) => void>()
   private cachedSnapshot: QueueSnapshot | null = null
   private syncing = false
+  private paused = false
   private syncedTotal = 0
   private inFlight: Promise<FlushResult> | null = null
   private retryHandle: unknown = null
@@ -225,8 +272,46 @@ export class OfflineQueue {
     this.maxAttempts = options.maxAttempts ?? MAX_ATTEMPTS
     this.baseBackoffMs = options.baseBackoffMs ?? BASE_BACKOFF_MS
     this.maxBackoffMs = options.maxBackoffMs ?? MAX_BACKOFF_MS
+    this.classifyFailure = options.classifyError ?? defaultClassifyError
     this.lastSender = options.send ?? null
+    this.scope = options.scope ?? null
+    this.storageKey = scopedStorageKey(this.scope)
     this.load()
+  }
+
+  /** The storage key currently in use (exposed for diagnostics and tests). */
+  key(): string {
+    return this.storageKey
+  }
+
+  /**
+   * Switches the queue to another account. Pending work of the previous user is
+   * already persisted under its own key, so the new session never sees it.
+   */
+  setScope(scope: string | null): void {
+    const next = scope?.trim() ?? ''
+    const normalized = next === '' ? null : next
+    if (normalized === this.scope) {
+      return
+    }
+    this.clearRetry()
+    this.scope = normalized
+    this.storageKey = scopedStorageKey(normalized)
+    this.operations = []
+    this.droppedOperations = []
+    this.paused = false
+    this.cachedSnapshot = null
+    this.load()
+    this.commit()
+  }
+
+  /** Empties the current queue (used on logout, so it is never synced by another account). */
+  clear(): void {
+    this.clearRetry()
+    this.operations = []
+    this.droppedOperations = []
+    this.paused = false
+    this.commit()
   }
 
   /**
@@ -286,6 +371,7 @@ export class OfflineQueue {
         pendingCount: this.operations.length,
         syncing: this.syncing,
         syncedTotal: this.syncedTotal,
+        paused: this.paused,
       }
     }
     return this.cachedSnapshot
@@ -330,6 +416,7 @@ export class OfflineQueue {
     let failed = 0
     let dropped = 0
     this.syncing = true
+    this.paused = false
     this.commit()
     try {
       while (this.operations.length > 0) {
@@ -353,6 +440,30 @@ export class OfflineQueue {
           this.syncedTotal += 1
           this.commit()
         } catch (error) {
+          const failure = this.classifyFailure(error)
+          if (failure === 'pause') {
+            // A 401 is a session problem, not an operation problem: keep the
+            // operation untouched and wait for a new token (no attempt used).
+            this.paused = true
+            this.commit()
+            break
+          }
+          if (failure === 'drop') {
+            // A definitive 4xx will never succeed on retry: show it and move on
+            // so one rejected operation cannot block the whole queue.
+            this.operations.shift()
+            this.droppedOperations.push({
+              ...operation,
+              dropped_at: now,
+              reason: errorMessage(error),
+            })
+            if (this.droppedOperations.length > MAX_DROPPED) {
+              this.droppedOperations.splice(0, this.droppedOperations.length - MAX_DROPPED)
+            }
+            dropped += 1
+            this.commit()
+            continue
+          }
           failed += 1
           operation.attempts += 1
           operation.last_error = errorMessage(error)
@@ -419,7 +530,7 @@ export class OfflineQueue {
   private load(): void {
     let raw: string | null = null
     try {
-      raw = this.storage.getItem(QUEUE_STORAGE_KEY)
+      raw = this.storage.getItem(this.storageKey)
     } catch {
       return
     }
@@ -454,7 +565,7 @@ export class OfflineQueue {
       dropped: this.droppedOperations,
     })
     try {
-      this.storage.setItem(QUEUE_STORAGE_KEY, payload)
+      this.storage.setItem(this.storageKey, payload)
     } catch {
       // quota/security errors: the in-memory queue still works this session
     }

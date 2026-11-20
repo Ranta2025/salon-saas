@@ -5,6 +5,7 @@
 
 export const TOKEN_KEY = 'salon.token'
 export const SALON_KEY = 'salon.salon_id'
+export const USER_KEY = 'salon.user_id'
 
 const memory = new Map<string, string>()
 
@@ -54,6 +55,19 @@ export function setToken(token: string): void {
 
 export function clearToken(): void {
   write(TOKEN_KEY, null)
+}
+
+export function getUserId(): string | null {
+  return read(USER_KEY)
+}
+
+export function setUserId(userId: string): void {
+  const trimmed = userId.trim()
+  write(USER_KEY, trimmed === '' ? null : trimmed)
+}
+
+export function clearUserId(): void {
+  write(USER_KEY, null)
 }
 
 export function getSalonId(): string | null {

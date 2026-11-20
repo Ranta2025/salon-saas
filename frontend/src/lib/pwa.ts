@@ -15,7 +15,9 @@ export function registerServiceWorker(): void {
     return
   }
   const register = (): void => {
-    void navigator.serviceWorker.register(SERVICE_WORKER_URL).catch(() => undefined)
+    void navigator.serviceWorker
+      .register(SERVICE_WORKER_URL, { updateViaCache: 'none' })
+      .catch(() => undefined)
   }
   if (document.readyState === 'complete') {
     register()

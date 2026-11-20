@@ -8,6 +8,7 @@ import {
   QUEUE_STORAGE_KEY,
   newClientOpId,
   nextBackoffMs,
+  scopedStorageKey,
   type QueueStorage,
   type QueueTimers,
   type QueuedOperation,
@@ -242,4 +243,110 @@ test('corrupted persisted state is ignored instead of breaking the app', () => {
   data.set(QUEUE_STORAGE_KEY, JSON.stringify({ operations: [{ kind: 'sale' }, null, 'x'] }))
   const second = new OfflineQueue({ storage, now: () => 1 })
   assert.deepEqual(second.pending(), [])
+})
+
+function httpError(status: number, message: string): Error {
+  const error = new Error(message)
+  ;(error as Error & { status?: number }).status = status
+  return error
+}
+
+test('a definitive 4xx is dropped immediately and the queue moves on', async () => {
+  const h = setup()
+  h.queue.enqueue('sale', 'salon-1', sale, 'op-rejected')
+  h.queue.enqueue('sale', 'salon-1', sale, 'op-ok')
+
+  const sent: string[] = []
+  const result = await h.queue.flush(async (operation) => {
+    sent.push(operation.client_op_id)
+    if (operation.client_op_id === 'op-rejected') {
+      throw httpError(422, 'El servicio ya no está activo')
+    }
+  })
+
+  assert.deepEqual(sent, ['op-rejected', 'op-ok'])
+  assert.deepEqual(result, { synced: 1, failed: 0, dropped: 1, pending: 0 })
+  assert.equal(h.queue.pending().length, 0)
+  const dropped = h.queue.dropped()
+  assert.equal(dropped.length, 1)
+  assert.equal(dropped[0]?.client_op_id, 'op-rejected')
+  assert.match(dropped[0]?.reason ?? '', /El servicio ya no está activo/)
+  assert.equal(h.timers.active().length, 0)
+})
+
+test('408 and 429 are transient server answers, not definitive rejections', async () => {
+  for (const status of [408, 429]) {
+    const h = setup()
+    h.queue.enqueue('sale', 'salon-1', sale, 'op-1')
+    const result = await h.queue.flush(async () => {
+      throw httpError(status, 'intenta de nuevo')
+    })
+
+    assert.deepEqual(result, { synced: 0, failed: 1, dropped: 0, pending: 1 })
+    assert.equal(h.queue.dropped().length, 0)
+    assert.equal(h.queue.pending()[0]?.attempts, 1)
+    assert.equal(h.timers.active().length, 1)
+  }
+})
+
+test('a 401 pauses the queue without consuming attempts or dropping work', async () => {
+  const h = setup()
+  h.queue.enqueue('sale', 'salon-1', sale, 'op-1')
+  h.queue.enqueue('sale', 'salon-1', sale, 'op-2')
+
+  const result = await h.queue.flush(async () => {
+    throw httpError(401, 'token vencido')
+  })
+
+  assert.deepEqual(result, { synced: 0, failed: 0, dropped: 0, pending: 2 })
+  assert.equal(h.queue.pending()[0]?.attempts, 0)
+  assert.equal(h.queue.pending()[0]?.next_attempt_at, h.now)
+  assert.equal(h.queue.dropped().length, 0)
+  assert.equal(h.queue.snapshot().paused, true)
+  assert.equal(h.timers.active().length, 0)
+
+  // A new session can retry at once: the pause is not a permanent state.
+  const sent: string[] = []
+  const retried = await h.queue.flush(async (operation) => {
+    sent.push(operation.client_op_id)
+  })
+  assert.deepEqual(sent, ['op-1', 'op-2'])
+  assert.deepEqual(retried, { synced: 2, failed: 0, dropped: 0, pending: 0 })
+  assert.equal(h.queue.snapshot().paused, false)
+})
+
+test('the queue is scoped per user and logout can clear only the current one', () => {
+  const h = setup()
+  h.queue.setScope('user-a')
+  h.queue.enqueue('sale', 'salon-1', sale, 'op-a')
+
+  h.queue.setScope('user-b')
+  assert.deepEqual(h.queue.pending(), [])
+  h.queue.enqueue('sale', 'salon-1', sale, 'op-b')
+
+  h.queue.setScope('user-a')
+  assert.deepEqual(
+    h.queue.pending().map((operation) => operation.client_op_id),
+    ['op-a'],
+  )
+
+  h.queue.clear()
+  assert.deepEqual(h.queue.pending(), [])
+  assert.deepEqual(h.queue.dropped(), [])
+
+  h.queue.setScope('user-b')
+  assert.deepEqual(
+    h.queue.pending().map((operation) => operation.client_op_id),
+    ['op-b'],
+  )
+})
+
+test('scoped queues never share the persisted storage key', () => {
+  const h = setup()
+  h.queue.setScope('user-a')
+  h.queue.enqueue('sale', 'salon-1', sale, 'op-a')
+  assert.ok(h.data.has(scopedStorageKey('user-a')))
+  assert.equal(h.data.has(QUEUE_STORAGE_KEY), false)
+  assert.notEqual(scopedStorageKey('user-a'), scopedStorageKey('user-b'))
+  assert.equal(scopedStorageKey(null), QUEUE_STORAGE_KEY)
 })

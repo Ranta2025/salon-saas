@@ -52,10 +52,10 @@ class FakeSocket implements RealtimeSocket {
     this.onopen?.(new Event('open'))
   }
 
-  drop(): void {
+  drop(code = 1006): void {
     this.readyState = 3
     this.closed = true
-    this.onclose?.({ code: 1006 } as CloseEvent)
+    this.onclose?.({ code } as CloseEvent)
   }
 
   push(payload: unknown): void {
@@ -296,4 +296,31 @@ test('stop closes the socket, cancels the retry timer and ignores later frames',
     data: { notification: { id: 'late', title: 'Tarde', kind: 'notify', read: false } },
   })
   assert.deepEqual(received, [])
+})
+
+test('an authentication failure stops reconnecting instead of hammering the server', () => {
+  const h = harness()
+  const statuses: RealtimeStatus[] = []
+  h.client.onStatus((status) => statuses.push(status))
+
+  h.client.start()
+  h.sockets[0]?.open()
+  h.sockets[0]?.drop(1008)
+
+  assert.equal(h.client.getStatus(), 'stopped')
+  assert.equal(statuses[statuses.length - 1], 'stopped')
+  assert.equal(h.timers.active().length, 0)
+  assert.equal(h.sockets.length, 1)
+})
+
+test('a close after the token disappears stops the client too', () => {
+  const h = harness()
+  h.client.start()
+  h.sockets[0]?.open()
+
+  h.setToken(null)
+  h.sockets[0]?.drop()
+
+  assert.equal(h.client.getStatus(), 'stopped')
+  assert.equal(h.timers.active().length, 0)
 })

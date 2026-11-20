@@ -6,6 +6,9 @@
  */
 
 import { clearToken, getToken } from './session.ts'
+import { normalizeMe, type Me } from './me.ts'
+import { normalizeStaff, type StaffMember } from './staff.ts'
+import { normalizePublicSalon, type PublicSalon } from './publicSalon.ts'
 import { normalizeDashboard, type DashboardMetrics } from './metrics.ts'
 import {
   normalizeNotifications,
@@ -25,14 +28,22 @@ import type {
   ServiceUpdateInput,
 } from '../types'
 
-const DEFAULT_BASE_URL = 'http://localhost:8080'
+const DEFAULT_BASE_URL = ''
 
+/**
+ * Base URL of the API. `VITE_API_URL` wins (production build arg); without it the
+ * app uses same-origin requests, which the Vite dev server proxies to the API so
+ * local development does not depend on CORS.
+ */
 function resolveBaseUrl(): string {
   const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env
   const configured = env?.['VITE_API_URL']?.trim()
   const base = configured && configured !== '' ? configured : DEFAULT_BASE_URL
   return base.replace(/\/+$/, '')
 }
+
+/** A request that hangs falls back to the offline queue instead of blocking the POS. */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
 
 /** Base URL of the API (no trailing slash). */
 export const API_BASE = resolveBaseUrl()
@@ -63,6 +74,10 @@ export type RequestOptions = {
   method?: HttpMethod
   body?: unknown
   signal?: AbortSignal
+  /** Milliseconds before the request aborts as a network failure (0 disables it). */
+  timeoutMs?: number
+  /** `none` sends the request without the Authorization header (public endpoints). */
+  auth?: 'auto' | 'none'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -98,14 +113,40 @@ function signalUnauthorized(): void {
 /** Performs one request and returns the parsed JSON body. */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' }
-  const token = getToken()
+  const token = options.auth === 'none' ? null : getToken()
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
   }
+  const controller = new AbortController()
+  let timedOut = false
+  const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+  const timer =
+    timeoutMs > 0
+      ? globalThis.setTimeout(() => {
+          timedOut = true
+          controller.abort()
+        }, timeoutMs)
+      : null
+  const external = options.signal
+  const onExternalAbort = (): void => controller.abort()
+  if (external) {
+    if (external.aborted) {
+      controller.abort()
+    } else {
+      external.addEventListener('abort', onExternalAbort, { once: true })
+    }
+  }
+  const cleanup = (): void => {
+    if (timer !== null) {
+      globalThis.clearTimeout(timer)
+    }
+    external?.removeEventListener('abort', onExternalAbort)
+  }
+
   const init: RequestInit = {
     method: options.method ?? 'GET',
     headers,
-    signal: options.signal,
+    signal: controller.signal,
   }
   if (options.body !== undefined) {
     headers['Content-Type'] = 'application/json'
@@ -116,6 +157,15 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   try {
     response = await fetch(`${API_BASE}${path}`, init)
   } catch (error) {
+    cleanup()
+    if (external?.aborted) {
+      throw error
+    }
+    if (timedOut) {
+      throw new NetworkError(
+        'El servidor tardó demasiado en responder. Revisa tu conexión o intenta de nuevo.',
+      )
+    }
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw error
     }
@@ -123,6 +173,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       'No pudimos conectar con el servidor. Revisa tu conexión o la URL de la API.',
     )
   }
+  cleanup()
 
   if (response.status === 401) {
     clearToken()
@@ -160,6 +211,35 @@ export async function login(email: string, password: string): Promise<string> {
     throw new ApiError(200, 'La respuesta de inicio de sesión no incluyó un token.')
   }
   return payload.token
+}
+
+// --- identity and directory ---
+
+export async function fetchMe(): Promise<Me> {
+  const me = normalizeMe(await request<unknown>('/api/v1/me'))
+  if (!me) {
+    throw new ApiError(200, 'La API no devolvió los datos de tu cuenta.')
+  }
+  return me
+}
+
+/** Team of the salon; the POS uses these ids instead of a free-text field. */
+export async function fetchStaff(salonId: string): Promise<StaffMember[]> {
+  const payload = await request<unknown>(salonPath(salonId, '/staff'))
+  return normalizeStaff(payload)
+}
+
+/** Public catalogue; no Authorization header because the endpoint is anonymous. */
+export async function fetchPublicSalon(slug: string): Promise<PublicSalon> {
+  const salon = normalizePublicSalon(
+    await request<unknown>(`/api/v1/public/salons/${encodeURIComponent(slug)}`, {
+      auth: 'none',
+    }),
+  )
+  if (!salon) {
+    throw new ApiError(200, 'La API no devolvió los servicios del salón.')
+  }
+  return salon
 }
 
 // --- dashboard ---
