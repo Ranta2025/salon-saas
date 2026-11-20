@@ -1,22 +1,24 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { SALON, SERVICES, type LandingService } from '../content'
+import { toDateInputValue } from '../../lib/datetime'
+import { SALON, type LandingService } from '../content'
 
 const TIME_SLOTS = ['10:00', '12:00', '14:00', '16:00', '18:00'] as const
 
 type BookingCtaProps = {
+  /** Catalogue in use: the public API when it answers, the bundled one otherwise. */
+  services: readonly LandingService[]
   /** Service preselected when a service card was clicked. */
   preselected: LandingService | null
 }
 
-function todayValue(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-
 /** Final CTA: booking request that hands the message to WhatsApp or email. */
-export function BookingCta({ preselected }: BookingCtaProps) {
+export function BookingCta({ services, preselected }: BookingCtaProps) {
+  // Local calendar date of the salon: toISOString() would shift the minimum one
+  // day in the evening in Mexico City.
+  const today = toDateInputValue(new Date())
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
-  const [service, setService] = useState<string>(SERVICES[0]?.name ?? '')
+  const [service, setService] = useState<string>(services[0]?.name ?? '')
   const [date, setDate] = useState('')
   const [time, setTime] = useState<string>(TIME_SLOTS[0])
   const [error, setError] = useState<string | null>(null)
@@ -27,6 +29,14 @@ export function BookingCta({ preselected }: BookingCtaProps) {
       setService(preselected.name)
     }
   }, [preselected])
+
+  useEffect(() => {
+    setService((current) =>
+      services.some((option) => option.name === current)
+        ? current
+        : (services[0]?.name ?? ''),
+    )
+  }, [services])
 
   const buildMessage = (): string =>
     [
@@ -136,7 +146,7 @@ export function BookingCta({ preselected }: BookingCtaProps) {
                 value={service}
                 onChange={(event) => setService(event.target.value)}
               >
-                {SERVICES.map((option) => (
+                {services.map((option) => (
                   <option key={option.id} value={option.name}>
                     {option.name}
                   </option>
@@ -150,7 +160,7 @@ export function BookingCta({ preselected }: BookingCtaProps) {
                 className="input"
                 name="date"
                 type="date"
-                min={todayValue()}
+                min={today}
                 value={date}
                 onChange={(event) => setDate(event.target.value)}
               />

@@ -97,15 +97,19 @@ Rutas nuevas del panel:
   cuenta no lee respuestas cacheadas de otra en el mismo navegador. Al cerrar
   sesión o recibir un 401 la app manda `salon:clear-api-cache` y la caché de API
   se borra.
-- El SW se registra solo en build de producción (`registerServiceWorker`); en
-  desarrollo Vite serviría el archivo sin optimizar y una caché vieja ocultaría
-  los cambios.
+- El SW se registra solo en build de producción (`registerServiceWorker`) con
+  `updateViaCache: 'none'`; en desarrollo Vite serviría el archivo sin
+  optimizar y una caché vieja ocultaría los cambios. La versión de caches es
+  `salon-v2` y debe subirse en cada deploy que cambie el worker (ver
+  `docs/design/fase5-frontend.md` §4).
 
 ### Manifest, iconos y meta tags
 
 - `public/manifest.webmanifest`: `display: standalone`, `start_url: /panel`,
-  colores de la paleta (`#3B1E33` / `#FAF5EF`) e iconos SVG `any` + `maskable`
-  (`public/icons/*.svg`, sin binarios).
+  colores de la paleta (`#3B1E33` / `#FAF5EF`) e iconos PNG 192/512 `any` +
+  512 `maskable` (`icon-192.png`, `icon-512.png`, `icon-maskable-512.png`) más
+  `apple-touch-icon.png` de 180, generados desde los SVG de
+  `public/icons/`.
 - `index.html`: `link rel=manifest`, favicon SVG, `apple-touch-icon`,
   `theme-color`, `mobile-web-app-capable`, tags de iOS.
 
@@ -129,10 +133,12 @@ type QueuedOperation = {
 
 - `enqueue(kind, salonId, payload, clientOpId?)` deduplica por `client_op_id`:
   encolar dos veces el mismo id devuelve la operación existente.
-- `flush(send)` envía en orden FIFO y se detiene en el primer fallo para no
-  adelantar operaciones. Un fallo incrementa `attempts` y programa el reintento
-  con backoff exponencial (5 s → 5 min). A los 8 intentos la operación se mueve
-  a `dropped` y la UI avisa con su `client_op_id` y el último error.
+- `flush(send)` envía en orden FIFO. Un `4xx` definitivo (salvo 408/429) se
+  mueve a `dropped` de inmediato y la cola sigue con la operación siguiente; un
+  `401` pausa la cola sin gastar intentos; el resto incrementa `attempts` y
+  programa el reintento con backoff exponencial (5 s → 5 min). A los 8 intentos
+  la operación se mueve a `dropped` y la UI avisa con su `client_op_id` y el
+  último error. La cola se aísla por usuario (`salon.offline_queue:<user.id>`).
 - Si el navegador está offline (`canSend`), el flush no consume intentos: espera
   el evento `online`. Los reintentos y el flush del montaje sobreviven a un
   reload porque el estado está en `localStorage`.

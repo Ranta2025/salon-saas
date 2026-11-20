@@ -100,6 +100,9 @@ export type PhotoLicense = 'CC0' | 'CC BY 2.0' | 'CC BY-SA 4.0'
 
 export type SalonPhoto = {
   src: string
+  /** Intrinsic size of the file; reserves space and avoids layout shift. */
+  width: number
+  height: number
   alt: string
   caption: string
   title: string
@@ -112,6 +115,8 @@ export type SalonPhoto = {
 export const PHOTOS = {
   hero: {
     src: '/img/hero-atwork.webp',
+    width: 1400,
+    height: 2100,
     alt: 'Estilista acomodando el cabello trenzado de una clienta en el salón',
     caption: 'Estilista trabajando en el salón',
     title: 'Hairdresser at work.jpg',
@@ -121,6 +126,8 @@ export const PHOTOS = {
   },
   interior: {
     src: '/img/gallery-02-iran01.webp',
+    width: 1400,
+    height: 934,
     alt: 'Estilista atendiendo a un cliente con capa de rayas en el interior del salón',
     caption: 'Atención personalizada',
     title: 'Haircut or hair Salon From Iran- Canon Photography- Mostafa Meraji- fashion Photo 01.jpg',
@@ -131,6 +138,8 @@ export const PHOTOS = {
   },
   stylistDetail: {
     src: '/img/gallery-01-iran09.webp',
+    width: 1400,
+    height: 2100,
     alt: 'Barbero recortando el cabello de un cliente con tijera y máquina',
     caption: 'Corte a tijera',
     title: 'Haircut or hair Salon From Iran- Canon Photography- Mostafa Meraji- fashion Photo 09.jpg',
@@ -141,6 +150,8 @@ export const PHOTOS = {
   },
   salonWide: {
     src: '/img/gallery-03-iran04.webp',
+    width: 1400,
+    height: 934,
     alt: 'Cliente en el sillón mientras le cortan el cabello frente a los espejos del salón',
     caption: 'Sillón y espejos',
     title: 'Haircut or hair Salon From Iran- Canon Photography- Mostafa Meraji- fashion Photo 04.jpg',
@@ -151,6 +162,8 @@ export const PHOTOS = {
   },
   beardTrim: {
     src: '/img/gallery-04-iran06.webp',
+    width: 1400,
+    height: 934,
     alt: 'Detalle de un barbero perfilando el corte y la barba de un cliente',
     caption: 'Detalle y precisión',
     title: 'Haircut or hair Salon From Iran- Canon Photography- Mostafa Meraji- fashion Photo 06.jpg',
@@ -161,6 +174,8 @@ export const PHOTOS = {
   },
   stylistWide: {
     src: '/img/gallery-05-iran08.webp',
+    width: 1400,
+    height: 2100,
     alt: 'Barbero trabajando el corte de un cliente junto a una planta del salón',
     caption: 'Oficio en el salón',
     title: 'Haircut or hair Salon From Iran- Canon Photography- Mostafa Meraji- fashion Photo 08.jpg',
@@ -171,6 +186,8 @@ export const PHOTOS = {
   },
   coloring: {
     src: '/img/gallery-06-coloring.webp',
+    width: 1400,
+    height: 1621,
     alt: 'Estilista aplicando mechas con papel aluminio sobre cabello rubio',
     caption: 'Mechas y coloración',
     title: 'Hair coloring at hair salon (51213255633).jpg',
@@ -181,6 +198,8 @@ export const PHOTOS = {
   },
   makeup: {
     src: '/img/gallery-08-makeup.webp',
+    width: 1400,
+    height: 934,
     alt: 'Maquillista aplicando sombra en el ojo de una clienta',
     caption: 'Maquillaje de cerca',
     title: 'Makeup Technician.jpg',
@@ -190,6 +209,8 @@ export const PHOTOS = {
   },
   portrait: {
     src: '/img/gallery-09-portrait.webp',
+    width: 1400,
+    height: 1542,
     alt: 'Retrato de una mujer de cabello largo y oscuro con una flor blanca en el cabello',
     caption: 'Retrato con styling',
     title: 'Ishitta R Chowdhary.jpg',
@@ -199,6 +220,8 @@ export const PHOTOS = {
   },
   lipLiner: {
     src: '/img/gallery-10-lip.webp',
+    width: 1400,
+    height: 935,
     alt: 'Acercamiento de una maquillista delineando los labios de una clienta',
     caption: 'Delineado perfecto',
     title: 'Applying lip liner in a beauty setting during a makeup session.jpg',
@@ -209,6 +232,8 @@ export const PHOTOS = {
   },
   nails: {
     src: '/img/gallery-11-nails.webp',
+    width: 1400,
+    height: 2098,
     alt: 'Manicurista dibujando un diseño en la uña de una clienta con un pincel',
     caption: 'Nail art a mano alzada',
     title: 'Nail technician applies a nail design at a manicure table during a salon appointment.jpg',
@@ -223,15 +248,18 @@ export type GalleryVariant = 'feature' | 'tall' | 'wide' | 'small'
 
 export type GalleryEntry = SalonPhoto & { variant: GalleryVariant }
 
+/**
+ * Gallery with complete rows: 2×2 base layout up to 1099 px (eight equal cells)
+ * and, from 1100 px, 2×3 + 1×2 + 1×2 + 2×1 + 4×1 = 16 cells in a 4-column grid.
+ */
 export const GALLERY: readonly GalleryEntry[] = [
   { ...PHOTOS.portrait, variant: 'feature' },
   { ...PHOTOS.coloring, variant: 'tall' },
   { ...PHOTOS.nails, variant: 'tall' },
+  { ...PHOTOS.salonWide, variant: 'wide' },
   { ...PHOTOS.makeup, variant: 'small' },
   { ...PHOTOS.stylistDetail, variant: 'small' },
-  { ...PHOTOS.salonWide, variant: 'wide' },
   { ...PHOTOS.lipLiner, variant: 'small' },
-  { ...PHOTOS.stylistWide, variant: 'tall' },
   { ...PHOTOS.beardTrim, variant: 'small' },
 ]
 
@@ -242,7 +270,6 @@ export const ATTRIBUTION: readonly SalonPhoto[] = [
   PHOTOS.interior,
   PHOTOS.salonWide,
   PHOTOS.beardTrim,
-  PHOTOS.stylistWide,
   PHOTOS.coloring,
   PHOTOS.makeup,
   PHOTOS.portrait,

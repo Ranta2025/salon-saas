@@ -8,7 +8,14 @@ type GalleryItemProps = {
 export function GalleryItem({ photo }: GalleryItemProps) {
   return (
     <figure className={`gallery-item gallery-item--${photo.variant}`}>
-      <img src={photo.src} alt={photo.alt} loading="lazy" decoding="async" />
+      <img
+        src={photo.src}
+        alt={photo.alt}
+        width={photo.width}
+        height={photo.height}
+        loading="lazy"
+        decoding="async"
+      />
       <figcaption>
         <span className="gallery-item__caption">{photo.caption}</span>
         <span className="gallery-item__credit">

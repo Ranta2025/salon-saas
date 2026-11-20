@@ -8,7 +8,9 @@
  * - cache-first for same-origin static assets (JS/CSS/fonts/images)
  */
 
-const VERSION = 'salon-v1'
+// Bump this value on every deploy that changes the worker or the precache list:
+// `activate` deletes every cache that is not part of the current version.
+const VERSION = 'salon-v2'
 const SHELL_CACHE = `${VERSION}-shell`
 const STATIC_CACHE = `${VERSION}-static`
 const API_CACHE = `${VERSION}-api`
@@ -18,8 +20,10 @@ const SHELL_URLS = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
-  '/icons/icon.svg',
-  '/icons/icon-maskable.svg',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/icon-maskable-512.png',
+  '/icons/apple-touch-icon.png',
   '/icons/favicon.svg',
 ]
 
@@ -120,7 +124,13 @@ async function networkFirstApi(request) {
   const key = apiCacheKey(request)
   try {
     const response = await fetch(request)
-    if (response.ok) {
+    if (response.status === 401) {
+      // A rejected session must not leave private responses behind.
+      await caches.delete(API_CACHE)
+      return response
+    }
+    const noStore = (response.headers.get('Cache-Control') || '').includes('no-store')
+    if (response.ok && !noStore) {
       await cache.put(key, response.clone())
     }
     return response
@@ -173,19 +183,27 @@ async function cacheFirstStatic(request) {
   return response
 }
 
-/** The cache key includes a hash of the token so another account cannot read it. */
+/**
+ * The cache key includes two independent hashes of the Authorization header so
+ * another account cannot read these responses and a hash collision is
+ * practically impossible. The raw token is never stored in the cache name.
+ */
 function apiCacheKey(request) {
   const url = new URL(request.url)
-  url.searchParams.set('__auth', hashToken(request.headers.get('Authorization') || 'anon'))
+  const authorization = request.headers.get('Authorization') || 'anon'
+  url.searchParams.set('__auth', hashToken(authorization))
   return new Request(url.toString(), { method: 'GET' })
 }
 
 function hashToken(value) {
-  let hash = 5381
+  let first = 5381
+  let second = 52711
   for (let index = 0; index < value.length; index += 1) {
-    hash = ((hash << 5) + hash + value.charCodeAt(index)) >>> 0
+    const code = value.charCodeAt(index)
+    first = ((first << 5) + first + code) >>> 0
+    second = ((second << 5) - second + code) >>> 0
   }
-  return `u${hash.toString(36)}`
+  return `u${first.toString(36)}${second.toString(36)}`
 }
 
 self.addEventListener('message', (event) => {

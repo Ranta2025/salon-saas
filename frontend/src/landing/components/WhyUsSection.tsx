@@ -8,8 +8,8 @@ export function WhyUsSection() {
           <img
             src={PHOTOS.interior.src}
             alt={PHOTOS.interior.alt}
-            width={1920}
-            height={1280}
+            width={PHOTOS.interior.width}
+            height={PHOTOS.interior.height}
             loading="lazy"
             decoding="async"
           />

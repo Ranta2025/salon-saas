@@ -8,8 +8,10 @@ export function Hero() {
         className="hero__photo"
         src={PHOTOS.hero.src}
         alt={PHOTOS.hero.alt}
-        width={1920}
-        height={2880}
+        width={PHOTOS.hero.width}
+        height={PHOTOS.hero.height}
+        loading="eager"
+        fetchPriority="high"
         decoding="async"
       />
       <div className="hero__scrim" aria-hidden="true" />

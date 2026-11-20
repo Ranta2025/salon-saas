@@ -46,7 +46,7 @@ Ruta `/` y `/salon/:slug` comparten `LandingPage`. Orden de secciones:
 | hero con overlay en degradado | `inicio` | `hero-atwork.jpg` |
 | franja de confianza (4 puntos) | — | — |
 | servicios y precios (8 tarjetas) | `servicios` | — |
-| galería en mosaico con hover | `galeria` | 10 fotos (ver abajo) |
+| galería en mosaico con hover | `galeria` | 8 fotos (ver abajo) |
 | por qué elegirnos (imagen + 4 razones) | `nosotros` | `gallery-02-iran01.jpg` |
 | testimonios | `opiniones` | — |
 | CTA final + formulario de reserva | `reservar` | — |
@@ -109,9 +109,10 @@ redirigen a sus equivalentes nuevas. `RequireAuth` protege `/panel/**` y un 401
 en cualquier request limpia el token y manda a `/login` (evento
 `salon:unauthorized`).
 
-- **Salón activo**: la API todavía no expone "mis salones"; el id se guarda en
-  `localStorage` (`salon.salon_id`) y se edita desde el selector de la barra
-  superior. Sin id, cada página muestra un estado que lo explica.
+- **Salón activo**: `GET /api/v1/me` devuelve los salones de la cuenta y el
+  frontend elige el primero (o el guardado si sigue perteneciendo al usuario).
+  Con varios salones la barra superior muestra un selector; ya no se pega un id.
+  Ver `docs/design/fase5-frontend.md` §2.
 - **Dinero**: la UI calcula el total de la venta con enteros (centavos) para
   mostrarlo, pero muestra también el total que devolvió el servidor y advierte
   si difieren. El payload de venta no incluye `total_cents`.
@@ -120,8 +121,9 @@ en cualquier request limpia el token y manda a `/login` (evento
   profesionales se agrupan por `professional_id` porque aún no hay endpoint de
   profesionales.
 - **POS**: catálogo filtrable, carrito con cantidades, comisión y duración
-  visibles solo en el catálogo de servicios. El ID de profesional se captura a
-  mano (la API lo exige).
+  visibles solo en el catálogo de servicios. El profesional se elige de un
+  `<select>` alimentado por `GET /api/v1/salons/:id/staff`; el error de esa
+  llamada se muestra junto al campo.
 - **CSS del panel**: `frontend/src/styles/app.css`, misma paleta, densidad
   mayor (sidebar, cards, tablas), sin inline styles salvo geometría calculada
   (posición de citas y ancho de barras).

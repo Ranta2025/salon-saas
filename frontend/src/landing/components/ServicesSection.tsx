@@ -1,11 +1,12 @@
-import { SERVICES, type LandingService } from '../content'
+import type { LandingService } from '../content'
 import { ServiceCard } from './ServiceCard'
 
 type ServicesSectionProps = {
+  services: readonly LandingService[]
   onSelect: (service: LandingService) => void
 }
 
-export function ServicesSection({ onSelect }: ServicesSectionProps) {
+export function ServicesSection({ services, onSelect }: ServicesSectionProps) {
   return (
     <section className="section services" id="servicios" aria-labelledby="services-title">
       <div className="container">
@@ -19,7 +20,7 @@ export function ServicesSection({ onSelect }: ServicesSectionProps) {
         </div>
 
         <div className="services__grid">
-          {SERVICES.map((service) => (
+          {services.map((service) => (
             <ServiceCard key={service.id} service={service} onSelect={onSelect} />
           ))}
         </div>

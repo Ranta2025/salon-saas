@@ -28,8 +28,10 @@
   /* derived surfaces and text tints */
   --plum-deep: #2a1424;
   --surface: #fffdfa;
+  --shell-bg: #f6efe7;
   --ink-soft: rgba(30, 20, 24, 0.74);
-  --ink-muted: rgba(30, 20, 24, 0.56);
+  /* solid so the 4.5:1 AA ratio is measurable (see src/lib/contrast.test.ts) */
+  --ink-muted: #6b5a5e;
   --cream-soft: rgba(250, 245, 239, 0.8);
   --cream-muted: rgba(250, 245, 239, 0.62);
   --line: rgba(30, 20, 24, 0.12);

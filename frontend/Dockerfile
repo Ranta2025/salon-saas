@@ -1,7 +1,14 @@
-FROM node:20-slim
+# Build the SPA with the API URL baked in, then serve the static files with nginx.
+FROM node:20-slim AS build
 WORKDIR /app
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install || npm install --no-package-lock
-COPY frontend/ ./
-EXPOSE 5173
-CMD ["npm", "run", "dev"]
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . ./
+ARG VITE_API_URL=http://localhost:8080
+ENV VITE_API_URL=$VITE_API_URL
+RUN npm run build
+
+FROM nginx:1.27-alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80
