@@ -28,7 +28,11 @@ type Booking struct {
 	StartsAt       time.Time
 	EndsAt         time.Time
 	Status         BookingStatus
-	CreatedAt      time.Time
+	// ClientOpID identifica la operación en el cliente (cola offline). Igual
+	// que en las ventas: si viene repetido, el servidor devuelve la reserva YA
+	// registrada en vez de agendar un turno nuevo.
+	ClientOpID string
+	CreatedAt  time.Time
 }
 
 // NewBooking valida y crea una reserva activa.

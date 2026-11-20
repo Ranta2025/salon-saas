@@ -39,6 +39,8 @@ func (h BookingHandler) Create(c *gin.Context) {
 		ClientPhone    string `json:"client_phone"`
 		StartsAt       string `json:"starts_at"`
 		EndsAt         string `json:"ends_at"`
+		// ClientOpID es opcional: lo manda la cola offline para idempotencia.
+		ClientOpID string `json:"client_op_id"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "body inválido"})
@@ -50,7 +52,7 @@ func (h BookingHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "fechas RFC3339 inválidas"})
 		return
 	}
-	b, err := h.Bookings.CreateBooking(actor, salonID, in.ProfessionalID, in.ClientName, in.ClientPhone, startsAt, endsAt)
+	b, err := h.Bookings.CreateBookingWithOp(actor, salonID, in.ProfessionalID, in.ClientName, in.ClientPhone, startsAt, endsAt, in.ClientOpID)
 	if err != nil {
 		c.JSON(statusOf(err), gin.H{"error": err.Error()})
 		return

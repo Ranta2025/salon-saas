@@ -45,10 +45,10 @@ escritura audita actor.
 
 ## Tasks
 
-- [ ] T1 (backend): catálogo de servicios — dominio `Service`, `ports.ServiceRepository`,
+- [x] T1 (backend): catálogo de servicios — dominio `Service`, `ports.ServiceRepository`,
   `app.ServiceService` (CRUD con permiso owner/admin), `pgstore.Services`,
   migración 004, HTTP CRUD, tests unit + integración. Route: writer A.
-- [ ] T2 (backend): POS — dominio `Sale` (cálculo de total en servidor, ítems con
+- [x] T2 (backend): POS — dominio `Sale` (cálculo de total en servidor, ítems con
   qty y precio unitario), `app.SaleService` (registrar venta), cierre de caja
   (`CashClose` con diferencia contable), `pgstore` + migración 005, HTTP,
   dashboard con agregados, tests unit + integración + e2e contra Postgres real.
@@ -59,6 +59,16 @@ escritura audita actor.
 - [ ] T4 (frontend): shell de la app interna — login, panel, calendario de reservas
   del día, POS (punto de venta) consumiendo la API, catálogo de servicios.
   Route: writer B. Depende de T1/T2 para los endpoints.
+
+## Commits (unidades revisables)
+
+| Unidad | Commit | Contenido |
+|---|---|---|
+| T1+T2 dominio | `9467c28` | entidades `Service`, `Sale`, `CashClose` + tests |
+| T1+T2 puertos | `7241979` | `ServiceRepository`, `SaleRepository`, `CashCloseRepository`, `AgendaStats`, `StaffCounter` |
+| T1+T2 app | `ebedf16` | casos de uso + permiso de dinero (ver L4) |
+| T1+T2 pgstore | `73cbd71` | repos + migraciones 004/005/006 idempotentes + IT real |
+| T1+T2 http | `779dd30` | endpoints, rutas, wiring y `docs/api/pos-servicios.md` |
 
 ## Allowed edit surfaces
 
@@ -89,3 +99,13 @@ obligatorio: usar `@font-face` con fallback de sistema si no hay red.
   de Wikimedia Commons (licencias libres), revisadas visualmente una por una
   antes de elegir. URLs en `docs/assets/images.md`.
 - L3 (orquestador): RDD — assess por unidad de trabajo antes de integrar.
+- L4 (orquestador): el writer dejó abierto que cualquier miembro del salón
+  (incluso `professional` y `client`) podía leer ventas, cierres de caja y el
+  revenue del panel. Cerrado: la plata solo la ven `owner`, `admin` y
+  `reception` (función única `puedeVerPlata` en `internal/app/sales.go`); los
+  profesionales siguen viendo servicios y su agenda. Verificado con 403 real
+  por HTTP. Un cambio de política es cambiar esa función.
+- L5 (orquestador): el writer avisó que no ejercitó el camino "base de datos
+  vacía". Cerrado por el orquestador: las 6 migraciones se aplicaron en cadena
+  sobre una DB nueva (OK) y se re-aplicaron sobre la misma (idempotentes, OK),
+  y la API arrancó contra esa base recién creada.

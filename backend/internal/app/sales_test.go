@@ -217,3 +217,40 @@ func TestPlata_solo_manage_y_recepcion(t *testing.T) {
 		}
 	}
 }
+
+// TestSale_idempotente_por_client_op: la cola offline reintenta con el mismo
+// operation id cuando pierde la respuesta. El servidor debe devolver la venta
+// original, no cobrar dos veces.
+func TestSale_idempotente_por_client_op(t *testing.T) {
+	sales := &fakeSales{}
+	services := &fakeServices{}
+	mems := &fakeMemberships{}
+	svc := SaleService{Sales: sales, Services: services, Memberships: mems}
+	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
+
+	svc1 := domain.Service{ID: "sv1", SalonID: "s1", Name: "Corte", DurationMin: 45, PriceCents: 3000, CommissionPct: 20, Active: true}
+	services.all = append(services.all, svc1)
+	items := []domain.SaleItem{{ServiceID: "sv1", Qty: 1, UnitPriceCents: 3000}}
+
+	first, err := svc.RegisterSaleWithOp(recep, "s1", "u-prof1", "Lía", items, domain.MethodCash, "op-123")
+	if err != nil {
+		t.Fatalf("primera: %v", err)
+	}
+	second, err := svc.RegisterSaleWithOp(recep, "s1", "u-prof1", "Lía", items, domain.MethodCash, "op-123")
+	if err != nil {
+		t.Fatalf("reintento: %v", err)
+	}
+	if first.ID != second.ID {
+		t.Fatalf("el reintento debe devolver la misma venta: %q vs %q", first.ID, second.ID)
+	}
+	if len(sales.all) != 1 {
+		t.Fatalf("debe guardarse una sola vez, se guardó %d", len(sales.all))
+	}
+	// Otra operación distinta sí crea otra venta.
+	if _, err := svc.RegisterSaleWithOp(recep, "s1", "u-prof1", "Lía", items, domain.MethodCash, "op-456"); err != nil {
+		t.Fatalf("op distinta: %v", err)
+	}
+	if len(sales.all) != 2 {
+		t.Fatalf("esperaba 2 ventas, hay %d", len(sales.all))
+	}
+}

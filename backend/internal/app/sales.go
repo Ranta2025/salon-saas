@@ -4,6 +4,8 @@
 package app
 
 import (
+	"errors"
+	"strings"
 	"time"
 
 	"salon-saas/internal/domain"
@@ -14,6 +16,8 @@ type SaleService struct {
 	Sales       ports.SaleRepository
 	Services    ports.ServiceRepository
 	Memberships ports.MembershipRepository
+	// Events es opcional (nil = no avisa): la venta no depende del realtime.
+	Events ports.EventPublisher
 }
 
 // puedeVender: recepción y quien administra (el profesional cobra en caja...
@@ -33,6 +37,14 @@ func puedeVerPlata(m domain.Membership) bool {
 
 // RegisterSale registra la venta y devuelve la entidad con el total calculado.
 func (s SaleService) RegisterSale(actor domain.Membership, salonID, professionalID, clientName string, items []domain.SaleItem, method domain.PaymentMethod) (domain.Sale, error) {
+	return s.RegisterSaleWithOp(actor, salonID, professionalID, clientName, items, method, "")
+}
+
+// RegisterSaleWithOp registra la venta con un operation id del cliente.
+// Idempotente: si esa operación ya existe en este salón, devuelve la venta
+// original (mismo id y mismo total) en vez de crear otra. Es lo que evita que
+// la cola offline cobre dos veces una venta que ya había llegado al servidor.
+func (s SaleService) RegisterSaleWithOp(actor domain.Membership, salonID, professionalID, clientName string, items []domain.SaleItem, method domain.PaymentMethod, clientOpID string) (domain.Sale, error) {
 	m, err := s.member(actor, salonID)
 	if err != nil {
 		return domain.Sale{}, err
@@ -44,6 +56,14 @@ func (s SaleService) RegisterSale(actor domain.Membership, salonID, professional
 	if err != nil {
 		return domain.Sale{}, err
 	}
+	sale.ClientOpID = strings.TrimSpace(clientOpID)
+	if sale.ClientOpID != "" {
+		if existing, err := s.Sales.FindByClientOpID(salonID, sale.ClientOpID); err == nil {
+			return existing, nil
+		} else if !errors.Is(err, domain.ErrNotFound) {
+			return domain.Sale{}, err
+		}
+	}
 	// Validación de catálogo: cada ítem tiene que existir en ESTE salón.
 	// Si el servicio fuera de otro tenant, la venta rompería el aislamiento.
 	for _, it := range sale.Items {
@@ -52,8 +72,28 @@ func (s SaleService) RegisterSale(actor domain.Membership, salonID, professional
 		}
 	}
 	if err := s.Sales.Save(sale); err != nil {
+		// Carrera entre el check previo y el insert (dos reintentos a la vez):
+		// el índice único dejó pasar uno; el otro se resuelve devolviendo el original.
+		if sale.ClientOpID != "" && errors.Is(err, domain.ErrAlreadyExists) {
+			if existing, rerr := s.Sales.FindByClientOpID(salonID, sale.ClientOpID); rerr == nil {
+				return existing, nil
+			}
+		}
 		return domain.Sale{}, err
 	}
+	// El total que viaja acá es el que calculó el dominio, no el del cliente.
+	publish(s.Events, ports.Event{
+		Type:    "sale.created",
+		SalonID: salonID,
+		Data: map[string]any{
+			"id":              sale.ID,
+			"total_cents":     sale.TotalCents,
+			"method":          string(sale.Method),
+			"client_name":     sale.ClientName,
+			"professional_id": sale.ProfessionalID,
+		},
+		TS: sale.CreatedAt,
+	})
 	return sale, nil
 }
 

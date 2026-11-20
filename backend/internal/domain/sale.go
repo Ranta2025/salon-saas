@@ -49,7 +49,12 @@ type Sale struct {
 	Items          []SaleItem
 	TotalCents     int
 	Method         PaymentMethod
-	CreatedAt      time.Time
+	// ClientOpID identifica la operación en el cliente (cola offline). Vacío
+	// significa "operación en línea". Si viene repetido, el servidor devuelve la
+	// venta YA registrada en vez de cobrarla de nuevo: sin esto, una venta que
+	// llegó al servidor pero perdió la respuesta se cobraría dos veces.
+	ClientOpID string
+	CreatedAt  time.Time
 }
 
 // NewSale valida y crea la venta, calculando el total en el servidor.
