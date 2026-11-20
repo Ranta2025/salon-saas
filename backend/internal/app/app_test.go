@@ -27,6 +27,16 @@ func (f *fakeUsers) FindByEmail(email string) (domain.User, error) {
 	return u, nil
 }
 
+// FindByID: lo usa GET /me (el token trae el userID, no el email).
+func (f *fakeUsers) FindByID(id string) (domain.User, error) {
+	for _, u := range f.byEmail {
+		if u.ID == id {
+			return u, nil
+		}
+	}
+	return domain.User{}, domain.ErrNotFound
+}
+
 type fakeSalons struct{ bySlug map[string]domain.Salon }
 
 func (f *fakeSalons) Save(s domain.Salon) error {
@@ -42,6 +52,16 @@ func (f *fakeSalons) FindBySlug(slug string) (domain.Salon, error) {
 		return domain.Salon{}, domain.ErrNotFound
 	}
 	return s, nil
+}
+
+// FindByID: lo usa GET /me para el nombre y el slug de cada salón del usuario.
+func (f *fakeSalons) FindByID(id string) (domain.Salon, error) {
+	for _, s := range f.bySlug {
+		if s.ID == id {
+			return s, nil
+		}
+	}
+	return domain.Salon{}, domain.ErrNotFound
 }
 
 type fakeMemberships struct{ byKey map[string]domain.Membership }
@@ -76,6 +96,7 @@ type fakeHasher struct{}
 
 func (fakeHasher) Hash(plain string) (string, error) { return "h:" + plain, nil }
 func (fakeHasher) Compare(hash, plain string) bool   { return hash == "h:"+plain }
+func (fakeHasher) DummyCompare(string) bool          { return false }
 
 type fakeTokens struct{}
 
@@ -89,21 +110,22 @@ func (fakeTokens) Parse(t string) (string, error) {
 
 func TestAuth_Register_Login(t *testing.T) {
 	svc := AuthService{Users: &fakeUsers{}, Hasher: fakeHasher{}, Tokens: fakeTokens{}}
-	u, err := svc.Register("Ana", "ana@mail.com", "secreta")
+	// B-06: la clave mínima son 8 bytes.
+	u, err := svc.Register("Ana", "ana@mail.com", "secreta123")
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	if _, err := svc.Register("Otra", "ana@mail.com", "x"); !errors.Is(err, domain.ErrAlreadyExists) {
+	if _, err := svc.Register("Otra", "ana@mail.com", "otraClave1"); !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("esperaba ErrAlreadyExists, dio %v", err)
 	}
-	tok, err := svc.Login("ana@mail.com", "secreta")
+	tok, err := svc.Login("ana@mail.com", "secreta123")
 	if err != nil || tok == "" {
 		t.Fatalf("login: %v %q", err, tok)
 	}
-	if _, err := svc.Login("ana@mail.com", "otra"); !errors.Is(err, domain.ErrUnauthorized) {
+	if _, err := svc.Login("ana@mail.com", "otraClave2"); !errors.Is(err, domain.ErrUnauthorized) {
 		t.Fatalf("clave mala debe dar Unauthorized, dio %v", err)
 	}
-	if _, err := svc.Login("nadie@mail.com", "x"); !errors.Is(err, domain.ErrUnauthorized) {
+	if _, err := svc.Login("nadie@mail.com", "otraClave2"); !errors.Is(err, domain.ErrUnauthorized) {
 		t.Fatalf("usuario inexistente debe dar Unauthorized, dio %v", err)
 	}
 	_ = u

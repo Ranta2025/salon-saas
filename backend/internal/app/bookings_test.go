@@ -56,6 +56,9 @@ func TestBooking_create_ok_y_solape_409(t *testing.T) {
 	mems := &fakeMemberships{}
 	svc := BookingService{Bookings: bookings, Memberships: mems}
 	rec := recepcionista(mems)
+	// B-12: solo agenda quien atiende en el salón.
+	miembro(mems, "prof1", "s1", domain.RoleProfessional)
+	miembro(mems, "prof2", "s1", domain.RoleProfessional)
 	day := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
 
 	if _, err := svc.CreateBooking(rec, "s1", "prof1", "Lía", "555", day.Add(10*time.Hour), day.Add(11*time.Hour)); err != nil {
@@ -106,6 +109,7 @@ func TestBooking_idempotente_por_client_op(t *testing.T) {
 	mems := &fakeMemberships{}
 	svc := BookingService{Bookings: bookings, Memberships: mems}
 	rec := recepcionista(mems)
+	miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	day := time.Date(2026, 12, 5, 0, 0, 0, 0, time.UTC)
 	start, end := day.Add(10*time.Hour), day.Add(11*time.Hour)
 

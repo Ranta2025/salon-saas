@@ -5,6 +5,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -44,6 +45,13 @@ func (s SaleService) RegisterSale(actor domain.Membership, salonID, professional
 // Idempotente: si esa operación ya existe en este salón, devuelve la venta
 // original (mismo id y mismo total) en vez de crear otra. Es lo que evita que
 // la cola offline cobre dos veces una venta que ya había llegado al servidor.
+//
+// Orden de las reglas (importa):
+//  1. permisos del actor;
+//  2. forma del pedido TAL COMO LLEGÓ (B-03: qty/precio/total dentro de rango);
+//  3. replay idempotente (no se rompe porque el catálogo cambió después);
+//  4. el profesional atiende en el salón (B-12);
+//  5. precio desde el catálogo y servicio activo (B-04).
 func (s SaleService) RegisterSaleWithOp(actor domain.Membership, salonID, professionalID, clientName string, items []domain.SaleItem, method domain.PaymentMethod, clientOpID string) (domain.Sale, error) {
 	m, err := s.member(actor, salonID)
 	if err != nil {
@@ -52,6 +60,8 @@ func (s SaleService) RegisterSaleWithOp(actor domain.Membership, salonID, profes
 	if !puedeVender(m) {
 		return domain.Sale{}, domain.ErrForbidden
 	}
+	// (2) El pedido se valida tal como llegó: un precio manipulado fuera de
+	// rango se rechaza con 400 en vez de "corregirse" en silencio.
 	sale, err := domain.NewSale(salonID, professionalID, clientName, items, method)
 	if err != nil {
 		return domain.Sale{}, err
@@ -64,13 +74,31 @@ func (s SaleService) RegisterSaleWithOp(actor domain.Membership, salonID, profes
 			return domain.Sale{}, err
 		}
 	}
-	// Validación de catálogo: cada ítem tiene que existir en ESTE salón.
-	// Si el servicio fuera de otro tenant, la venta rompería el aislamiento.
-	for _, it := range sale.Items {
-		if _, err := s.Services.FindByID(salonID, it.ServiceID); err != nil {
-			return domain.Sale{}, domain.ErrValidation
-		}
+	if err := ensureProfessional(s.Memberships, salonID, professionalID); err != nil {
+		return domain.Sale{}, err
 	}
+	// (5) El precio lo pone el catálogo del salón, nunca el cliente, y un
+	// servicio inactivo ya no se vende. Se reconstruye la venta con los precios
+	// del catálogo: el total sale de ahí, no del body.
+	priced := make([]domain.SaleItem, len(items))
+	for i, it := range items {
+		svc, err := s.Services.FindByID(salonID, it.ServiceID)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return domain.Sale{}, fmt.Errorf("%w: el servicio no existe en el salón", domain.ErrValidation)
+			}
+			return domain.Sale{}, err
+		}
+		if !svc.Active {
+			return domain.Sale{}, fmt.Errorf("%w: el servicio %q ya no está activo", domain.ErrValidation, svc.Name)
+		}
+		priced[i] = domain.SaleItem{ServiceID: svc.ID, Qty: it.Qty, UnitPriceCents: svc.PriceCents}
+	}
+	sale, err = domain.NewSale(salonID, professionalID, clientName, priced, method)
+	if err != nil {
+		return domain.Sale{}, err
+	}
+	sale.ClientOpID = strings.TrimSpace(clientOpID)
 	if err := s.Sales.Save(sale); err != nil {
 		// Carrera entre el check previo y el insert (dos reintentos a la vez):
 		// el índice único dejó pasar uno; el otro se resuelve devolviendo el original.

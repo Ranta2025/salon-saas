@@ -47,6 +47,7 @@ func TestSaleService_register_total_en_servidor(t *testing.T) {
 	svc := SaleService{Sales: sales, Services: services, Memberships: mems}
 	catalogo(t, services, "s1")
 	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
+	miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	corte := svcIDByName(t, services, "s1", "Corte")
 	brushing := svcIDByName(t, services, "s1", "Brushing")
 
@@ -75,6 +76,7 @@ func TestSaleService_permisos(t *testing.T) {
 	mems := &fakeMemberships{}
 	svc := SaleService{Sales: sales, Services: services, Memberships: mems}
 	catalogo(t, services, "s1")
+	miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	corte := svcIDByName(t, services, "s1", "Corte")
 	items := []domain.SaleItem{{ServiceID: corte, Qty: 1, UnitPriceCents: 150000}}
 
@@ -106,6 +108,7 @@ func TestSaleService_rechaza_ventas_invalidas(t *testing.T) {
 	svc := SaleService{Sales: sales, Services: services, Memberships: mems}
 	catalogo(t, services, "s1")
 	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
+	miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	corte := svcIDByName(t, services, "s1", "Corte")
 
 	// Sin ítems: no hay venta que registrar (no hay venta en $0 fantasma).
@@ -227,6 +230,7 @@ func TestSale_idempotente_por_client_op(t *testing.T) {
 	mems := &fakeMemberships{}
 	svc := SaleService{Sales: sales, Services: services, Memberships: mems}
 	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
+	miembro(mems, "u-prof1", "s1", domain.RoleProfessional)
 
 	svc1 := domain.Service{ID: "sv1", SalonID: "s1", Name: "Corte", DurationMin: 45, PriceCents: 3000, CommissionPct: 20, Active: true}
 	services.all = append(services.all, svc1)

@@ -60,6 +60,10 @@ func (s BookingService) CreateBookingWithOp(actor domain.Membership, salonID, pr
 			return domain.Booking{}, err
 		}
 	}
+	// B-12: el turno tiene que ser para alguien que atiende en ESTE salón.
+	if err := ensureProfessional(s.Memberships, salonID, professionalID); err != nil {
+		return domain.Booking{}, err
+	}
 	busy, err := s.Bookings.FindOverlapping(salonID, professionalID, startsAt, endsAt)
 	if err != nil {
 		return domain.Booking{}, err

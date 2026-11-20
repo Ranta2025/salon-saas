@@ -18,6 +18,7 @@ func TestBookingService_publica_booking_created(t *testing.T) {
 	notifier := &fakeNotifier{}
 	svc := BookingService{Bookings: bookings, Memberships: mems, Events: events, Notifier: notifier}
 	rec := recepcionista(mems)
+	miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	day := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
 
 	b, err := svc.CreateBooking(rec, "s1", "prof1", "Lía", "555", day.Add(10*time.Hour), day.Add(11*time.Hour))
@@ -47,6 +48,7 @@ func TestBookingService_solape_no_publica_evento(t *testing.T) {
 	events := &fakeEvents{}
 	svc := BookingService{Bookings: bookings, Memberships: mems, Events: events}
 	rec := recepcionista(mems)
+	miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	day := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
 	_, _ = svc.CreateBooking(rec, "s1", "prof1", "Lía", "", day.Add(10*time.Hour), day.Add(11*time.Hour))
 	before, _ := events.typed("booking.created")
@@ -67,6 +69,7 @@ func TestSaleService_publica_sale_created(t *testing.T) {
 	svc := SaleService{Sales: sales, Services: services, Memberships: mems, Events: events}
 	catalogo(t, services, "s1")
 	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
+	miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	corte := svcIDByName(t, services, "s1", "Corte")
 
 	sale, err := svc.RegisterSale(recep, "s1", "prof1", "Lía",
