@@ -16,6 +16,10 @@ type CashCloseService struct {
 	CashCloses  ports.CashCloseRepository
 	Sales       ports.SaleRepository
 	Memberships ports.MembershipRepository
+	// Settings da la zona horaria del salón: la ventana del turno arranca a
+	// medianoche LOCAL, no UTC (un salón de CDMX cierra a las 03:00 UTC y su
+	// caja abrió el día anterior local). nil = día UTC (compatibilidad).
+	Settings ports.SalonSettingsRepository
 	// Tx ejecuta el cierre en una transacción con lock por salón (B-09). Es
 	// opcional solo para los fakes de los tests: el composition root siempre lo
 	// configura, porque sin él dos cierres concurrentes cuentan la misma
@@ -86,7 +90,10 @@ func (s CashCloseService) CloseCash(actor domain.Membership, salonID string, cou
 // closeWith hace el cálculo del turno usando la ventana recibida.
 func (s CashCloseService) closeWith(w cashWindow, salonID string, countedCents int, note string) (domain.CashClose, error) {
 	now := time.Now().UTC()
-	openedAt := startOfUTCDay(now)
+	openedAt, err := s.openOfShift(salonID, now)
+	if err != nil {
+		return domain.CashClose{}, err
+	}
 	last, err := w.Last(salonID)
 	switch {
 	case err == nil:
@@ -107,6 +114,21 @@ func (s CashCloseService) closeWith(w cashWindow, salonID string, countedCents i
 		return domain.CashClose{}, err
 	}
 	return c, nil
+}
+
+// openOfShift es la apertura del turno sin cierre previo: medianoche local del
+// salón. Si la configuración no se puede leer, el cierre falla (nunca se cuenta
+// plata con una ventana adivinada).
+func (s CashCloseService) openOfShift(salonID string, now time.Time) (time.Time, error) {
+	settings, err := loadSalonSettings(s.Settings, salonID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	loc, err := settings.Location()
+	if err != nil {
+		return time.Time{}, err
+	}
+	return startOfSalonDay(now, loc), nil
 }
 
 // inWindow corre fn en la transacción con lock si está configurada; si no, con

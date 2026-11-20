@@ -6,6 +6,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -98,6 +99,142 @@ func (s BookingService) CreateBookingWithOp(actor domain.Membership, salonID, pr
 	notify(s.Notifier, salonID, "", "Nuevo turno",
 		b.ClientName+" · "+b.StartsAt.Format("02/01 15:04"), domain.KindBooking)
 	return b, nil
+}
+
+// BookingPatch es el body de PATCH /salons/:id/bookings/:bid: estado y/o
+// reprogramación. nil = el campo no vino.
+type BookingPatch struct {
+	Status         *domain.BookingStatus
+	StartsAt       *time.Time
+	EndsAt         *time.Time
+	ProfessionalID *string
+}
+
+// reschedules dice si el patch mueve el turno (horario y/o profesional).
+func (p BookingPatch) reschedules() bool {
+	if p.StartsAt != nil || p.EndsAt != nil {
+		return true
+	}
+	return p.ProfessionalID != nil && strings.TrimSpace(*p.ProfessionalID) != ""
+}
+
+// puedeEditarTurno: recepción y superiores tocan cualquier turno; el
+// profesional solo los suyos (no reprograma la agenda ajena).
+func puedeEditarTurno(actor domain.Membership, b domain.Booking) bool {
+	switch actor.Role {
+	case domain.RoleOwner, domain.RoleAdmin, domain.RoleReception:
+		return true
+	case domain.RoleProfessional:
+		return actor.UserID == b.ProfessionalID
+	default:
+		return false
+	}
+}
+
+// Update aplica cancelación / no-show / hecho y/o reprogramación, y publica
+// booking.updated para que los calendarios abiertos se refresquen solos.
+func (s BookingService) Update(actor domain.Membership, salonID, bookingID string, patch BookingPatch) (domain.Booking, error) {
+	if actor.SalonID != salonID {
+		return domain.Booking{}, domain.ErrForbidden
+	}
+	m, err := s.Memberships.Find(actor.UserID, salonID)
+	if err != nil {
+		return domain.Booking{}, domain.ErrForbidden
+	}
+	// Scope por salón: el turno de otro tenant no existe (404).
+	b, err := s.Bookings.FindByID(salonID, bookingID)
+	if err != nil {
+		return domain.Booking{}, err
+	}
+	if !puedeEditarTurno(m, b) {
+		return domain.Booking{}, domain.ErrForbidden
+	}
+
+	rescheduled := false
+	if patch.reschedules() {
+		// Un turno cerrado liberó su hueco: reprogramarlo lo reabriría sin
+		// pasar por la decisión de estado. Se rechaza.
+		if b.Status != domain.BookingBooked {
+			return domain.Booking{}, fmt.Errorf("%w: no se puede reprogramar un turno cancelado, hecho o no-show", domain.ErrValidation)
+		}
+		startsAt, endsAt, professionalID := b.StartsAt, b.EndsAt, b.ProfessionalID
+		if patch.StartsAt != nil {
+			startsAt = *patch.StartsAt
+		}
+		if patch.EndsAt != nil {
+			endsAt = *patch.EndsAt
+		}
+		if patch.ProfessionalID != nil {
+			professionalID = *patch.ProfessionalID
+		}
+		moved, err := b.Reschedule(professionalID, startsAt, endsAt)
+		if err != nil {
+			return domain.Booking{}, err
+		}
+		if moved.ProfessionalID != b.ProfessionalID {
+			if err := ensureProfessional(s.Memberships, salonID, moved.ProfessionalID); err != nil {
+				return domain.Booking{}, err
+			}
+		}
+		busy, err := s.Bookings.FindOverlapping(salonID, moved.ProfessionalID, moved.StartsAt, moved.EndsAt)
+		if err != nil {
+			return domain.Booking{}, err
+		}
+		for _, other := range busy {
+			if other.ID != b.ID {
+				return domain.Booking{}, fmt.Errorf("%w: el horario ya está ocupado", domain.ErrAlreadyExists)
+			}
+		}
+		b = moved
+		rescheduled = true
+	}
+	if patch.Status != nil {
+		updated, err := b.SetStatus(*patch.Status)
+		if err != nil {
+			return domain.Booking{}, err
+		}
+		b = updated
+	}
+
+	if err := s.Bookings.Update(b); err != nil {
+		if errors.Is(err, domain.ErrAlreadyExists) {
+			return domain.Booking{}, fmt.Errorf("%w: el horario ya está ocupado", domain.ErrAlreadyExists)
+		}
+		return domain.Booking{}, err
+	}
+	publish(s.Events, ports.Event{
+		Type:    "booking.updated",
+		SalonID: salonID,
+		Data: map[string]any{
+			"id":              b.ID,
+			"professional_id": b.ProfessionalID,
+			"client_name":     b.ClientName,
+			"starts_at":       b.StartsAt.Format(time.RFC3339),
+			"ends_at":         b.EndsAt.Format(time.RFC3339),
+			"status":          string(b.Status),
+		},
+		TS: time.Now().UTC(),
+	})
+	if patch.Status != nil {
+		notify(s.Notifier, salonID, "", bookingChangeTitle(b.Status),
+			b.ClientName+" · "+b.StartsAt.Format("02/01 15:04"), domain.KindBooking)
+	} else if rescheduled {
+		notify(s.Notifier, salonID, "", "Turno reprogramado",
+			b.ClientName+" · "+b.StartsAt.Format("02/01 15:04"), domain.KindBooking)
+	}
+	return b, nil
+}
+
+// bookingChangeTitle es el título del aviso de un cambio de estado.
+func bookingChangeTitle(status domain.BookingStatus) string {
+	switch status {
+	case domain.BookingCancelled:
+		return "Turno cancelado"
+	case domain.BookingNoShow:
+		return "Cliente no se presentó"
+	default:
+		return "Turno atendido"
+	}
 }
 
 // List trae la agenda del salón en [from,to). Solo miembros del salón.

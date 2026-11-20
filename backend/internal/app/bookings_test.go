@@ -43,6 +43,29 @@ func (f *fb) ListRange(salonID string, from, to time.Time) ([]domain.Booking, er
 	return out, nil
 }
 
+// FindByID: el scope por salón es la autorización del PATCH (turno de otro
+// tenant = no existe).
+func (f *fb) FindByID(salonID, id string) (domain.Booking, error) {
+	for _, b := range f.all {
+		if b.SalonID == salonID && b.ID == id {
+			return b, nil
+		}
+	}
+	return domain.Booking{}, domain.ErrNotFound
+}
+
+// Update reemplaza la reserva por id (misma semántica que el UPDATE ... WHERE
+// id AND salon_id de pgstore).
+func (f *fb) Update(b domain.Booking) error {
+	for i := range f.all {
+		if f.all[i].ID == b.ID && f.all[i].SalonID == b.SalonID {
+			f.all[i] = b
+			return nil
+		}
+	}
+	return domain.ErrNotFound
+}
+
 var _ ports.BookingRepository = (*fb)(nil)
 
 func recepcionista(m *fakeMemberships) domain.Membership {
