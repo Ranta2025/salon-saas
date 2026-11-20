@@ -43,7 +43,7 @@ func (h BookingHandler) Create(c *gin.Context) {
 		ClientOpID string `json:"client_op_id"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "body inválido"})
+		badBody(c)
 		return
 	}
 	startsAt, err1 := time.Parse(time.RFC3339, in.StartsAt)
@@ -54,7 +54,7 @@ func (h BookingHandler) Create(c *gin.Context) {
 	}
 	b, err := h.Bookings.CreateBookingWithOp(actor, salonID, in.ProfessionalID, in.ClientName, in.ClientPhone, startsAt, endsAt, in.ClientOpID)
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{
@@ -92,7 +92,7 @@ func (h BookingHandler) List(c *gin.Context) {
 	}
 	list, err := h.Bookings.List(actor, salonID, from, to)
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))

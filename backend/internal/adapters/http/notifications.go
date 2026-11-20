@@ -43,7 +43,7 @@ func (h NotificationHandler) List(c *gin.Context) {
 	}
 	list, err := h.Notifications.List(actor, salonID, limit)
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	out := make([]map[string]any, 0, len(list))
@@ -54,7 +54,7 @@ func (h NotificationHandler) List(c *gin.Context) {
 	// otra vuelta a la API (campo extra, aditivo al contrato).
 	unread, err := h.Notifications.UnreadCount(actor, salonID)
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"notifications": out, "unread": unread})
@@ -67,7 +67,7 @@ func (h NotificationHandler) MarkRead(c *gin.Context) {
 	uid, _ := c.Get("userID")
 	actor := domain.Membership{UserID: uid.(string)}
 	if err := h.Notifications.MarkRead(actor, c.Param("nid")); err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)

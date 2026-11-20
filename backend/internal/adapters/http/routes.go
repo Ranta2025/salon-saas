@@ -16,6 +16,9 @@ type Deps struct {
 	Dashboard     DashboardHandler
 	Notifications NotificationHandler
 	Clients       ClientHandler
+	Me            MeHandler
+	Staff         StaffHandler
+	Public        PublicHandler
 	// WS es el handler del websocket (el hub de realtime). Va como
 	// gin.HandlerFunc para que este paquete no conozca gorilla/websocket:
 	// el composition root monta el adaptador concreto.
@@ -24,17 +27,28 @@ type Deps struct {
 }
 
 // RegisterRoutes monta /api/v1. Las protegidas cuelgan del middleware.
+//
+// Las rutas públicas (auth, vidriera del salón, foto por capability, WS) no
+// llevan Bearer; el resto sí.
 func RegisterRoutes(r *gin.Engine, d Deps) {
 	v1 := r.Group("/api/v1")
 	v1.POST("/auth/register", d.Auth.Register)
 	v1.POST("/auth/login", d.Auth.Login)
 
+	// Vidriera pública del salón: la landing no tiene login.
+	v1.GET("/public/salons/:slug", d.Public.GetSalon)
+
 	authed := v1.Group("", AuthMiddleware(d.TokenIssuer))
+	// Quién soy y en qué salones estoy (el frontend elige el salón activo).
+	authed.GET("/me", d.Me.Get)
 	authed.POST("/salons", d.Tenants.CreateSalon)
 
 	// Agenda
 	authed.POST("/salons/:id/bookings", d.Bookings.Create)
 	authed.GET("/salons/:id/bookings", d.Bookings.List)
+
+	// Equipo del salón (select de profesional de la agenda)
+	authed.GET("/salons/:id/staff", d.Staff.List)
 
 	// Catálogo de servicios
 	authed.GET("/salons/:id/services", d.Services.List)

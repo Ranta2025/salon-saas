@@ -150,7 +150,13 @@ type posEnv struct {
 	clients  *mclients
 	store    *mstorage
 	events   *mevents
+	hub      *realtime.Hub
+	d        Deps
 }
+
+// deps devuelve lo mismo que monta newPOSEnv, para armar routers alternativos
+// (con los middlewares de producción) sin duplicar el cableado.
+func (e *posEnv) deps() Deps { return e.d }
 
 func newPOSEnv() *posEnv {
 	gin.SetMode(gin.TestMode)
@@ -175,13 +181,16 @@ func newPOSEnv() *posEnv {
 	bookSvc := app.BookingService{Bookings: env.bookings, Memberships: env.mems, Events: env.events, Notifier: notifSvc}
 	svcSvc := app.ServiceService{Services: env.services, Memberships: env.mems}
 	saleSvc := app.SaleService{Sales: env.sales, Services: env.services, Memberships: env.mems, Events: env.events}
-	cashSvc := app.CashCloseService{CashCloses: env.closes, Sales: env.sales, Memberships: env.mems, Events: env.events, Notifier: notifSvc}
+	cashSvc := app.CashCloseService{CashCloses: env.closes, Sales: env.sales, Memberships: env.mems, Tx: &mCashTx{closes: env.closes, sales: env.sales}, Events: env.events, Notifier: notifSvc}
 	dashSvc := app.DashboardService{Sales: env.sales, Agenda: env.bookings, Staff: env.mems, Memberships: env.mems}
 	clientSvc := app.ClientService{Clients: env.clients, Memberships: env.mems, Photos: env.store, Images: mimages{}}
-	hub := realtime.NewHub(tokens, env.mems)
+	meSvc := app.MeService{Users: env.users, Salons: env.salons, Members: env.mems}
+	staffSvc := app.StaffService{Staff: env.mems, Memberships: env.mems}
+	publicSvc := app.PublicSalonService{Salons: env.salons, Services: env.services}
+	hub := realtime.NewHub(tokens, env.mems, realtime.HubOrigins("http://localhost:5173"))
+	env.hub = hub
 
-	env.r = gin.New()
-	RegisterRoutes(env.r, Deps{
+	env.d = Deps{
 		Auth:          AuthHandler{Auth: authSvc},
 		Tenants:       TenantsHandler{Tenants: tenSvc, Memberships: env.mems},
 		Bookings:      BookingHandler{Bookings: bookSvc, Memberships: env.mems},
@@ -191,19 +200,56 @@ func newPOSEnv() *posEnv {
 		Dashboard:     DashboardHandler{Dashboard: dashSvc, Memberships: env.mems},
 		Notifications: NotificationHandler{Notifications: notifSvc, Memberships: env.mems},
 		Clients:       ClientHandler{Clients: clientSvc, Memberships: env.mems},
+		Me:            MeHandler{Me: meSvc},
+		Staff:         StaffHandler{Staff: staffSvc, Memberships: env.mems},
+		Public:        PublicHandler{Public: publicSvc},
 		WS:            hub.ServeWS,
 		TokenIssuer:   tokens,
-	})
+	}
+	env.r = gin.New()
+	RegisterRoutes(env.r, env.d)
 	return env
+}
+
+// mCashTx es la transacción con lock (B-09) sobre los fakes: en los tests HTTP
+// no hay Postgres, pero el caso de uso recorre el mismo camino.
+type mCashTx struct {
+	closes *mclose
+	sales  *msale
+}
+
+type mCashTxView struct{ parent *mCashTx }
+
+func (v mCashTxView) Save(c domain.CashClose) error { return v.parent.closes.Save(c) }
+func (v mCashTxView) Last(salonID string) (domain.CashClose, error) {
+	return v.parent.closes.Last(salonID)
+}
+func (v mCashTxView) List(salonID string) ([]domain.CashClose, error) {
+	return v.parent.closes.List(salonID)
+}
+func (v mCashTxView) SumCashCents(salonID string, from, to time.Time) (int, error) {
+	return v.parent.sales.SumCents(salonID, from, to, domain.MethodCash)
+}
+
+func (t *mCashTx) InSalonTx(salonID string, fn func(ports.CashCloseTx) error) error {
+	return fn(mCashTxView{parent: t})
+}
+
+var _ ports.SalonTxRunner = (*mCashTx)(nil)
+
+// seedProfessional hace que userID atienda en el salón: el professional_id de
+// una venta o reserva tiene que ser personal del salón (B-12).
+func seedProfessional(env *posEnv, salonID, userID string) {
+	_ = env.mems.Save(domain.Membership{UserID: userID, SalonID: salonID, Role: domain.RoleProfessional})
 }
 
 // register registra+loguea un usuario y devuelve (token, userID).
 func (e *posEnv) register(t *testing.T, email string) (string, string) {
 	t.Helper()
-	if w := doReq(e.r, "POST", "/api/v1/auth/register", `{"name":"`+email+`","email":"`+email+`","password":"secreta"}`, ""); w.Code != http.StatusCreated {
+	if w := doReq(e.r, "POST", "/api/v1/auth/register", `{"name":"`+email+`","email":"`+email+`","password":"secreta123"}`, ""); w.Code != http.StatusCreated {
 		t.Fatalf("register %s: %d %s", email, w.Code, w.Body.String())
 	}
-	w := doReq(e.r, "POST", "/api/v1/auth/login", `{"email":"`+email+`","password":"secreta"}`, "")
+	w := doReq(e.r, "POST", "/api/v1/auth/login", `{"email":"`+email+`","password":"secreta123"}`, "")
 	var lr struct {
 		Token string `json:"token"`
 	}
@@ -375,6 +421,8 @@ func TestHTTP_sales(t *testing.T) {
 	base := "/api/v1/salons/" + salonID + "/sales"
 	svcID := env.seedService(t, ownerTok, salonID, "Corte", 150000)
 
+	seedProfessional(env, salonID, "prof1")
+
 	// El cliente manda su propio total: debe ser ignorado y recalculado.
 	body := `{"professional_id":"prof1","client_name":"Lía","method":"cash",` +
 		`"total":1,"total_cents":1,` +
@@ -471,6 +519,7 @@ func TestHTTP_cash_closes(t *testing.T) {
 	salonID := env.salon(t, ownerTok, "caja")
 	base := "/api/v1/salons/" + salonID + "/cash-closes"
 	svcID := env.seedService(t, ownerTok, salonID, "Corte", 150000)
+	seedProfessional(env, salonID, "prof1")
 
 	// Una venta en efectivo de 300000 deja eso en el cajón.
 	w := doReq(env.r, "POST", "/api/v1/salons/"+salonID+"/sales",
@@ -632,6 +681,7 @@ func TestHTTP_sale_replay(t *testing.T) {
 	salonID := env.salon(t, ownerTok, "replay")
 	base := "/api/v1/salons/" + salonID + "/sales"
 	svcID := env.seedService(t, ownerTok, salonID, "Corte", 150000)
+	seedProfessional(env, salonID, "prof1")
 
 	body := `{"professional_id":"prof1","client_name":"Lía","method":"cash","client_op_id":"op-abc",` +
 		`"items":[{"service_id":"` + svcID + `","qty":1,"unit_price_cents":150000}]}`

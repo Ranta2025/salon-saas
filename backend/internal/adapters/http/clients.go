@@ -77,12 +77,12 @@ func (h ClientHandler) Create(c *gin.Context) {
 		Notes string `json:"notes"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "body inválido"})
+		badBody(c)
 		return
 	}
 	client, err := h.Clients.Create(actor, salonID, in.Name, in.Phone, in.Notes)
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, clientJSON(client))
@@ -97,7 +97,7 @@ func (h ClientHandler) List(c *gin.Context) {
 	}
 	list, err := h.Clients.List(actor, salonID)
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -123,7 +123,7 @@ func (h ClientHandler) AddPhoto(c *gin.Context) {
 	}
 	photo, err := h.Clients.AddPhoto(actor, salonID, c.Param("cid"), data, contentType)
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"photo": photoJSON(photo)})
@@ -138,7 +138,7 @@ func (h ClientHandler) ListPhotos(c *gin.Context) {
 	}
 	list, err := h.Clients.ListPhotos(actor, salonID, c.Param("cid"))
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -156,7 +156,7 @@ func (h ClientHandler) DeletePhoto(c *gin.Context) {
 		return
 	}
 	if err := h.Clients.DeletePhoto(actor, salonID, c.Param("cid"), c.Param("pid")); err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -169,7 +169,7 @@ func (h ClientHandler) DeletePhoto(c *gin.Context) {
 func (h ClientHandler) StreamPhoto(c *gin.Context) {
 	photo, data, err := h.Clients.Photo(c.Param("pid"))
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	c.Header("Content-Type", photo.ContentType)

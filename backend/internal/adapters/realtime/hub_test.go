@@ -231,3 +231,44 @@ func TestHub_al_desconectar_libera_la_room(t *testing.T) {
 	_ = conn.Close()
 	waitRoom(t, hub, "s-a", 0)
 }
+
+// B-01: el handshake del websocket respeta la MISMA allowlist que la API.
+// Un origen ajeno no puede abrir el socket (403 antes del upgrade).
+func TestHub_rechaza_origin_ajeno(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	salons := &fakeSalons{byUser: map[string][]domain.Membership{
+		"u-ana": {{UserID: "u-ana", SalonID: "s-a", Role: domain.RoleOwner}},
+	}}
+	tokens := security.JWTIssuer{Secret: "test-secret"}
+	hub := NewHub(tokens, salons, HubOrigins("http://localhost:5173"))
+	r := gin.New()
+	r.GET("/api/v1/ws", hub.ServeWS)
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+
+	tok, err := tokens.Issue("u-ana")
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	u := "ws" + strings.TrimPrefix(srv.URL, "http") + "/api/v1/ws?token=" + url.QueryEscape(tok)
+
+	// Origen permitido: conecta.
+	conn, _, err := websocket.DefaultDialer.Dial(u, http.Header{"Origin": {"http://localhost:5173"}})
+	if err != nil {
+		t.Fatalf("origen permitido debe conectar: %v", err)
+	}
+	_ = conn.Close()
+
+	// Origen ajeno: el upgrade se rechaza con 403.
+	_, resp, err := websocket.DefaultDialer.Dial(u, http.Header{"Origin": {"https://evil.example"}})
+	if err == nil {
+		t.Fatal("un origen ajeno no debe poder abrir el socket")
+	}
+	if resp == nil || resp.StatusCode != http.StatusForbidden {
+		got := 0
+		if resp != nil {
+			got = resp.StatusCode
+		}
+		t.Fatalf("esperaba 403, dio %d (%v)", got, err)
+	}
+}

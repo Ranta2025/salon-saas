@@ -54,12 +54,12 @@ func (h ServiceHandler) Create(c *gin.Context) {
 		CommissionPct int    `json:"commission_pct"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "body inválido"})
+		badBody(c)
 		return
 	}
 	svc, err := h.Services.Create(actor, salonID, in.Name, in.DurationMin, in.PriceCents, in.CommissionPct)
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, serviceJSON(svc))
@@ -81,7 +81,7 @@ func (h ServiceHandler) Update(c *gin.Context) {
 		Active        *bool  `json:"active"` // ausente = sigue activo
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "body inválido"})
+		badBody(c)
 		return
 	}
 	active := true
@@ -90,7 +90,7 @@ func (h ServiceHandler) Update(c *gin.Context) {
 	}
 	svc, err := h.Services.Update(actor, salonID, serviceID, in.Name, in.DurationMin, in.PriceCents, in.CommissionPct, active)
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, serviceJSON(svc))
@@ -106,7 +106,7 @@ func (h ServiceHandler) List(c *gin.Context) {
 	includeInactive := c.Query("include_inactive") == "true"
 	list, err := h.Services.List(actor, salonID, includeInactive)
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -176,7 +176,7 @@ func (h SaleHandler) Create(c *gin.Context) {
 		} `json:"items"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "body inválido"})
+		badBody(c)
 		return
 	}
 	items := make([]domain.SaleItem, 0, len(in.Items))
@@ -189,7 +189,7 @@ func (h SaleHandler) Create(c *gin.Context) {
 	}
 	sale, err := h.Sales.RegisterSaleWithOp(actor, salonID, in.ProfessionalID, in.ClientName, items, domain.PaymentMethod(in.Method), in.ClientOpID)
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"sale_id": sale.ID, "total": sale.TotalCents})
@@ -208,7 +208,7 @@ func (h SaleHandler) List(c *gin.Context) {
 	}
 	list, err := h.Sales.ListSales(actor, salonID, from, to)
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -260,12 +260,12 @@ func (h CashCloseHandler) Create(c *gin.Context) {
 		Note         string `json:"note"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "body inválido"})
+		badBody(c)
 		return
 	}
 	cc, err := h.CashCloses.CloseCash(actor, salonID, in.CountedCents, in.Note)
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"close_id": cc.ID, "expected_cash": cc.SystemCashCents})
@@ -280,7 +280,7 @@ func (h CashCloseHandler) List(c *gin.Context) {
 	}
 	list, err := h.CashCloses.ListCloses(actor, salonID)
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -316,7 +316,7 @@ func (h DashboardHandler) Get(c *gin.Context) {
 	}
 	d, err := h.Dashboard.Today(actor, salonID)
 	if err != nil {
-		c.JSON(statusOf(err), gin.H{"error": err.Error()})
+		respondErr(c, err)
 		return
 	}
 	top := make([]gin.H, 0, len(d.TopServices))

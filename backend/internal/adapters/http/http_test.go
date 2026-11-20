@@ -29,6 +29,16 @@ func (f *mu) FindByEmail(e string) (domain.User, error) {
 	return u, nil
 }
 
+// FindByID: lo usa GET /me (el token trae el userID, no el email).
+func (f *mu) FindByID(id string) (domain.User, error) {
+	for _, u := range f.byEmail {
+		if u.ID == id {
+			return u, nil
+		}
+	}
+	return domain.User{}, domain.ErrNotFound
+}
+
 type ms struct{ bySlug map[string]domain.Salon }
 
 func (f *ms) Save(s domain.Salon) error {
@@ -44,6 +54,16 @@ func (f *ms) FindBySlug(slug string) (domain.Salon, error) {
 		return domain.Salon{}, domain.ErrNotFound
 	}
 	return s, nil
+}
+
+// FindByID: lo usa GET /me para el nombre y el slug de cada salón del usuario.
+func (f *ms) FindByID(id string) (domain.Salon, error) {
+	for _, s := range f.bySlug {
+		if s.ID == id {
+			return s, nil
+		}
+	}
+	return domain.Salon{}, domain.ErrNotFound
 }
 
 type mm struct{ byKey map[string]domain.Membership }
@@ -74,12 +94,23 @@ func (f *mm) CountProfessionals(salonID string) (int, error) {
 	return n, nil
 }
 
-// ListByUser: puerto MembershipLister (rooms del websocket y avisos leídos).
+// ListByUser: puerto MembershipLister (rooms del websocket, avisos y /me).
 func (f *mm) ListByUser(userID string) ([]domain.Membership, error) {
 	var out []domain.Membership
 	for _, m := range f.byKey {
 		if m.UserID == userID {
 			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
+// ListStaff: personal que atiende (owner/admin/professional) con nombre.
+func (f *mm) ListStaff(salonID string) ([]domain.StaffMember, error) {
+	var out []domain.StaffMember
+	for _, m := range f.byKey {
+		if m.SalonID == salonID && m.Role.IsStaff() {
+			out = append(out, domain.StaffMember{ID: m.UserID, Name: m.UserID, Role: m.Role})
 		}
 	}
 	return out, nil
@@ -104,15 +135,15 @@ func doReq(r *gin.Engine, method, path, body, token string) *httptest.ResponseRe
 func TestHTTP_flujo_auth_salon(t *testing.T) {
 	r := testRouter()
 
-	w := doReq(r, "POST", "/api/v1/auth/register", `{"name":"Ana","email":"ana@mail.com","password":"secreta"}`, "")
+	w := doReq(r, "POST", "/api/v1/auth/register", `{"name":"Ana","email":"ana@mail.com","password":"secreta123"}`, "")
 	if w.Code != http.StatusCreated {
 		t.Fatalf("register: %d %s", w.Code, w.Body.String())
 	}
-	w = doReq(r, "POST", "/api/v1/auth/register", `{"name":"Otra","email":"ana@mail.com","password":"x"}`, "")
+	w = doReq(r, "POST", "/api/v1/auth/register", `{"name":"Otra","email":"ana@mail.com","password":"otraClave1"}`, "")
 	if w.Code != http.StatusConflict {
 		t.Fatalf("duplicado debe dar 409, dio %d", w.Code)
 	}
-	w = doReq(r, "POST", "/api/v1/auth/login", `{"email":"ana@mail.com","password":"secreta"}`, "")
+	w = doReq(r, "POST", "/api/v1/auth/login", `{"email":"ana@mail.com","password":"secreta123"}`, "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("login: %d %s", w.Code, w.Body.String())
 	}
@@ -187,9 +218,10 @@ func (f *mb) StatsRange(salonID string, from, to time.Time) (int, int, error) {
 // Flujo: login como receptora -> crear reserva 201 -> solape 409 ->
 // adyacente 201 -> listado del día trae 2 -> sin token 401.
 func TestHTTP_bookings(t *testing.T) {
-	r := testRouter()
-	doReq(r, "POST", "/api/v1/auth/register", `{"name":"Recep","email":"recep@mail.com","password":"secreta"}`, "")
-	lr := doReq(r, "POST", "/api/v1/auth/login", `{"email":"recep@mail.com","password":"secreta"}`, "")
+	env := newPOSEnv()
+	r := env.r
+	doReq(r, "POST", "/api/v1/auth/register", `{"name":"Recep","email":"recep@mail.com","password":"secreta123"}`, "")
+	lr := doReq(r, "POST", "/api/v1/auth/login", `{"email":"recep@mail.com","password":"secreta123"}`, "")
 	var lt struct {
 		Token string `json:"token"`
 	}
@@ -203,6 +235,8 @@ func TestHTTP_bookings(t *testing.T) {
 	if err := json.Unmarshal(ws.Body.Bytes(), &created); err != nil || created.ID == "" {
 		t.Fatalf("salón: %s", ws.Body.String())
 	}
+	// B-12: el profesional del turno tiene que atender en el salón.
+	seedProfessional(env, created.ID, "prof1")
 	p := "/api/v1/salons/" + created.ID + "/bookings"
 	b10 := `{"professional_id":"prof1","client_name":"Lía","starts_at":"2026-12-03T10:00:00Z","ends_at":"2026-12-03T11:00:00Z"}`
 	if w := doReq(r, "POST", p, b10, lt.Token); w.Code != http.StatusCreated {

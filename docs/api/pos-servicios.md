@@ -104,9 +104,16 @@ Respuesta:
 `total` es **centavos** y sale de `Σ qty × unit_price_cents` en el servidor.
 `total` / `total_cents` en el request se ignoran por diseño.
 
-Validaciones (`400`): al menos un ítem, `qty >= 1`, `unit_price_cents >= 0`,
-`client_name` y `professional_id` no vacíos, `service_id` existente **en este
-salón** (vender un servicio de otro tenant no pasa) y `method` del enum.
+Validaciones (`400`): al menos un ítem, `qty` entre 1 y 1000, `unit_price_cents`
+entre 0 y 10.000.000, máximo 50 ítems, total de la venta ≤ 2.000.000.000
+centavos, `client_name` y `professional_id` no vacíos, `service_id` existente y
+**activo en este salón** (vender un servicio de otro tenant o uno desactivado no
+pasa), `professional_id` debe ser personal del salón (`owner`, `admin` o
+`professional`) y `method` del enum.
+
+**El precio unitario lo pone el catálogo** (fase 5): el `unit_price_cents` del
+body solo se valida; el precio que se cobra y se persiste es el `price_cents` del
+servicio. Ver [`fase5-backend.md`](./fase5-backend.md).
 
 ### `GET /salons/:id/sales?from=&to=` → `200`
 

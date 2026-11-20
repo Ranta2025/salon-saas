@@ -10,6 +10,7 @@ package realtime
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +19,23 @@ import (
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
+
+// DefaultWSOrigins: los mismos orígenes de desarrollo que la API. El
+// composition root pasa la allowlist real con HubOrigins(CORS_ORIGINS...).
+const DefaultWSOrigins = "http://localhost:5173,http://localhost:4173"
+
+// ParseOrigins convierte "a,b" en una allowlist normalizada (minúsculas, sin
+// barra final). Vive en este paquete porque el hub no puede importar el
+// adaptador HTTP sin invertir la dependencia; la lista llega como parámetro.
+func ParseOrigins(raw string) []string {
+	out := make([]string, 0, 4)
+	for _, part := range strings.Split(raw, ",") {
+		if o := strings.TrimRight(strings.TrimSpace(part), "/"); o != "" {
+			out = append(out, strings.ToLower(o))
+		}
+	}
+	return out
+}
 
 const (
 	// sendBuffer: cuántos eventos puede acumular un cliente lento antes de
@@ -30,12 +48,45 @@ const (
 
 // Hub mantiene las conexiones agrupadas por salon_id.
 type Hub struct {
-	tokens   ports.TokenIssuer
-	salons   ports.MembershipLister
-	upgrader websocket.Upgrader
+	tokens         ports.TokenIssuer
+	salons         ports.MembershipLister
+	allowedOrigins []string
+	upgrader       websocket.Upgrader
 
 	mu    sync.RWMutex
 	rooms map[string]map[*client]struct{}
+}
+
+// Option configura el hub sin romper el constructor de dos argumentos.
+type Option func(*Hub)
+
+// HubOrigins fija la allowlist de orígenes del handshake (B-01). Tiene que ser
+// la MISMA que CORS_ORIGINS de la API: si el socket acepta cualquier origen,
+// una página ajena puede abrir el WS de un usuario ya logueado.
+func HubOrigins(origins ...string) Option {
+	return func(h *Hub) {
+		h.allowedOrigins = make([]string, 0, len(origins))
+		for _, o := range origins {
+			if o = strings.TrimRight(strings.TrimSpace(o), "/"); o != "" {
+				h.allowedOrigins = append(h.allowedOrigins, strings.ToLower(o))
+			}
+		}
+	}
+}
+
+// originAllowed dice si el origen puede abrir el socket. Un pedido SIN header
+// Origin (curl, tests, clientes no-navegador) no es cross-site: se permite.
+func originAllowed(origin string, allowed []string) bool {
+	if strings.TrimSpace(origin) == "" {
+		return true
+	}
+	origin = strings.ToLower(strings.TrimRight(strings.TrimSpace(origin), "/"))
+	for _, o := range allowed {
+		if o == origin {
+			return true
+		}
+	}
+	return false
 }
 
 // client es una conexión suscripta. Solo el writeLoop la escribe.
@@ -45,19 +96,27 @@ type client struct {
 
 // NewHub arma el hub. tokens autentica el JWT del query param; salons resuelve
 // a qué rooms unir la conexión.
-func NewHub(tokens ports.TokenIssuer, salons ports.MembershipLister) *Hub {
-	return &Hub{
-		tokens: tokens,
-		salons: salons,
-		upgrader: websocket.Upgrader{
-			ReadBufferSize:  1024,
-			WriteBufferSize: 4096,
-			// El token (no una cookie) es la credencial, así que no hay CSRF
-			// de cookies acá: el navegador de cualquier origen puede conectar.
-			CheckOrigin: func(*http.Request) bool { return true },
-		},
-		rooms: map[string]map[*client]struct{}{},
+func NewHub(tokens ports.TokenIssuer, salons ports.MembershipLister, opts ...Option) *Hub {
+	h := &Hub{
+		tokens:         tokens,
+		salons:         salons,
+		allowedOrigins: ParseOrigins(DefaultWSOrigins),
+		rooms:          map[string]map[*client]struct{}{},
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	h.upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 4096,
+		// El token viaja en el query param (el navegador no puede mandar
+		// Authorization en un WS), así que la cookie no autentica nada; igual
+		// se valida el origen: es la misma allowlist que la API.
+		CheckOrigin: func(r *http.Request) bool {
+			return originAllowed(r.Header.Get("Origin"), h.allowedOrigins)
+		},
+	}
+	return h
 }
 
 // wireEvent es el JSON que viaja por el socket: {type, salon_id, data, ts}.

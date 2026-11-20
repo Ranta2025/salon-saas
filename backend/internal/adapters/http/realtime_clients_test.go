@@ -221,6 +221,7 @@ func TestHTTP_notifications_flujo(t *testing.T) {
 	ownerTok, _ := env.register(t, "owner@mail.com")
 	salonID := env.salon(t, ownerTok, "avisos")
 	base := "/api/v1/salons/" + salonID
+	seedProfessional(env, salonID, "prof1")
 
 	// Una reserva crea el aviso "Nuevo turno" para todo el salón.
 	if w := doReq(env.r, "POST", base+"/bookings",
