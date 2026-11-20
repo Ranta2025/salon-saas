@@ -1,7 +1,15 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { login } from '../lib/api'
-import { getToken, setToken } from '../lib/session'
+import { fetchMe, login } from '../lib/api'
+import { pickSalonId } from '../lib/me'
+import {
+  clearSalonId,
+  getSalonId,
+  getToken,
+  setSalonId,
+  setToken,
+  setUserId,
+} from '../lib/session'
 
 type LocationState = { from?: string } | null
 
@@ -25,6 +33,28 @@ export function LoginPage() {
     try {
       const token = await login(email.trim(), password)
       setToken(token)
+      // GET /me selects the salon of the account; nobody pastes an id anymore.
+      // If the identity endpoint is not available yet, the stored salon and the
+      // panel fallback keep the session usable.
+      try {
+        const me = await fetchMe()
+        setUserId(me.user.id)
+        const nextSalon = pickSalonId(getSalonId(), me.salons)
+        if (nextSalon) {
+          setSalonId(nextSalon)
+        } else {
+          clearSalonId()
+        }
+      } catch (meError) {
+        if (!getToken()) {
+          setError(
+            meError instanceof Error
+              ? meError.message
+              : 'No pudimos leer tu cuenta. Intenta de nuevo.',
+          )
+          return
+        }
+      }
       navigate(from, { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No pudimos iniciar sesión.')

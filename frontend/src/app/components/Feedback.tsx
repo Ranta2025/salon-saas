@@ -23,10 +23,10 @@ export function ErrorNotice({ message, onRetry }: { message: string; onRetry?: (
 export function SalonRequired() {
   return (
     <div className="empty-state">
-      <h2>Falta elegir el salón</h2>
+      <h2>Tu cuenta no tiene un salón activo</h2>
       <p>
-        La API todavía no expone la lista de salones de tu cuenta. Escribe el <strong>ID del salón</strong>{' '}
-        en el selector de la barra superior (arriba a la izquierda) y esta pantalla carga sola.
+        Al iniciar sesión cargamos los salones de tu cuenta y elegimos el primero. Si el problema
+        sigue, cierra sesión y vuelve a entrar, o pídele a la administración que revise tu acceso.
       </p>
     </div>
   )

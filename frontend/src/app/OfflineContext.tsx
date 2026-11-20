@@ -17,6 +17,7 @@ import {
   type QueuedOperation,
 } from '../lib/offlineQueue'
 import type { SaleInput } from '../types'
+import { useSalon } from './SalonContext'
 
 /** Single queue of the app. The transport is the API client (`submitQueuedOperation`). */
 export const offlineQueue = new OfflineQueue({
@@ -30,6 +31,8 @@ type OfflineContextValue = {
   pendingCount: number
   dropped: DroppedOperation[]
   syncing: boolean
+  /** True when a 401 paused the queue until the next successful login. */
+  paused: boolean
   /** Operations confirmed by the server since the app loaded. */
   syncedTotal: number
   enqueueSale: (salonId: string, input: SaleInput) => QueuedOperation
@@ -44,6 +47,7 @@ const OfflineContext = createContext<OfflineContextValue | null>(null)
  * reload with pending work) and every time the browser reports being online.
  */
 export function OfflineProvider({ children }: { children: ReactNode }) {
+  const { user } = useSalon()
   const snapshot = useSyncExternalStore(
     useCallback((onChange: () => void) => offlineQueue.subscribe(onChange), []),
     useCallback(() => offlineQueue.snapshot(), []),
@@ -63,6 +67,12 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
       syncingRef.current = false
     }
   }, [])
+
+  // One queue per account: pending sales of a previous user are never sent by
+  // the session that signs in next on the same browser.
+  useEffect(() => {
+    offlineQueue.setScope(user?.id ?? null)
+  }, [user])
 
   useEffect(() => {
     if (isBrowserOnline()) {
@@ -98,6 +108,7 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
       pendingCount: snapshot.pendingCount,
       dropped: snapshot.dropped,
       syncing: snapshot.syncing,
+      paused: snapshot.paused,
       syncedTotal: snapshot.syncedTotal,
       enqueueSale,
       syncNow,

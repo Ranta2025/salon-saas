@@ -88,7 +88,7 @@ export function ServicesPage() {
       <PageHeader
         eyebrow="Catálogo"
         title="Servicios y precios"
-        description="Los precios se guardan en centavos enteros; la interfaz los muestra en pesos."
+        description="Precios finales en pesos mexicanos, con duración y comisión de cada servicio."
         actions={
           <button
             type="button"
@@ -149,7 +149,7 @@ export function ServicesPage() {
             </p>
           ) : (
             <div className="table-wrap">
-              <table className="table">
+              <table className="table table--stack">
                 <thead>
                   <tr>
                     <th scope="col">Servicio</th>
@@ -169,19 +169,25 @@ export function ServicesPage() {
                 <tbody>
                   {services.map((service) => (
                     <tr key={service.id} data-inactive={!service.active}>
-                      <td>
-                        <strong>{service.name}</strong>
-                        <span className="table__id">{service.id}</span>
+                      <td data-label="Servicio">
+                        <span>
+                          <strong>{service.name}</strong>
+                          <span className="table__id">{service.id}</span>
+                        </span>
                       </td>
-                      <td>{formatMinutes(service.duration_min)}</td>
-                      <td className="table__num">{formatCents(service.price_cents)}</td>
-                      <td className="table__num">{service.commission_pct}%</td>
-                      <td>
+                      <td data-label="Duración">{formatMinutes(service.duration_min)}</td>
+                      <td className="table__num" data-label="Precio">
+                        {formatCents(service.price_cents)}
+                      </td>
+                      <td className="table__num" data-label="Comisión">
+                        {service.commission_pct}%
+                      </td>
+                      <td data-label="Estado">
                         <span className={`pill ${service.active ? 'pill--on' : 'pill--off'}`}>
                           {service.active ? 'Activo' : 'Inactivo'}
                         </span>
                       </td>
-                      <td className="table__actions">
+                      <td className="table__actions" data-label="Acciones">
                         <button
                           type="button"
                           className="btn btn--quiet btn--sm"

@@ -1,12 +1,12 @@
-import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { SALON } from '../landing/content'
 import { purgeOfflineApiCache } from '../lib/pwa'
-import { clearToken } from '../lib/session'
+import { clearSalonId, clearToken, clearUserId } from '../lib/session'
 import { NotificationCenter } from './components/NotificationCenter'
 import { OfflineBanner, SyncStatusChip } from './components/SyncStatus'
 import { NotificationsProvider } from './NotificationsContext'
-import { OfflineProvider } from './OfflineContext'
+import { OfflineProvider, offlineQueue } from './OfflineContext'
+import { RealtimeProvider } from './RealtimeContext'
 import { SalonProvider, useSalon } from './SalonContext'
 
 const NAV = [
@@ -19,53 +19,56 @@ const NAV = [
 ] as const
 
 function SalonSwitcher() {
-  const { salonId, updateSalonId } = useSalon()
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(salonId ?? '')
+  const { salonId, salons, loading, error, updateSalonId, refresh } = useSalon()
 
-  if (!editing) {
+  if (loading) {
     return (
-      <button type="button" className="shell__salon" onClick={() => setEditing(true)}>
+      <span className="shell__salon shell__salon--static" role="status">
+        Cargando salón…
+      </span>
+    )
+  }
+
+  if (salons.length > 1) {
+    return (
+      <label className="shell__salon shell__salon--select">
         <span className="shell__salon-label">Salón</span>
-        <span className="shell__salon-value">{salonId ?? 'Sin definir'}</span>
-      </button>
+        <select
+          className="select shell__salon-select"
+          value={salonId ?? ''}
+          onChange={(event) => updateSalonId(event.target.value)}
+          aria-label="Salón activo"
+        >
+          {salonId === null ? <option value="">Elige un salón</option> : null}
+          {salons.map((salon) => (
+            <option key={salon.id} value={salon.id}>
+              {salon.name}
+            </option>
+          ))}
+        </select>
+      </label>
+    )
+  }
+
+  const active = salons.find((salon) => salon.id === salonId) ?? salons[0]
+  if (active) {
+    return (
+      <span className="shell__salon shell__salon--static">
+        <span className="shell__salon-label">Salón</span>
+        <span className="shell__salon-value">{active.name}</span>
+      </span>
     )
   }
 
   return (
-    <form
-      className="shell__salon-form"
-      onSubmit={(event) => {
-        event.preventDefault()
-        updateSalonId(draft)
-        setEditing(false)
-      }}
+    <button
+      type="button"
+      className="shell__salon shell__salon--static"
+      onClick={refresh}
+      title={error ?? undefined}
     >
-      <label className="visually-hidden" htmlFor="salon-id">
-        ID del salón
-      </label>
-      <input
-        id="salon-id"
-        className="input"
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        placeholder="ID del salón"
-        autoFocus
-      />
-      <button type="submit" className="btn btn--wine btn--sm">
-        Usar
-      </button>
-      <button
-        type="button"
-        className="btn btn--quiet btn--sm"
-        onClick={() => {
-          setDraft(salonId ?? '')
-          setEditing(false)
-        }}
-      >
-        Cancelar
-      </button>
-    </form>
+      Sin salón asignado · Reintentar
+    </button>
   )
 }
 
@@ -74,6 +77,12 @@ function ShellChrome() {
 
   const handleLogout = () => {
     clearToken()
+    clearUserId()
+    clearSalonId()
+    // The queue of this account is never synced by the next one that signs in.
+    offlineQueue.clear()
+    offlineQueue.setScope(null)
+    offlineQueue.clear()
     purgeOfflineApiCache()
     navigate('/login', { replace: true })
   }
@@ -116,9 +125,7 @@ function ShellChrome() {
         <header className="shell__topbar">
           <div className="shell__topbar-main">
             <SalonSwitcher />
-            <p className="shell__hint">
-              Los montos se muestran en pesos mexicanos (MXN), en centavos en la API.
-            </p>
+            <p className="shell__hint">Los montos se muestran en pesos mexicanos (MXN).</p>
           </div>
           <div className="shell__topbar-actions">
             <SyncStatusChip />
@@ -142,11 +149,13 @@ function ShellChrome() {
 export function AppShell() {
   return (
     <SalonProvider>
-      <NotificationsProvider>
-        <OfflineProvider>
-          <ShellChrome />
-        </OfflineProvider>
-      </NotificationsProvider>
+      <RealtimeProvider>
+        <NotificationsProvider>
+          <OfflineProvider>
+            <ShellChrome />
+          </OfflineProvider>
+        </NotificationsProvider>
+      </RealtimeProvider>
     </SalonProvider>
   )
 }

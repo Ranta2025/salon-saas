@@ -117,7 +117,7 @@ export function ServiceForm({ service, onSubmit, onCancel }: ServiceFormProps) {
           />
           {priceCentsInForm !== null ? (
             <p className="field__hint">
-              Se guarda como {priceCentsInForm} centavos ({formatCents(priceCentsInForm)}).
+              Se guarda como {formatCents(priceCentsInForm)}.
             </p>
           ) : null}
         </div>

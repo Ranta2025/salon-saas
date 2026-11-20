@@ -2,12 +2,13 @@ import { useOffline } from '../OfflineContext'
 
 /** Compact pending counter for the app header; always visible when work is waiting. */
 export function SyncStatusChip() {
-  const { online, pendingCount, syncing } = useOffline()
-  if (pendingCount === 0 && online) {
+  const { online, pendingCount, syncing, paused } = useOffline()
+  if (pendingCount === 0 && online && !paused) {
     return null
   }
-  const label =
-    pendingCount === 0
+  const label = paused
+    ? 'Sincronización en pausa'
+    : pendingCount === 0
       ? 'Sin conexión'
       : `${pendingCount} ${pendingCount === 1 ? 'operación pendiente' : 'operaciones pendientes'}`
   return (
@@ -24,9 +25,10 @@ export function SyncStatusChip() {
  * are waiting and warns when the queue had to drop something for good.
  */
 export function OfflineBanner() {
-  const { online, pendingCount, dropped, syncing, syncNow, dismissDropped } = useOffline()
+  const { online, pendingCount, dropped, syncing, paused, syncNow, dismissDropped } =
+    useOffline()
 
-  if (online && pendingCount === 0 && dropped.length === 0) {
+  if (online && pendingCount === 0 && dropped.length === 0 && !paused) {
     return null
   }
 
@@ -36,14 +38,18 @@ export function OfflineBanner() {
       role="status"
     >
       <p className="offline-banner__title">
-        {!online
-          ? 'Estás sin conexión'
-          : pendingCount > 0
-            ? 'Sincronización pendiente'
-            : 'Operaciones sin enviar'}
+        {paused
+          ? 'Sincronización en pausa'
+          : !online
+            ? 'Estás sin conexión'
+            : pendingCount > 0
+              ? 'Sincronización pendiente'
+              : 'Operaciones sin enviar'}
       </p>
       <p className="offline-banner__text">
-        {online
+        {paused
+          ? 'Tu sesión venció. Vuelve a iniciar sesión: las operaciones guardadas no se perdieron ni gastaron intentos.'
+          : online
           ? `${pendingCount} ${pendingCount === 1 ? 'operación espera' : 'operaciones esperan'} al servidor.`
           : 'Puedes seguir cobrando: las ventas se guardan en este dispositivo y se envían solas al volver la red.'}
         {!online && pendingCount > 0

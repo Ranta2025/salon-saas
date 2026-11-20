@@ -66,7 +66,7 @@ export function Timeline({ bookings }: TimelineProps) {
   if (bookings.length === 0) {
     return (
       <p className="empty-state">
-        No hay citas agendadas para este día. Las reservas que entre por la API aparecen aquí.
+        No hay citas agendadas para este día. Las reservas nuevas aparecen aquí.
       </p>
     )
   }

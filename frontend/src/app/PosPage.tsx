@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { createSale, fetchSales, fetchServices, NetworkError } from '../lib/api'
+import { createSale, fetchSales, fetchServices, fetchStaff, NetworkError } from '../lib/api'
 import { dayRange } from '../lib/datetime'
 import { formatCents } from '../lib/money'
 import { newClientOpId, type QueuedOperation } from '../lib/offlineQueue'
+import type { StaffMember } from '../lib/staff'
 import { addItem, type Cart } from '../lib/posCart'
 import {
   SALE_METHODS,
@@ -37,6 +38,8 @@ export function PosPage() {
   const { online, pending, enqueueSale, syncedTotal } = useOffline()
   const [services, setServices] = useState<Service[]>([])
   const [sales, setSales] = useState<Sale[]>([])
+  const [staff, setStaff] = useState<StaffMember[]>([])
+  const [staffError, setStaffError] = useState<string | null>(null)
   const [cart, setCart] = useState<Cart>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
@@ -53,7 +56,23 @@ export function PosPage() {
     let active = true
     setLoading(true)
     setError(null)
+    setStaffError(null)
     const { from, to } = dayRange(new Date())
+    // The team comes from its own endpoint: a failure here must not hide the
+    // catalogue, so it is reported next to the professional select.
+    fetchStaff(salonId)
+      .then((list) => {
+        if (active) {
+          setStaff(list)
+        }
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setStaffError(
+            err instanceof Error ? err.message : 'No pudimos cargar el equipo del salón.',
+          )
+        }
+      })
     Promise.all([fetchServices(salonId), fetchSales(salonId, from, to)])
       .then(([serviceList, saleList]) => {
         if (!active) {
@@ -207,6 +226,8 @@ export function PosPage() {
           <aside className="pos-checkout" aria-label="Cobro de la venta">
             <POSPanel
               cart={cart}
+              staff={staff}
+              staffError={staffError}
               onCartChange={setCart}
               onSubmit={handleSubmit}
               onCompleted={reload}

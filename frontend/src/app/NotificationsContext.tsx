@@ -13,7 +13,8 @@ import {
   unreadCount,
   type Notification,
 } from '../lib/notifications'
-import { RealtimeClient, type RealtimeStatus } from '../lib/realtime'
+import type { RealtimeStatus } from '../lib/realtime'
+import { useRealtime } from './RealtimeContext'
 import { useSalon } from './SalonContext'
 
 /** Human label for the live channel (bell panel and notifications page). */
@@ -45,10 +46,10 @@ const NotificationsContext = createContext<NotificationsContextValue | null>(nul
  */
 export function NotificationsProvider({ children }: { children: ReactNode }) {
   const { salonId } = useSalon()
+  const { status: realtimeStatus, subscribe } = useRealtime()
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('idle')
   const [reloadKey, setReloadKey] = useState(0)
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
@@ -90,9 +91,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     if (!salonId) {
       return
     }
-    const client = new RealtimeClient()
-    const offStatus = client.onStatus(setRealtimeStatus)
-    const offNotify = client.subscribe('notify', (event) => {
+    return subscribe('notify', (event) => {
       // The hub already isolates salons; this is a second guard on our side.
       if (event.salon_id !== '' && event.salon_id !== salonId) {
         return
@@ -106,13 +105,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         ...current.filter((item) => item.id !== notification.id),
       ])
     })
-    client.start()
-    return () => {
-      offNotify()
-      offStatus()
-      client.stop()
-    }
-  }, [salonId])
+  }, [salonId, subscribe])
 
   const markRead = useCallback(
     async (notificationId: string): Promise<void> => {

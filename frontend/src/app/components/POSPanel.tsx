@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { formatCents } from '../../lib/money'
+import type { StaffMember } from '../../lib/staff'
 import { changeQty, itemCount, lineSubtotal, removeItem, totalCents, type Cart } from '../../lib/posCart'
 import {
   SALE_METHODS,
@@ -10,6 +11,10 @@ import {
 
 type POSPanelProps = {
   cart: Cart
+  /** Team of the salon, from GET /salons/:id/staff. */
+  staff: StaffMember[]
+  /** Message of the failed /staff request, shown next to the select. */
+  staffError: string | null
   onCartChange: (cart: Cart) => void
   onSubmit: (input: SaleInput) => Promise<SaleOutcome>
   onCompleted: () => void
@@ -22,8 +27,16 @@ type POSPanelProps = {
  * amount that counts is the one the server returns. When the network is down the
  * parent queues the sale and returns a `queued` outcome instead.
  */
+const ROLE_LABEL: Record<StaffMember['role'], string> = {
+  owner: 'Dueña o dueño',
+  admin: 'Administración',
+  professional: 'Profesional',
+}
+
 export function POSPanel({
   cart,
+  staff,
+  staffError,
   onCartChange,
   onSubmit,
   onCompleted,
@@ -46,8 +59,8 @@ export function POSPanel({
       setError('Agrega al menos un servicio a la venta.')
       return
     }
-    if (professionalId.trim() === '') {
-      setError('La API exige el ID del profesional que atendió la venta.')
+    if (professionalId.trim() === '' || !staff.some((member) => member.id === professionalId)) {
+      setError('Elige al profesional que atendió la venta.')
       return
     }
     if (clientName.trim() === '') {
@@ -150,18 +163,30 @@ export function POSPanel({
           />
         </div>
         <div className="field">
-          <label htmlFor="pos-professional">ID del profesional</label>
-          <input
+          <label htmlFor="pos-professional">Profesional que atendió</label>
+          <select
             id="pos-professional"
-            className="input"
+            className="select"
             value={professionalId}
             onChange={(event) => setProfessionalId(event.target.value)}
-            autoComplete="off"
-            placeholder="prof-123"
-          />
-          <p className="field__hint">
-            La API de ventas lo exige y aún no hay endpoint para listar profesionales.
-          </p>
+            disabled={staff.length === 0}
+          >
+            <option value="">Elige a la persona</option>
+            {staff.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.name} · {ROLE_LABEL[member.role]}
+              </option>
+            ))}
+          </select>
+          {staffError ? (
+            <p className="field__error" role="alert">
+              No pudimos cargar el equipo: {staffError}
+            </p>
+          ) : staff.length === 0 ? (
+            <p className="field__hint">Cargando el equipo del salón…</p>
+          ) : (
+            <p className="field__hint">Lista del equipo del salón activo.</p>
+          )}
         </div>
         <div className="field">
           <label htmlFor="pos-method">Método de pago</label>

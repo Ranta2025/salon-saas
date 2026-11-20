@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { fetchDashboard } from '../lib/api'
 import { formatOccupancy, type DashboardMetrics } from '../lib/metrics'
 import { formatCents } from '../lib/money'
+import { useRealtime } from './RealtimeContext'
 import { useSalon } from './SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
 import { KPICard } from './components/KPICard'
@@ -9,12 +10,23 @@ import { PageHeader } from './components/PageHeader'
 
 export function DashboardPage() {
   const { salonId } = useSalon()
+  const { subscribe } = useRealtime()
   const [data, setData] = useState<DashboardMetrics | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
+
+  // Live events of the salon keep the numbers current without a manual refresh.
+  useEffect(() => {
+    const offBooking = subscribe('booking.created', () => reload())
+    const offSale = subscribe('sale.created', () => reload())
+    return () => {
+      offBooking()
+      offSale()
+    }
+  }, [subscribe, reload])
 
   useEffect(() => {
     if (!salonId) {
@@ -106,7 +118,7 @@ export function DashboardPage() {
           <section className="panel-card" aria-labelledby="top-services-title">
             <div className="panel-card__head">
               <h2 id="top-services-title">Servicios más vendidos hoy</h2>
-              <span className="panel-card__meta">Monto en centavos de la API</span>
+              <span className="panel-card__meta">Montos en pesos</span>
             </div>
             {data.top_services.length === 0 ? (
               <p className="muted">

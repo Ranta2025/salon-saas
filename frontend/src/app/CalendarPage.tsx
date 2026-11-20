@@ -7,6 +7,7 @@ import {
   toDateInputValue,
 } from '../lib/datetime'
 import type { Booking } from '../types'
+import { useRealtime } from './RealtimeContext'
 import { useSalon } from './SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
 import { PageHeader } from './components/PageHeader'
@@ -14,6 +15,7 @@ import { Timeline } from './components/Timeline'
 
 export function CalendarPage() {
   const { salonId } = useSalon()
+  const { subscribe } = useRealtime()
   const [dateValue, setDateValue] = useState(() => toDateInputValue(new Date()))
   const [bookings, setBookings] = useState<Booking[]>([])
   const [loadedDay, setLoadedDay] = useState<string | null>(null)
@@ -22,6 +24,16 @@ export function CalendarPage() {
   const [reloadKey, setReloadKey] = useState(0)
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
+
+  // A booking created or changed anywhere refreshes the visible day.
+  useEffect(() => {
+    const offCreated = subscribe('booking.created', () => reload())
+    const offUpdated = subscribe('booking.updated', () => reload())
+    return () => {
+      offCreated()
+      offUpdated()
+    }
+  }, [subscribe, reload])
 
   useEffect(() => {
     if (!salonId) {
