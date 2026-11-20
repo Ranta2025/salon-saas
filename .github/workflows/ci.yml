@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Un push nuevo a la misma rama cancela la corrida anterior.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ─── Backend: vet + tests unitarios (con detector de carreras) ─────────────
+  backend:
+    name: Backend (vet + unit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # La versión sale del propio go.mod: una sola fuente de verdad.
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      # Los tests del adaptador de imaging invocan cwebp (ver internal/adapters/imaging).
+      - name: Instalar webp
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends webp
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test -race
+        run: go test -race -count=1 ./...
+
+      - name: go build
+        run: go build ./...
+
+  # ─── Backend: integración real contra Postgres 16 ──────────────────────────
+  integration:
+    name: Backend (integración Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: salon
+          POSTGRES_PASSWORD: salon
+          POSTGRES_DB: salon
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U salon -d salon"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://salon:salon@localhost:5432/salon?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      # psql no viene garantizado en todos los runners; el cliente es liviano.
+      - name: Instalar cliente de Postgres
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
+      # Los IT asumen las migraciones aplicadas (main.migrate las corre en prod).
+      # La base del servicio arranca vacía, así que acá se aplican en orden.
+      - name: Aplicar migraciones
+        run: |
+          for f in migrations/*.sql; do
+            echo "migrate: aplicando $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      - name: Tests de integración
+        run: SALON_IT=1 go test -count=1 ./internal/adapters/postgres/
+
+  # ─── Frontend: typecheck + tests + build de producción ─────────────────────
+  frontend:
+    name: Frontend (tsc + tests + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Dependencias
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

@@ -1,92 +1,220 @@
-# Salón SaaS — Plataforma multi-tenant de gestión para salones y peluquerías
+# Salón SaaS — plataforma multi-tenant para salones y peluquerías
 
-## Visión
-SaaS web para que cada salón tenga su espacio propio: reservas online, calendario,
-clientes, catálogo de servicios, POS y cierre de caja, comisiones por barbero,
-notificaciones en tiempo real y página pública para reservar sin cuenta.
-PWA offline-first para recepción/caja.
+SaaS web donde cada salón tiene su espacio aislado: agenda de turnos, clientes
+con fotos, catálogo de servicios, POS y cierre de caja, notificaciones en tiempo
+real y una PWA offline-first para el mostrador. El objetivo del proyecto es
+mostrar decisiones de ingeniería reales (multi-tenancy, concurrencia, offline,
+puertos/adaptadores) y no un CRUD de juguete.
 
-Evolución web de `gestion-salon` (Flutter + sqflite offline) + realtime de `chatapp`
-(Gin + React). Pensado para portfolio senior: multi-tenancy real, concurrencia en
-reservas, sync offline, archivos, push, Docker y tests.
+## Arquitectura (hexagonal / puertos y adaptadores)
+
+La regla de dependencia va de afuera hacia adentro: `domain` no conoce frameworks
+ni bases de datos; `app` orquesta casos de uso contra interfaces (`ports`);
+`adapters` implementa esas interfaces; `cmd/api/main.go` es el único composition
+root que conoce a todos los adaptadores concretos.
+
+```
+        HTTP / WS (navegador, PWA)
+                 │
+                 ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ backend/ (Go + Gin)                                                  │
+│                                                                      │
+│  adapters/http ─────► app/ (casos de uso) ─────► ports/ (interfaces) │
+│  adapters/postgres ──►        │                        ▲             │
+│  adapters/realtime ──►        │                        │             │
+│  adapters/storage  ──►        │                        │             │
+│  adapters/imaging  ──►        │                        │             │
+│  adapters/security ──►        │                        │             │
+│                               └──────► domain/  (reglas puras)        │
+│                                                                      │
+│  cmd/api/main.go = composition root (elige adaptadores)              │
+└──────────────────────────────────────────────────────────────────────┘
+                 │                                    │
+                 ▼                                    ▼
+        Postgres 16 (fuente de verdad)      media/ (fotos, detrás de
+                                            ports.PhotoStorage)
+```
+
+Reglas transversales:
+
+- **Todo dato cuelga de `salon_id`.** Sin membership en el salón, la API
+  responde `403`; un recurso de otro salón responde `404` (no filtra existencia).
+- **Dinero en centavos enteros**, nunca floats.
+- **Reservas sin solape garantizado por la DB** (`EXCLUDE USING gist`), no solo
+  por un chequeo previo: dos requests concurrentes al mismo hueco terminan en
+  `409`, no en dos filas.
+- **Fotos fuera de la DB**: hoy un volumen local detrás de `ports.PhotoStorage`
+  (misma interfaz que usaría S3/MinIO; ver `docs/ops/minio.md`).
 
 ## Stack
-- Backend: Go + Gin + Postgres + Redis (cola + realtime vía websocket/SSE)
-- Frontend: React + TypeScript + Vite + PWA (offline para recepción)
-- Archivos: S3 compatible (MinIO en local)
-- Infra local: Docker Compose (api, web, postgres, redis, minio, mailpit)
-- Tests: `go test -race`, vitest, Playwright e2e
 
-## Arquitectura
+| Capa | Tecnología |
+|---|---|
+| Backend | Go + Gin, `pgx` (Postgres), JWT (`golang-jwt`), WebSocket (`gorilla/websocket`) |
+| Base de datos | Postgres 16 (migraciones SQL idempotentes en `backend/migrations/`) |
+| Frontend | React 18 + TypeScript + Vite, PWA offline-first |
+| Imágenes | `cwebp` (libwebp) detrás de `ports.ImageProcessor` |
+| Infra local | Docker Compose: api, web (nginx), postgres, redis, mailpit; MinIO opcional (`files`) |
+| Tests | `go test -race`, tests de integración con `SALON_IT=1`, tests del frontend con Node |
+| CI | GitHub Actions (`.github/workflows/ci.yml`) |
+
+## Cómo correrlo
+
+### Con Docker (stack completo)
+
+Requisitos: Docker + Docker Compose v2. Las imágenes del backend y del frontend
+se construyen localmente.
+
+Primero creá el archivo de variables con un secreto real (ver
+[docs/ops/environment.md](docs/ops/environment.md), incluye la versión para fish
+y para bash) y después:
+
+```bash
+make up          # docker compose up -d --build
 ```
-salon-saas/
-  backend/          # API Gin, un módulo por dominio en internal/
-    cmd/api/        # main.go, bootstrap
-    internal/
-      auth/         # login, JWT, refresh, roles
-      tenants/      # salones, miembros, roles por salón
-      services/     # servicios, combos, comisiones
-      bookings/     # reservas, calendario, anti-solape
-      clients/      # clientes, historial, fotos
-      pos/          # ventas, caja, ingresos/gastos
-      notifications/# websocket hub, push, email (mailpit local)
-      storage/      # subida a MinIO/S3
-  frontend/         # Vite React TS PWA
-    src/pages/      # login, dashboard, calendar, pos, clients, public-booking
-    src/components/ # UI compartida
-    src/lib/        # api client, auth, realtime, offline queue
-  docs/             # decisiones, API, roadmap
+
+Servicios y puertos por defecto (todos configurables en `.env`):
+
+| Servicio | URL / puerto host | Notas |
+|---|---|---|
+| `web` | http://localhost:8081 | build estático servido por nginx en `:80` |
+| `api` | http://localhost:8080 | `GET /health`, API en `/api/v1` |
+| `postgres` | `localhost:5432` | usuario/clave/base `salon` |
+| `redis` | `localhost:6379` | reservado para cola/realtime futura |
+| `mailpit` | http://localhost:8025 | SMTP en `localhost:1025` |
+| `minio` (opcional) | http://localhost:9001 | solo con `--profile files` |
+
+Comandos útiles: `make logs`, `make down`, `make test`, `make test-it`,
+`make lint`, `make web-build`.
+
+MinIO es **opcional** y no lo usa la app todavía (las fotos van al volumen
+local). Se levanta con:
+
+```bash
+docker compose --profile files up -d minio
 ```
 
-Multi-tenancy: todo dato cuelga de `salon_id`. Roles: `owner/admin/barbero/recepcion/cliente`.
-Regla dura: ninguna query sin `salon_id`, ningún archivo sin `salon_id`.
+Si la imagen no se puede bajar, `docs/ops/minio.md` lista las alternativas que
+sí resuelven y cómo apuntar `MINIO_IMAGE` a la que funcione.
 
-## Módulos (alcance grande)
-1. Auth + organizaciones + auditoría
-2. Salones: perfil, horarios, sillones/recursos, página pública `/b/:slug`
-3. Servicios + combos + duración + precio + comisión
-4. Reservas: calendario por barbero/recurso, anti-solape transaccional, recordatorios,
-   cancelación, no-show
-5. Clientes: fichas, historial, fotos, preferencias, búsqueda
-6. POS: venta de servicios/productos, cierre de caja, ingresos/gastos
-7. Dashboard: ocupación, ingresos, ranking barberos, exportación CSV/Excel/PDF
-8. Notificaciones: hub realtime + web-push + email + centro de notificaciones
-9. Adjuntos: fotos de trabajos, comprobantes (MinIO, variantes webp)
-10. Offline: cola de ventas/reservas en PWA que sincroniza con idempotencia
+### Sin Docker (API + Vite en el host)
 
-## Reglas de negocio clave
-- Una reserva no puede solaparse con otra del mismo barbero/recurso (constraint +
-  transacción; 409 ante carrera).
-- Cancelación hasta X horas antes (config por salón); después marca no-show.
-- Cierre de caja cuadra: `ventas - gastos = neto`; todo movimiento auditable.
-- Comisión del barbero = % del servicio a precio cobrado, no a precio lista.
-- Reserva pública crea cliente automáticamente si el teléfono no existe.
+Requisitos: Go (la versión de `backend/go.mod`), Node 22, Postgres 16 y `cwebp`
+(`apt install webp` o `brew install webp`).
+
+```bash
+# 1. Postgres (si no hay uno local, alcanza con el contenedor)
+docker compose up -d postgres redis
+
+# 2. API
+export DATABASE_URL='postgres://salon:salon@localhost:5432/salon?sslmode=disable'
+export JWT_SECRET='un-secreto-de-al-menos-32-caracteres'
+export MEDIA_DIR='./media'
+cd backend && go run ./cmd/api        # :8080, aplica migraciones al arrancar
+
+# 3. Frontend (otra terminal)
+cd frontend && npm ci && npm run dev  # :5173
+```
+
+La API lee la configuración del entorno; ver la tabla de variables más abajo.
+
+## Variables de entorno
+
+La plantilla con todas las variables está en
+[docs/ops/environment.md](docs/ops/environment.md); el archivo real lo creás
+vos y está ignorado por git.
+Compose arma `DATABASE_URL` solo con las piezas `POSTGRES_*`; las variables de
+"API" son las que lee el binario Go.
+
+| Variable | Default | Quién la usa | Para qué |
+|---|---|---|---|
+| `JWT_SECRET` | — (**obligatoria**) | api | firma de los JWT; mínimo 32 caracteres en `GIN_MODE=release` |
+| `DATABASE_URL` | `postgres://salon:salon@localhost:5432/salon?sslmode=disable` (código) | api | conexión a Postgres; en Compose se arma con las `POSTGRES_*` |
+| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:4173` (código) | api | orígenes permitidos, separados por coma |
+| `MEDIA_DIR` | `./media` (código) / `/media` (Compose) | api | carpeta de fotos del adaptador local |
+| `PORT` | `8080` | api | puerto HTTP dentro del contenedor |
+| `GIN_MODE` | `debug` | api | `debug` \| `release` \| `test` |
+| `VITE_API_URL` | `http://localhost:8080/api/v1` | frontend (build) | base de la API que se hornea en el build |
+| `API_PORT`, `WEB_PORT`, `POSTGRES_PORT`, `REDIS_PORT`, `MAILPIT_PORT`, `MAILPIT_SMTP_PORT` | `8080`, `8081`, `5432`, `6379`, `8025`, `1025` | Compose | puertos del host |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `salon` | Compose | credenciales de la base local |
+| `POSTGRES_IMAGE`, `REDIS_IMAGE`, `MAILPIT_IMAGE` | `postgres:16`, `redis:7`, `axllent/mailpit:latest` | Compose | imágenes de servicios |
+| `MINIO_IMAGE` | `pgsty/minio:latest` | Compose (`files`) | imagen de MinIO/S3 (ver `docs/ops/minio.md`) |
+| `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | `salonminio` / placeholder | Compose (`files`) | credenciales de MinIO |
+| `MINIO_PORT`, `MINIO_CONSOLE_PORT` | `9000`, `9001` | Compose (`files`) | API S3 y consola web |
+| `SALON_IT` | sin definir | tests | `1` habilita los tests de integración |
+
+## Tests
+
+```bash
+# Backend: unitarios + detector de carreras (no necesitan DB)
+make test                       # cd backend && go test -race -count=1 ./...
+
+# Backend: integración real contra Postgres (anti-solape, POS, clientes)
+# La base tiene que existir con las migraciones aplicadas (01..09).
+docker compose up -d postgres
+export DATABASE_URL='postgres://salon:salon@localhost:5432/salon?sslmode=disable'
+make test-it                    # SALON_IT=1 go test -count=1 ./internal/adapters/postgres/
+
+# Frontend: typecheck, tests y build
+cd frontend && npm ci && npx tsc --noEmit && npm test && npm run build
+```
+
+Los tests del adaptador de imágenes necesitan `cwebp` instalado (paquete `webp`
+en Debian/Ubuntu). El CI instala las dependencias y aplica las migraciones
+antes de correr la integración.
 
 ## API (v1, prefijo `/api/v1`)
-- `POST /auth/login|refresh|logout` — JWT corto + refresh rotado
-- `CRUD /salons/:id/...` — services, barbers, clients, bookings, sales, expenses
-- `GET /b/:slug/availability?date=` — huecos públicos
-- `POST /b/:slug/bookings` — reserva pública (rate-limit)
-- `WS /ws?token=` — eventos: booking.created/updated, sale.created, notify
 
-## Estado actual
-Esqueleto inicial: carpetas, `docker-compose.yml`, `Makefile`, backend `GET /health`,
-frontend Vite mínimo. Siguiente: auth + tenants + migraciones.
+Contrato detallado en `docs/api/`:
 
-## Cómo correr (local)
-```bash
-docker compose up -d --build
-go run ./backend/cmd/api      # :8080, GET /health
-cd frontend && npm i && npm run dev  # :5173
-```
+- `docs/api/pos-servicios.md` — servicios, ventas, cierre de caja, dashboard.
+- `docs/api/notificaciones-clientes.md` — notificaciones, websocket, clientes,
+  fotos y subida de adjuntos.
 
-## Roadmap
-- Fase 1: auth + tenants + migraciones + CRUD servicios/clientes
-- Fase 2: reservas con anti-solape + calendario + página pública
-- Fase 3: POS + caja + dashboard + reportes
-- Fase 4: realtime + push + adjuntos + PWA offline
-- Fase 5: hardening (rate-limit, auditoría, backups) + demo seed + deploy
+Resumen de grupos de rutas:
 
-## Qué demuestra (para entrevistas)
-Multi-tenancy, transacciones y carreras en reservas, RBAC, sync offline idempotente,
-subida de archivos, realtime, PWA, Docker, tests de backend + e2e.
+| Grupo | Rutas |
+|---|---|
+| Auth | `POST /auth/register`, `POST /auth/login` |
+| Tenants | `POST /salons`, `GET /me`, `GET /salons/:id/staff` |
+| Reservas | `GET/POST /salons/:id/bookings` |
+| Servicios | `GET/POST /salons/:id/services`, `PUT /salons/:id/services/:service_id` |
+| POS | `GET/POST /salons/:id/sales` |
+| Caja | `GET/POST /salons/:id/cash-closes` |
+| Dashboard | `GET /salons/:id/dashboard` |
+| Clientes | `GET/POST /salons/:id/clients`, fotos por cliente |
+| Público | `GET /public/salons/:slug`, `GET /photos/:pid` |
+| Realtime | `GET /ws?token=<jwt>` (eventos `booking.*`, `sale.created`, avisos) |
+
+Convenciones de error: `{"error":"<mensaje>"}` con `400` validación, `401` sin
+token, `403` sin permiso, `404` no existe, `409` duplicado/carrera.
+
+## Estado del proyecto
+
+Implementado y con tests:
+
+- Auth con JWT, multi-tenancy por membership y roles (`owner/admin/reception/professional/client`).
+- Reservas con anti-solape garantizado por Postgres (constraint `EXCLUDE` + transacción).
+- Catálogo de servicios, POS (ventas idempotentes) y cierre de caja con diferencia contable.
+- Notificaciones persistidas + hub realtime por websocket.
+- Clientes con ficha e historial, fotos normalizadas a WebP en almacenamiento local.
+- PWA offline-first con cola de operaciones e idempotencia (`client_op_id`).
+- Landing pública del salón con fotos, dashboard del día y shell responsive.
+- Docker Compose completo, CI y documentación de operación.
+
+Próximo (roadmap):
+
+1. Reserva pública real (`availability` + `POST /public/salons/:slug/bookings`).
+2. Editar / cancelar / marcar no-show de un turno desde el calendario.
+3. Gestión de equipo (altas de miembros y roles desde la UI).
+4. MinIO/S3 como adaptador de `ports.PhotoStorage` (hoy volumen local).
+
+## Licencia y atribución
+
+- Las **fotos de la landing** son de Wikimedia Commons, verificadas y con
+  licencia libre (CC0, CC BY 2.0 o CC BY-SA 4.0). Autor, licencia y URL de cada
+  archivo están en `docs/assets/images.md`; la landing muestra la atribución en
+  el pie, como exigen CC BY / CC BY-SA.
+- El **código** de este repositorio no declara una licencia todavía; hasta que
+  exista un archivo `LICENSE`, vale el derecho de autor por defecto.

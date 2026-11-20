@@ -1,10 +1,41 @@
-.PHONY: dev api web test
+# Salón SaaS — Makefile de atajos.
+#
+# Docker: `cp .env.example .env`, poner un JWT_SECRET y `make up`.
+# Sin Docker: levantar postgres/redis, exportar DATABASE_URL y `make api`.
+# Todos los targets corren desde la raíz del repo.
 
-api:
-	go run ./backend/cmd/api
+.PHONY: up down logs dev api test test-it lint web-build
 
-test:
-	go test -race ./backend/...
-
-dev:
+# ─── Docker Compose ──────────────────────────────────────────────────────────
+up:
 	docker compose up -d --build
+
+down:
+	docker compose down
+
+logs:
+	docker compose logs -f --tail=100
+
+# Alias histórico: mismo stack completo en segundo plano.
+dev: up
+
+# ─── Desarrollo sin Docker ───────────────────────────────────────────────────
+# Necesita DATABASE_URL (por defecto postgres local) y JWT_SECRET exportados.
+api:
+	cd backend && go run ./cmd/api
+
+# ─── Tests y linters ─────────────────────────────────────────────────────────
+test:
+	cd backend && go test -race -count=1 ./...
+
+# Integración real contra Postgres: requiere DATABASE_URL a una base con las
+# migraciones aplicadas y SALON_IT=1 (ver README).
+test-it:
+	cd backend && SALON_IT=1 go test -count=1 ./internal/adapters/postgres/
+
+lint:
+	cd backend && go vet ./...
+
+# ─── Frontend ────────────────────────────────────────────────────────────────
+web-build:
+	cd frontend && npm run build

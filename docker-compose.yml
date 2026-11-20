@@ -1,44 +1,112 @@
+# Salón SaaS — stack local completo.
+#
+#   crear el archivo de variables con JWT_SECRET (obligatorio): ver docs/ops/environment.md
+#   make up                 # o: docker compose up -d --build
+#
+# Puertos host por defecto: web 8081, api 8080, postgres 5432, redis 6379,
+# mailpit 8025 (UI) / 1025 (SMTP). Todo se puede pisar desde .env; los valores
+# por defecto existen para que `docker compose config` funcione sin .env.
+#
+# MinIO es opcional y vive detrás del perfil `files`. La imagen por defecto es
+# pgsty/minio (fork comunitario con la misma API S3); las imágenes oficiales
+# minio/minio y bitnami/minio ya no se publican. Alternativas y comandos en
+# docs/ops/minio.md:
+#   docker compose --profile files up -d minio
+
 services:
   api:
-    build: ./backend
-    ports:
-      - "8080:8080"
+    build:
+      context: ./backend
     environment:
-      - PORT=8080
-      - DATABASE_URL=postgres://salon:salon@postgres:5432/salon?sslmode=disable
-      - REDIS_URL=redis://redis:6379/0
+      # La DB se arma con las mismas piezas que usa el servicio postgres, así
+      # no hay dos fuentes de verdad para usuario/clave/base.
+      DATABASE_URL: postgres://${POSTGRES_USER:-salon}:${POSTGRES_PASSWORD:-salon}@postgres:5432/${POSTGRES_DB:-salon}?sslmode=disable
+      # Obligatorio a propósito: sin secreto el proceso no arranca.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8081,http://localhost:5173,http://localhost:4173}
+      MEDIA_DIR: ${MEDIA_DIR:-/media}
+      PORT: ${PORT:-8080}
+      GIN_MODE: ${GIN_MODE:-debug}
+    ports:
+      - "${API_PORT:-8080}:${PORT:-8080}"
+    volumes:
+      # Mismo target que MEDIA_DIR: si se cambia MEDIA_DIR, usar una ruta
+      # absoluta dentro del contenedor (el volumen la sigue).
+      - media:${MEDIA_DIR:-/media}
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   web:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        # Se hornea en el build: la imagen de producción es estática (nginx :80).
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8080/api/v1}
     ports:
-      - "5173:5173"
+      - "${WEB_PORT:-8081}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
   postgres:
-    image: postgres:16
-    ports:
-      - "5432:5432"
+    image: ${POSTGRES_IMAGE:-postgres:16}
     environment:
-      - POSTGRES_USER=salon
-      - POSTGRES_PASSWORD=salon
-      - POSTGRES_DB=salon
+      POSTGRES_USER: ${POSTGRES_USER:-salon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-salon}
+      POSTGRES_DB: ${POSTGRES_DB:-salon}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-salon} -d ${POSTGRES_DB:-salon}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
   redis:
-    image: redis:7
+    image: ${REDIS_IMAGE:-redis:7}
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
-  minio:
-    image: quay.io/minio/minio
-    profiles: ["files"] # opcional: archivos llegan en Fase 3; no bloquea Fase 1
-    command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   mailpit:
-    image: axllent/mailpit
+    image: ${MAILPIT_IMAGE:-axllent/mailpit:latest}
     ports:
-      - "8025:8025"
+      - "${MAILPIT_PORT:-8025}:8025"
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+    restart: unless-stopped
+
+  # Opcional: solo con --profile files. La imagen se elige con MINIO_IMAGE
+  # (ver docs/ops/minio.md para alternativas si el pull falla).
+  minio:
+    image: ${MINIO_IMAGE:-pgsty/minio:latest}
+    profiles: ["files"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-salon}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-salon-secret-123}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - miniodata:/data
+    restart: unless-stopped
 
 volumes:
   pgdata:
+  redisdata:
+  media:
+  miniodata:
