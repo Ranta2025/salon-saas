@@ -132,3 +132,103 @@ precache del service worker incluye los cuatro binarios.
   del websocket ante fallo de autenticación.
 - Revisión visual con `vite preview` y capturas headless a 375, 768 y 1280 px
   de la landing; panel a 390 y 1280 px cuando la API compila.
+
+## 10. Ronda 2 — reserva pública, turnos, equipo y ajustes (T7)
+
+Consume el contrato de la ronda 2 (`odd/tasks/fase5-hardening.md`). Sin
+dependencias nuevas y con la misma paleta de `src/styles/theme.css`.
+
+### 10.1 Reserva pública real (`src/landing/components/BookingCta.tsx`)
+
+- Se elige **servicio** (catálogo público ya cargado), **fecha** (`min` = hoy en
+  el calendario local del visitante, `toDateInputValue(new Date(), visitorTimeZone())`,
+  nunca `toISOString()`) y después los **horarios** de
+  `GET /public/salons/:slug/availability?date=&service_id=`.
+- Los huecos llegan en UTC y se muestran en la hora local del visitante con
+  `Intl.DateTimeFormat` (`hourCycle: 'h23'`). La interfaz dice la zona:
+  “Horarios del viernes, 20 de noviembre en tu hora local: Ciudad de México
+  (America/Mexico_City)”.
+- `groupSlotsByTime` agrupa por hora local de inicio (`10:00` + `10:00` de dos
+  profesionales = un solo botón). El POST no manda `professional_id`: el salón
+  asigna a quien esté libre, así que un hueco con dos especialistas no choca con
+  un 409 por haber elegido a la persona equivocada.
+- `POST /public/salons/:slug/bookings` con `BookingAttempt`: el `client_op_id`
+  se conserva en cada reintento (deduplicación del servidor) y sólo se renueva
+  después de una reserva confirmada, para que la siguiente cita sea otra.
+- Confirmación clara (fecha, hora, servicio, zona horaria y folio) con enlace
+  secundario “Avisar también por WhatsApp”; el enlace de WhatsApp también queda
+  en la letra chica del formulario para quien prefiera ese canal.
+- Errores: `describeBookingError` distingue **409** (el hueco se acaba de
+  ocupar: mensaje, recarga de horarios y datos del formulario intactos),
+  **429** (demasiadas solicitudes), **400/422** (mensaje del servidor) y fallo
+  de red. Si `/availability` falla, el botón “Reintentar” vuelve a consultar y
+  WhatsApp sigue disponible.
+- Accesibilidad: `label` en cada campo, `fieldset`/`legend` por paso, botones de
+  horario con `aria-pressed` y `aria-label` (“10:00, dos especialistas
+  disponibles”), región `role="status"` que anuncia el conteo y el foco se mueve
+  al primer horario cuando la lista cambia (y al título de la confirmación al
+  reservar).
+
+### 10.2 Acciones sobre turnos (`CalendarPage`, `Timeline`, `BookingDetail`)
+
+- Cada cita del calendario (bloque del timeline y fila de la agenda móvil) es un
+  botón operable por teclado que abre el panel de acciones; el bloque muestra
+  hora, cliente y su **badge de estado** (`Agendada`, `Atendida`, `Cancelada`,
+  `No asistió`).
+- El panel permite **cancelar** (con confirmación en línea), **marcar que no
+  asistió**, **marcar como atendida** y **reprogramar** (fecha, hora y
+  profesional desde `/staff`) vía `PATCH /salons/:id/bookings/:bid`
+  (`src/lib/bookingActions.ts`). El cambio conserva la duración del turno
+  (`reschedulePayload`) y sólo se ofrecen acciones válidas para el estado.
+- El calendario pide `/salons/:id/settings` para dibujar con la zona del salón
+  (respaldo `TIME_ZONE`) y usa los nombres del equipo en los encabezados de
+  columna.
+- `relativeRole`: owner/admin actúan sobre cualquier cita; professional sólo
+  sobre las propias (`canManageBooking` con el id de `/me`). En el resto el
+  panel muestra “Solo la administración del salón o la profesional asignada…”.
+- `booking.updated` refresca el día visible (además de `booking.created`).
+
+### 10.3 Equipo (`/panel/equipo`) y ajustes (`/panel/ajustes`)
+
+- `TeamPage`: lista `GET /members`, agrega por correo (normalizado a minúsculas)
+  y rol con `POST`, quita con confirmación `DELETE` y muestra el mensaje del
+  servidor (“todavía no tiene cuenta”, “no se puede quitar al último owner”).
+  Sólo la dueña/dueño puede asignar administración (`canAssignRole`).
+- `SettingsPage`: zona horaria (lista de IANA de Latinoamérica, España y UTC),
+  apertura, cierre y paso de turnos (15/30/60) con `GET/PUT /settings`.
+  `validateSettings` reporta el campo exacto (formato `HH:MM`, cierre posterior
+  a la apertura, paso permitido, zona válida) y el guardado muestra confirmación.
+- Ambas páginas se guardan por rol antes de pedir nada: un professional ve una
+  explicación en lugar de un 403. Si el 403 llega igual, `friendlyApiMessage`
+  traduce el código a una frase útil (`src/lib/api.ts`).
+
+### 10.4 Fotos firmadas
+
+- `normalizeClientPhoto` usa la `url` tal como llega (la firma se resuelve
+  contra `VITE_API_URL`, sin reconstruirla). Si una imagen falla al cargar
+  (`onError`), `ClientDetailPage` vuelve a pedir el listado **una vez** para
+  obtener firmas nuevas y evita un bucle de recargas.
+
+### 10.5 Navegación y roles
+
+- `AppShell` filtra las entradas `managerOnly` (`Equipo`, `Ajustes`) con el rol
+  del salón activo (`activeRole`). Mientras `/me` no responde las entradas
+  quedan visibles y la página explica el 403 en vez de romperse.
+- La navegación móvil pasa a `repeat(auto-fit, minmax(5.4rem, 1fr))`: 8 entradas
+  visibles, sin recortes ni scroll horizontal (verificado a 375 px).
+
+### 10.6 Verificación de la ronda 2
+
+- `npx tsc --noEmit`, `npm test` (140 tests, node --test) y `npm run build` en
+  verde.
+- TDD en `src/lib`: `publicBooking.test.ts` (normalización, agrupación por hora
+  local, formato, 409/429, reutilización del `client_op_id`), `permissions.test.ts`,
+  `settings.test.ts`, `members.test.ts`, `bookingActions.test.ts`, más
+  `toDateTimeIso`/`addMinutesToIso` en `datetime.test.ts` y
+  `friendlyApiMessage` en `api.test.ts`.
+- `vite preview` (proxy `/api` agregado a `preview` para revisar el build contra
+  una API local sin recompilar con `VITE_API_URL`) + una API simulada en
+  `/tmp/fase5-shot/server.mjs` y capturas Chromium headless a 375 y 1280 px de
+  la reserva (formulario, horarios, confirmación, 409), del calendario con
+  acciones (owner y professional), de equipo, de ajustes y de la navegación
+  móvil con las ocho entradas.

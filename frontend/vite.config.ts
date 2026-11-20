@@ -26,6 +26,16 @@ export default defineConfig(({ mode }) => {
     preview: {
       host: true,
       port: 4173,
+      // `vite preview` serves the built bundle; proxying /api keeps the same
+      // same-origin behaviour as dev so the build can be reviewed against a
+      // local API without rebuilding with VITE_API_URL.
+      proxy: {
+        '/api': {
+          target: proxyTarget,
+          changeOrigin: true,
+          ws: true,
+        },
+      },
     },
   }
 })

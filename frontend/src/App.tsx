@@ -10,6 +10,8 @@ import { NotificationsPage } from './app/NotificationsPage'
 import { PosPage } from './app/PosPage'
 import { RequireAuth } from './app/RequireAuth'
 import { ServicesPage } from './app/ServicesPage'
+import { SettingsPage } from './app/SettingsPage'
+import { TeamPage } from './app/TeamPage'
 import { LandingPage } from './landing/LandingPage'
 import { UNAUTHORIZED_EVENT } from './lib/api'
 import { purgeOfflineApiCache } from './lib/pwa'
@@ -71,6 +73,8 @@ export function App() {
           <Route path="clientes" element={<ClientsPage />} />
           <Route path="clientes/:clientId" element={<ClientDetailPage />} />
           <Route path="avisos" element={<NotificationsPage />} />
+          <Route path="equipo" element={<TeamPage />} />
+          <Route path="ajustes" element={<SettingsPage />} />
         </Route>
 
         {/* Old shell routes from the scaffold keep working. */}
