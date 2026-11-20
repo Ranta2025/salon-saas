@@ -47,6 +47,22 @@ type StaffLister interface {
 	ListStaff(salonID string) ([]domain.StaffMember, error)
 }
 
+// MemberAdminRepository: pantalla de equipo (listar con nombre/email, quitar y
+// contar por rol). Va aparte de MembershipRepository (ISP): los repos de
+// reservas o ventas no cargan con la administración del equipo.
+type MemberAdminRepository interface {
+	ListMembers(salonID string) ([]domain.Member, error)
+	DeleteMember(userID, salonID string) error
+	CountRole(salonID string, role domain.Role) (int, error)
+}
+
+// SalonSettingsRepository: configuración operativa del salón (zona horaria,
+// horario y paso de turnos). La lee la reserva pública y el cierre de caja.
+type SalonSettingsRepository interface {
+	Settings(salonID string) (domain.SalonSettings, error)
+	SaveSettings(s domain.SalonSettings) error
+}
+
 // --- Seguridad (puertos de salida hacia crypto/tokens) ---
 
 type PasswordHasher interface {
@@ -69,6 +85,12 @@ type BookingRepository interface {
 	Save(b domain.Booking) error
 	// FindByClientOpID busca una reserva ya registrada por su operation id.
 	FindByClientOpID(salonID, clientOpID string) (domain.Booking, error)
+	// FindByID resuelve un turno scopeado por salón: el id de otro tenant no
+	// existe (404), que es la autorización del PATCH.
+	FindByID(salonID, id string) (domain.Booking, error)
+	// Update persiste los cambios de un turno existente (estado y horario).
+	// La EXCLUDE de la DB sigue siendo el árbitro final del solape.
+	Update(b domain.Booking) error
 	// FindOverlapping trae activas del profesional que pisan [start,end).
 	// El caso de uso la usa como filtro amable; la EXCLUDE de la DB decide.
 	FindOverlapping(salonID, professionalID string, start, end time.Time) ([]domain.Booking, error)
@@ -190,14 +212,24 @@ type ClientRepository interface {
 	PhotoByID(id string) (domain.ClientPhoto, error)
 }
 
-// PhotoStorage guarda los binarios fuera de la DB. Hoy el adaptador es el
-// filesystem local; la interfaz es la misma que usaría S3/MinIO, así que pasar
-// de uno a otro es una línea en el composition root.
+// PhotoStorage guarda los binarios fuera de la DB. El adaptador puede ser el
+// filesystem local o S3/MinIO (se elige por S3_ENDPOINT en el composition
+// root); el puerto es el mismo.
 type PhotoStorage interface {
 	// Put guarda data bajo key y devuelve la ruta estable a persistir en la DB.
 	Put(key string, data []byte, contentType string) (storedPath string, err error)
 	Get(path string) ([]byte, error)
 	Delete(path string) error
+}
+
+// PhotoURLSigner firma la URL de una foto con vencimiento (HMAC). El navegador
+// usa la url tal cual en <img src> y no puede mandar Authorization; la firma es
+// la capability temporal (24 h).
+type PhotoURLSigner interface {
+	// Sign devuelve la firma (texto seguro para URL) de photoID con ese vencimiento.
+	Sign(photoID string, expiresUnix int64) string
+	// Verify dice si la firma es válida y no venció.
+	Verify(photoID string, expiresUnix int64, sig string) bool
 }
 
 // ImageProcessor normaliza la subida: devuelve la variante que se persiste

@@ -37,6 +37,17 @@ func NewMembership(userID, salonID string, role Role) (Membership, error) {
 	}
 }
 
+// Valid dice si el rol es uno de los conocidos. Sirve para distinguir "rol que
+// no existe" (400) de "rol que no podés asignar" (403).
+func (r Role) Valid() bool {
+	switch r {
+	case RoleOwner, RoleAdmin, RoleProfessional, RoleReception, RoleClient:
+		return true
+	default:
+		return false
+	}
+}
+
 // CanManage cataloga quién puede configurar el salón (precios, horarios, personal).
 func (m Membership) CanManage() bool {
 	return m.Role == RoleOwner || m.Role == RoleAdmin

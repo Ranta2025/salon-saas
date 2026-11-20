@@ -78,6 +78,45 @@ func NewBooking(salonID, professionalID, clientName, clientPhone string, startsA
 // servidor. Medio minuto no cambia nada y evita rechazar un turno "ahora".
 const bookingClockSkew = 30 * time.Second
 
+// SetStatus devuelve la reserva con el estado nuevo. Solo los estados de
+// cierre de un turno se pueden fijar por la API: cancelada, no se presentó o
+// hecha. Volver a 'booked' reabriría un hueco ya liberado sin pasar por la
+// garantía anti-solape, así que no se admite.
+func (b Booking) SetStatus(status BookingStatus) (Booking, error) {
+	switch status {
+	case BookingCancelled, BookingNoShow, BookingDone:
+		b.Status = status
+		return b, nil
+	default:
+		return Booking{}, fmt.Errorf("%w: estado inválido %q (usá cancelled, no_show o done)", ErrValidation, status)
+	}
+}
+
+// Reschedule devuelve la reserva movida de horario y/o de profesional,
+// revalidando las mismas reglas que una reserva nueva (fin posterior al inicio,
+// duración máxima y no en el pasado). professionalID vacío = se queda con el
+// actual. No cambia identidad, cliente ni estado: mover un turno no lo reabre.
+func (b Booking) Reschedule(professionalID string, startsAt, endsAt time.Time) (Booking, error) {
+	if p := strings.TrimSpace(professionalID); p != "" {
+		b.ProfessionalID = p
+	}
+	if b.ProfessionalID == "" {
+		return Booking{}, fmt.Errorf("%w: el profesional es obligatorio", ErrValidation)
+	}
+	if !endsAt.After(startsAt) {
+		return Booking{}, fmt.Errorf("%w: el fin debe ser posterior al inicio", ErrValidation)
+	}
+	if endsAt.Sub(startsAt) > MaxBookingDuration {
+		return Booking{}, fmt.Errorf("%w: un turno no puede durar más de %d horas", ErrValidation, int(MaxBookingDuration.Hours()))
+	}
+	if startsAt.Before(time.Now().UTC().Add(-bookingClockSkew)) {
+		return Booking{}, fmt.Errorf("%w: no se puede agendar un turno en el pasado", ErrValidation)
+	}
+	b.StartsAt = startsAt.UTC()
+	b.EndsAt = endsAt.UTC()
+	return b, nil
+}
+
 // Overlaps dice si dos reservas del MISMO profesional se pisan.
 // Se usa en tests y en el caso de uso (filtro rápido antes de la DB).
 func (b Booking) Overlaps(o Booking) bool {
