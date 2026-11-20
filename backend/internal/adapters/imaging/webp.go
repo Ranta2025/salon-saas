@@ -10,6 +10,7 @@ package imaging
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"image"
@@ -20,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"salon-saas/internal/domain"
 )
@@ -42,6 +44,13 @@ func (w WebP) ToWebP(data []byte) ([]byte, int, int, error) {
 	width, height, err := imageDims(data)
 	if err != nil {
 		return nil, 0, 0, err
+	}
+	// Guarda anti-bomba ANTES de decodificar: imageDims solo leyó la cabecera,
+	// así que un archivo chico con dimensiones mentirosas se frena acá sin
+	// gastar memoria ni CPU. int64 porque 100000*100000 desborda un int32.
+	if int64(width)*int64(height) > domain.MaxPhotoPixels {
+		return nil, 0, 0, fmt.Errorf("%w: la imagen declara %dx%d píxeles (máximo %d)",
+			domain.ErrValidation, width, height, domain.MaxPhotoPixels)
 	}
 	tw, th := fit(width, height, w.maxSide())
 	out, err := w.convert(data, tw, th)
@@ -98,7 +107,11 @@ func (w WebP) convert(data []byte, width, height int) ([]byte, error) {
 	args = append(args, "-resize", fmt.Sprint(width), fmt.Sprint(height))
 	args = append(args, src, "-o", dst)
 
-	cmd := exec.Command(w.binary(), args...)
+	// Timeout de conversión: si cwebp se cuelga (archivo raro, disco lento),
+	// el request muere en vez de apilar workers. El defer de arriba borra el temporal.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, w.binary(), args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

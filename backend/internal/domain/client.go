@@ -42,9 +42,13 @@ func NewClient(salonID, name, phone, notes string) (Client, error) {
 const (
 	MaxPhotoBytes = 8 << 20 // 8 MB de subida
 	MaxPhotoSide  = 1280    // lado mayor de la variante que se guarda
-	PhotoTypeWebP = "image/webp"
-	PhotoTypeJPEG = "image/jpeg"
-	PhotoTypePNG  = "image/png"
+	// MaxPhotoPixels acota la BOMBA DE DESCOMPRESIÓN: un PNG/JPEG de pocos KB
+	// puede declarar dimensiones gigantes (100000x100000) y obligar al decoder
+	// a reservar gigabytes. 25 MP sobran para fotos de salón de verdad.
+	MaxPhotoPixels = 25_000_000
+	PhotoTypeWebP  = "image/webp"
+	PhotoTypeJPEG  = "image/jpeg"
+	PhotoTypePNG   = "image/png"
 )
 
 // PhotoTypeAllowed dice si el tipo de archivo se acepta como adjunto.
