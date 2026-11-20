@@ -24,6 +24,9 @@ func NewSalon(name, slug string) (Salon, error) {
 	if name == "" {
 		return Salon{}, fmt.Errorf("%w: nombre del salón vacío", ErrValidation)
 	}
+	if err := validateText("el nombre del salón", name, MaxTextName); err != nil {
+		return Salon{}, err
+	}
 	if !slugRe.MatchString(slug) {
 		return Salon{}, fmt.Errorf("%w: slug inválido (minúsculas, números y guiones)", ErrValidation)
 	}

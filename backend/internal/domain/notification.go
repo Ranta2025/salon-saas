@@ -51,6 +51,13 @@ func NewNotification(salonID, userID, title, body string, kind NotificationKind)
 	if title == "" {
 		return Notification{}, fmt.Errorf("%w: el título es obligatorio", ErrValidation)
 	}
+	if err := validateText("el título", title, MaxTextTitle); err != nil {
+		return Notification{}, err
+	}
+	body = strings.TrimSpace(body)
+	if err := validateText("el cuerpo del aviso", body, MaxTextBody); err != nil {
+		return Notification{}, err
+	}
 	if !kind.Valid() {
 		return Notification{}, fmt.Errorf("%w: tipo de aviso desconocido %q", ErrValidation, kind)
 	}
@@ -59,7 +66,7 @@ func NewNotification(salonID, userID, title, body string, kind NotificationKind)
 		SalonID:   salonID,
 		UserID:    strings.TrimSpace(userID),
 		Title:     title,
-		Body:      strings.TrimSpace(body),
+		Body:      body,
 		Kind:      kind,
 		CreatedAt: time.Now().UTC(),
 	}, nil

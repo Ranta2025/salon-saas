@@ -69,22 +69,18 @@ func NewSale(salonID, professionalID, clientName string, items []SaleItem, metho
 	if clientName == "" {
 		return Sale{}, fmt.Errorf("%w: el nombre del cliente es obligatorio", ErrValidation)
 	}
-	if len(items) == 0 {
-		return Sale{}, fmt.Errorf("%w: la venta necesita al menos un ítem", ErrValidation)
+	if err := validateText("el nombre del cliente", clientName, MaxTextName); err != nil {
+		return Sale{}, err
 	}
 	if !method.Valid() {
 		return Sale{}, fmt.Errorf("%w: método de pago desconocido %q", ErrValidation, method)
 	}
-	for _, it := range items {
-		if strings.TrimSpace(it.ServiceID) == "" {
-			return Sale{}, fmt.Errorf("%w: cada ítem necesita service_id", ErrValidation)
-		}
-		if it.Qty < 1 {
-			return Sale{}, fmt.Errorf("%w: la cantidad debe ser al menos 1", ErrValidation)
-		}
-		if it.UnitPriceCents < 0 {
-			return Sale{}, fmt.Errorf("%w: el precio unitario no puede ser negativo", ErrValidation)
-		}
+	if err := ValidateSaleItems(items); err != nil {
+		return Sale{}, err
+	}
+	total, err := totalCents(items)
+	if err != nil {
+		return Sale{}, err
 	}
 	return Sale{
 		ID:             NewID(),
@@ -92,19 +88,57 @@ func NewSale(salonID, professionalID, clientName string, items []SaleItem, metho
 		ProfessionalID: professionalID,
 		ClientName:     clientName,
 		Items:          items,
-		TotalCents:     totalCents(items),
+		TotalCents:     total,
 		Method:         method,
 		CreatedAt:      time.Now().UTC(),
 	}, nil
 }
 
-// totalCents suma los subtotales en centavos (sin floats, sin redondeos).
-func totalCents(items []SaleItem) int {
-	total := 0
-	for _, it := range items {
-		total += it.SubtotalCents()
+// ValidateSaleItems valida la FORMA y los límites de las líneas, sin construir
+// la entidad. Se usa para rechazar el pedido crudo del cliente (precio
+// manipulado, cantidades absurdas) antes de reemplazar los precios por los del
+// catálogo: el pedido se valida tal como llegó, y el cobro se hace con el precio
+// del salón.
+func ValidateSaleItems(items []SaleItem) error {
+	if len(items) == 0 {
+		return fmt.Errorf("%w: la venta necesita al menos un ítem", ErrValidation)
 	}
-	return total
+	if len(items) > MaxSaleItems {
+		return fmt.Errorf("%w: la venta no puede tener más de %d ítems", ErrValidation, MaxSaleItems)
+	}
+	for _, it := range items {
+		if strings.TrimSpace(it.ServiceID) == "" {
+			return fmt.Errorf("%w: cada ítem necesita service_id", ErrValidation)
+		}
+		if it.Qty < 1 {
+			return fmt.Errorf("%w: la cantidad debe ser al menos 1", ErrValidation)
+		}
+		if it.Qty > MaxSaleItemQty {
+			return fmt.Errorf("%w: la cantidad no puede superar %d", ErrValidation, MaxSaleItemQty)
+		}
+		if it.UnitPriceCents < 0 {
+			return fmt.Errorf("%w: el precio unitario no puede ser negativo", ErrValidation)
+		}
+		if it.UnitPriceCents > MaxSaleUnitPriceCents {
+			return fmt.Errorf("%w: el precio unitario no puede superar %d centavos", ErrValidation, MaxSaleUnitPriceCents)
+		}
+	}
+	return nil
+}
+
+// totalCents suma los subtotales en centavos (sin floats, sin redondeos) con
+// chequeo de overflow: el total tiene que caber en el límite que soportan la DB
+// y las sumas del dashboard/cierre. Un total gigante no es una venta grande: es
+// un pedido roto, y se rechaza antes de escribir.
+func totalCents(items []SaleItem) (int, error) {
+	total := int64(0)
+	for _, it := range items {
+		total += int64(it.Qty) * int64(it.UnitPriceCents)
+		if total > MaxSaleTotalCents {
+			return 0, fmt.Errorf("%w: el total de la venta supera el máximo permitido (%d centavos)", ErrValidation, MaxSaleTotalCents)
+		}
+	}
+	return int(total), nil
 }
 
 // TopService es un agregado de lectura del dashboard: el ranking de servicios

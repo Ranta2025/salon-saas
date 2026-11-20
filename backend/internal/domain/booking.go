@@ -44,8 +44,22 @@ func NewBooking(salonID, professionalID, clientName, clientPhone string, startsA
 	if clientName == "" {
 		return Booking{}, fmt.Errorf("%w: nombre del cliente vacío", ErrValidation)
 	}
+	if err := validateText("el nombre del cliente", clientName, MaxTextName); err != nil {
+		return Booking{}, err
+	}
+	if err := validateText("el teléfono", strings.TrimSpace(clientPhone), MaxTextPhone); err != nil {
+		return Booking{}, err
+	}
 	if !endsAt.After(startsAt) {
 		return Booking{}, fmt.Errorf("%w: el fin debe ser posterior al inicio", ErrValidation)
+	}
+	// B-18: un turno de más de medio día es un error de tipeo; y no se agenda
+	// hacia atrás (el calendario no reescribe el pasado).
+	if endsAt.Sub(startsAt) > MaxBookingDuration {
+		return Booking{}, fmt.Errorf("%w: un turno no puede durar más de %d horas", ErrValidation, int(MaxBookingDuration.Hours()))
+	}
+	if startsAt.Before(time.Now().UTC().Add(-bookingClockSkew)) {
+		return Booking{}, fmt.Errorf("%w: no se puede agendar un turno en el pasado", ErrValidation)
 	}
 	return Booking{
 		ID:             NewID(),
@@ -59,6 +73,10 @@ func NewBooking(salonID, professionalID, clientName, clientPhone string, startsA
 		CreatedAt:      time.Now().UTC(),
 	}, nil
 }
+
+// bookingClockSkew: tolerancia para relojes desfasados entre el navegador y el
+// servidor. Medio minuto no cambia nada y evita rechazar un turno "ahora".
+const bookingClockSkew = 30 * time.Second
 
 // Overlaps dice si dos reservas del MISMO profesional se pisan.
 // Se usa en tests y en el caso de uso (filtro rápido antes de la DB).

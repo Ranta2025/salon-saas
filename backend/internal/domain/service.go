@@ -60,6 +60,9 @@ func validateServiceFields(salonID, name string, durationMin, priceCents, commis
 	if name == "" {
 		return "", fmt.Errorf("%w: el nombre del servicio es obligatorio", ErrValidation)
 	}
+	if err := validateText("el nombre del servicio", name, MaxTextName); err != nil {
+		return "", err
+	}
 	if durationMin <= 0 {
 		return "", fmt.Errorf("%w: la duración debe ser mayor a 0 minutos", ErrValidation)
 	}

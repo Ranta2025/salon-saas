@@ -21,12 +21,18 @@ type User struct {
 // responsabilidad del adaptador security, no del dominio).
 func NewUser(name, email, passwordHash string) (User, error) {
 	name = strings.TrimSpace(name)
-	email = strings.TrimSpace(strings.ToLower(email))
+	email = NormalizeEmail(email)
 	if name == "" {
 		return User{}, fmt.Errorf("%w: nombre vacío", ErrValidation)
 	}
+	if err := validateText("el nombre", name, MaxTextName); err != nil {
+		return User{}, err
+	}
 	if !strings.Contains(email, "@") || len(email) < 5 {
 		return User{}, fmt.Errorf("%w: email inválido", ErrValidation)
+	}
+	if len(email) > MaxTextEmail {
+		return User{}, fmt.Errorf("%w: el email no puede superar los %d caracteres", ErrValidation, MaxTextEmail)
 	}
 	if passwordHash == "" {
 		return User{}, fmt.Errorf("%w: falta hash de clave", ErrValidation)

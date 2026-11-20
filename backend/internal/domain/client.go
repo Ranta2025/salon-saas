@@ -27,12 +27,23 @@ func NewClient(salonID, name, phone, notes string) (Client, error) {
 	if name == "" {
 		return Client{}, fmt.Errorf("%w: el nombre del cliente es obligatorio", ErrValidation)
 	}
+	if err := validateText("el nombre del cliente", name, MaxTextName); err != nil {
+		return Client{}, err
+	}
+	phone = strings.TrimSpace(phone)
+	if err := validateText("el teléfono", phone, MaxTextPhone); err != nil {
+		return Client{}, err
+	}
+	notes = strings.TrimSpace(notes)
+	if err := validateText("las notas", notes, MaxTextNotes); err != nil {
+		return Client{}, err
+	}
 	return Client{
 		ID:        NewID(),
 		SalonID:   salonID,
 		Name:      name,
-		Phone:     strings.TrimSpace(phone),
-		Notes:     strings.TrimSpace(notes),
+		Phone:     phone,
+		Notes:     notes,
 		CreatedAt: time.Now().UTC(),
 	}, nil
 }

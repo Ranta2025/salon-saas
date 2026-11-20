@@ -32,6 +32,11 @@ func NewCashClose(salonID string, openedAt, closedAt time.Time, systemCashCents,
 	if systemCashCents < 0 || countedCents < 0 {
 		return CashClose{}, fmt.Errorf("%w: los montos de caja no pueden ser negativos", ErrValidation)
 	}
+	// Mismo techo que una venta: las columnas de la DB son INTEGER y una suma
+	// fuera de rango rompe el cierre en vez de avisar.
+	if systemCashCents > MaxCashCents || countedCents > MaxCashCents {
+		return CashClose{}, fmt.Errorf("%w: los montos de caja no pueden superar %d centavos", ErrValidation, MaxCashCents)
+	}
 	return CashClose{
 		ID:              NewID(),
 		SalonID:         salonID,

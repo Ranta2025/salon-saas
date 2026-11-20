@@ -14,11 +14,16 @@ import (
 type UserRepository interface {
 	Save(u domain.User) error
 	FindByEmail(email string) (domain.User, error)
+	// FindByID resuelve el usuario del token (GET /me no tiene otro dato).
+	FindByID(id string) (domain.User, error)
 }
 
 type SalonRepository interface {
 	Save(s domain.Salon) error
 	FindBySlug(slug string) (domain.Salon, error)
+	// FindByID resuelve el salón de una membership (GET /me devuelve nombre y
+	// slug de cada salón del usuario).
+	FindByID(id string) (domain.Salon, error)
 }
 
 type MembershipRepository interface {
@@ -28,7 +33,7 @@ type MembershipRepository interface {
 
 // MembershipLister: los salones a los que pertenece un usuario. Es el puerto
 // de las features que solo reciben el JWT y no un :salon_id en la ruta: el hub
-// de websockets (rooms por salón) y "marcar notificación leída".
+// de websockets (rooms por salón), "marcar notificación leída" y GET /me.
 //
 // Va aparte de MembershipRepository (ISP): los repos de reservas o ventas no
 // tienen por qué implementar listados que nadie les pide.
@@ -36,11 +41,21 @@ type MembershipLister interface {
 	ListByUser(userID string) ([]domain.Membership, error)
 }
 
+// StaffLister: el personal que atiende en el salón, con nombre (memberships
+// cruzado con users). Es la fuente del select de profesional del frontend.
+type StaffLister interface {
+	ListStaff(salonID string) ([]domain.StaffMember, error)
+}
+
 // --- Seguridad (puertos de salida hacia crypto/tokens) ---
 
 type PasswordHasher interface {
 	Hash(plain string) (string, error)
 	Compare(hash, plain string) bool
+	// DummyCompare gasta el tiempo de un Compare real y siempre devuelve false.
+	// Lo usa el login cuando el usuario no existe: sin eso, el tiempo de
+	// respuesta delata qué emails están registrados.
+	DummyCompare(plain string) bool
 }
 
 type TokenIssuer interface {
@@ -93,6 +108,23 @@ type CashCloseRepository interface {
 	// marca la apertura del turno actual.
 	Last(salonID string) (domain.CashClose, error)
 	List(salonID string) ([]domain.CashClose, error)
+}
+
+// CashCloseTx es la vista de la caja DENTRO de una transacción con lock por
+// salón: el cierre tiene que leer el último cierre, sumar el efectivo de la
+// ventana y guardar el cierre nuevo viendo siempre lo mismo.
+type CashCloseTx interface {
+	CashCloseRepository
+	// SumCashCents es la suma de efectivo de las ventas en [from,to).
+	SumCashCents(salonID string, from, to time.Time) (int, error)
+}
+
+// SalonTxRunner ejecuta una función dentro de una transacción con un lock por
+// salón (pg_advisory_xact_lock). Sin esto, dos cierres concurrentes leen el
+// mismo "último cierre", suman la MISMA ventana de efectivo y el salón cierra
+// dos veces lo mismo: la caja queda contada al doble.
+type SalonTxRunner interface {
+	InSalonTx(salonID string, fn func(tx CashCloseTx) error) error
 }
 
 // --- Agregados de lectura para el dashboard ---
