@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/adapters/security"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 )
 
@@ -65,23 +63,19 @@ func (f *mm) Find(u, s string) (domain.Membership, error) {
 	return m, nil
 }
 
-func testRouter() *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	users, salons, mems := &mu{}, &ms{}, &mm{}
-	hasher := security.BcryptHasher{}
-	tokens := security.JWTIssuer{Secret: "test-secret"}
-	authSvc := app.AuthService{Users: users, Hasher: hasher, Tokens: tokens}
-	tenSvc := app.TenantService{Salons: salons, Memberships: mems}
-	bookSvc := app.BookingService{Bookings: &mb{}, Memberships: mems}
-	r := gin.New()
-	RegisterRoutes(r, Deps{
-		Auth:        AuthHandler{Auth: authSvc},
-		Tenants:     TenantsHandler{Tenants: tenSvc, Memberships: mems},
-		Bookings:    BookingHandler{Bookings: bookSvc, Memberships: mems},
-		TokenIssuer: tokens,
-	})
-	return r
+// CountProfessionals: capacidad instalada del salón (StaffCounter del dashboard).
+func (f *mm) CountProfessionals(salonID string) (int, error) {
+	n := 0
+	for _, m := range f.byKey {
+		if m.SalonID == salonID && m.Role == domain.RoleProfessional {
+			n++
+		}
+	}
+	return n, nil
 }
+
+// testRouter arma el router completo con fakes en memoria (ver pos_test.go).
+func testRouter() *gin.Engine { return newPOSEnv().r }
 
 func doReq(r *gin.Engine, method, path, body, token string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -153,6 +147,22 @@ func (f *mb) ListRange(salonID string, from, to time.Time) ([]domain.Booking, er
 		}
 	}
 	return out, nil
+}
+
+// StatsRange: agregados de agenda para el dashboard (AgendaStats).
+func (f *mb) StatsRange(salonID string, from, to time.Time) (int, int, error) {
+	count, minutes := 0, 0
+	for _, b := range f.all {
+		if b.SalonID != salonID || b.StartsAt.Before(from) || !b.StartsAt.Before(to) {
+			continue
+		}
+		if b.Status != domain.BookingBooked && b.Status != domain.BookingDone {
+			continue
+		}
+		count++
+		minutes += int(b.EndsAt.Sub(b.StartsAt).Minutes())
+	}
+	return count, minutes, nil
 }
 
 // Flujo: login como receptora -> crear reserva 201 -> solape 409 ->

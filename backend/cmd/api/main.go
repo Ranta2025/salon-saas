@@ -77,7 +77,16 @@ func main() {
 
 	authSvc := app.AuthService{Users: users, Hasher: hasher, Tokens: tokens}
 	tenSvc := app.TenantService{Salons: salons, Memberships: mems}
-	bookSvc := app.BookingService{Bookings: pgstore.Bookings{Pool: pool}, Memberships: mems}
+	bookings := pgstore.Bookings{Pool: pool}
+	salesRepo := pgstore.Sales{Pool: pool}
+	closesRepo := pgstore.CashCloses{Pool: pool}
+	servicesRepo := pgstore.Services{Pool: pool}
+
+	bookSvc := app.BookingService{Bookings: bookings, Memberships: mems}
+	svcSvc := app.ServiceService{Services: servicesRepo, Memberships: mems}
+	saleSvc := app.SaleService{Sales: salesRepo, Services: servicesRepo, Memberships: mems}
+	cashCloseSvc := app.CashCloseService{CashCloses: closesRepo, Sales: salesRepo, Memberships: mems}
+	dashSvc := app.DashboardService{Sales: salesRepo, Agenda: bookings, Staff: mems, Memberships: mems}
 
 	r := gin.Default()
 	r.GET("/health", func(c *gin.Context) {
@@ -87,6 +96,10 @@ func main() {
 		Auth:        httpapi.AuthHandler{Auth: authSvc},
 		Tenants:     httpapi.TenantsHandler{Tenants: tenSvc, Memberships: mems},
 		Bookings:    httpapi.BookingHandler{Bookings: bookSvc, Memberships: mems},
+		Services:    httpapi.ServiceHandler{Services: svcSvc, Memberships: mems},
+		Sales:       httpapi.SaleHandler{Sales: saleSvc, Memberships: mems},
+		CashCloses:  httpapi.CashCloseHandler{CashCloses: cashCloseSvc, Memberships: mems},
+		Dashboard:   httpapi.DashboardHandler{Dashboard: dashSvc, Memberships: mems},
 		TokenIssuer: tokens,
 	})
 
