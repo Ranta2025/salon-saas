@@ -2,11 +2,12 @@ package domain
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
 func TestNewClient_ok(t *testing.T) {
-	c, err := NewClient("s1", "  Lía Fernández  ", "  11 5555-1234  ", "  prefiere turnos de mañana  ")
+	c, err := NewClient("s1", "  Lía Fernández  ", "  11 5555-1234  ", "", "  prefiere turnos de mañana  ")
 	if err != nil {
 		t.Fatalf("cliente válido: %v", err)
 	}
@@ -36,13 +37,53 @@ func TestNewClient_rechaza_invalidos(t *testing.T) {
 		{"nombre vacío", "s1", "   "},
 	}
 	for _, c := range cases {
-		if _, err := NewClient(c.salonID, c.clientName, "", ""); !errors.Is(err, ErrValidation) {
+		if _, err := NewClient(c.salonID, c.clientName, "", "", ""); !errors.Is(err, ErrValidation) {
 			t.Fatalf("%s: esperaba ErrValidation, dio %v", c.name, err)
 		}
 	}
-	// Teléfono y notas son opcionales.
-	if _, err := NewClient("s1", "Sin datos", "", ""); err != nil {
-		t.Fatalf("teléfono y notas vacíos deben ser válidos: %v", err)
+	// Teléfono, email y notas son opcionales.
+	if _, err := NewClient("s1", "Sin datos", "", "", ""); err != nil {
+		t.Fatalf("teléfono, email y notas vacíos deben ser válidos: %v", err)
+	}
+}
+
+// E-03: la ficha acepta un email opcional, normalizado como el del login
+// (minúsculas y sin espacios) y con el mismo tope de largo.
+func TestNewClient_email(t *testing.T) {
+	c, err := NewClient("s1", "Lía", "555", "  Lia@Mail.COM  ", "")
+	if err != nil {
+		t.Fatalf("email válido: %v", err)
+	}
+	if c.Email != "lia@mail.com" {
+		t.Fatalf("el email se normaliza a minúsculas, dio %q", c.Email)
+	}
+	if _, err := NewClient("s1", "Lía", "", "no-es-un-email", ""); !errors.Is(err, ErrValidation) {
+		t.Fatalf("email sin @ debe dar ErrValidation, dio %v", err)
+	} else if err.Error() != "Email inválido" {
+		// El mensaje llega tal cual a la pantalla: sin el prefijo interno.
+		t.Fatalf("mensaje del email inválido: %q", err.Error())
+	}
+	if _, err := NewClient("s1", "Lía", "", strings.Repeat("a", MaxTextEmail)+"@mail.com", ""); !errors.Is(err, ErrValidation) {
+		t.Fatalf("email largo debe dar ErrValidation, dio %v", err)
+	}
+}
+
+// E-03: el teléfono se guarda tal como se tipeó (es lo que se muestra en la
+// ficha) y la normalización es solo para BUSCARLA. Si se guardara normalizado,
+// la ficha perdería el formato que escribió la persona.
+func TestNormalizePhone(t *testing.T) {
+	cases := map[string]string{
+		"11 5555-1234":       "1155551234",
+		"+52 (55) 1234 5678": "525512345678",
+		"555.123.4567":       "5551234567",
+		"  555  ":            "555",
+		"":                   "",
+		"sin números":        "",
+	}
+	for in, want := range cases {
+		if got := NormalizePhone(in); got != want {
+			t.Fatalf("NormalizePhone(%q) = %q, esperaba %q", in, got, want)
+		}
 	}
 }
 

@@ -11,11 +11,11 @@ import (
 // (y por client_id cuando aplica): el id de otro tenant no existe.
 type Clients struct{ Pool *pgxpool.Pool }
 
-const clientColumns = `id,salon_id,name,phone,notes,created_at`
+const clientColumns = `id,salon_id,name,phone,email,notes,created_at`
 
 func scanClient(scan func(...interface{}) error) (domain.Client, error) {
 	var c domain.Client
-	if err := scan(&c.ID, &c.SalonID, &c.Name, &c.Phone, &c.Notes, &c.CreatedAt); err != nil {
+	if err := scan(&c.ID, &c.SalonID, &c.Name, &c.Phone, &c.Email, &c.Notes, &c.CreatedAt); err != nil {
 		return domain.Client{}, err
 	}
 	c.CreatedAt = c.CreatedAt.UTC()
@@ -24,11 +24,42 @@ func scanClient(scan func(...interface{}) error) (domain.Client, error) {
 
 func (r Clients) Save(c domain.Client) error {
 	_, err := r.Pool.Exec(context.Background(),
-		`INSERT INTO clients(id,salon_id,name,phone,notes,created_at)
-		 VALUES($1,$2,$3,$4,$5,$6)
-		 ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, phone=EXCLUDED.phone, notes=EXCLUDED.notes`,
-		c.ID, c.SalonID, c.Name, c.Phone, c.Notes, c.CreatedAt)
+		`INSERT INTO clients(id,salon_id,name,phone,email,notes,created_at)
+		 VALUES($1,$2,$3,$4,$5,$6,$7)
+		 ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, phone=EXCLUDED.phone,
+		   email=EXCLUDED.email, notes=EXCLUDED.notes`,
+		c.ID, c.SalonID, c.Name, c.Phone, c.Email, c.Notes, c.CreatedAt)
 	return pgError(err)
+}
+
+// FindByPhone resuelve la ficha por teléfono normalizado (solo dígitos, la
+// misma regla que domain.NormalizePhone) DENTRO del salón. La columna generada
+// phone_norm es la que garantiza que "11 5555-1234" y "1155551234" sean la
+// misma persona; la ficha sigue mostrando el teléfono como se escribió.
+func (r Clients) FindByPhone(salonID, phone string) (domain.Client, error) {
+	row := r.Pool.QueryRow(context.Background(),
+		`SELECT `+clientColumns+` FROM clients
+		 WHERE salon_id=$1 AND phone_norm=$2
+		 ORDER BY created_at, id LIMIT 1`, salonID, domain.NormalizePhone(phone))
+	c, err := scanClient(row.Scan)
+	if err != nil {
+		return domain.Client{}, notFound(err)
+	}
+	return c, nil
+}
+
+// FindByName es el respaldo cuando la reserva pública no trae teléfono: nombre
+// exacto dentro del salón (sin esto, cada reserva anónima crearía una ficha).
+func (r Clients) FindByName(salonID, name string) (domain.Client, error) {
+	row := r.Pool.QueryRow(context.Background(),
+		`SELECT `+clientColumns+` FROM clients
+		 WHERE salon_id=$1 AND name=$2
+		 ORDER BY created_at, id LIMIT 1`, salonID, name)
+	c, err := scanClient(row.Scan)
+	if err != nil {
+		return domain.Client{}, notFound(err)
+	}
+	return c, nil
 }
 
 func (r Clients) FindByID(salonID, id string) (domain.Client, error) {

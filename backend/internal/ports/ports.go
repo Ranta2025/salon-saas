@@ -202,6 +202,13 @@ type ClientRepository interface {
 	Save(c domain.Client) error
 	FindByID(salonID, id string) (domain.Client, error)
 	List(salonID string) ([]domain.Client, error)
+	// FindByPhone busca la ficha por teléfono NORMALIZADO (domain.NormalizePhone)
+	// dentro del salón. La usa la reserva pública para no crear una ficha nueva
+	// cada vez que la misma persona reserva.
+	FindByPhone(salonID, phone string) (domain.Client, error)
+	// FindByName busca la ficha por nombre exacto dentro del salón: es el
+	// respaldo de la reserva pública cuando la persona no dejó teléfono.
+	FindByName(salonID, name string) (domain.Client, error)
 	SavePhoto(p domain.ClientPhoto) error
 	ListPhotos(salonID, clientID string) ([]domain.ClientPhoto, error)
 	DeletePhoto(salonID, clientID, id string) error

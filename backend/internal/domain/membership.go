@@ -48,6 +48,25 @@ func (r Role) Valid() bool {
 	}
 }
 
+// Label es el nombre del rol para MOSTRAR a una persona: "owner" o
+// "professional" no dicen nada en un mensaje de la pantalla de equipo.
+func (r Role) Label() string {
+	switch r {
+	case RoleOwner:
+		return "dueño"
+	case RoleAdmin:
+		return "administración"
+	case RoleProfessional:
+		return "profesional"
+	case RoleReception:
+		return "recepción"
+	case RoleClient:
+		return "cliente"
+	default:
+		return "rol desconocido"
+	}
+}
+
 // CanManage cataloga quién puede configurar el salón (precios, horarios, personal).
 func (m Membership) CanManage() bool {
 	return m.Role == RoleOwner || m.Role == RoleAdmin

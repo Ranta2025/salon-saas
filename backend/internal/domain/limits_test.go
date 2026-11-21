@@ -94,13 +94,13 @@ func TestText_limites(t *testing.T) {
 	if _, err := NewService("s1", long, 30, 1000, 10); !errors.Is(err, ErrValidation) {
 		t.Fatalf("nombre de servicio largo debe dar ErrValidation, dio %v", err)
 	}
-	if _, err := NewClient("s1", long, "", ""); !errors.Is(err, ErrValidation) {
+	if _, err := NewClient("s1", long, "", "", ""); !errors.Is(err, ErrValidation) {
 		t.Fatalf("nombre de cliente largo debe dar ErrValidation, dio %v", err)
 	}
-	if _, err := NewClient("s1", "Lía", strings.Repeat("1", MaxTextPhone+1), ""); !errors.Is(err, ErrValidation) {
+	if _, err := NewClient("s1", "Lía", strings.Repeat("1", MaxTextPhone+1), "", ""); !errors.Is(err, ErrValidation) {
 		t.Fatalf("teléfono largo debe dar ErrValidation, dio %v", err)
 	}
-	if _, err := NewClient("s1", "Lía", "", strings.Repeat("n", MaxTextNotes+1)); !errors.Is(err, ErrValidation) {
+	if _, err := NewClient("s1", "Lía", "", "", strings.Repeat("n", MaxTextNotes+1)); !errors.Is(err, ErrValidation) {
 		t.Fatalf("notas largas deben dar ErrValidation, dio %v", err)
 	}
 	if _, err := NewUser(long, "ana@mail.com", "h"); !errors.Is(err, ErrValidation) {
@@ -116,7 +116,7 @@ func TestText_limites(t *testing.T) {
 		t.Fatalf("cliente de reserva largo debe dar ErrValidation, dio %v", err)
 	}
 	// Los valores válidos siguen entrando.
-	if _, err := NewClient("s1", strings.Repeat("a", MaxTextName), "", strings.Repeat("n", MaxTextNotes)); err != nil {
+	if _, err := NewClient("s1", strings.Repeat("a", MaxTextName), "", "", strings.Repeat("n", MaxTextNotes)); err != nil {
 		t.Fatalf("el tope exacto debe aceptarse: %v", err)
 	}
 }

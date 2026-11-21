@@ -13,3 +13,21 @@ var (
 	ErrUnauthorized  = errors.New("no autenticado")
 	ErrForbidden     = errors.New("sin permiso")
 )
+
+// Message es un error de dominio con el texto que ve la persona. Envuelve el
+// error de dominio (errors.Is sigue funcionando, así que el status HTTP no
+// cambia) pero Error() devuelve SOLO el mensaje: sin el prefijo interno que
+// existe para el log ("validación:", "ya existe:"), que en la pantalla no dice
+// nada. Es la excepción deliberada a la regla general de los errores de dominio,
+// no un reemplazo: se usa donde el mensaje se escribe para quien lo lee.
+type Message struct {
+	Kind error
+	Text string
+}
+
+func (m Message) Error() string { return m.Text }
+
+func (m Message) Unwrap() error { return m.Kind }
+
+// NewMessage arma un error de dominio con un texto listo para mostrar.
+func NewMessage(kind error, text string) error { return Message{Kind: kind, Text: text} }

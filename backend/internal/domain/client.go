@@ -14,12 +14,13 @@ type Client struct {
 	SalonID   string
 	Name      string
 	Phone     string
+	Email     string
 	Notes     string
 	CreatedAt time.Time
 }
 
 // NewClient valida y crea una ficha de cliente.
-func NewClient(salonID, name, phone, notes string) (Client, error) {
+func NewClient(salonID, name, phone, email, notes string) (Client, error) {
 	name = strings.TrimSpace(name)
 	if salonID == "" {
 		return Client{}, fmt.Errorf("%w: el salón es obligatorio", ErrValidation)
@@ -30,9 +31,22 @@ func NewClient(salonID, name, phone, notes string) (Client, error) {
 	if err := validateText("el nombre del cliente", name, MaxTextName); err != nil {
 		return Client{}, err
 	}
+	// El teléfono se guarda COMO SE TIPEÓ (es lo que se muestra en la ficha);
+	// para buscar la ficha se usa NormalizePhone. Guardarlo normalizado le
+	// sacaría el formato que escribió la persona.
 	phone = strings.TrimSpace(phone)
 	if err := validateText("el teléfono", phone, MaxTextPhone); err != nil {
 		return Client{}, err
+	}
+	email = NormalizeEmail(email)
+	if email != "" {
+		// Misma regla que el email de una cuenta (NewUser): forma mínima y tope
+		// de largo. Un email inventado no rompe nada, pero tampoco entra.
+		if !strings.Contains(email, "@") || len(email) < 5 || len(email) > MaxTextEmail {
+			// Texto para la pantalla: el prefijo interno del error de dominio
+			// ("validación:") no le dice nada a quien llena el formulario.
+			return Client{}, NewMessage(ErrValidation, "Email inválido")
+		}
 	}
 	notes = strings.TrimSpace(notes)
 	if err := validateText("las notas", notes, MaxTextNotes); err != nil {
@@ -43,9 +57,23 @@ func NewClient(salonID, name, phone, notes string) (Client, error) {
 		SalonID:   salonID,
 		Name:      name,
 		Phone:     phone,
+		Email:     email,
 		Notes:     notes,
 		CreatedAt: time.Now().UTC(),
 	}, nil
+}
+
+// NormalizePhone deja solo los dígitos del teléfono: es la forma de COMPARAR
+// dos teléfonos ("11 5555-1234" y "1155551234" son la misma persona). No se
+// persiste: la ficha guarda el teléfono como se escribió.
+func NormalizePhone(phone string) string {
+	var b strings.Builder
+	for _, r := range phone {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // Límites de los adjuntos: son regla de negocio (no un detalle del handler),
