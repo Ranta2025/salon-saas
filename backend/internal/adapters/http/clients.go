@@ -50,6 +50,7 @@ func clientJSON(c domain.Client) gin.H {
 		"salon_id":   c.SalonID,
 		"name":       c.Name,
 		"phone":      c.Phone,
+		"email":      c.Email,
 		"notes":      c.Notes,
 		"created_at": c.CreatedAt.Format(time.RFC3339),
 	}
@@ -91,13 +92,14 @@ func (h ClientHandler) Create(c *gin.Context) {
 	var in struct {
 		Name  string `json:"name"`
 		Phone string `json:"phone"`
+		Email string `json:"email"`
 		Notes string `json:"notes"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		badBody(c)
 		return
 	}
-	client, err := h.Clients.Create(actor, salonID, in.Name, in.Phone, in.Notes)
+	client, err := h.Clients.Create(actor, salonID, in.Name, in.Phone, in.Email, in.Notes)
 	if err != nil {
 		respondErr(c, err)
 		return

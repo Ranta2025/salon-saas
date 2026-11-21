@@ -71,6 +71,26 @@ type mclients struct {
 
 func (f *mclients) Save(c domain.Client) error { f.clients = append(f.clients, c); return nil }
 
+// FindByPhone / FindByName: la reserva pública busca la ficha del visitante
+// antes de crear una nueva (teléfono normalizado / nombre exacto).
+func (f *mclients) FindByPhone(salonID, phone string) (domain.Client, error) {
+	for _, c := range f.clients {
+		if c.SalonID == salonID && domain.NormalizePhone(c.Phone) == phone {
+			return c, nil
+		}
+	}
+	return domain.Client{}, domain.ErrNotFound
+}
+
+func (f *mclients) FindByName(salonID, name string) (domain.Client, error) {
+	for _, c := range f.clients {
+		if c.SalonID == salonID && c.Name == name {
+			return c, nil
+		}
+	}
+	return domain.Client{}, domain.ErrNotFound
+}
+
 func (f *mclients) FindByID(salonID, id string) (domain.Client, error) {
 	for _, c := range f.clients {
 		if c.SalonID == salonID && c.ID == id {
@@ -380,6 +400,58 @@ func TestHTTP_clients(t *testing.T) {
 	}
 	if w := doReq(env.r, "GET", base, "", ""); w.Code != http.StatusUnauthorized {
 		t.Fatalf("sin token debe dar 401, dio %d", w.Code)
+	}
+}
+
+// E-03: el alta de ficha acepta un email opcional, lo normaliza y lo devuelve
+// en la MISMA forma de la ficha (el frontend lo muestra sin cambiar nada más).
+func TestHTTP_client_create_con_email(t *testing.T) {
+	env := newPOSEnv()
+	ownerTok, _ := env.register(t, "owner@mail.com")
+	salonID := env.salon(t, ownerTok, "clientes-email")
+	base := "/api/v1/salons/" + salonID + "/clients"
+
+	w := doReq(env.r, "POST", base, `{"name":"Lía","phone":"11 5555-1234","email":"  Lia@Mail.COM "}`, ownerTok)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("crear con email: %d %s", w.Code, w.Body.String())
+	}
+	var created struct {
+		ID    string `json:"id"`
+		Email string `json:"email"`
+	}
+	mustJSON(t, w.Body.Bytes(), &created)
+	if created.ID == "" || created.Email != "lia@mail.com" {
+		t.Fatalf("el email se devuelve normalizado: %s", w.Body.String())
+	}
+
+	// Persistido: el listado de la pantalla de clientes lo trae.
+	w = doReq(env.r, "GET", base, "", ownerTok)
+	var list struct {
+		Clients []map[string]any `json:"clients"`
+	}
+	mustJSON(t, w.Body.Bytes(), &list)
+	if len(list.Clients) != 1 || list.Clients[0]["email"] != "lia@mail.com" {
+		t.Fatalf("listado con email: %s", w.Body.String())
+	}
+
+	// Sin email sigue entrando, con el campo vacío (texto, nunca null).
+	w = doReq(env.r, "POST", base, `{"name":"Ana"}`, ownerTok)
+	var sinEmail struct {
+		Email string `json:"email"`
+	}
+	mustJSON(t, w.Body.Bytes(), &sinEmail)
+	if sinEmail.Email != "" {
+		t.Fatalf("sin email el campo va vacío, dio %q", sinEmail.Email)
+	}
+
+	// Email inválido: 400 con mensaje para la pantalla, sin el prefijo interno
+	// del error de dominio ("validación:").
+	w = doReq(env.r, "POST", base, `{"name":"Ana","email":"sin-arroba"}`, ownerTok)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("email inválido debe dar 400, dio %d %s", w.Code, w.Body.String())
+	}
+	if body := w.Body.String(); !strings.Contains(body, "Email inválido") || strings.Contains(body, "validación:") {
+		t.Fatalf("mensaje del email inválido: %s", body)
 	}
 }
 

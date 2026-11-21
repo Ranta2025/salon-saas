@@ -5,7 +5,6 @@ package app
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"salon-saas/internal/domain"
@@ -42,19 +41,22 @@ func (s MemberService) Add(actor domain.Membership, salonID, email string, role 
 		return domain.Member{}, err
 	}
 	if !role.Valid() {
-		return domain.Member{}, fmt.Errorf("%w: rol desconocido %q", domain.ErrValidation, role)
+		// Los roles válidos se nombran en español: el valor crudo de la API
+		// ("professional") no le dice nada a quien administra el salón (E-07).
+		return domain.Member{}, domain.NewMessage(domain.ErrValidation,
+			"Rol desconocido: usá dueño, administración, profesional, recepción o cliente")
 	}
 	if !role.AddableBy(m.Role) {
 		return domain.Member{}, domain.ErrForbidden
 	}
 	email = domain.NormalizeEmail(email)
 	if email == "" {
-		return domain.Member{}, fmt.Errorf("%w: el email es obligatorio", domain.ErrValidation)
+		return domain.Member{}, domain.NewMessage(domain.ErrValidation, "El email es obligatorio")
 	}
 	user, err := s.Users.FindByEmail(email)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			return domain.Member{}, fmt.Errorf("%w: no existe una cuenta con el email %s (la persona debe registrarse primero)", domain.ErrValidation, email)
+			return domain.Member{}, domain.NewMessage(domain.ErrValidation, "La persona todavía no tiene cuenta")
 		}
 		return domain.Member{}, err
 	}
@@ -62,9 +64,14 @@ func (s MemberService) Add(actor domain.Membership, salonID, email string, role 
 	if err != nil {
 		return domain.Member{}, err
 	}
-	if _, err := s.Memberships.Find(user.ID, salonID); err == nil {
-		return domain.Member{}, fmt.Errorf("%w: esa persona ya es miembro del salón", domain.ErrAlreadyExists)
-	} else if !errors.Is(err, domain.ErrNotFound) {
+	existing, err := s.Memberships.Find(user.ID, salonID)
+	switch {
+	case err == nil && existing.Role == role:
+		return domain.Member{}, domain.NewMessage(domain.ErrAlreadyExists, "Ya tiene ese rol")
+	case err == nil:
+		return domain.Member{}, domain.NewMessage(domain.ErrAlreadyExists,
+			"Ya es parte del equipo como "+existing.Role.Label())
+	case !errors.Is(err, domain.ErrNotFound):
 		return domain.Member{}, err
 	}
 	if err := s.Memberships.Save(membership); err != nil {
@@ -92,7 +99,7 @@ func (s MemberService) Remove(actor domain.Membership, salonID, userID string) e
 			return err
 		}
 		if owners <= 1 {
-			return fmt.Errorf("%w: no se puede quitar al último owner del salón", domain.ErrValidation)
+			return domain.NewMessage(domain.ErrValidation, "No se puede quitar al último dueño")
 		}
 	}
 	return s.Members.DeleteMember(userID, salonID)

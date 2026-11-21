@@ -7,6 +7,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -31,6 +32,9 @@ type PublicBookingService struct {
 	Settings ports.SalonSettingsRepository
 	Staff    ports.StaffLister
 	Bookings ports.BookingRepository
+	// Clients deja la ficha del visitante cuando la reserva entra (E-03). Es
+	// opcional como los avisos: nil = este entorno no lleva fichas.
+	Clients ports.ClientRepository
 	// Opcionales: nil = no avisa (tests sin infraestructura).
 	Events   ports.EventPublisher
 	Notifier Notifier
@@ -122,6 +126,11 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 		return domain.Booking{}, err
 	}
 
+	// La ficha del visitante se escribe DESPUÉS de la reserva y no puede
+	// tumbarla: el turno es lo que la persona pidió (E-03). Si falla, queda el
+	// detalle en el log y la ficha se puede crear a mano desde el mostrador.
+	s.upsertClient(salon.ID, b.ClientName, b.ClientPhone)
+
 	publish(s.Events, ports.Event{
 		Type:    "booking.created",
 		SalonID: salon.ID,
@@ -136,8 +145,43 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 		TS: b.CreatedAt,
 	})
 	notify(s.Notifier, salon.ID, "", "Nuevo turno",
-		b.ClientName+" · "+b.StartsAt.Format("02/01 15:04")+" (reserva web)", domain.KindBooking)
+		b.ClientName+" · "+FormatSalonTime(settings, b.StartsAt)+" (reserva web)", domain.KindBooking)
 	return b, nil
+}
+
+// upsertClient deja la ficha del visitante en el salón de la reserva. Busca
+// primero para NO duplicar: por teléfono normalizado (la misma persona suele
+// escribirlo distinto) y, si no dejó teléfono, por nombre exacto.
+//
+// Si la ficha ya existe no se toca: la del mostrador puede tener notas, fotos y
+// un nombre corregido a mano que una reserva desde la web no tiene por qué
+// pisar. Best-effort a propósito: la reserva ya entró.
+func (s PublicBookingService) upsertClient(salonID, name, phone string) {
+	if s.Clients == nil {
+		return
+	}
+	phoneNorm := domain.NormalizePhone(phone)
+	var err error
+	if phoneNorm != "" {
+		_, err = s.Clients.FindByPhone(salonID, phoneNorm)
+	} else {
+		_, err = s.Clients.FindByName(salonID, strings.TrimSpace(name))
+	}
+	switch {
+	case err == nil:
+		return // ya tiene ficha
+	case !errors.Is(err, domain.ErrNotFound):
+		log.Printf("reserva pública: buscar ficha en el salón %s: %v", salonID, err)
+		return
+	}
+	c, err := domain.NewClient(salonID, name, phone, "", "")
+	if err != nil {
+		log.Printf("reserva pública: ficha inválida en el salón %s: %v", salonID, err)
+		return
+	}
+	if err := s.Clients.Save(c); err != nil {
+		log.Printf("reserva pública: guardar ficha en el salón %s: %v", salonID, err)
+	}
 }
 
 // freeProfessional elige el primer profesional del equipo sin turno en el

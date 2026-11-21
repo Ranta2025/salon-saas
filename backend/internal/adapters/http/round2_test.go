@@ -396,6 +396,62 @@ func TestHTTP_booking_patch(t *testing.T) {
 	}
 }
 
+// E-07: los mensajes de la pantalla de equipo llegan al cuerpo de la respuesta
+// en español limpio: sin el prefijo interno ("validación:", "ya existe:") y con
+// los roles nombrados en español. Los códigos HTTP no cambian.
+func TestHTTP_members_mensajes_en_espanol(t *testing.T) {
+	env := newPOSEnv()
+	ownerTok, ownerID := env.register(t, "owner@mail.com")
+	salonID := env.salon(t, ownerTok, "equipo-mensajes")
+	base := "/api/v1/salons/" + salonID + "/members"
+	adminTok, adminID := env.register(t, "admin@mail.com")
+	_ = env.mems.Save(domain.Membership{UserID: adminID, SalonID: salonID, Role: domain.RoleAdmin})
+
+	casos := []struct {
+		nombre string
+		metodo string
+		ruta   string
+		body   string
+		tok    string
+		status int
+		error  string
+	}{
+		{"mismo rol", "POST", base, `{"email":"admin@mail.com","role":"admin"}`, ownerTok, http.StatusConflict, "Ya tiene ese rol"},
+		{"otro rol", "POST", base, `{"email":"admin@mail.com","role":"professional"}`, ownerTok, http.StatusConflict, "Ya es parte del equipo como administración"},
+		{"sin cuenta", "POST", base, `{"email":"nadie@mail.com","role":"professional"}`, ownerTok, http.StatusBadRequest, "La persona todavía no tiene cuenta"},
+		{"rol desconocido", "POST", base, `{"email":"nadie@mail.com","role":"jefe"}`, ownerTok, http.StatusBadRequest, "Rol desconocido: usá dueño, administración, profesional, recepción o cliente"},
+		{"email vacío", "POST", base, `{"email":"   ","role":"professional"}`, ownerTok, http.StatusBadRequest, "El email es obligatorio"},
+		{"último dueño", "DELETE", base + "/" + ownerID, "", ownerTok, http.StatusBadRequest, "No se puede quitar al último dueño"},
+	}
+	for _, c := range casos {
+		w := doReq(env.r, c.metodo, c.ruta, c.body, c.tok)
+		if w.Code != c.status {
+			t.Fatalf("%s: status %d, esperaba %d (%s)", c.nombre, w.Code, c.status, w.Body.String())
+		}
+		var body struct {
+			Error string `json:"error"`
+		}
+		mustJSON(t, w.Body.Bytes(), &body)
+		if body.Error != c.error {
+			t.Fatalf("%s: mensaje %q, esperaba %q", c.nombre, body.Error, c.error)
+		}
+	}
+
+	// El camino feliz sigue igual: un admin agrega un profesional (201).
+	_, nuevoID := env.register(t, "nuevo@mail.com")
+	w := doReq(env.r, "POST", base, `{"email":"nuevo@mail.com","role":"professional"}`, adminTok)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("admin agrega profesional: %d %s", w.Code, w.Body.String())
+	}
+	var added struct {
+		ID string `json:"id"`
+	}
+	mustJSON(t, w.Body.Bytes(), &added)
+	if added.ID != nuevoID {
+		t.Fatalf("miembro agregado: %s", w.Body.String())
+	}
+}
+
 // --- Equipo ---
 
 func TestHTTP_members(t *testing.T) {

@@ -82,11 +82,24 @@ func (f *fakeEvents) typed(t string) (ports.Event, int) {
 var _ ports.EventPublisher = (*fakeEvents)(nil)
 
 // fakeNotifier registra los avisos que los casos de uso piden crear.
-type fakeNotifier struct{ calls int }
+type fakeNotifier struct {
+	calls  int
+	bodies []string
+}
 
 func (f *fakeNotifier) Create(salonID, userID, title, body string, kind domain.NotificationKind) (domain.Notification, error) {
 	f.calls++
+	f.bodies = append(f.bodies, body)
 	return domain.NewNotification(salonID, userID, title, body, kind)
+}
+
+// lastBody es el texto del último aviso: los tests de la hora local miran el
+// texto que ve la persona, no el evento.
+func (f *fakeNotifier) lastBody() string {
+	if len(f.bodies) == 0 {
+		return ""
+	}
+	return f.bodies[len(f.bodies)-1]
 }
 
 var _ Notifier = (*fakeNotifier)(nil)

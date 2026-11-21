@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"salon-saas/internal/domain"
@@ -164,4 +165,71 @@ func TestMemberService_remove(t *testing.T) {
 	if err := svc.Remove(prof, "s1", "u-owner2"); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("profesional quitando: %v", err)
 	}
+}
+
+// E-07: los mensajes de la pantalla de equipo no llevan el prefijo interno del
+// error ("validación:", "ya existe:") ni nombres de rol en inglés ("owner",
+// "professional"). El status HTTP no cambia: se sigue identificando el mismo
+// error de dominio por debajo.
+func TestMemberService_mensajes_para_la_persona(t *testing.T) {
+	svc, mems, _ := memberFixture(t)
+	owner, _ := mems.Find("u-owner", "s1")
+	admin, _ := mems.Find("u-admin", "s1")
+
+	sinPrefijo := func(err error, esperado string) {
+		t.Helper()
+		if err == nil {
+			t.Fatalf("esperaba el error %q", esperado)
+		}
+		if got := err.Error(); got != esperado {
+			t.Fatalf("mensaje = %q, esperaba %q", got, esperado)
+		}
+		for _, feo := range []string{"validación:", "ya existe:", "no encontrado:", "owner", "professional", "reception"} {
+			if strings.Contains(err.Error(), feo) {
+				t.Fatalf("el mensaje %q no puede contener %q", err.Error(), feo)
+			}
+		}
+	}
+
+	// Ya es parte del equipo con ese rol.
+	_, err := svc.Add(owner, "s1", "beto@mail.com", domain.RoleAdmin)
+	if !errors.Is(err, domain.ErrAlreadyExists) {
+		t.Fatalf("ya miembro debe seguir siendo AlreadyExists (409), dio %v", err)
+	}
+	sinPrefijo(err, "Ya tiene ese rol")
+
+	// Ya es parte del equipo con OTRO rol: se dice cuál, en español.
+	_, err = svc.Add(admin, "s1", "beto@mail.com", domain.RoleProfessional)
+	if !errors.Is(err, domain.ErrAlreadyExists) {
+		t.Fatalf("ya miembro debe seguir siendo AlreadyExists (409), dio %v", err)
+	}
+	sinPrefijo(err, "Ya es parte del equipo como administración")
+
+	// La persona todavía no tiene cuenta.
+	_, err = svc.Add(owner, "s1", "nadie@mail.com", domain.RoleProfessional)
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("email sin cuenta debe seguir siendo Validation (400), dio %v", err)
+	}
+	sinPrefijo(err, "La persona todavía no tiene cuenta")
+
+	// Rol desconocido: se listan los roles válidos en español.
+	_, err = svc.Add(owner, "s1", "eva@mail.com", domain.Role("jefe"))
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("rol desconocido debe seguir siendo Validation (400), dio %v", err)
+	}
+	sinPrefijo(err, "Rol desconocido: usá dueño, administración, profesional, recepción o cliente")
+
+	// Quitar al último owner.
+	err = svc.Remove(owner, "s1", "u-owner")
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("último owner debe seguir siendo Validation (400), dio %v", err)
+	}
+	sinPrefijo(err, "No se puede quitar al último dueño")
+
+	// El email vacío tampoco arrastra el prefijo.
+	_, err = svc.Add(owner, "s1", "   ", domain.RoleProfessional)
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("email vacío: %v", err)
+	}
+	sinPrefijo(err, "El email es obligatorio")
 }

@@ -18,6 +18,7 @@ type publicEnv struct {
 	staff    *fakeStaffLister
 	settings *fakeSettings
 	services *fakeServices
+	clients  *fakeClients
 	corte    domain.Service
 	viejo    domain.Service
 	events   *fakeEvents
@@ -50,10 +51,11 @@ func newPublicEnv(t *testing.T) *publicEnv {
 	bookings := &fb{}
 	events := &fakeEvents{}
 	notifier := &fakeNotifier{}
+	clients := &fakeClients{}
 	return &publicEnv{
 		avail:    AvailabilityService{Salons: salons, Services: services, Settings: settings, Staff: staff, Bookings: bookings},
-		book:     PublicBookingService{Salons: salons, Services: services, Settings: settings, Staff: staff, Bookings: bookings, Events: events, Notifier: notifier},
-		bookings: bookings, staff: staff, settings: settings, services: services,
+		book:     PublicBookingService{Salons: salons, Services: services, Settings: settings, Staff: staff, Bookings: bookings, Clients: clients, Events: events, Notifier: notifier},
+		bookings: bookings, staff: staff, settings: settings, services: services, clients: clients,
 		corte: corte, viejo: viejo, events: events, notifier: notifier,
 	}
 }

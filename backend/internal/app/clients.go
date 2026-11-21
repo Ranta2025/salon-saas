@@ -24,12 +24,13 @@ func puedeGestionarClientes(m domain.Membership) bool {
 	return m.CanManage() || m.Role == domain.RoleReception
 }
 
-// Create abre la ficha de un cliente del salón.
-func (s ClientService) Create(actor domain.Membership, salonID, name, phone, notes string) (domain.Client, error) {
+// Create abre la ficha de un cliente del salón. El email es opcional y se
+// guarda normalizado (minúsculas, sin espacios), igual que el del login.
+func (s ClientService) Create(actor domain.Membership, salonID, name, phone, email, notes string) (domain.Client, error) {
 	if _, err := s.manager(actor, salonID); err != nil {
 		return domain.Client{}, err
 	}
-	c, err := domain.NewClient(salonID, name, phone, notes)
+	c, err := domain.NewClient(salonID, name, phone, email, notes)
 	if err != nil {
 		return domain.Client{}, err
 	}

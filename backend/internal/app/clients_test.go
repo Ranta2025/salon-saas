@@ -14,9 +14,13 @@ type fakeClients struct {
 	clients       []domain.Client
 	photos        []domain.ClientPhoto
 	failSavePhoto bool // simula una DB caída justo después de escribir el archivo
+	failSave      bool // simula una DB caída al guardar la ficha
 }
 
 func (f *fakeClients) Save(c domain.Client) error {
+	if f.failSave {
+		return errors.New("db caída")
+	}
 	for i := range f.clients {
 		if f.clients[i].ID == c.ID {
 			f.clients[i] = c
@@ -30,6 +34,26 @@ func (f *fakeClients) Save(c domain.Client) error {
 func (f *fakeClients) FindByID(salonID, id string) (domain.Client, error) {
 	for _, c := range f.clients {
 		if c.SalonID == salonID && c.ID == id {
+			return c, nil
+		}
+	}
+	return domain.Client{}, domain.ErrNotFound
+}
+
+// FindByPhone compara por teléfono normalizado, igual que el índice de pgstore.
+func (f *fakeClients) FindByPhone(salonID, phone string) (domain.Client, error) {
+	for _, c := range f.clients {
+		if c.SalonID == salonID && domain.NormalizePhone(c.Phone) == phone {
+			return c, nil
+		}
+	}
+	return domain.Client{}, domain.ErrNotFound
+}
+
+// FindByName es el respaldo sin teléfono: nombre exacto dentro del salón.
+func (f *fakeClients) FindByName(salonID, name string) (domain.Client, error) {
+	for _, c := range f.clients {
+		if c.SalonID == salonID && c.Name == name {
 			return c, nil
 		}
 	}
@@ -171,7 +195,7 @@ func TestClientService_create_permisos(t *testing.T) {
 	ajeno := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
 
 	for _, actor := range []domain.Membership{owner, admin, recep} {
-		c, err := svc.Create(actor, "s1", "Cliente "+actor.UserID, "555", "")
+		c, err := svc.Create(actor, "s1", "Cliente "+actor.UserID, "555", "", "")
 		if err != nil {
 			t.Fatalf("%s debe poder crear clientes: %v", actor.Role, err)
 		}
@@ -180,11 +204,11 @@ func TestClientService_create_permisos(t *testing.T) {
 		}
 	}
 	for _, actor := range []domain.Membership{profe, cliente, ajeno} {
-		if _, err := svc.Create(actor, "s1", "X", "", ""); !errors.Is(err, domain.ErrForbidden) {
+		if _, err := svc.Create(actor, "s1", "X", "", "", ""); !errors.Is(err, domain.ErrForbidden) {
 			t.Fatalf("%s no debe poder crear clientes, dio %v", actor.Role, err)
 		}
 	}
-	if _, err := svc.Create(owner, "s1", "   ", "", ""); !errors.Is(err, domain.ErrValidation) {
+	if _, err := svc.Create(owner, "s1", "   ", "", "", ""); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("nombre vacío debe dar ErrValidation, dio %v", err)
 	}
 	if len(clients.clients) != 3 {
@@ -197,7 +221,7 @@ func TestClientService_list_scoped(t *testing.T) {
 	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
 	profe := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
 	ajeno := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
-	if _, err := svc.Create(owner, "s1", "Lía", "", ""); err != nil {
+	if _, err := svc.Create(owner, "s1", "Lía", "", "", ""); err != nil {
 		t.Fatalf("crear: %v", err)
 	}
 	// El profesional mira la ficha, no la administra: leer sí, escribir no.
@@ -212,7 +236,7 @@ func TestClientService_list_scoped(t *testing.T) {
 func TestClientService_addPhoto_convierte_y_guarda(t *testing.T) {
 	svc, clients, store, images, mems := clientEnv()
 	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	c, err := svc.Create(recep, "s1", "Lía", "555", "")
+	c, err := svc.Create(recep, "s1", "Lía", "555", "", "")
 	if err != nil {
 		t.Fatalf("crear cliente: %v", err)
 	}
@@ -244,7 +268,7 @@ func TestClientService_addPhoto_convierte_y_guarda(t *testing.T) {
 func TestClientService_addPhoto_rechaza_lo_que_no_es_imagen(t *testing.T) {
 	svc, clients, store, images, mems := clientEnv()
 	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	c, _ := svc.Create(recep, "s1", "Lía", "", "")
+	c, _ := svc.Create(recep, "s1", "Lía", "", "", "")
 
 	// Tipo declarado fuera del catálogo: 400 antes de procesar.
 	for _, ct := range []string{"application/pdf", "image/gif", "text/plain", ""} {
@@ -276,7 +300,7 @@ func TestClientService_addPhoto_scoped_y_permisos(t *testing.T) {
 	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
 	profe := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
 	ajenoOwner := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
-	c, _ := svc.Create(recep, "s1", "Lía", "", "")
+	c, _ := svc.Create(recep, "s1", "Lía", "", "", "")
 
 	// Actor de otro salón: 403 aunque el cliente exista en s1.
 	if _, err := svc.AddPhoto(ajenoOwner, "s1", c.ID, []byte("x"), "image/png"); !errors.Is(err, domain.ErrForbidden) {
@@ -300,7 +324,7 @@ func TestClientService_addPhoto_scoped_y_permisos(t *testing.T) {
 func TestClientService_addPhoto_rollback_del_archivo(t *testing.T) {
 	svc, clients, store, _, mems := clientEnv()
 	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	c, _ := svc.Create(recep, "s1", "Lía", "", "")
+	c, _ := svc.Create(recep, "s1", "Lía", "", "", "")
 	clients.failSavePhoto = true
 	if _, err := svc.AddPhoto(recep, "s1", c.ID, []byte("x"), "image/png"); err == nil {
 		t.Fatal("esperaba error de persistencia")
@@ -318,7 +342,7 @@ func TestClientService_listPhotos_y_delete(t *testing.T) {
 	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
 	profe := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
 	ajeno := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
-	c, _ := svc.Create(recep, "s1", "Lía", "", "")
+	c, _ := svc.Create(recep, "s1", "Lía", "", "", "")
 	p, err := svc.AddPhoto(recep, "s1", c.ID, []byte("x"), "image/png")
 	if err != nil {
 		t.Fatalf("subir: %v", err)
@@ -353,7 +377,7 @@ func TestClientService_listPhotos_y_delete(t *testing.T) {
 func TestClientService_photo_para_streaming(t *testing.T) {
 	svc, _, store, images, mems := clientEnv()
 	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	c, _ := svc.Create(recep, "s1", "Lía", "", "")
+	c, _ := svc.Create(recep, "s1", "Lía", "", "", "")
 	p, _ := svc.AddPhoto(recep, "s1", c.ID, []byte("x"), "image/png")
 
 	got, data, err := svc.Photo(p.ID)
@@ -368,5 +392,33 @@ func TestClientService_photo_para_streaming(t *testing.T) {
 	}
 	if _, _, err := svc.Photo("no-existe"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("foto inexistente debe dar NotFound, dio %v", err)
+	}
+}
+
+// E-03: el alta de ficha acepta un email opcional y lo persiste (hoy se
+// descartaba en silencio y la ficha quedaba "Sin correo" en la pantalla).
+func TestClientService_create_con_email(t *testing.T) {
+	svc, clients, _, _, mems := clientEnv()
+	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
+
+	c, err := svc.Create(recep, "s1", "Lía", "11 5555-1234", "  Lia@Mail.COM ", "")
+	if err != nil {
+		t.Fatalf("crear con email: %v", err)
+	}
+	if c.Email != "lia@mail.com" {
+		t.Fatalf("el email se normaliza (minúsculas, sin espacios), dio %q", c.Email)
+	}
+	if len(clients.clients) != 1 || clients.clients[0].Email != "lia@mail.com" {
+		t.Fatalf("el email tiene que persistirse: %+v", clients.clients)
+	}
+
+	// Email inválido o demasiado largo: 400 y no se guarda nada.
+	for _, bad := range []string{"sin-arroba", strings.Repeat("a", domain.MaxTextEmail) + "@mail.com"} {
+		if _, err := svc.Create(recep, "s1", "Ana", "", bad, ""); !errors.Is(err, domain.ErrValidation) {
+			t.Fatalf("email %q debe dar ErrValidation, dio %v", bad, err)
+		}
+	}
+	if len(clients.clients) != 1 {
+		t.Fatalf("un alta inválida no puede persistir: %+v", clients.clients)
 	}
 }

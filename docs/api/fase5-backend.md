@@ -34,7 +34,7 @@ Origin: http://localhost:5173
 Access-Control-Request-Method: POST
 → 204
   Access-Control-Allow-Origin: http://localhost:5173
-  Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
+  Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
   Access-Control-Allow-Headers: Authorization, Content-Type
   Access-Control-Max-Age: 600
   Vary: Origin
@@ -298,6 +298,85 @@ vencimiento de **24 h**:
   primero» no cambian. `timezone` inválida o ilegible → el cierre falla en vez de
   inventar una ventana.
 
+## Ronda 3 (T9): ficha desde la reserva, email de la ficha, hora del salón y mensajes
+
+Hallazgos E-03, E-04 y E-07 de la auditoría en navegador real. Los códigos HTTP
+de estos endpoints no cambian; cambia el cuerpo (mensajes) y lo que se persiste.
+
+### `POST /public/salons/:slug/bookings`: deja la ficha del cliente (E-03)
+
+- Después de crear el turno, la reserva pública busca la ficha del visitante en
+  **ese** salón (por teléfono normalizado: solo dígitos, así que `11 5555-1234` y
+  `1155551234` son la misma persona) y, si no existe, la crea con el nombre y el
+  teléfono de la reserva (sin email ni notas).
+- La misma persona reservando de nuevo **no duplica** la ficha. Sin teléfono, la
+  búsqueda es por nombre exacto y también dentro del salón.
+- Si la ficha ya existe no se toca: una reserva web no pisa notas, fotos ni un
+  nombre corregido en el mostrador.
+- Todo va scopeado por `salon_id`: el mismo teléfono en otro salón es otra ficha
+  y no se lee ni se modifica.
+- Si la ficha falla (DB caída, dato raro), **la reserva igual entra**: la
+  respuesta `201` no cambia y el detalle queda en el log del servidor. La ficha
+  se puede crear a mano desde el mostrador.
+- El cuerpo de la respuesta es el mismo de la ronda 2.
+
+### `POST /salons/:id/clients`: email opcional (E-03)
+
+```json
+{ "name": "Lía", "phone": "11 5555-1234", "email": "lia@mail.com", "notes": "" }
+
+201 { "id": "c_...", "salon_id": "s_...", "name": "Lía", "phone": "11 5555-1234",
+      "email": "lia@mail.com", "notes": "", "created_at": "2026-11-21T23:00:00Z" }
+```
+
+- `email` es opcional; se normaliza a minúsculas y sin espacios. Vacío se guarda
+  como texto vacío (nunca `null`) y el campo aparece siempre, tanto en el alta
+  como en `GET /salons/:id/clients` y en la ficha de un turno.
+- Email sin forma de email o de más de 254 caracteres →
+  `400 {"error":"Email inválido"}` (misma regla de forma que el email de una
+  cuenta). El mensaje no lleva el prefijo interno del error de dominio.
+- Permisos y códigos no cambian: `owner`, `admin` y `reception` escriben; el
+  `professional` solo lee.
+
+### Avisos de turno en la hora del salón (E-04)
+
+El **texto** de los avisos pasa a la hora local del salón (`salons.timezone`) y
+nombra la zona:
+
+```
+Nuevo turno
+Lía · 26/11 11:00 (America/Mexico_City) (reserva web)
+```
+
+- Aplica a `booking.created` (reserva pública **y** alta de staff) y a
+  `booking.updated` (cancelar, no-show, atendido, reprogramar).
+- Zona ilegible (fila de settings rota): el aviso sale igual, con la hora UTC y
+  la etiqueta `(UTC)`. Un aviso con hora explícita es mejor que ninguno.
+- **El payload del websocket no cambia**: `starts_at`/`ends_at` siguen en UTC
+  RFC3339 y las pantallas siguen formateando por su cuenta.
+- Los títulos (`Nuevo turno`, `Turno cancelado`, `Cliente no se presentó`,
+  `Turno atendido`, `Turno reprogramado`) y el `kind: "booking"` no cambian.
+
+### Mensajes del equipo en español limpio (E-07)
+
+`GET/POST/DELETE /salons/:id/members` mantiene los mismos códigos HTTP, pero el
+cuerpo ya no lleva el prefijo interno del error (`validación:`, `ya existe:`) ni
+nombres de rol en inglés:
+
+| Caso | HTTP | `error` |
+|---|---|---|
+| La persona ya es miembro con ese rol | `409` | `Ya tiene ese rol` |
+| Ya es miembro con otro rol | `409` | `Ya es parte del equipo como administración` |
+| El email no tiene cuenta | `400` | `La persona todavía no tiene cuenta` |
+| Rol desconocido | `400` | `Rol desconocido: usá dueño, administración, profesional, recepción o cliente` |
+| Email vacío | `400` | `El email es obligatorio` |
+| Quitar al último dueño | `400` | `No se puede quitar al último dueño` |
+
+Los roles válidos para `POST` siguen siendo `admin`, `professional` y
+`reception` (valores de la API); lo que cambia es cómo se **nombran** en un
+mensaje y en el detalle de «ya es parte del equipo». `owner`/`admin` siguen
+siendo los roles que administran el equipo, y los permisos no cambian.
+
 ## Cambios de comportamiento en endpoints existentes
 
 - **`POST /salons/:id/sales`**: el precio unitario **lo pone el catálogo**. El
@@ -347,8 +426,14 @@ Migraciones de la ronda 2:
   con guardas de `information_schema` / `pg_constraint`.
 - `012_indexes.sql`: `bookings (salon_id, starts_at)` y `memberships (salon_id)`
   (finding B-19). `CREATE INDEX IF NOT EXISTS`.
+- `013_clients_contact.sql` (ronda 3): `clients.email` (default `''`, con
+  `CHECK` de 254), `clients.phone_norm` como columna **generada** (`STORED`, solo
+  dígitos: la misma regla que `domain.NormalizePhone`) e índice parcial
+  `clients (salon_id, phone_norm) WHERE phone_norm <> ''` para la búsqueda de la
+  reserva pública. Guardas de `information_schema` / `pg_constraint` /
+  `IF NOT EXISTS`: una base con fichas existentes calcula su `phone_norm` sola.
 
-Ambas se probaron aplicando todos los `.sql` en orden **dos veces** con
+Las tres se probaron aplicando todos los `.sql` en orden **dos veces** con
 `psql -v ON_ERROR_STOP=1` sobre una base limpia y sobre una ya migrada, y el
-binario arranca contra esas bases (el runner registra las 12 versiones en
+binario arranca contra esas bases (el runner registra las 13 versiones en
 `schema_migrations`).

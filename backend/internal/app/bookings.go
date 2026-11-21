@@ -17,6 +17,9 @@ import (
 type BookingService struct {
 	Bookings    ports.BookingRepository
 	Memberships ports.MembershipRepository
+	// Settings da la zona horaria del salón para el TEXTO de los avisos (el
+	// evento del websocket sigue en UTC). nil = defaults de fábrica.
+	Settings ports.SalonSettingsRepository
 	// Events y Notifier son opcionales (nil = no avisa): el caso de uso
 	// publica "agendé un turno" sin saber que atrás hay websockets.
 	Events   ports.EventPublisher
@@ -97,7 +100,7 @@ func (s BookingService) CreateBookingWithOp(actor domain.Membership, salonID, pr
 		TS: b.CreatedAt,
 	})
 	notify(s.Notifier, salonID, "", "Nuevo turno",
-		b.ClientName+" · "+b.StartsAt.Format("02/01 15:04"), domain.KindBooking)
+		b.ClientName+" · "+salonTimeLabel(s.Settings, salonID, b.StartsAt), domain.KindBooking)
 	return b, nil
 }
 
@@ -217,10 +220,10 @@ func (s BookingService) Update(actor domain.Membership, salonID, bookingID strin
 	})
 	if patch.Status != nil {
 		notify(s.Notifier, salonID, "", bookingChangeTitle(b.Status),
-			b.ClientName+" · "+b.StartsAt.Format("02/01 15:04"), domain.KindBooking)
+			b.ClientName+" · "+salonTimeLabel(s.Settings, salonID, b.StartsAt), domain.KindBooking)
 	} else if rescheduled {
 		notify(s.Notifier, salonID, "", "Turno reprogramado",
-			b.ClientName+" · "+b.StartsAt.Format("02/01 15:04"), domain.KindBooking)
+			b.ClientName+" · "+salonTimeLabel(s.Settings, salonID, b.StartsAt), domain.KindBooking)
 	}
 	return b, nil
 }

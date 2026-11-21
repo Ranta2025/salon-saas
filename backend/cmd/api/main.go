@@ -167,7 +167,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps) {
 	// Firma de las URLs de fotos (24 h): clave derivada del secreto del proceso.
 	photoSigner := security.NewPhotoSigner(cfg.JWTSecret)
 
-	bookSvc := app.BookingService{Bookings: bookings, Memberships: mems, Events: hub, Notifier: notifSvc}
+	// Settings: los avisos de turno se formatean en la zona horaria del salón.
+	bookSvc := app.BookingService{Bookings: bookings, Memberships: mems, Settings: salons, Events: hub, Notifier: notifSvc}
+	clientsRepo := pgstore.Clients{Pool: pool}
 	svcSvc := app.ServiceService{Services: servicesRepo, Memberships: mems}
 	saleSvc := app.SaleService{Sales: salesRepo, Services: servicesRepo, Memberships: mems, Events: hub}
 	// Tx: el cierre corre en una transacción con advisory lock por salón (B-09).
@@ -178,7 +180,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps) {
 	}
 	dashSvc := app.DashboardService{Sales: salesRepo, Agenda: bookings, Staff: mems, Memberships: mems}
 	clientSvc := app.ClientService{
-		Clients:     pgstore.Clients{Pool: pool},
+		Clients:     clientsRepo,
 		Memberships: mems,
 		Photos:      store,                                      // filesystem local
 		Images:      imaging.WebP{MaxSide: domain.MaxPhotoSide}, // cwebp
@@ -191,7 +193,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps) {
 	availabilitySvc := app.AvailabilityService{Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems, Bookings: bookings}
 	publicBookingSvc := app.PublicBookingService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems, Bookings: bookings,
-		Events: hub, Notifier: notifSvc,
+		Clients: clientsRepo, // cada reserva pública deja la ficha de la clienta (E-03)
+		Events:  hub, Notifier: notifSvc,
 	}
 
 	router := gin.New()
