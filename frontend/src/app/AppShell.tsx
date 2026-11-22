@@ -30,6 +30,9 @@ const NAV: readonly NavEntry[] = [
   { to: '/panel/calendario', label: 'Calendario', end: false },
   { to: '/panel/pos', label: 'Ventas', end: false },
   { to: '/panel/servicios', label: 'Servicios', end: false },
+  // The label is short on purpose: five columns at 375 px keep every entry in
+  // two rows (S-F2e-5). The page itself is titled «Equipamiento del salón».
+  { to: '/panel/equipamiento', label: 'Puestos', end: false, managerOnly: true },
   { to: '/panel/clientes', label: 'Clientes', end: false },
   { to: '/panel/avisos', label: 'Avisos', end: false },
   { to: '/panel/equipo', label: 'Equipo', end: false, managerOnly: true },

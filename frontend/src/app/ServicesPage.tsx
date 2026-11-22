@@ -6,6 +6,14 @@ import {
   updateService,
   type ApiErrorNotice,
 } from '../lib/api'
+import {
+  fetchEquipment,
+  NO_ACTIVE_EQUIPMENT_NOTICE,
+  resourceTypeName,
+  serviceOffersSlots,
+  serviceResourceTypeId,
+  type ResourceType,
+} from '../lib/equipment'
 import { fetchMembers, type SalonMember } from '../lib/members'
 import {
   bookableMembers,
@@ -33,6 +41,9 @@ export function ServicesPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [mode, setMode] = useState<FormMode>({ kind: 'closed' })
   const [members, setMembers] = useState<SalonMember[] | null>(null)
+  // Equipment of the salon (S-F2e-5): null until it loads, and null forever if
+  // the call fails. Without it the page claims nothing about equipment.
+  const [equipment, setEquipment] = useState<ResourceType[] | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
@@ -83,6 +94,27 @@ export function ServicesPage() {
       .catch(() => {
         if (active) {
           setMembers(null)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [salonId, reloadKey])
+
+  useEffect(() => {
+    if (!salonId) {
+      return
+    }
+    let active = true
+    fetchEquipment(salonId)
+      .then((list) => {
+        if (active) {
+          setEquipment(list)
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setEquipment(null)
         }
       })
     return () => {
@@ -149,6 +181,7 @@ export function ServicesPage() {
         <ServiceForm
           service={mode.kind === 'edit' ? mode.service : undefined}
           professionals={bookableMembers(members ?? [])}
+          equipment={equipment ?? []}
           onSubmit={
             mode.kind === 'edit'
               ? (input) => handleUpdate(mode.service.id, input)
@@ -202,6 +235,7 @@ export function ServicesPage() {
                     </th>
                     <th scope="col">Estado</th>
                     {members !== null ? <th scope="col">Profesionales</th> : null}
+                    {equipment !== null ? <th scope="col">Equipo</th> : null}
                     <th scope="col">
                       <span className="visually-hidden">Acciones</span>
                     </th>
@@ -229,23 +263,53 @@ export function ServicesPage() {
                         </span>
                       </td>
                       {members !== null ? (
-                        <td data-label="Profesionales" className="service-count">
-                          {(() => {
-                            const count = professionalCount(members, service.id)
-                            const nobody = nobodyDoesService(members, service.id)
-                            return (
-                              <>
-                                <span className="service-count__label">
-                                  {professionalsCountLabel(count)}
-                                </span>
-                                {nobody ? (
-                                  <span className="service-count__alert" role="status">
-                                    {NOBODY_DOES_SERVICE_NOTICE}
+                        <td data-label="Profesionales" className="service-cell">
+                          {/* Grid inside the cell: a `display:grid` on the <td>
+                              itself would leave the table and merge with the next
+                              cell (two `.service-cell`s are now adjacent). */}
+                          <span className="service-count">
+                            {(() => {
+                              const count = professionalCount(members, service.id)
+                              const nobody = nobodyDoesService(members, service.id)
+                              return (
+                                <>
+                                  <span className="service-count__label">
+                                    {professionalsCountLabel(count)}
                                   </span>
-                                ) : null}
-                              </>
-                            )
-                          })()}
+                                  {nobody ? (
+                                    <span className="service-count__alert" role="status">
+                                      {NOBODY_DOES_SERVICE_NOTICE}
+                                    </span>
+                                  ) : null}
+                                </>
+                              )
+                            })()}
+                          </span>
+                        </td>
+                      ) : null}
+                      {equipment !== null ? (
+                        <td data-label="Equipo" className="service-cell">
+                          <span className="service-count">
+                            {(() => {
+                              const typeId = serviceResourceTypeId(service)
+                              const name = resourceTypeName(equipment, typeId)
+                              if (typeId === null) {
+                                return <span className="muted">Sin equipo</span>
+                              }
+                              return (
+                                <>
+                                  <span className="service-count__label">
+                                    {name ?? 'Equipo borrado'}
+                                  </span>
+                                  {!serviceOffersSlots(equipment, typeId) ? (
+                                    <span className="service-count__alert" role="status">
+                                      {NO_ACTIVE_EQUIPMENT_NOTICE}
+                                    </span>
+                                  ) : null}
+                                </>
+                              )
+                            })()}
+                          </span>
                         </td>
                       ) : null}
                       <td className="table__actions" data-label="Acciones">

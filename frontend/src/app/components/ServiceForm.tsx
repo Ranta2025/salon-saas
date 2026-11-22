@@ -1,4 +1,10 @@
 import { useState, type FormEvent } from 'react'
+import {
+  activeUnitCount,
+  NO_ACTIVE_EQUIPMENT_NOTICE,
+  serviceResourceTypeId,
+  type ResourceType,
+} from '../../lib/equipment'
 import { formatCents, parseAmountToCents } from '../../lib/money'
 import { normalizeServiceIds } from '../../lib/tradeServices'
 import type { SalonMember } from '../../lib/members'
@@ -9,11 +15,19 @@ type ServiceFormProps = {
   service?: Service
   /** Bookable members offered to mark in create mode (S-F2c-7). */
   professionals?: readonly SalonMember[]
+  /** Types of equipment the service may use (S-F2e-5); empty is valid. */
+  equipment?: readonly ResourceType[]
   onSubmit: (input: ServiceInput | ServiceUpdateInput) => Promise<void>
   onCancel: () => void
 }
 
-export function ServiceForm({ service, professionals = [], onSubmit, onCancel }: ServiceFormProps) {
+export function ServiceForm({
+  service,
+  professionals = [],
+  equipment = [],
+  onSubmit,
+  onCancel,
+}: ServiceFormProps) {
   const editing = Boolean(service)
   const [name, setName] = useState(service?.name ?? '')
   const [duration, setDuration] = useState(String(service?.duration_min ?? 45))
@@ -23,6 +37,7 @@ export function ServiceForm({ service, professionals = [], onSubmit, onCancel }:
   const [commission, setCommission] = useState(String(service?.commission_pct ?? 0))
   const [active, setActive] = useState(service?.active ?? true)
   const [professionalIds, setProfessionalIds] = useState<string[]>([])
+  const [resourceTypeId, setResourceTypeId] = useState(serviceResourceTypeId(service ?? {}) ?? '')
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
@@ -56,6 +71,8 @@ export function ServiceForm({ service, professionals = [], onSubmit, onCancel }:
       duration_min: durationMin,
       price_cents: priceCents,
       commission_pct: commissionPct,
+      // S-F2e-3: a type id, or `null` when the service uses no equipment.
+      resource_type_id: resourceTypeId === '' ? null : resourceTypeId,
     }
 
     setPending(true)
@@ -74,6 +91,10 @@ export function ServiceForm({ service, professionals = [], onSubmit, onCancel }:
   }
 
   const priceCentsInForm = parseAmountToCents(price)
+  // A type absent from the list (the equipment call failed, or the type was
+  // deleted) stays selectable so saving the service never clears it silently.
+  const knownType = equipment.find((type) => type.id === resourceTypeId) ?? null
+  const unknownType = resourceTypeId !== '' && knownType === null
 
   return (
     <form className="service-form" onSubmit={handleSubmit} noValidate>
@@ -140,6 +161,36 @@ export function ServiceForm({ service, professionals = [], onSubmit, onCancel }:
             onChange={(event) => setCommission(event.target.value)}
             required
           />
+        </div>
+        <div className="field service-form__wide">
+          <label htmlFor="service-equipment">Equipo que usa</label>
+          <select
+            id="service-equipment"
+            className="select"
+            value={resourceTypeId}
+            onChange={(event) => setResourceTypeId(event.target.value)}
+          >
+            <option value="">Ninguno (sin equipo)</option>
+            {equipment.map((type) => (
+              <option key={type.id} value={type.id}>
+                {type.name}
+              </option>
+            ))}
+            {unknownType ? <option value={resourceTypeId}>Equipo actual (sin nombre)</option> : null}
+          </select>
+          <p className="field__hint">
+            Un turno de este servicio ocupa una unidad activa del equipo además de la profesional.
+          </p>
+          {knownType && activeUnitCount(knownType) === 0 ? (
+            <p className="notice notice--info" role="status">
+              {NO_ACTIVE_EQUIPMENT_NOTICE}
+            </p>
+          ) : null}
+          {unknownType ? (
+            <p className="field__hint">
+              No pudimos leer el nombre de este equipo; se conserva el que ya tiene el servicio.
+            </p>
+          ) : null}
         </div>
         {editing ? (
           <label className="checkbox service-form__wide">

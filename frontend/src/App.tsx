@@ -4,6 +4,7 @@ import { AppShell } from './app/AppShell'
 import { CalendarPage } from './app/CalendarPage'
 import { ClientDetailPage } from './app/ClientDetailPage'
 import { ClientsPage } from './app/ClientsPage'
+import { EquipmentPage } from './app/EquipmentPage'
 import { LoginPage } from './app/LoginPage'
 import { MyAgendaPage } from './app/MyAgendaPage'
 import { NotificationsPage } from './app/NotificationsPage'
@@ -76,6 +77,7 @@ export function App() {
           <Route path="clientes/:clientId" element={<ClientDetailPage />} />
           <Route path="avisos" element={<NotificationsPage />} />
           <Route path="equipo" element={<TeamPage />} />
+          <Route path="equipamiento" element={<EquipmentPage />} />
           <Route path="ajustes" element={<SettingsPage />} />
         </Route>
 

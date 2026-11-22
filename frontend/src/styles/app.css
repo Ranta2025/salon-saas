@@ -1989,8 +1989,9 @@
     grid-area: nav;
   }
 
-  /* Every entry keeps its whole label: five columns on phones so the ninth
-     entry (Mi agenda) still fits in two rows at 375 and 390 px, no scrolling. */
+  /* Every entry keeps its whole label: five columns on phones so the tenth
+     entry («Puestos», the equipment page of F2e) still fits in two rows at 375
+     and 390 px, no scrolling. */
   .shell__nav ul {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -2631,6 +2632,12 @@
   font-size: 0.8125rem;
 }
 
+/* A table cell keeps its own `display`: the grid lives inside it, otherwise the
+   browser merges two adjacent non-cell children into one anonymous cell. */
+.service-cell {
+  vertical-align: top;
+}
+
 .service-count__label {
   color: var(--ink-soft);
 }
@@ -2644,13 +2651,13 @@
 @media (max-width: 699px) {
   /* In the stacked table the cell becomes a labelled row: the alert wraps under
      the count instead of being squeezed to the right edge. */
-  .table--stack td.service-count {
+  .table--stack td.service-cell {
     display: grid;
     justify-items: start;
     gap: 0.25rem;
   }
 
-  .table--stack td.service-count::before {
+  .table--stack td.service-cell::before {
     content: attr(data-label);
     font-size: 0.6875rem;
     font-weight: 700;
@@ -3277,4 +3284,135 @@
   margin: 0;
   padding-left: 1.1rem;
   overflow-wrap: anywhere;
+}
+
+/* ==========================================================================
+   Fase 6 — F2e: equipment with capacity (/panel/equipamiento)
+
+   One card per type of equipment with its units. The switch is the `.attends`
+   drawing of F2a (44 px, `role=switch`); the cards and the fields go to one
+   column on the phone so nothing overflows at 390 px.
+   ========================================================================== */
+
+.equip-form__grid {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.equip-grid {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.equip-card {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.equip-card__fields {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.equip-card__add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.equip-card__add .input {
+  flex: 1 1 5.5rem;
+  min-width: 0;
+  max-width: 8rem;
+}
+
+.equip-card__units-title {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.equip-units {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.equip-unit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.2rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.equip-unit:first-child {
+  border-top: 0;
+}
+
+.equip-unit[data-inactive='true'] .equip-unit__name {
+  color: var(--ink-muted);
+}
+
+.equip-unit__switch {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.equip-unit__name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.equip-unit__rename {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.equip-unit__rename .input {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+.equip-form .btn,
+.equip-card .btn {
+  min-height: 44px;
+}
+
+.equip-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+@media (min-width: 640px) {
+  .equip-form__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+@media (min-width: 760px) {
+  .equip-card__fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .equip-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
 }

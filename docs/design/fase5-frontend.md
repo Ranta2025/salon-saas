@@ -1228,3 +1228,146 @@ páginas).
   ausencias (403 de recepción) mostrando la agenda igual que antes.
 - Fuera de alcance de esta entrega: reasignación automática (es una decisión del
   salón), la lista de espera (F7) y los avisos por WhatsApp (F12).
+
+## 19. Fase 6 — F2e: puestos y equipamiento con capacidad
+
+Contrato `odd/tasks/fase6-roadmap.md`, «Contrato F2e» (forma de S-F2e-3 y
+S-F2e-5). Sin dependencias nuevas. El backend que implementa el contrato en
+paralelo no se tocó: la UI consume `GET/POST /salons/:id/resources`,
+`PATCH /salons/:id/resources/:tid`, `POST /salons/:id/resources/:tid/units`,
+`PATCH /salons/:id/resource-units/:uid` (con `future_bookings` en la respuesta) y
+`DELETE /salons/:id/resources/:tid`, y los servicios aceptan y devuelven
+`resource_type_id`. Las frases del servidor se muestran verbatim.
+
+### 19.1 Tipo y cliente de API (`src/lib/equipment.ts`)
+
+| campo | lectura |
+| --- | --- |
+| `ResourceType` | `{id, name, units, services}`: `normalizeEquipment` lee `{types:[…]}`, descarta filas sin id y deja el nombre recortado (o el id si viene vacío) |
+| `ResourceUnit` | `{id, name, active}`: una unidad sin el flag booleano cuenta como activa (la columna nace en `true`; el equipo se quita desactivando, nunca borrando turnos) |
+| `services` | entero ≥ 0; un valor raro cae en 0 |
+| `Service.resource_type_id` | opcional en el tipo (`src/types.ts`) porque un API anterior no lo manda; se lee con `serviceResourceTypeId` (trim, `''`/`null` = sin equipo) |
+| `Booking.resource_unit_id` | opcional, documentado para los turnos del personal |
+
+- `fetchEquipment`, `createResourceType({name,count})`, `renameResourceType`,
+  `addResourceUnits(typeId,count)`, `setResourceUnit(unitId,{name?,active?})` y
+  `deleteResourceType` son el cliente fino del contrato. La respuesta del `PATCH`
+  de unidad se lee con `normalizeResourceUnitUpdate` (tolera los campos sueltos o
+  bajo `unit`, y `future_bookings` anidado).
+- `createService`/`updateService` (`src/lib/api.ts`) normalizan
+  `resource_type_id`: un id recortado, `null` para «sin equipo» y la clave
+  omitida si el cuerpo no la trae (un servidor anterior ve el mismo cuerpo de
+  siempre).
+
+### 19.2 Reglas puras (`src/lib/equipment.ts`)
+
+| helper | regla |
+| --- | --- |
+| `canEditEquipment` | solo dueño/administración: el resto no ve la entrada del menú ni la página (que igual explica el rol) |
+| `activeUnitCount` | unidades activas de un tipo: la capacidad que se ofrece |
+| `serviceOffersSlots` | un servicio sin equipo siempre ofrece turnos; con un tipo, solo si tiene al menos una unidad activa; un tipo borrado no ofrece ninguno |
+| `futureBookingsNotice` | `null` con 0, «1 turno futuro usa este puesto (lo conserva)» y «N turnos futuros usan este puesto (los conservan)» |
+| `validateResourceName` | espejo del servidor y en su orden: `trim`, saltos de línea a espacio, vacío → «El nombre del equipo es obligatorio», más de 60 → «El nombre no puede superar los 60 caracteres», repetido sin distinguir mayúsculas («Ya existe un equipo con ese nombre»); renombrar un tipo no choca consigo mismo |
+| `canAddType` / `checkUnitCount` / `canAddUnits` | 20 tipos → «Máximo 20 tipos de equipo»; cantidad entera 1..50 (texto del formulario) y 50 unidades por tipo → «Máximo 50 unidades por tipo» |
+| `nextUnitName` | primer número libre del tipo: «Silla 1», «Silla 3» → «Silla 2» |
+| `applyUnitActive` | interruptor optimista sobre una copia: repetirlo con el valor anterior es la vuelta atrás exacta y nunca muta la lista guardada |
+| `normalizeResourceUnitUpdate` | `{active: boolean \| null, futureBookings: number}` del `PATCH` de unidad |
+
+### 19.3 `/panel/equipamiento` (S-F2e-5)
+
+- Página nueva de la administración (menú y `EquipmentPage`) con el encabezado
+  «Equipamiento del salón» y el formulario «Nuevo tipo de equipo»: nombre y
+  cantidad de unidades (1..50). Al crear, la respuesta se recarga y el aviso dice
+  cuántas unidades se crearon («Equipo creado con 2 unidades: «Manicura 1» a
+  «Manicura 2».»). Los errores del servidor se leen tal cual en `role="alert"`.
+- «Tipos y unidades» lista una tarjeta por tipo con el conteo «N de M unidades
+  activas», cuántos servicios lo usan («1 servicio lo usa.», «Ningún servicio lo
+  usa todavía.»), el renombrado del tipo (campo + «Guardar nombre», con la
+  validación local y la frase del servidor si rechaza), «Unidades nuevas» con el
+  nombre que recibirá la próxima («Se crearán como «Pelo 4»…») y «Agregar
+  unidades» (deshabilitado en el límite, con su frase).
+- Cada unidad es una fila: interruptor `role="switch"` («Equipo activo: Pelo 2»),
+  su nombre, la píldora «Activa»/«Inactiva» y «Renombrar» (campo en línea con
+  «Guardar»/«Cancelar»). Desactivar es la forma de quitar equipo: la fila cambia
+  antes de la respuesta y, si el `PATCH` trae `future_bookings`, el aviso dice
+  «Pelo 2: 2 turnos futuros usan este puesto (los conservan).»; un rechazo la
+  devuelve a su valor anterior con el mensaje del servidor.
+- «Borrar equipo» pide confirmación en línea («¿Borrar el equipo? Las unidades
+  con turnos no se pueden borrar.» → «Sí, borrar» / «Volver»); un `409` muestra
+  «Hay servicios o turnos que lo usan: desactivá las unidades en lugar de
+  borrarlo» dentro de la tarjeta y no borra nada.
+
+### 19.4 `/panel/servicios` (S-F2e-5)
+
+- El formulario de alta y de edición suma el selector «Equipo que usa» con
+  «Ninguno (sin equipo)» y los tipos del salón, más la ayuda de que un turno
+  ocupa una unidad activa. Si el tipo elegido no tiene unidades activas aparece
+  «No hay equipo activo: no se ofrecen turnos» (`role="status"`). Si el
+  equipamiento no se pudo leer, el tipo actual del servicio se conserva como
+  opción («Equipo actual (sin nombre)»): guardar el servicio nunca lo borra en
+  silencio.
+- La tabla gana la columna «Equipo»: el nombre del tipo, «Sin equipo» o «Equipo
+  borrado», y bajo el nombre el aviso «No hay equipo activo: no se ofrecen
+  turnos» cuando el tipo no tiene ninguna unidad activa. Si `GET /resources`
+  falla no se dibuja la columna ni se afirma nada del equipamiento (un cero
+  inventado mentiría, como en F2c con `/members`).
+- La columna «Profesionales» pasó su `display: grid` a un `span` interno
+  (`td.service-cell`): con dos celdas no-tabla contiguas el navegador las
+  fusionaba en una celda anónima y «Equipo» se dibujaba dentro de
+  «Profesionales». El bug existía desde F2c y solo se veía al sumar la segunda
+  columna.
+
+### 19.5 Menú y navegación móvil
+
+- `NAV` suma «Puestos» (`/panel/equipamiento`, `managerOnly`) después de
+  «Servicios»: la décima entrada queda en dos filas de cinco a 375 y 390 px con
+  44 px de alto cada enlace (`scrollWidth === clientWidth`). **Desviación
+  consciente:** la etiqueta del menú es «Puestos» y no «Equipamiento» porque
+  «Equipamiento» no entra en una columna de ~66 px a 375 px y partiría el
+  enlace; el `h1` de la página mantiene «Equipamiento del salón». Un
+  profesional o recepción no ve la entrada.
+
+### 19.6 Accesibilidad y estilos
+
+`app.css` suma el bloque «F2e»: `.equip-form__grid`, `.equip-grid` (dos columnas
+desde 760 px, una en el teléfono), `.equip-card`/`.equip-card__fields`,
+`.equip-card__add` (el número y su botón envuelven), `.equip-units`/`.equip-unit`
+(fila de 44 px con filete, nombre con `overflow-wrap: anywhere`),
+`.equip-unit__rename` y `.equip-card__foot`. Todos los botones del formulario y
+de las tarjetas son de 44 px; el interruptor reutiliza `.attends` de F2a (44 px,
+foco de 3 px de `base.css`), y la celda nueva de la tabla usa `.service-cell`.
+Medido en el navegador: ningún control nuevo por debajo de 44 px (los únicos
+menores son el botón de avisos y los `btn--sm` que ya existían), `Tab` desde el
+campo de cantidad llega al siguiente control con `outline: 3px solid`, y a 390 y
+1280 px no hay scroll horizontal en ninguna de las dos páginas.
+
+### 19.7 Verificación
+
+- `npx tsc --noEmit` sin errores, `npm test` (296 tests, node --test; 282 eran
+  de la entrega anterior, 14 nuevas) y `npm run build` en verde.
+- TDD en `src/lib` (primero en rojo: `ERR_MODULE_NOT_FOUND` del módulo nuevo y
+  `resource_type_id` sin normalizar en `createService`): `equipment.test.ts`
+  cubre la lectura del payload (unidades sin flag, filas inutilizables,
+  `services` raro), quién edita, el conteo de unidades activas, la regla de «sin
+  equipo activo no se ofrecen turnos», el aviso de turnos futuros en singular y
+  plural, la validación del nombre con las cinco frases del servidor (trim, una
+  línea, 60 exactos, 61, repetido sin mayúsculas, renombrado de sí mismo), los
+  límites 20/50 y la cantidad 1..50, el siguiente número libre con huecos,
+  el interruptor optimista con vuelta atrás exacta sin mutar la lista y la
+  lectura del `PATCH` de unidad. `services.test.ts` cubre `resource_type_id` en
+  el alta (id recortado, `null` y clave omitida) y su borrado en la edición.
+- Revisión visual con el bundle de `vite build` servido junto a una API simulada
+  en `/tmp/f2e-shot` (tres tipos con unidades activas e inactivas, un tipo sin
+  ninguna activa usado por un servicio, un `PATCH` que devuelve
+  `future_bookings: 2` y un `DELETE` que responde `409` con la frase del
+  contrato) y Chromium headless por protocolo DevTools (el flag `--screenshot` se
+  cuelga en este entorno) a 390 y 1280 px: `/panel/equipamiento` (lista, aviso
+  «Pelo 2: 2 turnos futuros usan este puesto (los conservan).», alta de
+  «Manicura» con dos unidades y rechazo del borrado de «Barbería» con el mensaje
+  del servidor) y `/panel/servicios` (columna «Equipo» con el aviso de falta de
+  unidades activas, selector en alta con «Ninguno» y los tipos, y edición de
+  «Color y planchado» con «Barbería» y el aviso). Comprobado en el navegador:
+  `scrollWidth === clientWidth` en las dos páginas y anchos, la barra móvil con
+  las diez entradas en dos filas y 44 px, y el foco de 3 px al tabular.
+- Fuera de alcance de esta entrega: equipo en la reserva de staff y el
+  mantenimiento programado (el contrato los excluye).
