@@ -40,6 +40,7 @@ Salieron de la revisión por tramos (S3 aprobado; S1 y S6 escalados sin texto de
 - [x] H4 `staff` devuelve 403 ante cualquier error de `Find` de membresía: distinguir 500 y loguear. — hecho: 6567029
 - [x] H5 `storage/s3.go` hace `io.ReadAll` del objeto sin tope: agregar `LimitReader` (hoy lo acota el tope de 8 MB de subida). — hecho: 6567029
 - [x] H6 `backend/api` (binario compilado) aparece como archivo sin seguimiento: revisar que `.gitignore` lo cubra y borrarlo. — hecho: sin cambio: ya cubierto por .gitignore línea 9
+- [x] H7 (review nativa de F2d3) `InSalonTx` esperaba el lock del salón con `context.Background()`, sin límite — hecho: tope de 30 s en el adaptador (reservas y caja), con rollback en contexto propio; los puertos no llevan contexto, así que la cancelación del pedido sigue sin propagarse (queda acotado, no cancelable)
 
 ## Contrato F2a (solo atiende quien debe)
 Regla: una persona es RESERVABLE (aparece en agenda, disponibilidad y selectores) si su rol es `professional` O tiene `attends = true`. Recepción y cliente nunca atienden. Un solo rol por persona (L3).
