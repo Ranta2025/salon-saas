@@ -11,10 +11,11 @@ import (
 // salon_id: un membership de otro tenant no existe para estas queries.
 
 // ListMembers devuelve el equipo con nombre y email (join con users), ordenado
-// por nombre como lo espera la pantalla.
+// por nombre como lo espera la pantalla. Incluye la marca de quién atiende
+// (F2a): la pantalla la muestra y la cambia con SetAttends.
 func (r Memberships) ListMembers(salonID string) ([]domain.Member, error) {
 	rows, err := r.Pool.Query(context.Background(),
-		`SELECT u.id, u.name, u.email, m.role
+		`SELECT u.id, u.name, u.email, m.role, m.attends
 		 FROM memberships m
 		 JOIN users u ON u.id = m.user_id
 		 WHERE m.salon_id=$1
@@ -27,13 +28,28 @@ func (r Memberships) ListMembers(salonID string) ([]domain.Member, error) {
 	for rows.Next() {
 		var role string
 		var m domain.Member
-		if err := rows.Scan(&m.ID, &m.Name, &m.Email, &role); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.Email, &role, &m.Attends); err != nil {
 			return nil, err
 		}
 		m.Role = domain.Role(role)
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+// SetAttends enciende o apaga "atiende clientes" de un miembro. El WHERE lleva
+// el salon_id: la marca de un miembro de otro tenant no se toca (ErrNotFound).
+func (r Memberships) SetAttends(userID, salonID string, attends bool) error {
+	tag, err := r.Pool.Exec(context.Background(),
+		`UPDATE memberships SET attends=$3 WHERE user_id=$1 AND salon_id=$2`,
+		userID, salonID, attends)
+	if err != nil {
+		return pgError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 // DeleteMember quita a alguien del salón. Si no era miembro de ESTE salón no

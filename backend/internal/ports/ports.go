@@ -48,13 +48,18 @@ type StaffLister interface {
 	ListStaff(salonID string) ([]domain.StaffMember, error)
 }
 
-// MemberAdminRepository: pantalla de equipo (listar con nombre/email, quitar y
-// contar por rol). Va aparte de MembershipRepository (ISP): los repos de
-// reservas o ventas no cargan con la administración del equipo.
+// MemberAdminRepository: pantalla de equipo (listar con nombre/email, quitar,
+// contar por rol y la marca de quién atiende). Va aparte de
+// MembershipRepository (ISP): los repos de reservas o ventas no cargan con la
+// administración del equipo.
 type MemberAdminRepository interface {
 	ListMembers(salonID string) ([]domain.Member, error)
 	DeleteMember(userID, salonID string) error
 	CountRole(salonID string, role domain.Role) (int, error)
+	// SetAttends cambia la marca de "atiende clientes" de un miembro. El UPDATE
+	// es la autorización y el scope: si la persona no pertenece a ESE salón no
+	// se afectan filas (ErrNotFound, nunca un upsert).
+	SetAttends(userID, salonID string, attends bool) error
 }
 
 // SalonSettingsRepository: configuración operativa del salón (zona horaria,

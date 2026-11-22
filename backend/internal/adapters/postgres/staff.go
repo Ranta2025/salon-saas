@@ -21,15 +21,18 @@ func (r Memberships) CountProfessionals(salonID string) (int, error) {
 	return n, nil
 }
 
-// ListStaff implementa ports.StaffLister: el personal que atiende, con nombre.
-// Queda fuera el rol reception/client: no atienden, no van al select de
-// profesional. El orden por nombre es el que espera el frontend.
+// ListStaff implementa ports.StaffLister: el personal que ATIENDE, con nombre.
+// La regla es la del dominio (Membership.Bookable) traducida a SQL carácter por
+// carácter: un profesional atiende siempre; owner/admin solo con attends = true;
+// recepción y cliente NUNCA (aunque una fila vieja o manual tenga la marca
+// encendida). El orden por nombre es el que espera el frontend.
 func (r Memberships) ListStaff(salonID string) ([]domain.StaffMember, error) {
 	rows, err := r.Pool.Query(context.Background(),
-		`SELECT u.id, u.name, m.role
+		`SELECT u.id, u.name, m.role, m.attends
 		 FROM memberships m
 		 JOIN users u ON u.id = m.user_id
-		 WHERE m.salon_id=$1 AND m.role IN ('owner','admin','professional')
+		 WHERE m.salon_id=$1
+		   AND (m.role='professional' OR (m.attends AND m.role IN ('owner','admin')))
 		 ORDER BY u.name, u.id`,
 		salonID)
 	if err != nil {
@@ -40,7 +43,7 @@ func (r Memberships) ListStaff(salonID string) ([]domain.StaffMember, error) {
 	for rows.Next() {
 		var role string
 		var m domain.StaffMember
-		if err := rows.Scan(&m.ID, &m.Name, &role); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &role, &m.Attends); err != nil {
 			return nil, err
 		}
 		m.Role = domain.Role(role)

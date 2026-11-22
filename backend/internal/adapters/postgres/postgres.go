@@ -118,29 +118,38 @@ func (r Salons) SaveSettings(s domain.SalonSettings) error {
 type Memberships struct{ Pool *pgxpool.Pool }
 
 func (r Memberships) Save(m domain.Membership) error {
+	// attends viaja en el upsert: la membresía es una sola fila (un rol por
+	// persona y salón) y cambiar el rol recalcula la marca por defecto
+	// (professional atiende, el resto no) en vez de arrastrar la vieja.
 	_, err := r.Pool.Exec(context.Background(),
-		`INSERT INTO memberships(user_id,salon_id,role) VALUES($1,$2,$3)
-		 ON CONFLICT (user_id,salon_id) DO UPDATE SET role=EXCLUDED.role`,
-		m.UserID, m.SalonID, string(m.Role))
+		`INSERT INTO memberships(user_id,salon_id,role,attends) VALUES($1,$2,$3,$4)
+		 ON CONFLICT (user_id,salon_id) DO UPDATE SET role=EXCLUDED.role, attends=EXCLUDED.attends`,
+		m.UserID, m.SalonID, string(m.Role), m.Attends)
 	return err
 }
 
 func (r Memberships) Find(userID, salonID string) (domain.Membership, error) {
 	var role string
+	var attends bool
 	err := r.Pool.QueryRow(context.Background(),
-		`SELECT role FROM memberships WHERE user_id=$1 AND salon_id=$2`, userID, salonID,
-	).Scan(&role)
+		`SELECT role, attends FROM memberships WHERE user_id=$1 AND salon_id=$2`, userID, salonID,
+	).Scan(&role, &attends)
 	if err != nil {
 		return domain.Membership{}, notFound(err)
 	}
-	return domain.NewMembership(userID, salonID, domain.Role(role))
+	m, err := domain.NewMembership(userID, salonID, domain.Role(role))
+	if err != nil {
+		return domain.Membership{}, err
+	}
+	m.Attends = attends
+	return m, nil
 }
 
 // ListByUser trae los salones de un usuario con su rol. Lo usan las features
 // que solo tienen el JWT: rooms del websocket y "marcar notificación leída".
 func (r Memberships) ListByUser(userID string) ([]domain.Membership, error) {
 	rows, err := r.Pool.Query(context.Background(),
-		`SELECT salon_id, role FROM memberships WHERE user_id=$1 ORDER BY salon_id`, userID)
+		`SELECT salon_id, role, attends FROM memberships WHERE user_id=$1 ORDER BY salon_id`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -148,13 +157,15 @@ func (r Memberships) ListByUser(userID string) ([]domain.Membership, error) {
 	var out []domain.Membership
 	for rows.Next() {
 		var salonID, role string
-		if err := rows.Scan(&salonID, &role); err != nil {
+		var attends bool
+		if err := rows.Scan(&salonID, &role, &attends); err != nil {
 			return nil, err
 		}
 		m, err := domain.NewMembership(userID, salonID, domain.Role(role))
 		if err != nil {
 			return nil, err
 		}
+		m.Attends = attends
 		out = append(out, m)
 	}
 	return out, rows.Err()

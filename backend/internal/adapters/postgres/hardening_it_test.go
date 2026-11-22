@@ -229,11 +229,13 @@ func TestMemberships_IT_staff(t *testing.T) {
 		VALUES('u-staff-recep','Recep','u-staff-recep@test.com','x')
 		ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name`)
 
+	// F2a: el dueño sigue en la agenda porque atiende (attends=true, como lo
+	// deja el alta desde la 015); el profesional atiende por rol.
 	for _, m := range []domain.Membership{
-		{UserID: "u-it-pos", SalonID: "s-it-pos", Role: domain.RoleOwner},
-		{UserID: "u-staff-prof", SalonID: "s-it-pos", Role: domain.RoleProfessional},
+		{UserID: "u-it-pos", SalonID: "s-it-pos", Role: domain.RoleOwner, Attends: true},
+		{UserID: "u-staff-prof", SalonID: "s-it-pos", Role: domain.RoleProfessional, Attends: true},
 		{UserID: "u-staff-recep", SalonID: "s-it-pos", Role: domain.RoleReception},
-		{UserID: "u-staff-prof", SalonID: "s-it-pos2", Role: domain.RoleProfessional},
+		{UserID: "u-staff-prof", SalonID: "s-it-pos2", Role: domain.RoleProfessional, Attends: true},
 	} {
 		if err := mems.Save(m); err != nil {
 			t.Fatalf("membership: %v", err)

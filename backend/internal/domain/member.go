@@ -1,13 +1,14 @@
 package domain
 
 // Member es una persona del equipo del salón con lo que necesita la pantalla
-// de equipo: id, nombre, email y rol. Es la proyección de memberships + users
-// (no tiene tabla propia).
+// de equipo: id, nombre, email, rol y si atiende clientes (F2a). Es la
+// proyección de memberships + users (no tiene tabla propia).
 type Member struct {
-	ID    string
-	Name  string
-	Email string
-	Role  Role
+	ID      string
+	Name    string
+	Email   string
+	Role    Role
+	Attends bool
 }
 
 // AddableBy dice si `actor` puede sumar a alguien con el rol `target`.

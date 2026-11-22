@@ -18,22 +18,70 @@ const (
 
 // Membership une un User con un Salon + su Role.
 // Es la pieza que hace cumplir el multi-tenancy: sin membership no hay acceso.
+//
+// Attends es la marca de "esta persona atiende clientes": la necesitan el dueño
+// y la administración que también trabajan en la silla (el dueño-barbero). El
+// rol professional atiende siempre y recepción/cliente nunca, así que la marca
+// solo cambia el resultado para owner/admin (ver Bookable).
 type Membership struct {
 	UserID  string
 	SalonID string
 	Role    Role
+	Attends bool
 }
 
 // NewMembership valida la unión usuario-salón-rol.
+//
+// La marca nace con el rol: un profesional atiende (es su oficio) y el resto no.
+// El dueño de un salón recién creado la enciende el caso de uso (salón de una
+// sola persona, S-F2a-4) y la pantalla de equipo la cambia después.
 func NewMembership(userID, salonID string, role Role) (Membership, error) {
 	if userID == "" || salonID == "" {
 		return Membership{}, fmt.Errorf("%w: user y salón son obligatorios", ErrValidation)
 	}
 	switch role {
 	case RoleOwner, RoleAdmin, RoleProfessional, RoleReception, RoleClient:
-		return Membership{UserID: userID, SalonID: salonID, Role: role}, nil
+		return Membership{UserID: userID, SalonID: salonID, Role: role, Attends: role == RoleProfessional}, nil
 	default:
 		return Membership{}, fmt.Errorf("%w: rol desconocido %q", ErrValidation, role)
+	}
+}
+
+// Bookable es LA regla de quién atiende clientes: rol professional, o owner /
+// admin con la marca encendida. Recepción y cliente no atienden nunca. Es la
+// única fuente de verdad: la agenda, la disponibilidad y la validación del
+// professional_id de un turno la consultan acá.
+func (m Membership) Bookable() bool { return bookable(m.Role, m.Attends) }
+
+// SetAttends devuelve la membresía con la marca cambiada, o el error de
+// validación (400) con el texto que ve la persona. Un profesional no puede
+// apagarse (su rol es su oficio) y recepción/cliente no pueden encenderse.
+func (m Membership) SetAttends(attends bool) (Membership, error) {
+	switch m.Role {
+	case RoleProfessional:
+		// Encendida es un no-op válido: ya atiende.
+		if !attends {
+			return Membership{}, NewMessage(ErrValidation, "Las profesionales siempre atienden")
+		}
+	case RoleOwner, RoleAdmin:
+		// Los únicos que la pueden cambiar.
+	default:
+		return Membership{}, NewMessage(ErrValidation, "Ese rol no atiende clientes")
+	}
+	m.Attends = attends
+	return m, nil
+}
+
+// bookable vive una sola vez para que Membership (quien entra) y StaffMember
+// (lo que muestra la agenda) no puedan divergir.
+func bookable(role Role, attends bool) bool {
+	switch role {
+	case RoleProfessional:
+		return true
+	case RoleOwner, RoleAdmin:
+		return attends
+	default:
+		return false
 	}
 }
 
