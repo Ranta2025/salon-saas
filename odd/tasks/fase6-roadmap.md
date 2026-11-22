@@ -10,9 +10,9 @@ verificada y commiteada.
 
 ## Tasks (orden)
 - [ ] F1 Link firmado de un solo uso para cancelar o reprogramar desde el email
-- [ ] F2a Equipo con roles múltiples: una persona puede tener varios roles en un salón (`memberships` pasa de PK (user_id, salon_id) a PK (user_id, salon_id, role)); los permisos son la unión; SOLO el rol `professional` hace a alguien reservable (hoy owner y admin cuentan como staff y inflan la disponibilidad aunque no atiendan)
+- [ ] F2a Solo atiende quien debe: un rol por persona (sin roles múltiples; decisión del usuario). Es reservable quien tiene el rol `professional`, o un dueño/administración con la marca `attends` (el dueño-barbero); hoy owner y admin cuentan siempre como staff y inflan la disponibilidad. Migración idempotente: columna `attends` en memberships, true para los `professional` existentes y para owner/admin ya existentes (no cambia lo que hay hoy), false para el resto
 - [ ] F2b "Mi agenda": al entrar, quien atiende ve primero SUS turnos (hoy y la semana) y puede alternar a "Todo el salón" si su rol lo permite; recepción y administración ven todo
-- [ ] F2c Servicios que hace cada profesional (`professional_services`) y la disponibilidad calculada por profesional (horario propio ∩ sabe hacer el servicio ∩ sin turno) y unida; hoy se asume que todo el equipo hace todos los servicios
+- [ ] F2c Oficio y servicios por profesional: cada profesional tiene un oficio visible (barbero, estilista, colorista, manicurista; texto libre) y la lista de servicios que hace (`professional_services`); la disponibilidad se calcula por profesional (sabe hacer el servicio ∩ sin turno ∩ su horario) y se une; hoy se asume que todo el equipo hace todos los servicios
 - [ ] F2d Horario por día de la semana, descansos y bloqueos (vacaciones, días libres por profesional)
 - [ ] F3 Comisiones por profesional + reporte por período
 - [ ] F4 Exportar CSV (ventas, cierres, clientes)
@@ -45,3 +45,6 @@ L1: ver S1. El usuario aprobó el orden F1 -> F2 -> F3 -> F5 -> F6 y dejar F11/F
 
 L2 (usuario, verbatim): "va un panel de administracion no ? donde los trabajadores ven sus turnos, mira en los roles cada trabajador aparte de ser uno generico si son varios trabajadores que tengan uno o mas roles , y cuando entren le salen los turnos que tienen planificado para el los turnos disponibles son dependiendo de la cantidad de empleados"
 Evidencia al debatirlo (código): memberships tiene PK (user_id, salon_id) = un rol por salon; `Role.IsStaff()` incluye owner/admin/professional; no existe vínculo profesional-servicio; el calendario muestra todas las columnas a todos. El panel ya existe (/panel).
+
+L3 (usuario, verbatim): "no cuando me referia a varios roles me referia barbero estilista y eso pero como lo dices es mejor uno solo de profesional que es el que atiende y ya"
+Decisión: un solo rol de acceso `professional` para quien atiende; el oficio (barbero, estilista...) es un dato aparte ligado a servicios (F2c). Se descarta la propuesta de roles múltiples. Queda la marca `attends` solo para el dueño/administración que también atiende.
