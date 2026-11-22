@@ -27,7 +27,12 @@ func scanBooking(scan func(...interface{}) error) (domain.Booking, error) {
 	return b, nil
 }
 
-type Bookings struct{ Pool *pgxpool.Pool }
+type Bookings struct {
+	Pool *pgxpool.Pool
+	// TxTimeout acota la espera del lock del salón y la transacción de
+	// InSalonTx (H7). Cero = el valor por defecto (txDefaultTimeout).
+	TxTimeout time.Duration
+}
 
 // bookingColumns es la lista única de columnas del turno. service_id va con
 // COALESCE porque es NULL para los turnos del calendario, y covered_from porque
@@ -165,12 +170,17 @@ func listBookings(q querier, salonID string, from, to time.Time) ([]domain.Booki
 // El lock se libera solo al terminar la transacción (commit o rollback), así que
 // no puede quedar colgado por un error.
 func (r Bookings) InSalonTx(salonID string, fn func(tx ports.BookingTx) error) error {
-	ctx := context.Background()
+	// H7: la espera del lock y la transacción entera tienen un tope. Sin él, una
+	// transacción trabada dejaba al pedido esperando para siempre con una
+	// conexión del pool tomada, y los pedidos del mismo salón hacían cola detrás.
+	// Al vencer, pgx cancela la consulta y el Rollback libera conexión y lock.
+	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback(ctx) }() // no-op si ya commiteó
+	defer rollbackTx(tx) // no-op si ya commiteó
 
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, "booking-cover:"+salonID); err != nil {
 		return err

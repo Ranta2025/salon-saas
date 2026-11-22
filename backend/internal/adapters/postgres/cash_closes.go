@@ -11,7 +11,12 @@ import (
 )
 
 // CashCloses: cierres de caja por turno, uno atrás del otro.
-type CashCloses struct{ Pool *pgxpool.Pool }
+type CashCloses struct {
+	Pool *pgxpool.Pool
+	// TxTimeout acota la espera del lock del salón y la transacción de
+	// InSalonTx (H7). Cero = el valor por defecto (txDefaultTimeout).
+	TxTimeout time.Duration
+}
 
 const cashCloseColumns = `id,salon_id,opened_at,closed_at,system_cash_cents,counted_cents,difference_cents,note`
 
@@ -78,12 +83,15 @@ func (r CashCloses) List(salonID string) ([]domain.CashClose, error) {
 // El lock se libera solo al terminar la transacción (rollback o commit), así que
 // no puede quedar colgado por un error.
 func (r CashCloses) InSalonTx(salonID string, fn func(tx ports.CashCloseTx) error) error {
-	ctx := context.Background()
+	// H7: mismo tope que en las reservas, para que un cierre trabado no deje a
+	// los demás cierres del salón esperando el lock para siempre.
+	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback(ctx) }() // no-op si ya commiteó
+	defer rollbackTx(tx) // no-op si ya commiteó
 
 	// hashtext(salon_id) da una clave de 32 bits estable por salón: salones
 	// distintos no se esperan entre sí.
