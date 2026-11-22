@@ -10,7 +10,10 @@ verificada y commiteada.
 
 ## Tasks (orden)
 - [ ] F1 Link firmado de un solo uso para cancelar o reprogramar desde el email
-- [ ] F2 Horario por día de la semana, descansos y bloqueos (vacaciones, días libres por profesional)
+- [ ] F2a Equipo con roles múltiples: una persona puede tener varios roles en un salón (`memberships` pasa de PK (user_id, salon_id) a PK (user_id, salon_id, role)); los permisos son la unión; SOLO el rol `professional` hace a alguien reservable (hoy owner y admin cuentan como staff y inflan la disponibilidad aunque no atiendan)
+- [ ] F2b "Mi agenda": al entrar, quien atiende ve primero SUS turnos (hoy y la semana) y puede alternar a "Todo el salón" si su rol lo permite; recepción y administración ven todo
+- [ ] F2c Servicios que hace cada profesional (`professional_services`) y la disponibilidad calculada por profesional (horario propio ∩ sabe hacer el servicio ∩ sin turno) y unida; hoy se asume que todo el equipo hace todos los servicios
+- [ ] F2d Horario por día de la semana, descansos y bloqueos (vacaciones, días libres por profesional)
 - [ ] F3 Comisiones por profesional + reporte por período
 - [ ] F4 Exportar CSV (ventas, cierres, clientes)
 - [ ] F5 Historial de la clienta (visitas, gasto, última visita, alergias)
@@ -39,3 +42,6 @@ Salieron de la revisión por tramos (S3 aprobado; S1 y S6 escalados sin texto de
 
 ## Log
 L1: ver S1. El usuario aprobó el orden F1 -> F2 -> F3 -> F5 -> F6 y dejar F11/F12/F14 para el final.
+
+L2 (usuario, verbatim): "va un panel de administracion no ? donde los trabajadores ven sus turnos, mira en los roles cada trabajador aparte de ser uno generico si son varios trabajadores que tengan uno o mas roles , y cuando entren le salen los turnos que tienen planificado para el los turnos disponibles son dependiendo de la cantidad de empleados"
+Evidencia al debatirlo (código): memberships tiene PK (user_id, salon_id) = un rol por salon; `Role.IsStaff()` incluye owner/admin/professional; no existe vínculo profesional-servicio; el calendario muestra todas las columnas a todos. El panel ya existe (/panel).
