@@ -161,6 +161,8 @@ type posEnv struct {
 	// por eso los fakes tienen mutex).
 	mailer *mmailer
 	emails *mbookingEmails
+	// F2d1: horario semanal del salón y de cada persona.
+	weekly *mweekly
 	d      Deps
 }
 
@@ -185,6 +187,7 @@ func newPOSEnv() *posEnv {
 		settings: &msettings{},
 		mailer:   &mmailer{},
 		emails:   &mbookingEmails{},
+		weekly:   &mweekly{},
 	}
 	env.members = &mmembers{mems: env.mems, users: env.users}
 	env.profs = &mprof{mems: env.mems}
@@ -201,19 +204,24 @@ func newPOSEnv() *posEnv {
 	clientSvc := app.ClientService{Clients: env.clients, Memberships: env.mems, Photos: env.store, Images: mimages{}}
 	meSvc := app.MeService{Users: env.users, Salons: env.salons, Members: env.mems}
 	staffSvc := app.StaffService{Staff: env.mems, Memberships: env.mems}
-	publicSvc := app.PublicSalonService{Salons: env.salons, Services: env.services}
+	publicSvc := app.PublicSalonService{
+		Salons: env.salons, Services: env.services,
+		Settings: env.settings, Hours: env.weekly,
+	}
 	settingsSvc := app.SettingsService{Settings: env.settings, Memberships: env.mems}
+	salonHoursSvc := app.SalonHoursService{Hours: env.weekly, Settings: env.settings, Memberships: env.mems}
+	professionalHoursSvc := app.ProfessionalHoursService{Hours: env.weekly, Memberships: env.mems}
 	memberSvc := app.MemberService{
 		Members: env.members, Memberships: env.mems, Users: env.users,
 		Professionals: env.profs, Services: env.services,
 	}
 	availabilitySvc := app.AvailabilityService{
 		Salons: env.salons, Services: env.services, Settings: env.settings,
-		Staff: env.mems, Bookings: env.bookings, Professionals: env.profs,
+		Staff: env.mems, Bookings: env.bookings, Professionals: env.profs, Hours: env.weekly,
 	}
 	publicBookingSvc := app.PublicBookingService{
 		Salons: env.salons, Services: env.services, Settings: env.settings,
-		Staff: env.mems, Bookings: env.bookings, Professionals: env.profs,
+		Staff: env.mems, Bookings: env.bookings, Professionals: env.profs, Hours: env.weekly,
 		Events: env.events, Notifier: notifSvc, Mailer: env.mailer, Emails: env.emails,
 	}
 	env.signer = security.NewPhotoSigner("test-secret")
@@ -235,8 +243,11 @@ func newPOSEnv() *posEnv {
 		Public:        PublicHandler{Public: publicSvc, Avail: availabilitySvc, Bookings: publicBookingSvc},
 		Settings:      SettingsHandler{Settings: settingsSvc, Memberships: env.mems},
 		Members:       MemberHandler{Members: memberSvc, Memberships: env.mems},
-		WS:            hub.ServeWS,
-		TokenIssuer:   tokens,
+		Hours: HoursHandler{
+			Salon: salonHoursSvc, Professional: professionalHoursSvc, Memberships: env.mems,
+		},
+		WS:          hub.ServeWS,
+		TokenIssuer: tokens,
 	}
 	env.r = gin.New()
 	RegisterRoutes(env.r, env.d)

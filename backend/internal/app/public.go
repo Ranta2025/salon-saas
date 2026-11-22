@@ -12,11 +12,18 @@ import (
 type PublicSalon struct {
 	Salon    domain.Salon
 	Services []domain.Service
+	// Hours son los días ABIERTOS del salón, ya expandidos (F2d1): la landing
+	// muestra "Cerrado" en los días que no están acá. Sin horario propio son los
+	// 7 días de la ventana única de /settings.
+	Hours []domain.WeekdayHours
 }
 
 type PublicSalonService struct {
 	Salons   ports.SalonRepository
 	Services ports.ServiceRepository
+	// Settings y Hours dan la ventana única y el horario semanal (F2d1).
+	Settings ports.SalonSettingsRepository
+	Hours    ports.WeeklyHoursRepository
 }
 
 // Public resuelve el salón por slug y devuelve sus servicios activos.
@@ -34,5 +41,20 @@ func (s PublicSalonService) Public(slug string) (PublicSalon, error) {
 	if services == nil {
 		services = []domain.Service{}
 	}
-	return PublicSalon{Salon: salon, Services: services}, nil
+	// Horario visible: las filas propias o, si el salón nunca configuró días, la
+	// ventana única expandida a la semana (lo que hoy se mostraba como texto
+	// indicativo).
+	weekly, err := salonWeeklyHours(s.Hours, salon.ID)
+	if err != nil {
+		return PublicSalon{}, err
+	}
+	hours := weekly.Days()
+	if !weekly.Custom() {
+		settings, err := loadSalonSettings(s.Settings, salon.ID)
+		if err != nil {
+			return PublicSalon{}, err
+		}
+		hours = expandedDays(settings)
+	}
+	return PublicSalon{Salon: salon, Services: services, Hours: hours}, nil
 }

@@ -38,6 +38,9 @@ type AvailabilityService struct {
 	// Professionals dice quién HACE el servicio (F2c): la disponibilidad es
 	// saber hacerlo ∩ estar libre, no "todo el equipo hace todo".
 	Professionals ports.ProfessionalServiceRepository
+	// Hours es el horario semanal del salón y de cada profesional (F2d1). nil o
+	// sin filas = la ventana única de /settings para todo el equipo (hoy).
+	Hours ports.WeeklyHoursRepository
 }
 
 // Day calcula los huecos libres de una fecha local del salón, para un servicio
@@ -73,6 +76,23 @@ func (s AvailabilityService) Day(slug, date, serviceID, professionalID string) (
 		return DayAvailability{}, err
 	}
 
+	// Horario semanal (F2d1): sin filas todo esto es la ventana única de antes.
+	single, err := singleWindow(settings)
+	if err != nil {
+		return DayAvailability{}, err
+	}
+	weekly, err := salonWeeklyHours(s.Hours, salon.ID)
+	if err != nil {
+		return DayAvailability{}, err
+	}
+	segments, err := memberHours(s.Hours, salon.ID)
+	if err != nil {
+		return DayAvailability{}, err
+	}
+	// El día de la semana es el del SALÓN: un domingo 23:30 en CDMX ya es lunes
+	// en UTC y tiene que ofrecerse como domingo.
+	weekday := domain.IsoWeekday(day, loc)
+
 	// Se traen las reservas de una ventana más ancha que el día: un turno que
 	// arrancó la noche anterior también ocupa la mañana.
 	booked, err := s.Bookings.ListRange(salon.ID, open.UTC().Add(-24*time.Hour), closeAt.UTC().Add(24*time.Hour))
@@ -80,19 +100,32 @@ func (s AvailabilityService) Day(slug, date, serviceID, professionalID string) (
 		return DayAvailability{}, err
 	}
 	now := time.Now().UTC()
-	duration := time.Duration(service.DurationMin) * time.Minute
-	step := time.Duration(settings.SlotStepMin) * time.Minute
+	durationMin := service.DurationMin
+	stepMin := settings.SlotStepMin
 
 	slots := make([]Slot, 0, 32)
-	for start := open; !start.Add(duration).After(closeAt); start = start.Add(step) {
-		if !start.After(now) {
-			continue // ya pasó (o es ahora): no es un hueco reservable
+	for _, p := range professionals {
+		// Los tramos en los que ESTA persona puede recibir un turno ese día:
+		// ventana del salón ∩ su horario (vacío = día libre o salón cerrado).
+		plan := domain.DayPlan{Single: single, Weekly: weekly, Segments: segments[p.ID]}
+		windows, err := plan.Windows(weekday)
+		if err != nil {
+			return DayAvailability{}, err
 		}
-		for _, p := range professionals {
-			if overlapsAny(booked, p.ID, start, start.Add(duration)) {
-				continue
+		for _, w := range windows {
+			// Se arranca en cada tramo: un turno nunca cruza un descanso ni el
+			// cierre, por eso no hay un único grillo para todo el día.
+			for startMin := w.Start; startMin+durationMin <= w.End; startMin += stepMin {
+				start := salonTimeAt(day, startMin, loc)
+				if !start.After(now) {
+					continue // ya pasó (o es ahora): no es un hueco reservable
+				}
+				end := start.Add(time.Duration(durationMin) * time.Minute)
+				if overlapsAny(booked, p.ID, start, end) {
+					continue
+				}
+				slots = append(slots, Slot{ProfessionalID: p.ID, StartsAt: start.UTC(), EndsAt: end.UTC()})
 			}
-			slots = append(slots, Slot{ProfessionalID: p.ID, StartsAt: start.UTC(), EndsAt: start.UTC().Add(duration)})
 		}
 	}
 	// Orden estable: primero el horario y después el profesional.

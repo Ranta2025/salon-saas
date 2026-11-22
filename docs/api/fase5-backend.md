@@ -485,6 +485,112 @@ vencimiento de **24 h**:
   primero» no cambian. `timezone` inválida o ilegible → el cierre falla en vez de
   inventar una ventana.
 
+## Fase 6 — F2d1: horario semanal del salón y de cada profesional
+
+Hasta acá el salón tenía **una** ventana (`open_time`/`close_time` de
+`/settings`) que valía todos los días y cada profesional trabajaba todo lo que
+el salón abría. Ahora el salón puede configurar la ventana de **cada día** y cada
+persona sus **tramos** (con descansos: los huecos entre tramos).
+
+Convenciones: día ISO **1..7** (1 = lunes, 7 = domingo) calculado en la zona
+horaria del salón; horas `"HH:MM"` de 24 h.
+
+**La ausencia de filas es comportamiento, no dato faltante** (la migración 017 no
+hace backfill):
+
+- Salón sin ninguna fila → la ventana única de `/settings` vale los 7 días (lo
+  de hoy). Con una o más filas, **el día sin fila está cerrado**.
+- Profesional sin ninguna fila → sigue el horario del salón. Con filas, solo
+  trabaja en esos tramos: un día sin tramo es día libre, hasta 4 tramos por día,
+  sin solaparse.
+- La ventana efectiva de una persona un día = ventana del salón ∩ sus tramos,
+  recortada.
+
+### `GET /salons/:id/hours` y `PUT /salons/:id/hours`
+
+```json
+GET -> 200 { "days": [ { "weekday": 1, "open": "09:00", "close": "18:00" },
+                       { "weekday": 2, "open": "10:00", "close": "14:00" } ],
+             "custom": true }
+
+PUT { "days": [ { "weekday": 1, "open": "09:00", "close": "18:00" } ] } -> 200 (igual forma)
+PUT { "days": [] } -> 200  // vuelve al horario único (custom=false, 7 días)
+```
+
+- **Cualquier miembro** lee (la agenda lo necesita); solo `owner`/`admin` escribe
+  (`403`); sin token `401`; un ajeno al salón `403` (el `salon_id` de la ruta no
+  es la credencial, la membresía sí).
+- `custom: false` = no hay filas: se devuelve la ventana única expandida a los
+  **7 días**. Un salón nunca responde una semana vacía por no haber
+  configurado nada.
+- El `PUT` reemplaza el horario **entero** en una transacción (o queda el nuevo o
+  queda el anterior); la lista vacía borra las filas. Se valida antes de
+  escribir.
+- Errores exactos (400): `{"error":"Horario inválido: el inicio debe ser anterior al fin"}`,
+  `{"error":"Los tramos de un mismo día no pueden solaparse"}` (no aplica al
+  salón: un día tiene una sola ventana), `{"error":"Máximo 4 tramos por día"}`
+  (tampoco aplica), `{"error":"Día inválido"}`, `{"error":"Horario inválido: usá
+  horas HH:MM"}` y `{"error":"El día está repetido"}` (el salón manda un día una
+  sola vez).
+- `GET /salons/:id/settings` **no cambia**: sigue siendo la ventana única, que es
+  la que vale cuando `custom = false`.
+
+### `GET /salons/:id/members/:uid/hours` y `PUT` (mismo body)
+
+```json
+GET -> 200 { "segments": [ { "weekday": 2, "start": "09:00", "end": "13:00" },
+                           { "weekday": 2, "start": "14:00", "end": "18:00" } ],
+             "custom": true }
+
+PUT { "segments": [] } -> 200  // vuelve a "igual que el salón"
+```
+
+- `GET`: `owner`/`admin` o **la propia persona** (`200`). Otra profesional del
+  mismo salón → `403`; un miembro de otro salón → `404`.
+- `PUT`: solo `owner`/`admin` (`403`), también si es el horario propio. Solo
+  miembros reservables: recepción/cliente o un dueño/administración sin
+  `attends` → `400 {"error":"Ese rol no tiene horario"}`. Miembro de otro salón
+  → `404`.
+- Validación: formato `HH:MM`, inicio < fin, hasta **4 tramos por día**, sin
+  solaparse (un duplicado es un solape). Los mensajes son los del salón, más
+  `{"error":"Horario inválido: usá horas HH:MM"}`.
+- Reemplazo atómico: un cuerpo inválido deja los tramos anteriores intactos.
+- Un tramo que se sale de la ventana del salón **no es un error**: se recorta al
+  calcular (el salón manda).
+
+### `GET /public/salons/:slug` agrega `hours`
+
+```json
+GET /api/v1/public/salons/navajas-oro -> 200 {
+  "salon": { "id": "s_...", "slug": "navajas-oro", "name": "Navajas de Oro" },
+  "services": [ ... ],
+  "hours": [ { "weekday": 1, "open": "09:00", "close": "19:00" } ]
+}
+```
+
+- Solo los días **abiertos**, ya expandidos: la landing pone «Cerrado» en los que
+  no están y resalta el día de hoy. Un salón sin horario propio devuelve los 7
+  días de la ventana única.
+
+### Disponibilidad y reserva pública: la ventana efectiva manda
+
+- `GET /public/salons/:slug/availability` ofrece un hueco solo si el turno
+  **entra entero** en la ventana efectiva de esa persona ese día: no se ofrece
+  nada que cruce un descanso ni el cierre. Un día cerrado del salón no ofrece
+  nada (`200 {"slots":[]}`), y una persona con horario propio no aparece en sus
+  días libres.
+- `POST /public/salons/:slug/bookings`: la asignación automática aplica la misma
+  regla (saltea a quien no trabaja en ese horario). Sin nadie con ventana ese
+  día → `409 {"error":"... no hay profesional libre en ese horario"}` (nunca
+  `500`), igual que un día cerrado. Con `professional_id` de alguien que no
+  trabaja ese día/horario → `409 {"error":"... el horario ya no está disponible"}`;
+  un turno fuera de la ventana del salón sigue siendo `400`.
+- El **día de la semana es el del salón**, no el de UTC: un domingo 23:30 en
+  CDMX ya es lunes en UTC y se agenda como domingo.
+- La reserva de staff (`POST /salons/:id/bookings`) **no se restringe por
+  horario**: el calendario sigue agendando a mano fuera de horario y solo el
+  choque de turnos la frena (como antes).
+
 ## Ronda 3 (T9): ficha desde la reserva, email de la ficha, hora del salón y mensajes
 
 Hallazgos E-03, E-04 y E-07 de la auditoría en navegador real. Los códigos HTTP
@@ -658,6 +764,10 @@ defaults apuntan al Mailpit del stack (UI `http://localhost:8025`).
 - **`GET /salons/:id/staff`**: una falla del servidor al leer la membresía ya no
   se disfraza de `403`: responde `500 {"error":"error interno"}` y el detalle
   queda en el log.
+- **`GET /public/salons/:slug`**: agrega `hours` (los días abiertos, expandidos)
+  y la reserva pública respeta la ventana efectiva de cada persona (F2d1). Un
+  turno en un día cerrado del salón pasa a ser `409` (antes era `400` por estar
+  fuera de horario).
 
 ## Migraciones
 
@@ -734,7 +844,24 @@ Migración de la fase 6 (F2c):
   - Guardas miradas en `current_schema()` (columna, CHECK y FK): una segunda
     ejecución no hace nada y una tabla homónima de otro esquema no la confunde.
 
-Las 16 migraciones se probaron aplicándolas dos veces con
+Migración de la fase 6 (F2d1):
+
+- `017_weekly_hours.sql`:
+  - `salon_weekly_hours(salon_id, weekday SMALLINT CHECK 1..7, open_time,
+    close_time)`, PK `(salon_id, weekday)` (una ventana por día), FK a `salons`
+    `ON DELETE CASCADE`, `CHECK (open_time < close_time)` y un `CHECK` de formato
+    `HH:MM` (las horas son `TEXT`, así que la comparación lexicográfica es la del
+    reloj).
+  - `professional_hours(salon_id, user_id, weekday SMALLINT CHECK 1..7,
+    start_time, end_time)`, PK `(salon_id, user_id, weekday, start_time)`, FK
+    `(user_id, salon_id)` a `memberships` **`ON DELETE CASCADE`** (si la persona
+    sale del equipo, su horario se va con ella), `CHECK (start_time < end_time)` y
+    el mismo `CHECK` de formato. Índice `(salon_id, user_id, weekday)`.
+  - **Sin backfill**: la ausencia de filas es el comportamiento actual (ventana
+    única y la persona sigue al salón), así que una base migrada se comporta
+    igual hasta que alguien configure horarios.
+
+Las 17 migraciones se probaron aplicándolas dos veces con
 `psql -v ON_ERROR_STOP=1` sobre una base limpia y sobre una ya migrada, y el
 binario arranca contra esas bases. El backfill de la 016 se probó además sobre
 una base migrada **solo hasta la 015**, con dueño/administración/profesional/

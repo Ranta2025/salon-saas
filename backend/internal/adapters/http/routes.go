@@ -21,6 +21,8 @@ type Deps struct {
 	Public        PublicHandler
 	Settings      SettingsHandler
 	Members       MemberHandler
+	// Hours es el horario semanal del salón y de cada profesional (F2d1).
+	Hours HoursHandler
 	// PublicBookingLimit limita por IP el POST público de reservas (nil = sin
 	// límite, como en los tests unitarios del router).
 	PublicBookingLimit gin.HandlerFunc
@@ -73,6 +75,12 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	// qué servicios hace (PUT, lista completa).
 	authed.PATCH("/salons/:id/members/:uid", d.Members.Update)
 	authed.PUT("/salons/:id/members/:uid/services", d.Members.SetServices)
+
+	// F2d1: horario semanal del salón y de cada profesional.
+	authed.GET("/salons/:id/hours", d.Hours.GetSalon)
+	authed.PUT("/salons/:id/hours", d.Hours.UpdateSalon)
+	authed.GET("/salons/:id/members/:uid/hours", d.Hours.GetMember)
+	authed.PUT("/salons/:id/members/:uid/hours", d.Hours.UpdateMember)
 
 	// Equipo del salón (select de profesional de la agenda)
 	authed.GET("/salons/:id/staff", d.Staff.List)

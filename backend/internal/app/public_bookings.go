@@ -38,6 +38,10 @@ type PublicBookingService struct {
 	// Professionals dice quién hace el servicio: solo esa gente puede recibir
 	// el turno (F2c). Si nadie lo hace, la reserva es 409.
 	Professionals ports.ProfessionalServiceRepository
+	// Hours es el horario semanal del salón y de cada profesional (F2d1): un
+	// turno se ofrece solo si entra entero en la ventana efectiva de la persona.
+	// nil o sin filas = la ventana única de /settings (comportamiento de hoy).
+	Hours ports.WeeklyHoursRepository
 	// Clients deja la ficha del visitante cuando la reserva entra (E-03). Es
 	// opcional como los avisos: nil = este entorno no lleva fichas.
 	Clients ports.ClientRepository
@@ -87,6 +91,10 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 	if err != nil {
 		return domain.Booking{}, err
 	}
+	loc, err := settings.Location()
+	if err != nil {
+		return domain.Booking{}, err
+	}
 	service, err := resolvePublicService(s.Services, salon.ID, in.ServiceID)
 	if err != nil {
 		return domain.Booking{}, err
@@ -102,20 +110,56 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 		return domain.Booking{}, err
 	}
 
-	startsAt := in.StartsAt.UTC()
-	endsAt := startsAt.Add(time.Duration(service.DurationMin) * time.Minute)
-	// El turno tiene que entrar completo en el horario del salón (en su zona).
-	open, closeAt, err := settings.Window(startsAt)
+	// Horario semanal (F2d1): sin filas todo esto es la ventana única de antes.
+	single, err := singleWindow(settings)
 	if err != nil {
 		return domain.Booking{}, err
 	}
-	if startsAt.Before(open) || endsAt.After(closeAt) {
+	weekly, err := salonWeeklyHours(s.Hours, salon.ID)
+	if err != nil {
+		return domain.Booking{}, err
+	}
+	segments, err := memberHours(s.Hours, salon.ID)
+	if err != nil {
+		return domain.Booking{}, err
+	}
+
+	startsAt := in.StartsAt.UTC()
+	endsAt := startsAt.Add(time.Duration(service.DurationMin) * time.Minute)
+	// El día y el minuto son los del salón, no los de UTC: un domingo 23:30 en
+	// CDMX es lunes en UTC y sigue siendo domingo para la agenda.
+	weekday := domain.IsoWeekday(startsAt, loc)
+	startMin := localMinutes(startsAt, loc)
+	endMin := startMin + service.DurationMin
+
+	// La ventana del salón de ESE día. Si el salón abre, el turno tiene que
+	// entrar completo (400, como siempre). Si el día está cerrado no hay ventana
+	// y tampoco hay nadie con horario: la reserva cae en el 409 de abajo, que es
+	// la misma respuesta que la disponibilidad ({"slots":[]}).
+	salonWindows, err := salonWindow(weekly, single, weekday)
+	if err != nil {
+		return domain.Booking{}, err
+	}
+	if len(salonWindows) > 0 && !salonWindows[0].Contains(startMin, endMin) {
 		return domain.Booking{}, fmt.Errorf("%w: el horario elegido está fuera del horario del salón", domain.ErrValidation)
+	}
+
+	// Quién TRABAJA en ese horario: el turno tiene que caber entero en su ventana
+	// efectiva (salón ∩ sus tramos). Sin nadie con ventana ese día no hay hueco.
+	scheduled := make(map[string]bool, len(staff))
+	for _, m := range staff {
+		fits, err := domain.DayPlan{Single: single, Weekly: weekly, Segments: segments[m.ID]}.Fits(weekday, startMin, endMin)
+		if err != nil {
+			return domain.Booking{}, err
+		}
+		if fits {
+			scheduled[m.ID] = true
+		}
 	}
 
 	professionalID := strings.TrimSpace(in.ProfessionalID)
 	if professionalID == "" {
-		professionalID, err = s.freeProfessional(staff, eligible, salon.ID, startsAt, endsAt)
+		professionalID, err = s.freeProfessional(staff, eligible, scheduled, salon.ID, startsAt, endsAt)
 		if err != nil {
 			return domain.Booking{}, err
 		}
@@ -125,6 +169,10 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 		}
 		if !eligible[professionalID] {
 			return domain.Booking{}, fmt.Errorf("%w: el profesional elegido no hace ese servicio", domain.ErrValidation)
+		}
+		if !scheduled[professionalID] {
+			// No trabaja en ese horario: la disponibilidad no ofrece ese hueco.
+			return domain.Booking{}, fmt.Errorf("%w: el horario ya no está disponible", domain.ErrAlreadyExists)
 		}
 		busy, err := s.Bookings.FindOverlapping(salon.ID, professionalID, startsAt, endsAt)
 		if err != nil {
@@ -227,10 +275,11 @@ func (s PublicBookingService) upsertClient(salonID, name, phone string) {
 	}
 }
 
-// freeProfessional elige el primer profesional del equipo que HACE el servicio
-// y está sin turno en el hueco. Si no queda ninguno es un 409, no una reserva
-// sin profesional (ni un 500 cuando nadie hace el servicio).
-func (s PublicBookingService) freeProfessional(staff []domain.StaffMember, eligible map[string]bool, salonID string, start, end time.Time) (string, error) {
+// freeProfessional elige el primer profesional del equipo que HACE el servicio,
+// TRABAJA en ese horario (su ventana efectiva del día, F2d1) y está sin turno en
+// el hueco. Si no queda ninguno es un 409, no una reserva sin profesional (ni un
+// 500 cuando nadie hace el servicio o el salón está cerrado).
+func (s PublicBookingService) freeProfessional(staff []domain.StaffMember, eligible, scheduled map[string]bool, salonID string, start, end time.Time) (string, error) {
 	for _, m := range staff {
 		// Solo quien atiende: un dueño/administración sin la marca no recibe
 		// turnos por asignación automática (F2a).
@@ -239,6 +288,11 @@ func (s PublicBookingService) freeProfessional(staff []domain.StaffMember, eligi
 		}
 		// Y solo quien hace el servicio (F2c).
 		if !eligible[m.ID] {
+			continue
+		}
+		// Y solo quien tiene ventana en ese horario (F2d1): el descanso y el día
+		// libre no se saltean con la asignación automática.
+		if !scheduled[m.ID] {
 			continue
 		}
 		busy, err := s.Bookings.FindOverlapping(salonID, m.ID, start, end)

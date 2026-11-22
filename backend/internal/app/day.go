@@ -26,3 +26,18 @@ func startOfSalonDay(t time.Time, loc *time.Location) time.Time {
 	local := t.In(loc)
 	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
 }
+
+// salonTimeAt arma el instante de un minuto local (09:00 = 540) del día de
+// reference, en la zona del salón. Es cómo se traduce "09:00 del martes" a un
+// instante: el día es el del salón, no el de UTC.
+func salonTimeAt(reference time.Time, minutes int, loc *time.Location) time.Time {
+	local := reference.In(loc)
+	return time.Date(local.Year(), local.Month(), local.Day(), minutes/60, minutes%60, 0, 0, loc)
+}
+
+// localMinutes es el minuto del día local (09:00 = 540) de un instante, en la
+// zona del salón. Sirve para comparar un turno contra las ventanas del día.
+func localMinutes(t time.Time, loc *time.Location) int {
+	local := t.In(loc)
+	return local.Hour()*60 + local.Minute()
+}

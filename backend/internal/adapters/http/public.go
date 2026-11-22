@@ -18,8 +18,8 @@ type PublicHandler struct {
 	Bookings app.PublicBookingService
 }
 
-// GetSalon: GET /api/v1/public/salons/:slug. Solo nombre, slug y la carta de
-// servicios activos.
+// GetSalon: GET /api/v1/public/salons/:slug. Solo nombre, slug, la carta de
+// servicios activos y el horario de los días abiertos (F2d1).
 func (h PublicHandler) GetSalon(c *gin.Context) {
 	p, err := h.Public.Public(c.Param("slug"))
 	if err != nil {
@@ -35,9 +35,16 @@ func (h PublicHandler) GetSalon(c *gin.Context) {
 			"price_cents":  s.PriceCents,
 		})
 	}
+	// `hours` viene ya expandido: solo los días abiertos. La landing pone
+	// "Cerrado" en los que no están y resalta el día de hoy.
+	hours := make([]gin.H, 0, len(p.Hours))
+	for _, d := range p.Hours {
+		hours = append(hours, gin.H{"weekday": d.Weekday, "open": d.Open, "close": d.Close})
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"salon":    gin.H{"id": p.Salon.ID, "slug": p.Salon.Slug, "name": p.Salon.Name},
 		"services": services,
+		"hours":    hours,
 	})
 }
 

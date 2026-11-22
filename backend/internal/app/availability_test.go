@@ -20,6 +20,9 @@ type publicEnv struct {
 	settings *fakeSettings
 	services *fakeServices
 	clients  *fakeClients
+	// F2d1: horario semanal del salón y de las profesionales (sin filas = el
+	// comportamiento de siempre).
+	hours    *fakeWeeklyHours
 	corte    domain.Service
 	viejo    domain.Service
 	events   *fakeEvents
@@ -58,17 +61,19 @@ func newPublicEnv(t *testing.T) *publicEnv {
 	events := &fakeEvents{}
 	notifier := &fakeNotifier{}
 	clients := &fakeClients{}
+	hours := &fakeWeeklyHours{}
 	return &publicEnv{
 		avail: AvailabilityService{
 			Salons: salons, Services: services, Settings: settings, Staff: staff,
-			Bookings: bookings, Professionals: profs,
+			Bookings: bookings, Professionals: profs, Hours: hours,
 		},
 		book: PublicBookingService{
 			Salons: salons, Services: services, Settings: settings, Staff: staff,
 			Bookings: bookings, Professionals: profs, Clients: clients,
-			Events: events, Notifier: notifier,
+			Events: events, Notifier: notifier, Hours: hours,
 		},
 		bookings: bookings, staff: staff, profs: profs, settings: settings, services: services, clients: clients,
+		hours: hours,
 		corte: corte, viejo: viejo, events: events, notifier: notifier,
 	}
 }
