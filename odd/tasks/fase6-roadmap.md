@@ -10,11 +10,13 @@ verificada y commiteada.
 
 ## Tasks (orden)
 - [ ] F1 Link firmado de un solo uso para cancelar o reprogramar desde el email
-- [ ] F2a Solo atiende quien debe: un rol por persona (sin roles múltiples; decisión del usuario). Es reservable quien tiene el rol `professional`, o un dueño/administración con la marca `attends` (el dueño-barbero); hoy owner y admin cuentan siempre como staff y inflan la disponibilidad. Migración idempotente: columna `attends` en memberships, true para los `professional` existentes y para owner/admin ya existentes (no cambia lo que hay hoy), false para el resto
-- [ ] F2b "Mi agenda": al entrar, quien atiende ve primero SUS turnos (hoy y la semana) y puede alternar a "Todo el salón" si su rol lo permite; recepción y administración ven todo
-- [ ] F2c Oficio y servicios por profesional: cada profesional tiene un oficio visible (barbero, estilista, colorista, manicurista; texto libre) y la lista de servicios que hace (`professional_services`); la disponibilidad se calcula por profesional (sabe hacer el servicio ∩ sin turno ∩ su horario) y se une; hoy se asume que todo el equipo hace todos los servicios
+- [x] F2a Solo atiende quien debe: un rol por persona (sin roles múltiples; decisión del usuario). Es reservable quien tiene el rol `professional`, o un dueño/administración con la marca `attends` (el dueño-barbero); hoy owner y admin cuentan siempre como staff y inflan la disponibilidad. Migración idempotente: columna `attends` en memberships, true para los `professional` existentes y para owner/admin ya existentes (no cambia lo que hay hoy), false para el resto — hecho: c9b934d, 7357320 (backend), d9d1d8e, 5d70d26 (web)
+- [x] F2b "Mi agenda": al entrar, quien atiende ve primero SUS turnos (hoy y la semana) y puede alternar a "Todo el salón" si su rol lo permite; recepción y administración ven todo — hecho: 4decc17, 8df58bd
+- [x] F2c Oficio y servicios por profesional: cada profesional tiene un oficio visible (barbero, estilista, colorista, manicurista; texto libre) y la lista de servicios que hace (`professional_services`); la disponibilidad se calcula por profesional (sabe hacer el servicio ∩ sin turno ∩ su horario) y se une; hoy se asume que todo el equipo hace todos los servicios — hecho: f4682c6, 0380675 (backend), 7cb2580, 229e468 (web)
 - [ ] F2e Puestos y equipamiento con capacidad: el administrador define tipos de recurso y cuántas unidades hay (p. ej. 3 puestos de peluquería, 2 sillas de barbería, 1 lavacabezas); cada servicio indica qué tipo de recurso usa; un turno ocupa una profesional Y una unidad del recurso. Cada unidad es una fila con nombre y su propia EXCLUDE (unit_id, rango) igual que las profesionales: la capacidad queda garantizada por la base y no por un contador
-- [ ] F2d Horario por día de la semana, descansos y bloqueos (vacaciones, días libres por profesional)
+- [ ] F2d1 Horario semanal del salón y de cada profesional con descansos — backend hecho (0b3ac58, 5b8d1c0), web en curso
+- [ ] F2d2 Vacaciones y días libres puntuales por profesional, bloqueados en el calendario y la disponibilidad
+- [ ] F2d3 Cubrir ausencias: reasignar los turnos de quien falta a otra profesional que haga el servicio y avisar a la clienta
 - [ ] F2g Contratar por invitación: el dueño/administración invita por email con enlace de un solo uso y vencimiento (7 días), la persona crea su cuenta y entra con el rol ya asignado (hoy exige que ya tenga cuenta). Quitar a alguien DESACTIVA su membresía (`ended_at`) en vez de borrarla: conserva el historial de turnos y ventas y puede reactivarse
 - [ ] F3 Nómina y comisiones: cada profesional tiene su modelo de pago (sueldo fijo, % de comisión o mixto); la comisión sale de `services.commission_pct`, que YA existe; liquidación por período (semana, quincena o mes), detalle por profesional, marca de pagado y exportación
 - [ ] F3b Gastos y ganancias: registrar gastos (alquiler, insumos, servicios, otros) con fecha y categoría; ganancia neta = ingresos - gastos - nómina por período; panel de ganancias por día/semana/mes
@@ -32,12 +34,12 @@ verificada y commiteada.
 
 ## Seguimientos de la revisión nativa de la fase 5 (previos a F1, no bloqueantes)
 Salieron de la revisión por tramos (S3 aprobado; S1 y S6 escalados sin texto de hallazgo expuesto). Se atacan antes de F1.
-- [ ] H1 (el más serio) `MaxJSONBody` no aplica el tope de 1 MB si el Content-Type empieza con multipart/form-data o image/: un endpoint JSON recibe el encabezado falseado y se salta el límite. Aplicar el tope por ruta, no por Content-Type.
-- [ ] H2 El rate limiter en memoria no desaloja los cubos de IPs que no vuelven: purga periódica.
-- [ ] H3 Trusted proxies = todos los rangos privados: hacerlo configurable (`TRUSTED_PROXIES`) y documentarlo.
-- [ ] H4 `staff` devuelve 403 ante cualquier error de `Find` de membresía: distinguir 500 y loguear.
-- [ ] H5 `storage/s3.go` hace `io.ReadAll` del objeto sin tope: agregar `LimitReader` (hoy lo acota el tope de 8 MB de subida).
-- [ ] H6 `backend/api` (binario compilado) aparece como archivo sin seguimiento: revisar que `.gitignore` lo cubra y borrarlo.
+- [x] H1 (el más serio) `MaxJSONBody` no aplica el tope de 1 MB si el Content-Type empieza con multipart/form-data o image/: un endpoint JSON recibe el encabezado falseado y se salta el límite. Aplicar el tope por ruta, no por Content-Type. — hecho: 6567029, 3ba4a45
+- [x] H2 El rate limiter en memoria no desaloja los cubos de IPs que no vuelven: purga periódica. — hecho: 6567029
+- [x] H3 Trusted proxies = todos los rangos privados: hacerlo configurable (`TRUSTED_PROXIES`) y documentarlo. — hecho: 6567029, 3ba4a45
+- [x] H4 `staff` devuelve 403 ante cualquier error de `Find` de membresía: distinguir 500 y loguear. — hecho: 6567029
+- [x] H5 `storage/s3.go` hace `io.ReadAll` del objeto sin tope: agregar `LimitReader` (hoy lo acota el tope de 8 MB de subida). — hecho: 6567029
+- [x] H6 `backend/api` (binario compilado) aparece como archivo sin seguimiento: revisar que `.gitignore` lo cubra y borrarlo. — hecho: sin cambio: ya cubierto por .gitignore línea 9
 
 ## Contrato F2a (solo atiende quien debe)
 Regla: una persona es RESERVABLE (aparece en agenda, disponibilidad y selectores) si su rol es `professional` O tiene `attends = true`. Recepción y cliente nunca atienden. Un solo rol por persona (L3).
