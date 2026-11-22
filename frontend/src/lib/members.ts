@@ -6,6 +6,7 @@
 
 import { request } from './api.ts'
 import type { SalonRole } from './me.ts'
+import { normalizeServiceIds, normalizeTrade } from './tradeServices.ts'
 
 export type SalonMember = {
   id: string
@@ -18,6 +19,13 @@ export type SalonMember = {
    * `memberAttends()` instead of being trusted on its own.
    */
   attends: boolean
+  /**
+   * `memberships.trade` (F2c): visible craft (barbero, estilista…). It is text,
+   * not a permission; it is trimmed and capped at 40 characters like the server.
+   */
+  trade: string
+  /** Services of `professional_services` that this person does (empty is valid). */
+  service_ids: string[]
 }
 
 const ROLES: readonly SalonRole[] = ['owner', 'admin', 'professional', 'reception']
@@ -60,6 +68,8 @@ function normalizeMember(value: unknown): SalonMember | null {
     email: text(value['email']),
     role: memberRole,
     attends: attends(value['attends'], memberRole),
+    trade: normalizeTrade(text(value['trade'])),
+    service_ids: normalizeServiceIds(value['service_ids']),
   }
 }
 
@@ -128,6 +138,47 @@ export async function setMemberAttends(
     throw new Error('El servidor guardó el cambio pero no devolvió los datos de la persona.')
   }
   return member
+}
+
+/**
+ * Saves the trade of a bookable member
+ * (`PATCH /salons/:id/members/:uid`, contract S-F2c-3). A 400 keeps the server
+ * sentence verbatim: «Ese rol no tiene oficio».
+ */
+export async function setMemberTrade(
+  salonId: string,
+  userId: string,
+  trade: string,
+): Promise<SalonMember> {
+  const body = await request<unknown>(`${membersPath(salonId)}/${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    body: { trade: normalizeTrade(trade) },
+  })
+  const member = normalizeMember(body)
+  if (!member) {
+    throw new Error('El servidor guardó el oficio pero no devolvió los datos de la persona.')
+  }
+  return member
+}
+
+/**
+ * Replaces the services a member does
+ * (`PUT /salons/:id/members/:uid/services`, contract S-F2c-3). The empty list is
+ * valid; a 400 keeps the server sentence verbatim: «Servicio inválido».
+ */
+export async function setMemberServices(
+  salonId: string,
+  userId: string,
+  serviceIds: readonly string[],
+): Promise<string[]> {
+  const body = await request<unknown>(
+    `${membersPath(salonId)}/${encodeURIComponent(userId)}/services`,
+    { method: 'PUT', body: { service_ids: normalizeServiceIds(serviceIds) } },
+  )
+  if (!isRecord(body) || !Array.isArray(body['service_ids'])) {
+    throw new Error('El servidor guardó los servicios pero no devolvió la lista.')
+  }
+  return normalizeServiceIds(body['service_ids'])
 }
 
 export async function removeMember(salonId: string, userId: string): Promise<void> {

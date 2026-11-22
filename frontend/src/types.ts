@@ -16,6 +16,8 @@ export type ServiceInput = {
   duration_min: number
   price_cents: number
   commission_pct: number
+  /** Optional (S-F2c-5): bookable members that do the new service, max 50. */
+  professional_ids?: string[]
 }
 
 /** Body accepted by PUT services; `active` absent means "keep active". */

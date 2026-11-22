@@ -15,6 +15,7 @@ import {
   normalizeNotifications,
   type Notification,
 } from './notifications.ts'
+import { normalizeServiceIds } from './tradeServices.ts'
 import type { QueuedOperation } from './offlineQueue.ts'
 import type {
   Booking,
@@ -321,7 +322,16 @@ export async function fetchServices(
 }
 
 export async function createService(salonId: string, input: ServiceInput): Promise<void> {
-  await request<unknown>(salonPath(salonId, '/services'), { method: 'POST', body: input })
+  // S-F2c-5: nobody is assigned unless the body names them; the optional list is
+  // normalised and omitted when empty so an older server sees the same body.
+  const professionalIds = normalizeServiceIds(input.professional_ids)
+  const body: Record<string, unknown> = { ...input }
+  if (professionalIds.length > 0) {
+    body['professional_ids'] = professionalIds
+  } else {
+    delete body['professional_ids']
+  }
+  await request<unknown>(salonPath(salonId, '/services'), { method: 'POST', body })
 }
 
 export async function updateService(

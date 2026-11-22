@@ -10,7 +10,7 @@ import {
 import type { SalonMember } from './members.ts'
 
 function member(over: Partial<SalonMember> & Pick<SalonMember, 'id' | 'role'>): SalonMember {
-  return { name: over.id, email: '', attends: false, ...over }
+  return { name: over.id, email: '', attends: false, trade: '', service_ids: [], ...over }
 }
 
 test('a professional always attends clients, even with the flag stored as false', () => {

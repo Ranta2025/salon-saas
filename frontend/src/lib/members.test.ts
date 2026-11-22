@@ -9,6 +9,8 @@ import {
   normalizeMembers,
   removeMember,
   setMemberAttends,
+  setMemberServices,
+  setMemberTrade,
 } from './members.ts'
 
 type Call = { url: string; method: string; headers: Record<string, string>; body: string | undefined }
@@ -50,9 +52,33 @@ test('normalizeMembers reads the team with id, name, email, role and attends', (
     ],
   })
   assert.deepEqual(members, [
-    { id: 'u1', name: 'Ana', email: 'ana@salon.mx', role: 'owner', attends: true },
-    { id: 'u2', name: 'Beto', email: 'beto@salon.mx', role: 'professional', attends: true },
-    { id: 'u3', name: 'Rita', email: 'rita@salon.mx', role: 'reception', attends: false },
+    {
+      id: 'u1',
+      name: 'Ana',
+      email: 'ana@salon.mx',
+      role: 'owner',
+      attends: true,
+      trade: '',
+      service_ids: [],
+    },
+    {
+      id: 'u2',
+      name: 'Beto',
+      email: 'beto@salon.mx',
+      role: 'professional',
+      attends: true,
+      trade: '',
+      service_ids: [],
+    },
+    {
+      id: 'u3',
+      name: 'Rita',
+      email: 'rita@salon.mx',
+      role: 'reception',
+      attends: false,
+      trade: '',
+      service_ids: [],
+    },
   ])
 })
 
@@ -137,6 +163,8 @@ test('addMember POSTs a normalised email and the chosen role, and returns the ne
       email: 'carla@salon.mx',
       role: 'professional',
       attends: true,
+      trade: '',
+      service_ids: [],
     })
   } finally {
     stub.restore()
@@ -194,6 +222,8 @@ test('setMemberAttends PATCHes only the attends flag and returns the saved membe
       email: 'ana@salon.mx',
       role: 'owner',
       attends: true,
+      trade: '',
+      service_ids: [],
     })
   } finally {
     stub.restore()
@@ -232,6 +262,109 @@ test('removeMember surfaces the rule about the last owner', async () => {
         assert.ok(err instanceof ApiError)
         assert.equal(err.status, 409)
         assert.match(err.message, /último owner/)
+        return true
+      },
+    )
+  } finally {
+    stub.restore()
+    clearToken()
+  }
+})
+
+test('normalizeMembers reads the trade and the services each person does', () => {
+  const members = normalizeMembers({
+    members: [
+      {
+        id: 'u2',
+        name: 'Beto',
+        role: 'professional',
+        trade: '  Barbero ',
+        service_ids: ['s1', 's1', 's2'],
+      },
+      { id: 'u3', name: 'Rita', role: 'reception' },
+    ],
+  })
+  assert.equal(members[0]?.trade, 'Barbero')
+  assert.deepEqual(members[0]?.service_ids, ['s1', 's2'])
+  assert.equal(members[1]?.trade, '')
+  assert.deepEqual(members[1]?.service_ids, [])
+})
+
+test('setMemberTrade PATCHes the normalised trade and returns the saved member', async () => {
+  const stub = stubFetch(() =>
+    json({
+      id: 'u2',
+      name: 'Beto',
+      email: 'beto@salon.mx',
+      role: 'professional',
+      trade: 'Barbero',
+      service_ids: ['s1'],
+    }),
+  )
+  try {
+    setToken('jwt-members')
+    const member = await setMemberTrade('s1', 'u2', '  Barbero\r\n')
+    assert.equal(stub.calls[0]?.url, `${API_BASE}/api/v1/salons/s1/members/u2`)
+    assert.equal(stub.calls[0]?.method, 'PATCH')
+    assert.deepEqual(JSON.parse(stub.calls[0]?.body ?? '{}'), { trade: 'Barbero' })
+    assert.equal(member.trade, 'Barbero')
+    assert.deepEqual(member.service_ids, ['s1'])
+  } finally {
+    stub.restore()
+    clearToken()
+  }
+})
+
+test('setMemberTrade keeps the server sentence verbatim when the role has no trade', async () => {
+  const stub = stubFetch(() => json({ error: 'Ese rol no tiene oficio' }, 400))
+  try {
+    setToken('jwt-members')
+    await assert.rejects(
+      () => setMemberTrade('s1', 'r1', 'Barbero'),
+      (err: unknown) => {
+        assert.ok(err instanceof ApiError)
+        assert.equal(err.status, 400)
+        assert.equal(err.message, 'Ese rol no tiene oficio')
+        return true
+      },
+    )
+  } finally {
+    stub.restore()
+    clearToken()
+  }
+})
+
+test('setMemberServices PUTs the list and returns what the server kept', async () => {
+  const stub = stubFetch(() => json({ service_ids: ['s1', 's2'] }))
+  try {
+    setToken('jwt-members')
+    const ids = await setMemberServices('s1', 'u2', [' s1 ', 's2', 's2'])
+    assert.equal(stub.calls[0]?.url, `${API_BASE}/api/v1/salons/s1/members/u2/services`)
+    assert.equal(stub.calls[0]?.method, 'PUT')
+    assert.deepEqual(JSON.parse(stub.calls[0]?.body ?? '{}'), { service_ids: ['s1', 's2'] })
+    assert.deepEqual(ids, ['s1', 's2'])
+  } finally {
+    stub.restore()
+    clearToken()
+  }
+})
+
+test('setMemberServices accepts the empty list and surfaces the server message verbatim', async () => {
+  const stub = stubFetch((call) =>
+    JSON.parse(call.body ?? '{}').service_ids.length === 0
+      ? json({ service_ids: [] })
+      : json({ error: 'Servicio inválido' }, 400),
+  )
+  try {
+    setToken('jwt-members')
+    assert.deepEqual(await setMemberServices('s1', 'u2', []), [])
+    assert.deepEqual(JSON.parse(stub.calls[0]?.body ?? '{}'), { service_ids: [] })
+    await assert.rejects(
+      () => setMemberServices('s1', 'u2', ['s-ajeno']),
+      (err: unknown) => {
+        assert.ok(err instanceof ApiError)
+        assert.equal(err.status, 400)
+        assert.equal(err.message, 'Servicio inválido')
         return true
       },
     )
