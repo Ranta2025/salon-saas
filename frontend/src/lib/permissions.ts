@@ -11,6 +11,7 @@ const ROLE_LABELS: Record<Role, string> = {
   owner: 'Dueña o dueño',
   admin: 'Administración',
   professional: 'Profesional',
+  reception: 'Recepción',
 }
 
 export function roleLabel(role: Role | null | undefined): string {
@@ -30,6 +31,20 @@ export function canEditSettings(role: Role | null | undefined): boolean {
   return isManager(role)
 }
 
+/** Owner, admin and reception create client files by hand; a professional does not. */
+export function canCreateClient(role: Role | null | undefined): boolean {
+  return isManager(role) || role === 'reception'
+}
+
+/**
+ * Home of `/panel` for a role. A professional has no dashboard (the API answers
+ * 403), so the index sends them straight to the agenda instead of asking for it.
+ * `null` means the dashboard is the right page.
+ */
+export function panelHomePath(role: Role | null | undefined): string | null {
+  return role === 'professional' ? '/panel/calendario' : null
+}
+
 /**
  * Owner/admin act on every booking of the salon; a professional only on their
  * own (`/me` id compared with the `professional_id` of the booking).
@@ -39,7 +54,8 @@ export function canManageBooking(
   actorUserId: string | null | undefined,
   bookingProfessionalId: string,
 ): boolean {
-  if (isManager(role)) {
+  // The API lets owner, admin and reception change any booking of the salon.
+  if (isManager(role) || role === 'reception') {
     return true
   }
   if (role !== 'professional') {

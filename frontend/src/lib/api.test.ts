@@ -7,9 +7,12 @@ import {
   fetchMe,
   fetchPublicSalon,
   fetchStaff,
+  createClient,
+  describeApiError,
   friendlyApiMessage,
   request,
 } from './api.ts'
+import { subscribeOfflineData } from './offlineData.ts'
 import { clearToken, getToken, setToken } from './session.ts'
 
 type Call = { url: string; headers: Record<string, string>; body: string | undefined }
@@ -290,4 +293,117 @@ test('friendlyApiMessage explains a 403 in the UI instead of showing the raw ser
     'No pudimos conectar con el servidor.',
   )
   assert.equal(friendlyApiMessage('boom', 'No pudimos cargar.'), 'No pudimos cargar.')
+})
+
+test('describeApiError marks a 403 as not retryable and keeps the friendly message', () => {
+  const forbidden = describeApiError(new ApiError(403, 'sin permiso'), 'No pudimos cargar.')
+  assert.match(forbidden.message, /rol no permite/)
+  assert.equal(forbidden.retryable, false)
+
+  const invalid = describeApiError(new ApiError(400, 'nombre vacío'), 'No pudimos cargar.')
+  assert.deepEqual(invalid, { message: 'nombre vacío', retryable: true })
+
+  const offline = describeApiError(
+    new NetworkError('Sin conexión y sin copia guardada de estos datos.'),
+    'No pudimos cargar.',
+  )
+  assert.deepEqual(offline, {
+    message: 'Sin conexión y sin copia guardada de estos datos.',
+    retryable: true,
+  })
+
+  assert.deepEqual(describeApiError('boom', 'No pudimos cargar.'), {
+    message: 'No pudimos cargar.',
+    retryable: true,
+  })
+})
+
+test('an offline JSON answer of the service worker is a network failure, not a server error', async () => {
+  clearToken()
+  const stub = stubFetch(
+    () =>
+      new Response(
+        JSON.stringify({
+          error: 'Sin conexión y sin copia guardada de estos datos.',
+          offline: true,
+        }),
+        { status: 503, headers: { 'content-type': 'application/json' } },
+      ),
+  )
+  try {
+    await assert.rejects(
+      () => request('/api/v1/salons/s1/bookings'),
+      (err: unknown) => {
+        assert.ok(err instanceof NetworkError)
+        assert.equal(err instanceof ApiError, false)
+        assert.equal(err.message, 'Sin conexión y sin copia guardada de estos datos.')
+        return true
+      },
+    )
+  } finally {
+    stub.restore()
+  }
+})
+
+test('a response served from the offline cache tells the UI it is saved data', async () => {
+  clearToken()
+  const paths: string[] = []
+  const unsubscribe = subscribeOfflineData((path) => paths.push(path))
+  const stub = stubFetch(
+    () =>
+      new Response(JSON.stringify({ bookings: [] }), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'x-salon-offline-cache': '1',
+        },
+      }),
+  )
+  try {
+    const payload = await request<{ bookings: unknown[] }>('/api/v1/salons/s1/bookings')
+    assert.deepEqual(payload, { bookings: [] })
+    assert.deepEqual(paths, ['/api/v1/salons/s1/bookings'])
+  } finally {
+    unsubscribe()
+    stub.restore()
+  }
+})
+
+test('createClient posts name, phone, email and notes and returns the new file', async () => {
+  const stub = stubFetch(() =>
+    json(
+      {
+        id: 'cli-1',
+        salon_id: 's1',
+        name: 'Lía',
+        phone: '11 5555-1234',
+        email: 'lia@correo.com',
+        notes: 'prefiere turnos de mañana',
+        created_at: '2026-12-03T09:00:00Z',
+      },
+      201,
+    ),
+  )
+  try {
+    setToken('jwt-clients')
+    const client = await createClient('s1', {
+      name: 'Lía',
+      phone: '11 5555-1234',
+      email: 'lia@correo.com',
+      notes: 'prefiere turnos de mañana',
+    })
+    assert.equal(stub.calls[0]?.url, `${API_BASE}/api/v1/salons/s1/clients`)
+    assert.equal(stub.calls[0]?.headers.Authorization, 'Bearer jwt-clients')
+    assert.deepEqual(JSON.parse(stub.calls[0]?.body ?? '{}'), {
+      name: 'Lía',
+      phone: '11 5555-1234',
+      email: 'lia@correo.com',
+      notes: 'prefiere turnos de mañana',
+    })
+    assert.equal(client.id, 'cli-1')
+    assert.equal(client.email, 'lia@correo.com')
+  } finally {
+    stub.restore()
+    clearToken()
+  }
 })

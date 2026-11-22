@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { fetchPublicSalon } from '../lib/api'
+import { preloadLandingHero, releaseLandingHero } from '../lib/landingPreload'
 import { toLandingServices } from '../lib/publicSalon'
 import type { LandingService } from './content'
 import { SERVICES, TRUST_POINTS } from './content'
@@ -22,6 +23,12 @@ export function LandingPage() {
   const { slug } = useParams<{ slug?: string }>()
   const [preselected, setPreselected] = useState<LandingService | null>(null)
   const [services, setServices] = useState<readonly LandingService[]>(SERVICES)
+
+  // Client-side navigation to the landing still starts the hero early.
+  useEffect(() => {
+    preloadLandingHero()
+    return () => releaseLandingHero()
+  }, [])
 
   useEffect(() => {
     let active = true

@@ -184,6 +184,38 @@ export function formatHour(hour: number): string {
   return `${pad(hour)}:00`
 }
 
+const HOURS_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/
+
+function hourOfDay(value: string, round: 'down' | 'up'): number {
+  const match = HOURS_PATTERN.exec(value.trim())
+  if (!match) {
+    return Number.NaN
+  }
+  const hour = Number(match[1])
+  const minute = Number(match[2])
+  if (round === 'down') {
+    return hour
+  }
+  return minute > 0 ? Math.min(24, hour + 1) : hour
+}
+
+/**
+ * Grid of the day calendar built from the salon opening hours (`HH:MM`): opening
+ * rounds down and closing rounds up so no appointment is clipped. An unusable or
+ * empty range keeps `DEFAULT_WINDOW` (the historic 09:00–20:00).
+ */
+export function timelineWindowFromHours(
+  openTime: string,
+  closeTime: string,
+): TimelineWindow {
+  const startHour = hourOfDay(openTime ?? '', 'down')
+  const endHour = hourOfDay(closeTime ?? '', 'up')
+  if (!Number.isFinite(startHour) || !Number.isFinite(endHour) || endHour <= startHour) {
+    return DEFAULT_WINDOW
+  }
+  return { startHour, endHour }
+}
+
 /**
  * Fractional position of `[startMinutes, endMinutes)` inside the visible window.
  * Values outside the window are clamped instead of rendering out of bounds.

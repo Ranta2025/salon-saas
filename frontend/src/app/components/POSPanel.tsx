@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { formatCents } from '../../lib/money'
+import { dropReasonLabel, findDropped, type DroppedOperation } from '../../lib/offlineQueue'
 import type { StaffMember } from '../../lib/staff'
 import { changeQty, itemCount, lineSubtotal, removeItem, totalCents, type Cart } from '../../lib/posCart'
 import {
@@ -20,6 +21,8 @@ type POSPanelProps = {
   onCompleted: () => void
   /** Sales of this device still waiting in the offline queue. */
   pendingCount?: number
+  /** Operations the queue gave up on: a queued sale here never reached the API. */
+  dropped?: readonly DroppedOperation[]
 }
 
 /**
@@ -41,6 +44,7 @@ export function POSPanel({
   onSubmit,
   onCompleted,
   pendingCount = 0,
+  dropped = [],
 }: POSPanelProps) {
   const [clientName, setClientName] = useState('')
   const [professionalId, setProfessionalId] = useState('')
@@ -48,6 +52,12 @@ export function POSPanel({
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [receipt, setReceipt] = useState<{ outcome: SaleOutcome; uiTotal: number } | null>(null)
+  // A sale that the server rejected never syncs: saying "se enviará sola" would
+  // be a lie, so the receipt repeats the reason the API gave.
+  const droppedReceipt =
+    receipt && receipt.outcome.kind === 'queued'
+      ? findDropped(dropped, receipt.outcome.client_op_id)
+      : null
 
   const uiTotal = totalCents(cart)
 
@@ -178,7 +188,7 @@ export function POSPanel({
               </option>
             ))}
           </select>
-          {staffError ? (
+          {staffError && staff.length === 0 ? (
             <p className="field__error" role="alert">
               No pudimos cargar el equipo: {staffError}
             </p>
@@ -221,6 +231,14 @@ export function POSPanel({
               {receipt.outcome.server.total !== receipt.uiTotal
                 ? ' El total del servidor es el que vale: revisa el catálogo.'
                 : ''}
+            </p>
+          </div>
+        ) : droppedReceipt ? (
+          <div className="notice notice--error" role="alert">
+            <p>
+              <strong>Esta venta no se registró.</strong> {dropReasonLabel(droppedReceipt)} Vuelve a
+              cobrarla corrigiendo el dato. Referencia{' '}
+              <code>{droppedReceipt.client_op_id.slice(0, 8)}</code>.
             </p>
           </div>
         ) : (

@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import { createSale, fetchSales, fetchServices, fetchStaff, NetworkError } from '../lib/api'
+import {
+  createSale,
+  describeApiError,
+  fetchSales,
+  fetchServices,
+  fetchStaff,
+  NetworkError,
+  type ApiErrorNotice,
+} from '../lib/api'
 import { dayRange } from '../lib/datetime'
 import { formatCents } from '../lib/money'
 import { newClientOpId, type QueuedOperation } from '../lib/offlineQueue'
@@ -35,7 +43,7 @@ function pendingSaleItems(operation: QueuedOperation): number {
 
 export function PosPage() {
   const { salonId } = useSalon()
-  const { online, pending, enqueueSale, syncedTotal } = useOffline()
+  const { online, pending, dropped, enqueueSale, syncedTotal } = useOffline()
   const [services, setServices] = useState<Service[]>([])
   const [sales, setSales] = useState<Sale[]>([])
   const [staff, setStaff] = useState<StaffMember[]>([])
@@ -44,7 +52,7 @@ export function PosPage() {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ApiErrorNotice | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
@@ -88,10 +96,12 @@ export function PosPage() {
         }
         setError(
           !online
-            ? 'Sin conexión: no pudimos traer las ventas del servidor. Puedes cobrar igual y la venta se sincroniza al volver la red.'
-            : err instanceof Error
-              ? err.message
-              : 'No pudimos cargar el punto de venta.',
+            ? {
+                message:
+                  'Sin conexión: no pudimos traer las ventas del servidor. Puedes cobrar igual y la venta se sincroniza al volver la red.',
+                retryable: true,
+              }
+            : describeApiError(err, 'No pudimos cargar el punto de venta.'),
         )
       })
       .finally(() => {
@@ -178,7 +188,7 @@ export function PosPage() {
       {loading ? (
         <LoadingState label={loaded ? 'Actualizando ventas…' : 'Cargando catálogo y ventas…'} />
       ) : null}
-      {error ? <ErrorNotice message={error} onRetry={reload} /> : null}
+      {error ? <ErrorNotice error={error} onRetry={reload} /> : null}
 
       {loaded ? (
         <div className="pos-layout">
@@ -232,6 +242,7 @@ export function PosPage() {
               onSubmit={handleSubmit}
               onCompleted={reload}
               pendingCount={pendingSales.length}
+              dropped={dropped}
             />
           </aside>
 

@@ -6,7 +6,7 @@
 
 import type { AuthUser } from '../types'
 
-export type SalonRole = 'owner' | 'admin' | 'professional'
+export type SalonRole = 'owner' | 'admin' | 'professional' | 'reception'
 
 export type SalonMembership = {
   id: string
@@ -20,7 +20,7 @@ export type Me = {
   salons: SalonMembership[]
 }
 
-const ROLES: readonly SalonRole[] = ['owner', 'admin', 'professional']
+const ROLES: readonly SalonRole[] = ['owner', 'admin', 'professional', 'reception']
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

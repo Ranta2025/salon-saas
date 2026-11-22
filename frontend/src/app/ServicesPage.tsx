@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { createService, fetchServices, updateService } from '../lib/api'
+import {
+  createService,
+  describeApiError,
+  fetchServices,
+  updateService,
+  type ApiErrorNotice,
+} from '../lib/api'
 import { formatCents, formatMinutes } from '../lib/money'
 import type { Service, ServiceInput, ServiceUpdateInput } from '../types'
 import { useSalon } from './SalonContext'
@@ -15,7 +21,7 @@ export function ServicesPage() {
   const [includeInactive, setIncludeInactive] = useState(true)
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ApiErrorNotice | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [mode, setMode] = useState<FormMode>({ kind: 'closed' })
   const [reloadKey, setReloadKey] = useState(0)
@@ -38,7 +44,7 @@ export function ServicesPage() {
       })
       .catch((err: unknown) => {
         if (active) {
-          setError(err instanceof Error ? err.message : 'No pudimos cargar los servicios.')
+          setError(describeApiError(err, 'No pudimos cargar los servicios.'))
         }
       })
       .finally(() => {
@@ -135,7 +141,7 @@ export function ServicesPage() {
       {loading ? (
         <LoadingState label={loaded ? 'Actualizando servicios…' : 'Cargando servicios…'} />
       ) : null}
-      {error ? <ErrorNotice message={error} onRetry={reload} /> : null}
+      {error ? <ErrorNotice error={error} onRetry={reload} /> : null}
 
       {loaded ? (
         <section className="panel-card" aria-labelledby="services-table-title">

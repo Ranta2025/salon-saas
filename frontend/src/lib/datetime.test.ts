@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  DEFAULT_WINDOW,
   addDaysToDateValue,
   dayRange,
   formatHour,
@@ -13,6 +14,7 @@ import {
   overlapLayout,
   toDateTimeIso,
   addMinutesToIso,
+  timelineWindowFromHours,
 } from './datetime.ts'
 
 const TZ = 'America/Mexico_City'
@@ -112,4 +114,20 @@ test('toDateTimeIso rejects an unusable date or time instead of sending NaN to t
 test('addMinutesToIso keeps the calendar of the appointment', () => {
   assert.equal(addMinutesToIso('2025-03-14T22:30:00.000Z', 90), '2025-03-15T00:00:00.000Z')
   assert.equal(addMinutesToIso('2025-03-14T16:00:00Z', 45), '2025-03-14T16:45:00.000Z')
+})
+
+test('timelineWindowFromHours follows the salon settings', () => {
+  assert.deepEqual(timelineWindowFromHours('09:00', '19:00'), { startHour: 9, endHour: 19 })
+  assert.deepEqual(timelineWindowFromHours('10:00', '18:00'), { startHour: 10, endHour: 18 })
+  // Half hours widen to whole grid hours instead of clipping the last appointment.
+  assert.deepEqual(timelineWindowFromHours('08:30', '19:30'), { startHour: 8, endHour: 20 })
+})
+
+test('timelineWindowFromHours falls back to the default window on unusable hours', () => {
+  assert.deepEqual(timelineWindowFromHours('', ''), DEFAULT_WINDOW)
+  assert.deepEqual(timelineWindowFromHours('nueve', '20:00'), DEFAULT_WINDOW)
+  assert.deepEqual(timelineWindowFromHours('19:00', '09:00'), DEFAULT_WINDOW)
+  assert.deepEqual(timelineWindowFromHours('09:00', '09:00'), DEFAULT_WINDOW)
+  // A late half-hour closes on the next grid hour instead of being clipped.
+  assert.deepEqual(timelineWindowFromHours('23:00', '23:30'), { startHour: 23, endHour: 24 })
 })

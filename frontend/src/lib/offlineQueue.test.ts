@@ -6,6 +6,8 @@ import {
   MAX_BACKOFF_MS,
   OfflineQueue,
   QUEUE_STORAGE_KEY,
+  dropReasonLabel,
+  findDropped,
   newClientOpId,
   nextBackoffMs,
   scopedStorageKey,
@@ -195,6 +197,8 @@ test('an operation is dropped after the attempt cap so the queue never loops for
   assert.equal(h.queue.dropped().length, 1)
   assert.equal(h.queue.dropped()[0]?.client_op_id, 'op-1')
   assert.equal(h.queue.dropped()[0]?.attempts, 3)
+  assert.equal(h.queue.dropped()[0]?.cause, 'attempts_exhausted')
+  assert.match(h.queue.dropped()[0]?.reason ?? '', /Se agotaron los intentos: servidor caído/)
   assert.equal(h.queue.snapshot().dropped.length, 1)
 })
 
@@ -270,7 +274,9 @@ test('a definitive 4xx is dropped immediately and the queue moves on', async () 
   const dropped = h.queue.dropped()
   assert.equal(dropped.length, 1)
   assert.equal(dropped[0]?.client_op_id, 'op-rejected')
-  assert.match(dropped[0]?.reason ?? '', /El servicio ya no está activo/)
+  // A rejection carries the server reason, not the attempts-exhausted wording.
+  assert.equal(dropped[0]?.cause, 'server_rejected')
+  assert.equal(dropped[0]?.reason, 'El servicio ya no está activo')
   assert.equal(h.timers.active().length, 0)
 })
 
@@ -349,4 +355,61 @@ test('scoped queues never share the persisted storage key', () => {
   assert.equal(h.data.has(QUEUE_STORAGE_KEY), false)
   assert.notEqual(scopedStorageKey('user-a'), scopedStorageKey('user-b'))
   assert.equal(scopedStorageKey(null), QUEUE_STORAGE_KEY)
+})
+
+test('a dropped operation is found by its client_op_id', () => {
+  const base = {
+    kind: 'sale' as const,
+    salon_id: 'salon-1',
+    payload: sale,
+    created_at: '2026-11-21T10:00:00.000Z',
+    attempts: 1,
+    next_attempt_at: 2,
+    last_error: null,
+  }
+  const rejected = {
+    ...base,
+    client_op_id: 'op-rejected',
+    dropped_at: 10,
+    cause: 'server_rejected' as const,
+    reason: 'La profesional ya no pertenece al salón.',
+  }
+  const exhausted = {
+    ...base,
+    client_op_id: 'op-exhausted',
+    dropped_at: 11,
+    cause: 'attempts_exhausted' as const,
+    reason: 'Se agotaron los intentos: servidor caído',
+  }
+  assert.equal(findDropped([rejected, exhausted], 'op-rejected')?.cause, 'server_rejected')
+  assert.equal(findDropped([rejected, exhausted], 'op-exhausted')?.reason, 'Se agotaron los intentos: servidor caído')
+  assert.equal(findDropped([rejected, exhausted], 'op-other'), null)
+  assert.equal(findDropped([], 'op-rejected'), null)
+})
+
+test('the copy of a dropped operation names who rejected it', () => {
+  const base = {
+    kind: 'sale' as const,
+    salon_id: 'salon-1',
+    payload: sale,
+    client_op_id: 'op-1',
+    created_at: '2026-11-21T10:00:00.000Z',
+    attempts: 4,
+    next_attempt_at: 2,
+    last_error: null,
+    dropped_at: 10,
+  }
+  assert.equal(
+    dropReasonLabel({
+      ...base,
+      cause: 'server_rejected',
+      reason: 'La profesional ya no pertenece al salón.',
+    }),
+    'El servidor rechazó esta operación: La profesional ya no pertenece al salón.',
+  )
+  // The retry cap already explains itself in `reason`.
+  assert.equal(
+    dropReasonLabel({ ...base, cause: 'attempts_exhausted', reason: 'Se agotaron los intentos: servidor caído' }),
+    'Se agotaron los intentos: servidor caído',
+  )
 })

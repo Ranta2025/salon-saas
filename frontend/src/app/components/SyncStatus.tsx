@@ -1,3 +1,4 @@
+import { dropReasonLabel } from '../../lib/offlineQueue'
 import { useOffline } from '../OfflineContext'
 
 /** Compact pending counter for the app header; always visible when work is waiting. */
@@ -44,18 +45,20 @@ export function OfflineBanner() {
             ? 'Estás sin conexión'
             : pendingCount > 0
               ? 'Sincronización pendiente'
-              : 'Operaciones sin enviar'}
+              : 'Operaciones descartadas'}
       </p>
-      <p className="offline-banner__text">
-        {paused
-          ? 'Tu sesión venció. Vuelve a iniciar sesión: las operaciones guardadas no se perdieron ni gastaron intentos.'
-          : online
-          ? `${pendingCount} ${pendingCount === 1 ? 'operación espera' : 'operaciones esperan'} al servidor.`
-          : 'Puedes seguir cobrando: las ventas se guardan en este dispositivo y se envían solas al volver la red.'}
-        {!online && pendingCount > 0
-          ? ` ${pendingCount} ${pendingCount === 1 ? 'operación pendiente' : 'operaciones pendientes'}.`
-          : ''}
-      </p>
+      {paused || !online || pendingCount > 0 ? (
+        <p className="offline-banner__text">
+          {paused
+            ? 'Tu sesión venció. Vuelve a iniciar sesión: las operaciones guardadas no se perdieron ni gastaron intentos.'
+            : online
+            ? `${pendingCount} ${pendingCount === 1 ? 'operación espera' : 'operaciones esperan'} al servidor.`
+            : 'Puedes seguir cobrando: las ventas se guardan en este dispositivo y se envían solas al volver la red.'}
+          {!online && pendingCount > 0
+            ? ` ${pendingCount} ${pendingCount === 1 ? 'operación pendiente' : 'operaciones pendientes'}.`
+            : ''}
+        </p>
+      ) : null}
       {online && pendingCount > 0 ? (
         <button
           type="button"
@@ -71,15 +74,13 @@ export function OfflineBanner() {
         <div className="offline-banner__dropped">
           <p>
             <strong>Atención:</strong> {dropped.length}{' '}
-            {dropped.length === 1 ? 'operación se descartó' : 'operaciones se descartaron'} sin
-            llegar al servidor (se agotaron los intentos).
+            {dropped.length === 1 ? 'operación no llegó' : 'operaciones no llegaron'} al servidor.
           </p>
           <ul>
             {dropped.map((operation) => (
               <li key={operation.client_op_id}>
                 <code>{operation.client_op_id.slice(0, 8)}</code>{' '}
-                {operation.kind === 'sale' ? 'venta' : 'reserva'} ·{' '}
-                {operation.last_error ?? 'error desconocido'}
+                {operation.kind === 'sale' ? 'venta' : 'reserva'} · {dropReasonLabel(operation)}
               </li>
             ))}
           </ul>

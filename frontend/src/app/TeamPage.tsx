@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { friendlyApiMessage } from '../lib/api'
+import { describeApiError, friendlyApiMessage, type ApiErrorNotice } from '../lib/api'
 import type { SalonRole } from '../lib/me'
 import {
   addMember,
@@ -28,7 +28,7 @@ export function TeamPage() {
   const [members, setMembers] = useState<SalonMember[]>([])
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ApiErrorNotice | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [email, setEmail] = useState('')
   const [newRole, setNewRole] = useState<SalonRole>('professional')
@@ -56,7 +56,7 @@ export function TeamPage() {
       })
       .catch((err: unknown) => {
         if (active) {
-          setError(friendlyApiMessage(err, 'No pudimos cargar el equipo del salón.'))
+          setError(describeApiError(err, 'No pudimos cargar el equipo del salón.'))
         }
       })
       .finally(() => {
@@ -133,7 +133,7 @@ export function TeamPage() {
       setConfirmRemoveId(null)
       reload()
     } catch (err: unknown) {
-      setError(friendlyApiMessage(err, 'No pudimos quitar a esa persona del equipo.'))
+      setError(describeApiError(err, 'No pudimos quitar a esa persona del equipo.'))
     } finally {
       setRemovingId(null)
     }
@@ -152,7 +152,7 @@ export function TeamPage() {
           {notice}
         </p>
       ) : null}
-      {error ? <ErrorNotice message={error} onRetry={reload} /> : null}
+      {error ? <ErrorNotice error={error} onRetry={reload} /> : null}
 
       <form className="panel-card team-form" onSubmit={handleAdd} noValidate>
         <h2>Agregar a alguien del equipo</h2>

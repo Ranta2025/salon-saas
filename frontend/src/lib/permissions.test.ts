@@ -3,10 +3,12 @@ import assert from 'node:assert/strict'
 import {
   activeRole,
   canAssignRole,
+  canCreateClient,
   canEditSettings,
   canManageBooking,
   canManageMembers,
   isManager,
+  panelHomePath,
   roleLabel,
 } from './permissions.ts'
 
@@ -37,6 +39,7 @@ test('members and settings are managed by owner and admin only', () => {
 test('a professional only acts on their own bookings', () => {
   assert.equal(canManageBooking('owner', 'u1', 'u9'), true)
   assert.equal(canManageBooking('admin', 'u1', 'u9'), true)
+  assert.equal(canManageBooking('reception', 'u1', 'u9'), true)
   assert.equal(canManageBooking('professional', 'u2', 'u2'), true)
   assert.equal(canManageBooking('professional', 'u2', 'u9'), false)
   assert.equal(canManageBooking('professional', null, 'u2'), false)
@@ -61,4 +64,27 @@ test('activeRole reads the role of the active salon and never guesses another on
   assert.equal(activeRole(salons, 's9'), null)
   assert.equal(activeRole(salons, null), null)
   assert.equal(activeRole([], 's1'), null)
+})
+
+test('reception is its own role and not a manager', () => {
+  assert.equal(roleLabel('reception'), 'Recepción')
+  assert.equal(isManager('reception'), false)
+  assert.equal(canManageMembers('reception'), false)
+  assert.equal(canEditSettings('reception'), false)
+})
+
+test('a professional does not land on the dashboard after login', () => {
+  assert.equal(panelHomePath('professional'), '/panel/calendario')
+  assert.equal(panelHomePath('owner'), null)
+  assert.equal(panelHomePath('admin'), null)
+  assert.equal(panelHomePath('reception'), null)
+  assert.equal(panelHomePath(null), null)
+})
+
+test('client files are created by owner, admin and reception only', () => {
+  assert.equal(canCreateClient('owner'), true)
+  assert.equal(canCreateClient('admin'), true)
+  assert.equal(canCreateClient('reception'), true)
+  assert.equal(canCreateClient('professional'), false)
+  assert.equal(canCreateClient(null), false)
 })

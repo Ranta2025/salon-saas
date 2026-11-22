@@ -14,7 +14,7 @@ export type SalonMember = {
   role: SalonRole
 }
 
-const ROLES: readonly SalonRole[] = ['owner', 'admin', 'professional']
+const ROLES: readonly SalonRole[] = ['owner', 'admin', 'professional', 'reception']
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

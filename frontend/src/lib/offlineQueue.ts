@@ -48,7 +48,31 @@ export type FailureKind = 'retry' | 'drop' | 'pause'
 
 export type DroppedOperation = QueuedOperation & {
   dropped_at: number
+  /** Why it never reached the server: a definitive rejection or the retry cap. */
+  cause: DropCause
+  /** User facing reason; the server message when it rejected the operation. */
   reason: string
+}
+
+/**
+ * `server_rejected`: the API answered a definitive 4xx and will answer the same
+ * every time. `attempts_exhausted`: network or 5xx failures used up the retries.
+ */
+export type DropCause = 'server_rejected' | 'attempts_exhausted'
+
+/** Copy of a dropped operation: the API message when it rejected the work. */
+export function dropReasonLabel(operation: DroppedOperation): string {
+  return operation.cause === 'server_rejected'
+    ? `El servidor rechazó esta operación: ${operation.reason}`
+    : operation.reason
+}
+
+/** The dropped operation with this `client_op_id`, if it exists. */
+export function findDropped(
+  dropped: readonly DroppedOperation[],
+  clientOpId: string,
+): DroppedOperation | null {
+  return dropped.find((operation) => operation.client_op_id === clientOpId) ?? null
 }
 
 export type QueueSnapshot = {
@@ -169,9 +193,12 @@ function toDropped(value: unknown): DroppedOperation | null {
   if (!operation || !isRecord(value)) {
     return null
   }
+  const cause: DropCause =
+    value['cause'] === 'server_rejected' ? 'server_rejected' : 'attempts_exhausted'
   return {
     ...operation,
     dropped_at: asNumber(value['dropped_at'], 0),
+    cause,
     reason: typeof value['reason'] === 'string' ? value['reason'] : 'Se agotaron los intentos',
   }
 }
@@ -449,12 +476,13 @@ export class OfflineQueue {
             break
           }
           if (failure === 'drop') {
-            // A definitive 4xx will never succeed on retry: show it and move on
-            // so one rejected operation cannot block the whole queue.
+            // A definitive 4xx will never succeed on retry: show the server reason
+            // and move on so one rejected operation cannot block the whole queue.
             this.operations.shift()
             this.droppedOperations.push({
               ...operation,
               dropped_at: now,
+              cause: 'server_rejected',
               reason: errorMessage(error),
             })
             if (this.droppedOperations.length > MAX_DROPPED) {
@@ -472,7 +500,8 @@ export class OfflineQueue {
             this.droppedOperations.push({
               ...operation,
               dropped_at: this.clock(),
-              reason: `Se descartó después de ${this.maxAttempts} intentos`,
+              cause: 'attempts_exhausted',
+              reason: `Se agotaron los intentos: ${errorMessage(error)}`,
             })
             if (this.droppedOperations.length > MAX_DROPPED) {
               this.droppedOperations.splice(0, this.droppedOperations.length - MAX_DROPPED)

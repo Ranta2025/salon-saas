@@ -37,7 +37,7 @@ export function NotificationsPage() {
       </p>
 
       {loading ? <LoadingState label="Cargando avisos…" /> : null}
-      {error ? <ErrorNotice message={error} onRetry={reload} /> : null}
+      {error ? <ErrorNotice error={{ message: error, retryable: true }} onRetry={reload} /> : null}
 
       <section className="panel-card" aria-labelledby="notifications-title">
         <div className="panel-card__head">

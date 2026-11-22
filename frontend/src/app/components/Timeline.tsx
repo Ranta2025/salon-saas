@@ -8,8 +8,9 @@ import {
   positionInWindow,
   TIME_ZONE,
   type ProfessionalRef,
+  type TimelineWindow,
 } from '../../lib/datetime'
-import { statusLabel } from '../../lib/bookingActions'
+import { bookingCountLabel, statusLabel } from '../../lib/bookingActions'
 import type { Booking } from '../../types'
 
 const HOUR_HEIGHT = 56
@@ -24,6 +25,10 @@ type TimelineProps = {
   onSelect?: (booking: Booking) => void
   /** Id of the booking whose actions panel is open. */
   selectedId?: string | null
+  /** Opening window of the salon (`open_time`/`close_time`), 09:00–20:00 by default. */
+  gridWindow?: TimelineWindow
+  /** The day comes from the offline cache: an empty grid is not "no bookings". */
+  savedData?: boolean
 }
 
 type Block = {
@@ -66,18 +71,22 @@ export function Timeline({
   timeZone = TIME_ZONE,
   onSelect,
   selectedId = null,
+  gridWindow = DEFAULT_WINDOW,
+  savedData = false,
 }: TimelineProps) {
   const groups = groupByProfessional(bookings, professionals)
   const hours = Array.from(
-    { length: DEFAULT_WINDOW.endHour - DEFAULT_WINDOW.startHour + 1 },
-    (_, index) => DEFAULT_WINDOW.startHour + index,
+    { length: gridWindow.endHour - gridWindow.startHour + 1 },
+    (_, index) => gridWindow.startHour + index,
   )
-  const bodyHeight = (DEFAULT_WINDOW.endHour - DEFAULT_WINDOW.startHour) * HOUR_HEIGHT
+  const bodyHeight = (gridWindow.endHour - gridWindow.startHour) * HOUR_HEIGHT
 
   if (bookings.length === 0) {
     return (
       <p className="empty-state">
-        No hay citas agendadas para este día. Las reservas nuevas aparecen aquí.
+        {savedData
+          ? 'Sin conexión: la copia guardada de este día no tiene citas. Actualiza cuando vuelva la red.'
+          : 'No hay citas agendadas para este día. Las reservas nuevas aparecen aquí.'}
       </p>
     )
   }
@@ -103,19 +112,23 @@ export function Timeline({
               <section className="timeline__column" key={group.id}>
                 <header className="timeline__column-head">
                   <h2>{group.name}</h2>
-                  <span>{group.bookings.length} citas</span>
+                  <span>{bookingCountLabel(group.bookings.length)}</span>
                 </header>
                 <div className="timeline__body" style={{ height: bodyHeight }}>
                   {hours.map((hour) => (
                     <div
                       key={hour}
                       className="timeline__line"
-                      style={{ top: (hour - DEFAULT_WINDOW.startHour) * HOUR_HEIGHT }}
+                      style={{ top: (hour - gridWindow.startHour) * HOUR_HEIGHT }}
                       aria-hidden="true"
                     />
                   ))}
                   {blocks.map((block) => {
-                    const { offset, duration } = positionInWindow(block.start, block.end)
+                    const { offset, duration } = positionInWindow(
+                      block.start,
+                      block.end,
+                      gridWindow,
+                    )
                     const left = (block.column / block.columns) * 100
                     const startsAt = formatTimeOfDay(block.booking.starts_at, timeZone)
                     const endsAt = formatTimeOfDay(block.booking.ends_at, timeZone)

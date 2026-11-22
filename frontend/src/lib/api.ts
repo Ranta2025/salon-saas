@@ -9,6 +9,7 @@ import { clearToken, getToken } from './session.ts'
 import { normalizeMe, type Me } from './me.ts'
 import { normalizeStaff, type StaffMember } from './staff.ts'
 import { normalizePublicSalon, type PublicSalon } from './publicSalon.ts'
+import { isCachedResponse, noteOfflineData } from './offlineData.ts'
 import { normalizeDashboard, type DashboardMetrics } from './metrics.ts'
 import {
   normalizeNotifications,
@@ -19,6 +20,7 @@ import type {
   Booking,
   BookingInput,
   Client,
+  ClientInput,
   ClientPhoto,
   Sale,
   SaleCreated,
@@ -86,23 +88,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-async function errorMessage(response: Response): Promise<string> {
+async function errorDetail(
+  response: Response,
+): Promise<{ message: string; offline: boolean }> {
   const fallback = `El servidor respondió ${response.status}. Intenta nuevamente.`
   try {
     const text = await response.text()
     if (text.trim() === '') {
-      return fallback
+      return { message: fallback, offline: false }
     }
     const parsed: unknown = JSON.parse(text)
     if (isRecord(parsed)) {
       const message = parsed['error'] ?? parsed['message']
+      // The service worker answers an unreachable API with this flag: it is a
+      // connectivity failure, not a server error the person can retry forever.
+      const offline = parsed['offline'] === true
       if (typeof message === 'string' && message.trim() !== '') {
-        return message
+        return { message, offline }
       }
+      return { message: fallback, offline }
     }
-    return fallback
+    return { message: fallback, offline: false }
   } catch {
-    return fallback
+    return { message: fallback, offline: false }
   }
 }
 
@@ -112,19 +120,39 @@ async function errorMessage(response: Response): Promise<string> {
  * other status keeps the Spanish message of the API.
  */
 export function friendlyApiMessage(error: unknown, fallback: string): string {
+  return describeApiError(error, fallback).message
+}
+
+export type ApiErrorNotice = {
+  /** Spanish copy the screen shows. */
+  message: string
+  /** False when retrying cannot help (a permission problem, for example). */
+  retryable: boolean
+}
+
+/**
+ * Copy plus retry policy of a failed request. A 403 is a permission problem the
+ * person cannot fix by retrying, so it gets an explanation and no Retry button;
+ * every other status keeps the Spanish message of the API.
+ */
+export function describeApiError(error: unknown, fallback: string): ApiErrorNotice {
   if (error instanceof ApiError) {
     if (error.status === 403) {
-      return 'Tu rol no permite esta acción. Pídele a la administración del salón que revise tu acceso.'
+      return {
+        message:
+          'Tu rol no permite esta acción. Pídele a la administración del salón que revise tu acceso.',
+        retryable: false,
+      }
     }
-    return error.message
+    return { message: error.message, retryable: true }
   }
   if (error instanceof NetworkError) {
-    return error.message
+    return { message: error.message, retryable: true }
   }
   if (error instanceof Error && error.message.trim() !== '') {
-    return error.message
+    return { message: error.message, retryable: true }
   }
-  return fallback
+  return { message: fallback, retryable: true }
 }
 
 function signalUnauthorized(): void {
@@ -204,7 +232,16 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     signalUnauthorized()
   }
   if (!response.ok) {
-    throw new ApiError(response.status, await errorMessage(response))
+    const detail = await errorDetail(response)
+    if (detail.offline) {
+      throw new NetworkError(detail.message)
+    }
+    throw new ApiError(response.status, detail.message)
+  }
+  if (isCachedResponse(response)) {
+    // A cached API answer is not live data: the screen says so instead of
+    // showing it as if it had just arrived from the server.
+    noteOfflineData(path)
   }
   if (response.status === 204) {
     return undefined as T
@@ -427,6 +464,28 @@ export async function fetchClients(salonId: string, signal?: AbortSignal): Promi
   return clients.sort((a, b) => a.name.localeCompare(b.name, 'es'))
 }
 
+/**
+ * Creates a client file by hand (`POST /salons/:id/clients`). The server accepts
+ * name, phone, notes; `email` is sent too because the mirrored endpoint persists
+ * it (and the public booking flow fills it in).
+ */
+export async function createClient(salonId: string, input: ClientInput): Promise<Client> {
+  const payload = await request<unknown>(salonPath(salonId, '/clients'), {
+    method: 'POST',
+    body: {
+      name: input.name.trim(),
+      phone: input.phone.trim(),
+      email: input.email.trim().toLowerCase(),
+      notes: input.notes.trim(),
+    },
+  })
+  const client = normalizeClient(payload)
+  if (!client) {
+    throw new ApiError(201, 'El servidor creó la ficha pero no devolvió sus datos.')
+  }
+  return client
+}
+
 export async function fetchClientPhotos(
   salonId: string,
   clientId: string,
@@ -477,7 +536,11 @@ export async function uploadClientPhoto(
     signalUnauthorized()
   }
   if (!response.ok) {
-    throw new ApiError(response.status, await errorMessage(response))
+    const detail = await errorDetail(response)
+    if (detail.offline) {
+      throw new NetworkError(detail.message)
+    }
+    throw new ApiError(response.status, detail.message)
   }
   const text = await response.text()
   let parsed: unknown = null

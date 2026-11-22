@@ -70,8 +70,18 @@ export function availableActions(status: string): BookingAction[] {
   return []
 }
 
+/**
+ * Only an open appointment can move. Cancelled, no-show and done ones keep their
+ * history: offering "Reprogramar" there would rewrite what already happened.
+ */
 export function canReschedule(status: string): boolean {
-  return status !== 'cancelled'
+  return status === 'booked' || status === ''
+}
+
+/** `1 cita` / `2 citas`: the counter of the calendar column head. */
+export function bookingCountLabel(count: number): string {
+  const safe = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0
+  return `${safe} ${safe === 1 ? 'cita' : 'citas'}`
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

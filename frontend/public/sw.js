@@ -10,7 +10,7 @@
 
 // Bump this value on every deploy that changes the worker or the precache list:
 // `activate` deletes every cache that is not part of the current version.
-const VERSION = 'salon-v2'
+const VERSION = 'salon-v3'
 const SHELL_CACHE = `${VERSION}-shell`
 const STATIC_CACHE = `${VERSION}-static`
 const API_CACHE = `${VERSION}-api`
@@ -137,16 +137,40 @@ async function networkFirstApi(request) {
   } catch {
     const cached = await cache.match(key)
     if (cached) {
-      return cached
+      // The flag lets the app say "sin conexión: mostrando datos guardados"
+      // instead of presenting a cached list as live data.
+      return withOfflineFlag(cached)
     }
-    return new Response(
-      JSON.stringify({
-        error:
-          'Sin conexión y sin copia guardada de estos datos. Reintenta cuando vuelva la red.',
-      }),
-      { status: 503, headers: { 'Content-Type': 'application/json' } },
-    )
+    return offlineJSON()
   }
+}
+
+/** A cached API answer, marked so the UI knows it is not live data. */
+function withOfflineFlag(response) {
+  const headers = new Headers(response.headers)
+  headers.set('X-Salon-Offline-Cache', '1')
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
+}
+
+/**
+ * An API GET that neither the network nor the cache can answer. It is a JSON
+ * body with the `offline` flag (the app turns it into a quiet connectivity
+ * state, not a server error) and a 503 status; answering with a rejected fetch
+ * would only print a console error for an expected offline situation.
+ */
+function offlineJSON() {
+  return new Response(
+    JSON.stringify({
+      error:
+        'Sin conexión y sin copia guardada de estos datos. Reintenta cuando vuelva la red.',
+      offline: true,
+    }),
+    { status: 503, headers: { 'Content-Type': 'application/json' } },
+  )
 }
 
 async function networkFirstShell(request) {

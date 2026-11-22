@@ -1,17 +1,22 @@
-import { useCallback, useEffect, useState } from 'react'
-import { fetchBookings, fetchStaff } from '../lib/api'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { describeApiError, fetchBookings, fetchStaff, type ApiErrorNotice } from '../lib/api'
+import { subscribeOfflineData } from '../lib/offlineData'
 import { activeRole, canManageBooking } from '../lib/permissions'
 import { timeZoneLabel } from '../lib/publicBooking'
 import { fetchSettings } from '../lib/settings'
 import {
+  DEFAULT_WINDOW,
   TIME_ZONE,
   addDaysToDateValue,
   dayRange,
   fromDateInputValue,
+  timelineWindowFromHours,
   toDateInputValue,
+  type TimelineWindow,
 } from '../lib/datetime'
 import type { StaffMember } from '../lib/staff'
 import type { Booking } from '../types'
+import { useOffline } from './OfflineContext'
 import { useRealtime } from './RealtimeContext'
 import { useSalon } from './SalonContext'
 import { BookingDetail } from './components/BookingDetail'
@@ -22,19 +27,36 @@ import { Timeline } from './components/Timeline'
 export function CalendarPage() {
   const { salonId, salons, user } = useSalon()
   const { subscribe } = useRealtime()
+  const { online } = useOffline()
   const [dateValue, setDateValue] = useState(() => toDateInputValue(new Date()))
   const [bookings, setBookings] = useState<Booking[]>([])
   const [loadedDay, setLoadedDay] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ApiErrorNotice | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  /** The list on screen is a cached copy, not a live answer of the API. */
+  const [savedData, setSavedData] = useState(false)
   const [staff, setStaff] = useState<StaffMember[]>([])
   const [staffError, setStaffError] = useState<string | null>(null)
   const [timeZone, setTimeZone] = useState<string>(TIME_ZONE)
+  const [gridWindow, setGridWindow] = useState<TimelineWindow>(DEFAULT_WINDOW)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  // The service worker flags a cached answer before the fetch resolves, so the
+  // load below reads this ref to know whether the data it got is saved data.
+  const cachedAnswer = useRef(false)
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
+
+  useEffect(
+    () =>
+      subscribeOfflineData((path) => {
+        if (path.includes('/bookings')) {
+          cachedAnswer.current = true
+        }
+      }),
+    [],
+  )
 
   // A booking created or changed anywhere refreshes the visible day.
   useEffect(() => {
@@ -46,7 +68,7 @@ export function CalendarPage() {
     }
   }, [subscribe, reload])
 
-  // Team for the reschedule select and the salon zone for the geometry.
+  // Team for the reschedule select; settings for the zone and the visible hours.
   useEffect(() => {
     if (!salonId) {
       return
@@ -64,15 +86,16 @@ export function CalendarPage() {
           setStaffError(err instanceof Error ? err.message : 'No pudimos cargar el equipo del salón.')
         }
       })
-    // Settings are readable by any member; a failure keeps the known zone.
+    // Settings are readable by any member; a failure keeps the known values.
     fetchSettings(salonId)
       .then((settings) => {
         if (active) {
           setTimeZone(settings.timezone)
+          setGridWindow(timelineWindowFromHours(settings.openTime, settings.closeTime))
         }
       })
       .catch(() => {
-        // keep TIME_ZONE as the fallback
+        // keep TIME_ZONE and the 09:00–20:00 grid as the fallback
       })
     return () => {
       active = false
@@ -85,16 +108,19 @@ export function CalendarPage() {
     }
     const { from, to } = dayRange(new Date(fromDateInputValue(dateValue, timeZone)), timeZone)
     const controller = new AbortController()
+    cachedAnswer.current = false
     setLoading(true)
     setError(null)
     fetchBookings(salonId, from, to, controller.signal)
       .then((list) => {
         setBookings(list)
         setLoadedDay(dateValue)
+        setSavedData(cachedAnswer.current)
       })
       .catch((err: unknown) => {
         if (!controller.signal.aborted) {
-          setError(err instanceof Error ? err.message : 'No pudimos cargar la agenda.')
+          setSavedData(false)
+          setError(describeApiError(err, 'No pudimos cargar la agenda.'))
         }
       })
       .finally(() => {
@@ -110,6 +136,9 @@ export function CalendarPage() {
   const agendaReady = loadedDay === dateValue
   const role = activeRole(salons, salonId)
   const selected = bookings.find((booking) => booking.id === selectedId) ?? null
+  // Saved or failed data is never presented as today's real agenda.
+  const showingSavedData = savedData || !online
+  const hasError = error !== null
 
   if (!salonId) {
     return (
@@ -175,38 +204,50 @@ export function CalendarPage() {
           {notice}
         </p>
       ) : null}
+      {showingSavedData ? (
+        <p className="notice notice--info" role="status">
+          Sin conexión: mostrando datos guardados. Las citas nuevas aparecerán al recuperar la red.
+        </p>
+      ) : null}
       {loading ? (
         <LoadingState label={agendaReady ? 'Actualizando agenda…' : 'Cargando agenda…'} />
       ) : null}
-      {error ? <ErrorNotice message={error} onRetry={reload} /> : null}
-      {agendaReady && !error ? (
-        <Timeline
-          bookings={bookings}
-          professionals={staff}
-          timeZone={timeZone}
-          selectedId={selectedId}
-          onSelect={(booking) => {
-            setNotice(null)
-            setSelectedId(booking.id)
-          }}
-        />
-      ) : null}
+      {error ? <ErrorNotice error={error} onRetry={reload} /> : null}
 
-      {selected ? (
-        <BookingDetail
-          booking={selected}
-          staff={staff}
-          staffError={staffError}
-          timeZone={timeZone}
-          salonId={salonId}
-          canAct={canManageBooking(role, user?.id ?? null, selected.professional_id)}
-          onClose={() => setSelectedId(null)}
-          onUpdated={(message) => {
-            setNotice(message)
-            reload()
-          }}
-        />
-      ) : null}
+      <div className={`calendar-layout${selected ? ' calendar-layout--detail' : ''}`}>
+        <div className="calendar-layout__grid">
+          {agendaReady && !hasError ? (
+            <Timeline
+              bookings={bookings}
+              professionals={staff}
+              timeZone={timeZone}
+              gridWindow={gridWindow}
+              savedData={showingSavedData}
+              selectedId={selectedId}
+              onSelect={(booking) => {
+                setNotice(null)
+                setSelectedId(booking.id)
+              }}
+            />
+          ) : null}
+        </div>
+
+        {selected ? (
+          <BookingDetail
+            booking={selected}
+            staff={staff}
+            staffError={staffError}
+            timeZone={timeZone}
+            salonId={salonId}
+            canAct={canManageBooking(role, user?.id ?? null, selected.professional_id)}
+            onClose={() => setSelectedId(null)}
+            onUpdated={(message) => {
+              setNotice(message)
+              reload()
+            }}
+          />
+        ) : null}
+      </div>
     </>
   )
 }

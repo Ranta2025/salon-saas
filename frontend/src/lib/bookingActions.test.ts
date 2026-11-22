@@ -4,6 +4,7 @@ import { API_BASE, ApiError, NetworkError } from './api.ts'
 import { clearToken, setToken } from './session.ts'
 import {
   BOOKING_STATUS_LABEL,
+  bookingCountLabel,
   availableActions,
   bookingDurationMinutes,
   canReschedule,
@@ -60,7 +61,11 @@ test('availableActions offers the three closing actions only for a booked appoin
   assert.deepEqual(availableActions('cancelled'), [])
   assert.deepEqual(availableActions('no_show'), [])
   assert.equal(canReschedule('booked'), true)
+  assert.equal(canReschedule(''), true)
+  // A closed appointment keeps its history: moving it would rewrite the past.
   assert.equal(canReschedule('cancelled'), false)
+  assert.equal(canReschedule('done'), false)
+  assert.equal(canReschedule('no_show'), false)
 })
 
 test('reschedulePayload keeps the duration of the appointment', () => {
@@ -138,4 +143,11 @@ test('describeBookingUpdateError explains a 403 instead of showing the raw API t
   assert.equal(network, 'No pudimos conectar con el servidor.')
 
   assert.match(describeBookingUpdateError('boom'), /No pudimos actualizar el turno/)
+})
+
+test('bookingCountLabel agrees the number with cita/citas', () => {
+  assert.equal(bookingCountLabel(0), '0 citas')
+  assert.equal(bookingCountLabel(1), '1 cita')
+  assert.equal(bookingCountLabel(2), '2 citas')
+  assert.equal(bookingCountLabel(11), '11 citas')
 })

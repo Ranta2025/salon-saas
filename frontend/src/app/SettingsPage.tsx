@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { friendlyApiMessage } from '../lib/api'
+import { describeApiError, type ApiErrorNotice } from '../lib/api'
 import { activeRole, isManager, roleLabel } from '../lib/permissions'
 import {
   DEFAULT_SETTINGS,
@@ -30,7 +30,7 @@ export function SettingsPage() {
   const [draft, setDraft] = useState<SalonSettings>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ApiErrorNotice | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [fieldError, setFieldError] = useState<{ field: SettingsField; message: string } | null>(
     null,
@@ -56,7 +56,7 @@ export function SettingsPage() {
       })
       .catch((err: unknown) => {
         if (active) {
-          setError(friendlyApiMessage(err, 'No pudimos cargar la configuración del salón.'))
+          setError(describeApiError(err, 'No pudimos cargar la configuración del salón.'))
         }
       })
       .finally(() => {
@@ -110,7 +110,7 @@ export function SettingsPage() {
         'Ajustes guardados. La agenda y los horarios públicos ya usan este horario y esta zona.',
       )
     } catch (err: unknown) {
-      setError(friendlyApiMessage(err, 'No pudimos guardar los ajustes del salón.'))
+      setError(describeApiError(err, 'No pudimos guardar los ajustes del salón.'))
     } finally {
       setSaving(false)
     }
@@ -137,7 +137,7 @@ export function SettingsPage() {
           {notice}
         </p>
       ) : null}
-      {error ? <ErrorNotice message={error} onRetry={reload} /> : null}
+      {error ? <ErrorNotice error={error} onRetry={reload} /> : null}
       {loading && !loaded ? <LoadingState label="Cargando configuración…" /> : null}
 
       {loaded ? (

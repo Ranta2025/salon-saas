@@ -120,6 +120,14 @@ export type Client = {
   created_at: string | null
 }
 
+/** Body accepted by POST /api/v1/salons/:id/clients (owner/admin/reception). */
+export type ClientInput = {
+  name: string
+  phone: string
+  email: string
+  notes: string
+}
+
 /** Photo row of GET/POST /api/v1/salons/:id/clients/:cid/photos. */
 export type ClientPhoto = {
   id: string

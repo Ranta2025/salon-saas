@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ATTRIBUTION, NAV_LINKS, SALON } from '../content'
+import { ATTRIBUTION, NAV_LINKS, PUBLIC_HOURS_NOTE, SALON } from '../content'
 
 /** Footer with salon contact details and the licence attribution of every photo. */
 export function SiteFooter() {
@@ -25,6 +25,10 @@ export function SiteFooter() {
               </li>
             ))}
           </ul>
+          <p className="site-footer__hours-note">
+            {PUBLIC_HOURS_NOTE.charAt(0).toUpperCase() + PUBLIC_HOURS_NOTE.slice(1)}: confirma tu
+            horario al reservar.
+          </p>
         </div>
 
         <nav className="site-footer__nav" aria-label="Enlaces del pie de página">

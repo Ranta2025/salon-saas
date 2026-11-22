@@ -1,3 +1,5 @@
+import type { ApiErrorNotice } from '../../lib/api'
+
 export function LoadingState({ label = 'Cargando…' }: { label?: string }) {
   return (
     <p className="loading" role="status">
@@ -7,11 +9,21 @@ export function LoadingState({ label = 'Cargando…' }: { label?: string }) {
   )
 }
 
-export function ErrorNotice({ message, onRetry }: { message: string; onRetry?: () => void }) {
+/**
+ * Error of a page load. The retry policy travels with the message: a 403 is a
+ * permission problem, so it is explained without a button that cannot help.
+ */
+export function ErrorNotice({
+  error,
+  onRetry,
+}: {
+  error: ApiErrorNotice
+  onRetry?: () => void
+}) {
   return (
     <div className="notice notice--error" role="alert">
-      <p>{message}</p>
-      {onRetry ? (
+      <p>{error.message}</p>
+      {error.retryable && onRetry ? (
         <button type="button" className="btn btn--quiet btn--sm" onClick={onRetry}>
           Reintentar
         </button>

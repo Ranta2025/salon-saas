@@ -18,6 +18,15 @@ test('normalizeMe reads the user and every salon membership', () => {
   assert.deepEqual(me.salons[0], { id: 's1', slug: 'aurelia', name: 'Aurelia', role: 'owner' })
 })
 
+test('normalizeMe keeps reception as its own role instead of demoting it', () => {
+  const me = normalizeMe({
+    user: { id: 'u1', name: 'Rece' },
+    salons: [{ id: 's1', slug: 'aurelia', name: 'Aurelia', role: 'reception' }],
+  })
+  assert.ok(me)
+  assert.equal(me.salons[0]?.role, 'reception')
+})
+
 test('normalizeMe drops malformed users and memberships instead of breaking login', () => {
   assert.equal(normalizeMe(null), null)
   assert.equal(normalizeMe({ salons: [] }), null)

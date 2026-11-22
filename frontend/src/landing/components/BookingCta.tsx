@@ -13,7 +13,7 @@ import {
   type BookingFailure,
   type PublicBookingCreated,
 } from '../../lib/publicBooking'
-import { SALON, type LandingService } from '../content'
+import { PUBLIC_HOURS_NOTE, SALON, type LandingService } from '../content'
 
 /** `2025-03-14` → `viernes, 14 de marzo de 2025` without shifting the day. */
 function longDate(dateValue: string): string {
@@ -274,7 +274,7 @@ export function BookingCta({ slug, services, preselected }: BookingCtaProps) {
               <span className="booking__label">Horario</span>
               <span>
                 {SALON.hours[0]?.days}: {SALON.hours[0]?.time} · {SALON.hours[1]?.days}:{' '}
-                {SALON.hours[1]?.time}
+                {SALON.hours[1]?.time} ({PUBLIC_HOURS_NOTE})
               </span>
             </li>
           </ul>

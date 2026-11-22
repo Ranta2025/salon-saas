@@ -273,9 +273,11 @@ export function BookingDetail({
         </form>
       ) : null}
 
-      {canAct && !canReschedule(booking.status) ? (
+      {!canReschedule(booking.status) ? (
         <p className="booking-detail__hint">
-          Los turnos cancelados no se pueden reprogramar: crea una reserva nueva.
+          {canAct
+            ? 'Un turno cerrado (atendido, cancelado o no asistió) no se reprograma: crea una reserva nueva.'
+            : 'Este turno ya está cerrado y no se puede reprogramar.'}
         </p>
       ) : null}
 

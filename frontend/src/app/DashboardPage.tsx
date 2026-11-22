@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { fetchDashboard } from '../lib/api'
+import { describeApiError, fetchDashboard, type ApiErrorNotice } from '../lib/api'
 import { formatOccupancy, type DashboardMetrics } from '../lib/metrics'
 import { formatCents } from '../lib/money'
 import { useRealtime } from './RealtimeContext'
@@ -13,7 +13,7 @@ export function DashboardPage() {
   const { subscribe } = useRealtime()
   const [data, setData] = useState<DashboardMetrics | null>(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ApiErrorNotice | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
@@ -44,7 +44,7 @@ export function DashboardPage() {
       })
       .catch((err: unknown) => {
         if (active) {
-          setError(err instanceof Error ? err.message : 'No pudimos cargar el panel.')
+          setError(describeApiError(err, 'No pudimos cargar el panel.'))
         }
       })
       .finally(() => {
@@ -84,7 +84,7 @@ export function DashboardPage() {
 
       {loading && !data ? <LoadingState label="Cargando indicadores…" /> : null}
       {loading && data ? <LoadingState label="Actualizando indicadores…" /> : null}
-      {error ? <ErrorNotice message={error} onRetry={reload} /> : null}
+      {error ? <ErrorNotice error={error} onRetry={reload} /> : null}
 
       {data ? (
         <>

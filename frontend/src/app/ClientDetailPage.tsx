@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   deleteClientPhoto,
+  describeApiError,
   fetchClientPhotos,
   fetchClients,
   uploadClientPhoto,
+  type ApiErrorNotice,
 } from '../lib/api'
 import { formatBytes, validatePhotoFile } from '../lib/photos'
 import type { Client, ClientPhoto } from '../types'
@@ -31,7 +33,7 @@ export function ClientDetailPage() {
   const [photos, setPhotos] = useState<ClientPhoto[]>([])
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ApiErrorNotice | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -66,7 +68,7 @@ export function ClientDetailPage() {
       })
       .catch((err: unknown) => {
         if (active && !controller.signal.aborted) {
-          setError(err instanceof Error ? err.message : 'No pudimos cargar la ficha.')
+          setError(describeApiError(err, 'No pudimos cargar la ficha.'))
         }
       })
       .finally(() => {
@@ -117,7 +119,7 @@ export function ClientDetailPage() {
       setDeleteTarget(null)
       setNotice('Foto eliminada de la ficha.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No pudimos eliminar la foto.')
+      setError(describeApiError(err, 'No pudimos eliminar la foto.'))
     } finally {
       setDeleting(false)
     }
@@ -155,7 +157,7 @@ export function ClientDetailPage() {
       {loading ? (
         <LoadingState label={loaded ? 'Actualizando ficha…' : 'Cargando ficha y fotos…'} />
       ) : null}
-      {error ? <ErrorNotice message={error} onRetry={reload} /> : null}
+      {error ? <ErrorNotice error={error} onRetry={reload} /> : null}
       {notice ? (
         <p className="notice notice--success" role="status">
           {notice}
