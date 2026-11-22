@@ -24,6 +24,11 @@ type BookingService struct {
 	// publica "agendé un turno" sin saber que atrás hay websockets.
 	Events   ports.EventPublisher
 	Notifier Notifier
+	// Services y Resources (F2e): un turno que ocupa una unidad de equipo no
+	// puede reprogramarse a un horario donde no hay ninguna libre. Opcionales:
+	// sin servicio o sin unidad el turno se mueve como siempre.
+	Services  ports.ServiceRepository
+	Resources ports.ResourceRepository
 }
 
 // puedeAgendar: recepción y superiores agendan a cualquiera; el profesional solo a sí mismo.
@@ -179,6 +184,13 @@ func (s BookingService) Update(actor domain.Membership, salonID, bookingID strin
 				return domain.Booking{}, err
 			}
 		}
+		// Equipo (F2e, S-F2e-4): un turno que ocupa una unidad exige que SU
+		// unidad (o otra ACTIVA libre del mismo tipo) esté libre en el horario
+		// nuevo. Si no queda ninguna, es 409: nunca dos turnos en una unidad.
+		moved, err = s.moveUnit(salonID, b, moved)
+		if err != nil {
+			return domain.Booking{}, err
+		}
 		busy, err := s.Bookings.FindOverlapping(salonID, moved.ProfessionalID, moved.StartsAt, moved.EndsAt)
 		if err != nil {
 			return domain.Booking{}, err
@@ -238,6 +250,40 @@ func bookingChangeTitle(status domain.BookingStatus) string {
 	default:
 		return "Turno atendido"
 	}
+}
+
+// moveUnit deja el turno reprogramado con una unidad libre en el horario nuevo:
+// conserva la suya si sigue libre y, si no, toma otra unidad ACTIVA del tipo.
+// Un turno sin unidad (reserva de staff sin servicio) no consulta el equipo y se
+// reprograma como siempre.
+func (s BookingService) moveUnit(salonID string, before, moved domain.Booking) (domain.Booking, error) {
+	if before.ResourceUnitID == "" {
+		return moved, nil
+	}
+	if s.Resources == nil || s.Services == nil {
+		return moved, nil
+	}
+	busy, err := s.Resources.OccupiedUnits(salonID, moved.StartsAt, moved.EndsAt, before.ID)
+	if err != nil {
+		return domain.Booking{}, err
+	}
+	if domain.UnitFree(busy, before.ResourceUnitID, moved.StartsAt, moved.EndsAt) {
+		return moved, nil
+	}
+	service, err := s.Services.FindByID(salonID, before.ServiceID)
+	if err != nil || service.ResourceTypeID == "" {
+		return domain.Booking{}, fmt.Errorf("%w: no hay equipo libre en ese horario", domain.ErrAlreadyExists)
+	}
+	units, err := s.Resources.ActiveUnits(salonID, service.ResourceTypeID)
+	if err != nil {
+		return domain.Booking{}, err
+	}
+	free := domain.FreeUnits(units, busy, moved.StartsAt, moved.EndsAt)
+	if len(free) == 0 {
+		return domain.Booking{}, fmt.Errorf("%w: no hay equipo libre en ese horario", domain.ErrAlreadyExists)
+	}
+	moved.ResourceUnitID = free[0].ID
+	return moved, nil
 }
 
 // List trae la agenda del salón en [from,to). Solo miembros del salón.

@@ -165,7 +165,9 @@ type posEnv struct {
 	weekly *mweekly
 	// F2d2: ausencias (vacaciones y días libres puntuales).
 	timeOff *mtimeoff
-	d       Deps
+	// F2e: tipos y unidades de equipo con capacidad.
+	resources *mresources
+	d         Deps
 }
 
 // deps devuelve lo mismo que monta newPOSEnv, para armar routers alternativos
@@ -175,23 +177,25 @@ func (e *posEnv) deps() Deps { return e.d }
 func newPOSEnv() *posEnv {
 	gin.SetMode(gin.TestMode)
 	env := &posEnv{
-		users:    &mu{},
-		salons:   &ms{},
-		mems:     &mm{},
-		services: &msvc{},
-		sales:    &msale{},
-		closes:   &mclose{},
-		bookings: &mb{},
-		notifs:   &mnotif{},
-		clients:  &mclients{},
-		store:    &mstorage{},
-		events:   &mevents{},
-		settings: &msettings{},
-		mailer:   &mmailer{},
-		emails:   &mbookingEmails{},
-		weekly:   &mweekly{},
-		timeOff:  &mtimeoff{},
+		users:     &mu{},
+		salons:    &ms{},
+		mems:      &mm{},
+		services:  &msvc{},
+		sales:     &msale{},
+		closes:    &mclose{},
+		bookings:  &mb{},
+		notifs:    &mnotif{},
+		clients:   &mclients{},
+		store:     &mstorage{},
+		events:    &mevents{},
+		settings:  &msettings{},
+		mailer:    &mmailer{},
+		emails:    &mbookingEmails{},
+		weekly:    &mweekly{},
+		timeOff:   &mtimeoff{},
+		resources: &mresources{},
 	}
+	env.resources.bookings = env.bookings
 	env.members = &mmembers{mems: env.mems, users: env.users}
 	env.profs = &mprof{mems: env.mems}
 	hasher := security.BcryptHasher{}
@@ -200,7 +204,7 @@ func newPOSEnv() *posEnv {
 	tenSvc := app.TenantService{Salons: env.salons, Memberships: env.mems}
 	notifSvc := app.NotificationService{Notifications: env.notifs, Salons: env.mems, Events: env.events}
 	bookSvc := app.BookingService{Bookings: env.bookings, Memberships: env.mems, Events: env.events, Notifier: notifSvc}
-	svcSvc := app.ServiceService{Services: env.services, Memberships: env.mems, Professionals: env.profs}
+	svcSvc := app.ServiceService{Services: env.services, Memberships: env.mems, Professionals: env.profs, Resources: env.resources}
 	saleSvc := app.SaleService{Sales: env.sales, Services: env.services, Memberships: env.mems, Events: env.events}
 	cashSvc := app.CashCloseService{CashCloses: env.closes, Sales: env.sales, Memberships: env.mems, Tx: &mCashTx{closes: env.closes, sales: env.sales}, Events: env.events, Notifier: notifSvc}
 	dashSvc := app.DashboardService{Sales: env.sales, Agenda: env.bookings, Staff: env.mems, Memberships: env.mems}
@@ -262,6 +266,7 @@ func newPOSEnv() *posEnv {
 		},
 		TimeOff:     TimeOffHandler{TimeOff: timeOffSvc, Memberships: env.mems},
 		Absences:    AbsenceHandler{Coverage: coverageSvc, Memberships: env.mems},
+		Resources:   ResourceHandler{Resources: app.ResourceService{Resources: env.resources, Services: env.services, Memberships: env.mems}, Memberships: env.mems},
 		WS:          hub.ServeWS,
 		TokenIssuer: tokens,
 	}

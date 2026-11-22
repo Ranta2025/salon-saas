@@ -835,6 +835,152 @@ POST { "cancel": true, "reason": "Se enfermó" }
   auditada en la bandeja de avisos. El único agregado es `covered_from` en el
   JSON del personal (arriba); el `PATCH` no lo escribe.
 
+## Fase 6 — F2e: puestos y equipamiento con capacidad
+
+Un salón tiene **tipos de equipo** ("Puesto de peluquería", "Silla de
+barbería", "Lavacabezas") y cada tipo tiene **unidades con nombre** ("Puesto
+1", "Puesto 2"...). Un **servicio** puede exigir un tipo (`resource_type_id`) y
+entonces cada **turno ocupa una unidad concreta** (`resource_unit_id`) durante
+toda su duración, además de la profesional.
+
+La capacidad **no es un contador**: cada unidad es una fila con su propia
+`EXCLUDE USING gist (salon_id, resource_unit_id, tstzrange(starts_at, ends_at))`
+en Postgres (migración 020), el mismo patrón que `bookings_no_overlap` de la
+002. Dos reservas simultáneas nunca se llevan la última unidad: la base deja
+entrar una y la otra vuelve como conflicto.
+
+Sin backfill: un servicio **sin** `resource_type_id` y un turno **sin**
+`resource_unit_id` se comportan exactamente como antes de F2e.
+
+Permisos: **leer** cualquier miembro del salón; **escribir** (crear, renombrar,
+agregar unidades, activar/desactivar, borrar) solo dueño/administración. Todo
+va scopeado por `salon_id`: un id de otro salón responde **404**.
+
+### `GET /salons/:id/resources`
+
+```json
+{
+  "types": [
+    {
+      "id": "t1",
+      "name": "Puesto de peluquería",
+      "units": [
+        {"id": "u1", "name": "Puesto de peluquería 1", "active": true},
+        {"id": "u2", "name": "Puesto de peluquería 2", "active": false}
+      ],
+      "services": 2
+    }
+  ]
+}
+```
+
+`services` es cuántos servicios del catálogo (activos o no) usan ese tipo: es el
+aviso «No hay equipo activo: no se ofrecen turnos» de la pantalla de servicios.
+
+### `POST /salons/:id/resources` → `201`
+
+Body `{"name": "Puesto de peluquería", "count": 3}`. Crea el tipo y sus
+unidades con nombre automático (`"<tipo> 1"`, `"<tipo> 2"`...) en **una
+transacción**: o queda el tipo con todas sus unidades o no queda nada.
+`count` va de 1 a 50.
+
+### `PATCH /salons/:id/resources/:tid` → `200`
+
+Body `{"name": "Puesto"}`. Renombrar no toca las unidades ni los servicios.
+
+### `POST /salons/:id/resources/:tid/units` → `201`
+
+Body `{"count": 2}` → `{"units": [...]}`. Las unidades nuevas usan el **siguiente
+número libre** del tipo: si la "3" se renombró o no existe, se vuelve a usar ese
+número.
+
+### `PATCH /salons/:id/resource-units/:uid` → `200`
+
+Body `{"name"?: "Puesto A", "active"?: false}`. **Quitar equipo es desactivar**:
+la unidad sale de la disponibilidad pero los turnos ya agendados la conservan.
+La respuesta informa cuántos turnos `booked` futuros la usan (informativo):
+
+```json
+{"id": "u1", "name": "Puesto A", "active": false, "future_bookings": 3}
+```
+
+### `DELETE /salons/:id/resources/:tid` → `204`
+
+Solo si **ningún servicio** usa el tipo y **ninguna unidad** tiene turnos. Si no:
+
+```json
+409 {"error": "Hay servicios o turnos que lo usan: desactivá las unidades en lugar de borrarlo"}
+```
+
+Un tipo libre se borra con sus unidades en la misma transacción.
+
+### Errores exactos del equipamiento
+
+| Situación | Status | `error` |
+|---|---|---|
+| Nombre repetido (sin importar mayúsculas) | 400 | `Ya existe un equipo con ese nombre` |
+| Más de 20 tipos | 400 | `Máximo 20 tipos de equipo` |
+| Más de 50 unidades en un tipo | 400 | `Máximo 50 unidades por tipo` |
+| Nombre vacío | 400 | `El nombre del equipo es obligatorio` |
+| Nombre de más de 60 caracteres | 400 | `El nombre no puede superar los 60 caracteres` |
+| `count` fuera de 1..50 | 400 | `La cantidad de unidades debe estar entre 1 y 50` |
+| Borrar un tipo en uso | 409 | `Hay servicios o turnos que lo usan: desactivá las unidades en lugar de borrarlo` |
+| Tipo/servicio de otro salón | 404 | `no encontrado` |
+
+### Servicios: `resource_type_id`
+
+`POST /salons/:id/services` y `PUT /salons/:id/services/:service_id` aceptan
+`resource_type_id` (string o `null`; `""`/`null` = el servicio deja de usar
+equipo). Un tipo de **otro salón** o inexistente:
+
+```json
+400 {"error": "Equipo inválido"}
+```
+
+Los JSON de servicio (`POST`, `PUT`, `GET /services`, y el público de la
+landing no lo necesita) agregan `resource_type_id` (`string` o `null`).
+
+Los turnos del personal (`GET /salons/:id/bookings`, `POST`, `PATCH`) agregan
+`resource_unit_id` (`string` o `null`). La reserva pública **no** lo devuelve.
+
+### Disponibilidad pública: la capacidad manda
+
+`GET /public/salons/:slug/availability` con un servicio que usa equipo:
+
+- Un horario se ofrece solo si hay **al menos una profesional elegible libre**
+  (F2a/F2c/F2d1/F2d2) **y al menos una unidad ACTIVA libre en todo el
+  intervalo**. Por eso 5 profesionales con 3 puestos ofrecen **3** turnos por
+  hora, no 5.
+- Sin unidades activas del tipo: `{"slots": []}` (nunca un error).
+- Las duraciones cuentan enteras: un turno de 3 horas ocupa su unidad 3 horas y
+  mientras tanto otro servicio de 30 minutos entra en otra unidad.
+- Desactivar una unidad la saca de la oferta; el turno que ya la tenía la
+  conserva (y la sigue ocupando hasta que se cancele).
+
+### Reserva pública: el par (profesional, unidad)
+
+`POST /public/salons/:slug/bookings` asigna profesional **y** unidad y guarda
+`resource_unit_id` en el turno. La `EXCLUDE` de Postgres decide el doble turno:
+si rechaza el par (otra reserva entró entre el chequeo y el `INSERT`), el caso
+de uso **reintenta con otro par hasta 3 veces** antes de responder.
+
+- Sin unidades activas del tipo: `409 {"error":"ya existe: el horario ya no está disponible"}`.
+- Sin ningún par libre (última unidad o último profesional tomado):
+  `409` (mensaje de siempre: `no hay profesional libre en ese horario` cuando
+  la asignación es automática). **Nunca un 500 y nunca dos turnos en la misma
+  unidad.**
+
+### Reprogramar, cancelar y cubrir una ausencia
+
+- `PATCH /salons/:id/bookings/:bid` de un turno con unidad: se conserva su
+  unidad si está libre en el horario nuevo; si no, toma otra unidad **activa**
+  libre del mismo tipo; si no queda ninguna,
+  `409 {"error":"ya existe: no hay equipo libre en ese horario"}`.
+- Cancelar **libera** la unidad (la `EXCLUDE` solo mira `booked`).
+- Reasignar una ausencia (F2d3) **conserva** la unidad: el horario no cambia.
+- La reserva de staff desde el calendario **sin servicio** no ocupa unidad
+  (como hoy) y se reprograma sin mirar el equipamiento.
+
 ## Ronda 3 (T9): ficha desde la reserva, email de la ficha, hora del salón y mensajes
 
 Hallazgos E-03, E-04 y E-07 de la auditoría en navegador real. Los códigos HTTP
@@ -1129,9 +1275,41 @@ Fase 6 (F2d3): **sin migración nueva**. Reasignar es un `UPDATE` del
 bookings_no_overlap` de la 002; el "todo o nada" lo da la transacción del
 adaptador Postgres (`pg_advisory_xact_lock` por salón), no el esquema.
 
-Las 18 migraciones se probaron aplicándolas dos veces con
+Migración de la fase 6 (F2e):
+
+- `020_resources.sql`:
+  - `resource_types(id TEXT PRIMARY KEY, salon_id TEXT NOT NULL REFERENCES
+    salons(id) ON DELETE CASCADE, name TEXT NOT NULL, created_at TIMESTAMPTZ NOT
+    NULL DEFAULT now())` con `CHECK (length(btrim(name)) BETWEEN 1 AND 60)` e
+    índice único `resource_types_salon_name_idx (salon_id, lower(name))` (el
+    nombre es único por salón sin importar mayúsculas).
+  - `resource_units(id TEXT PRIMARY KEY, salon_id TEXT NOT NULL REFERENCES
+    salons(id) ON DELETE CASCADE, type_id TEXT NOT NULL REFERENCES
+    resource_types(id) **ON DELETE RESTRICT**, name TEXT NOT NULL, active BOOLEAN
+    NOT NULL DEFAULT true, created_at TIMESTAMPTZ NOT NULL DEFAULT now())` con el
+    mismo `CHECK` de nombre y el índice único
+    `resource_units_salon_type_name_idx (salon_id, type_id, lower(name))`.
+  - `services.resource_type_id TEXT NULL REFERENCES resource_types(id) ON DELETE
+    RESTRICT` y `bookings.resource_unit_id TEXT NULL REFERENCES resource_units(id)
+    ON DELETE RESTRICT`, agregadas con guardas de `information_schema` (las
+    columnas nacen `NULL`: **sin backfill**, un servicio sin tipo se comporta
+    como antes).
+  - `EXCLUDE USING gist (salon_id WITH =, resource_unit_id WITH =,
+    tstzrange(starts_at, ends_at) WITH &&) WHERE (status = 'booked' AND
+    resource_unit_id IS NOT NULL)`, con el nombre de guarda
+    `bookings_resource_no_overlap` (mismo patrón que `bookings_no_overlap` de la
+    002): la capacidad de la última unidad la garantiza la base, no un contador.
+  - Índices `bookings_resource_unit_idx (salon_id, resource_unit_id, starts_at)
+    WHERE resource_unit_id IS NOT NULL` (ocupación de la ventana) y
+    `services_resource_type_idx (salon_id, resource_type_id) WHERE
+    resource_type_id IS NOT NULL` (uso del tipo y rechazo del borrado).
+
+Las 19 migraciones se probaron aplicándolas dos veces con
 `psql -v ON_ERROR_STOP=1` sobre una base limpia y sobre una ya migrada, y el
-binario arranca contra esas bases. El backfill de la 016 se probó además sobre
+binario arranca contra esas bases. La 020 se probó además sobre una base migrada
+**solo hasta la 019** con dos servicios y dos turnos ya creados: los servicios
+quedan con `resource_type_id` NULL, los turnos con `resource_unit_id` NULL y no
+se crea ningún tipo ni unidad (el comportamiento de hoy no cambia). El backfill de la 016 se probó además sobre
 una base migrada **solo hasta la 015**, con dueño/administración/profesional/
 recepción, dos servicios y un turno ya creados: los tres reservables quedan con
 los dos servicios, recepción con ninguno y el turno con `service_id` NULL.

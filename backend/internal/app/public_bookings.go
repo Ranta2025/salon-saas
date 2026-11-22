@@ -45,6 +45,10 @@ type PublicBookingService struct {
 	// TimeOff son las ausencias (F2d2): a quien está ausente no se le asigna un
 	// turno, y elegirla a mano es 409 (la disponibilidad no la ofrece).
 	TimeOff ports.TimeOffRepository
+	// Resources es el equipamiento con capacidad (F2e): un turno de un servicio
+	// con tipo de equipo ocupa UNA unidad y la reserva guarda cuál. nil o
+	// servicio sin tipo = comportamiento de antes.
+	Resources ports.ResourceRepository
 	// Clients deja la ficha del visitante cuando la reserva entra (E-03). Es
 	// opcional como los avisos: nil = este entorno no lleva fichas.
 	Clients ports.ClientRepository
@@ -169,13 +173,15 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 	}
 	away := awaySet(absences, startsAt, endsAt)
 
+	// Equipo (F2e, S-F2e-4): si el servicio exige un tipo, el turno ocupa UNA
+	// unidad y sin ninguna activa no hay hueco (409, nunca 500).
+	units, err := s.equipment(salon.ID, service.ResourceTypeID)
+	if err != nil {
+		return domain.Booking{}, err
+	}
+
 	professionalID := strings.TrimSpace(in.ProfessionalID)
-	if professionalID == "" {
-		professionalID, err = s.freeProfessional(staff, eligible, scheduled, away, salon.ID, startsAt, endsAt)
-		if err != nil {
-			return domain.Booking{}, err
-		}
-	} else {
+	if professionalID != "" {
 		if !staffHas(staff, professionalID) {
 			return domain.Booking{}, domain.ErrNotFound
 		}
@@ -187,36 +193,69 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 			// ofrece ese hueco.
 			return domain.Booking{}, fmt.Errorf("%w: el horario ya no está disponible", domain.ErrAlreadyExists)
 		}
-		busy, err := s.Bookings.FindOverlapping(salon.ID, professionalID, startsAt, endsAt)
+	}
+
+	// Candidatos en orden: el elegido a mano o quien atiende, hace el servicio,
+	// trabaja ese horario y está presente (F2a/F2c/F2d1/F2d2).
+	candidates := []string{professionalID}
+	msg := "el horario ya no está disponible"
+	if professionalID == "" {
+		candidates = s.freeProfessionals(staff, eligible, scheduled, away)
+		msg = "no hay profesional libre en ese horario"
+	}
+
+	// Un turno ocupa UNA profesional Y UNA unidad. La EXCLUDE de Postgres decide
+	// el doble turno; si rechaza el par (otra reserva entró entre el chequeo y el
+	// INSERT), se reintenta con OTRO par hasta maxBookingAttempts veces. Nunca
+	// 500 y nunca dos turnos en la misma unidad/hora.
+	// Se prueba CADA par posible antes de rendirse: con las escrituras
+	// serializadas por salón, un intento fallido significa que ese par ya está
+	// tomado, no un interbloqueo, así que si queda un par libre se lo encuentra
+	// (un "sin lugar" falso es peor que un 500: la clienta se va).
+	attempts := maxBookingAttempts
+	if pairs := len(candidates) * maxInt(1, len(units)); pairs > attempts {
+		attempts = pairs
+	}
+	if attempts > maxPairAttempts {
+		attempts = maxPairAttempts
+	}
+	busy := make(map[string]bool, attempts)
+	var booking domain.Booking
+	for attempt := 0; attempt < attempts; attempt++ {
+		prof, unit, err := s.pickPair(salon.ID, candidates, units, startsAt, endsAt, busy, msg)
 		if err != nil {
 			return domain.Booking{}, err
 		}
-		if len(busy) > 0 {
-			return domain.Booking{}, fmt.Errorf("%w: el horario ya no está disponible", domain.ErrAlreadyExists)
+		candidate, err := domain.NewBooking(salon.ID, prof, in.ClientName, in.ClientPhone, startsAt, endsAt)
+		if err != nil {
+			return domain.Booking{}, err
 		}
-	}
-
-	b, err := domain.NewBooking(salon.ID, professionalID, in.ClientName, in.ClientPhone, startsAt, endsAt)
-	if err != nil {
-		return domain.Booking{}, err
-	}
-	b.ClientOpID = opID
-	// El turno guarda qué se va a hacer: es lo que después permite contar
-	// servicios, comisiones y "N profesionales lo hacen".
-	b.ServiceID = service.ID
-	if err := s.Bookings.Save(b); err != nil {
+		candidate.ClientOpID = opID
+		// El turno guarda qué se va a hacer: es lo que después permite contar
+		// servicios, comisiones y "N profesionales lo hacen".
+		candidate.ServiceID = service.ID
+		candidate.ResourceUnitID = unit
+		err = s.Bookings.Save(candidate)
+		if err == nil {
+			booking = candidate
+			break
+		}
+		if !errors.Is(err, domain.ErrAlreadyExists) {
+			return domain.Booking{}, err
+		}
 		// Carrera real: la EXCLUDE dejó pasar a otro. El reintento con op id
 		// devuelve la reserva que sí entró.
-		if opID != "" && errors.Is(err, domain.ErrAlreadyExists) {
+		if opID != "" {
 			if existing, rerr := s.Bookings.FindByClientOpID(salon.ID, opID); rerr == nil {
 				return existing, nil
 			}
 		}
-		if errors.Is(err, domain.ErrAlreadyExists) {
-			return domain.Booking{}, fmt.Errorf("%w: el horario ya no está disponible", domain.ErrAlreadyExists)
-		}
-		return domain.Booking{}, err
+		busy[pairKey(prof, unit)] = true
 	}
+	if booking.ID == "" {
+		return domain.Booking{}, fmt.Errorf("%w: %s", domain.ErrAlreadyExists, msg)
+	}
+	b := booking
 
 	// La ficha del visitante se escribe DESPUÉS de la reserva y no puede
 	// tumbarla: el turno es lo que la persona pidió (E-03). Si falla, queda el
@@ -288,11 +327,46 @@ func (s PublicBookingService) upsertClient(salonID, name, phone string) {
 	}
 }
 
-// freeProfessional elige el primer profesional del equipo que HACE el servicio,
-// TRABAJA en ese horario (su ventana efectiva del día, F2d1) y está sin turno en
-// el hueco. Si no queda ninguno es un 409, no una reserva sin profesional (ni un
-// 500 cuando nadie hace el servicio o el salón está cerrado).
-func (s PublicBookingService) freeProfessional(staff []domain.StaffMember, eligible, scheduled, away map[string]bool, salonID string, start, end time.Time) (string, error) {
+// maxBookingAttempts es cuántas veces se reintenta un par (profesional, unidad)
+// cuando la EXCLUDE rechaza el guardado por la carrera (S-F2e-4).
+const maxBookingAttempts = 3
+
+// maxPairAttempts acota el barrido de pares (profesional, unidad) de una
+// reserva: 5 profesionales x 6 unidades ya son 30 intentos.
+const maxPairAttempts = 40
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// equipment resuelve las unidades ACTIVAS del tipo de equipo del servicio. Sin
+// tipo devuelve nil (el turno no ocupa unidad). Sin unidades activas es 409:
+// el servicio está configurado pero hoy no se puede atender.
+func (s PublicBookingService) equipment(salonID, typeID string) ([]domain.ResourceUnit, error) {
+	if strings.TrimSpace(typeID) == "" {
+		return nil, nil
+	}
+	if s.Resources == nil {
+		return nil, fmt.Errorf("%w: el horario ya no está disponible", domain.ErrAlreadyExists)
+	}
+	units, err := s.Resources.ActiveUnits(salonID, typeID)
+	if err != nil {
+		return nil, err
+	}
+	if len(units) == 0 {
+		return nil, fmt.Errorf("%w: el horario ya no está disponible", domain.ErrAlreadyExists)
+	}
+	return units, nil
+}
+
+// freeProfessionals son los candidatos que HACEN el servicio, TRABAJAN ese
+// horario (F2d1) y están presentes (F2d2), en el orden del equipo. Que estén
+// libres de turno se mira al elegir el par: el estado cambia entre reintentos.
+func (s PublicBookingService) freeProfessionals(staff []domain.StaffMember, eligible, scheduled, away map[string]bool) []string {
+	out := make([]string, 0, len(staff))
 	for _, m := range staff {
 		// Solo quien atiende: un dueño/administración sin la marca no recibe
 		// turnos por asignación automática (F2a).
@@ -313,16 +387,52 @@ func (s PublicBookingService) freeProfessional(staff []domain.StaffMember, eligi
 		if away[m.ID] {
 			continue
 		}
-		busy, err := s.Bookings.FindOverlapping(salonID, m.ID, start, end)
+		out = append(out, m.ID)
+	}
+	return out
+}
+
+// pickPair elige la combinación (profesional, unidad) a intentar: un
+// profesional sin turno en el hueco y una unidad ACTIVA libre en todo el
+// intervalo, salteando los pares que ya rechazó la DB. Sin combinación posible
+// es 409 con el mensaje del camino (asignación automática o profesional
+// elegido), nunca un 500.
+func (s PublicBookingService) pickPair(salonID string, candidates []string, units []domain.ResourceUnit, start, end time.Time, attempted map[string]bool, msg string) (string, string, error) {
+	var busy []domain.UnitOccupancy
+	if units != nil {
+		var err error
+		busy, err = s.Resources.OccupiedUnits(salonID, start.UTC(), end.UTC(), "")
 		if err != nil {
-			return "", err
-		}
-		if len(busy) == 0 {
-			return m.ID, nil
+			return "", "", err
 		}
 	}
-	return "", fmt.Errorf("%w: no hay profesional libre en ese horario", domain.ErrAlreadyExists)
+	noRoom := fmt.Errorf("%w: %s", domain.ErrAlreadyExists, msg)
+	for _, prof := range candidates {
+		taken, err := s.Bookings.FindOverlapping(salonID, prof, start, end)
+		if err != nil {
+			return "", "", err
+		}
+		if len(taken) > 0 {
+			continue
+		}
+		if units == nil {
+			if !attempted[pairKey(prof, "")] {
+				return prof, "", nil
+			}
+			continue
+		}
+		free := domain.FreeUnits(units, busy, start, end)
+		for _, u := range free {
+			if !attempted[pairKey(prof, u.ID)] {
+				return prof, u.ID, nil
+			}
+		}
+	}
+	return "", "", noRoom
 }
+
+// pairKey identifica un par intentado para no repetirlo en los reintentos.
+func pairKey(professionalID, unitID string) string { return professionalID + "|" + unitID }
 
 // professionalIDs devuelve el conjunto de miembros que hacen el servicio, para
 // preguntarlo una sola vez por reserva.

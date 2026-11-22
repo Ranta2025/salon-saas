@@ -44,6 +44,10 @@ type AvailabilityService struct {
 	// TimeOff son las ausencias de las profesionales (F2d2): quien está de
 	// vacaciones no se ofrece ese día.
 	TimeOff ports.TimeOffRepository
+	// Resources es el equipamiento con capacidad (F2e): si el servicio exige un
+	// tipo de equipo, un hueco se ofrece solo si queda una unidad ACTIVA libre en
+	// todo el intervalo. nil o servicio sin tipo = comportamiento de antes.
+	Resources ports.ResourceRepository
 }
 
 // Day calcula los huecos libres de una fecha local del salón, para un servicio
@@ -151,7 +155,53 @@ func (s AvailabilityService) Day(slug, date, serviceID, professionalID string) (
 		}
 		return slots[i].ProfessionalID < slots[j].ProfessionalID
 	})
+	// Equipo (F2e, S-F2e-4): si el servicio ocupa una unidad, un horario se
+	// ofrece solo si queda una unidad ACTIVA libre en TODO el intervalo. Así 5
+	// profesionales con 3 puestos no ofrecen 5 turnos a la misma hora: el tope
+	// lo pone el equipamiento (la EXCLUDE por unidad lo garantiza al reservar).
+	if service.ResourceTypeID != "" {
+		slots, err = s.capByEquipment(salon.ID, service.ResourceTypeID, slots, open, closeAt)
+		if err != nil {
+			return DayAvailability{}, err
+		}
+	}
 	return DayAvailability{Date: day.Format(dateLayout), Slots: slots}, nil
+}
+
+// capByEquipment limita la oferta de cada horario a las unidades activas libres
+// del tipo. Sin unidades activas no se ofrece nada ({"slots":[]}), nunca un
+// error: el salón configuró un servicio que hoy no puede atender.
+func (s AvailabilityService) capByEquipment(salonID, typeID string, slots []Slot, from, to time.Time) ([]Slot, error) {
+	out := make([]Slot, 0, len(slots))
+	if len(slots) == 0 || s.Resources == nil {
+		return out, nil
+	}
+	units, err := s.Resources.ActiveUnits(salonID, typeID)
+	if err != nil {
+		return nil, err
+	}
+	busy, err := s.Resources.OccupiedUnits(salonID, from.UTC().Add(-24*time.Hour), to.UTC().Add(24*time.Hour), "")
+	if err != nil {
+		return nil, err
+	}
+	// Los huecos del mismo arranque comparten duración: el tope es cuántas
+	// unidades quedan libres en ese intervalo.
+	for i := 0; i < len(slots); {
+		j := i
+		for j < len(slots) && slots[j].StartsAt.Equal(slots[i].StartsAt) {
+			j++
+		}
+		free := len(domain.FreeUnits(units, busy, slots[i].StartsAt, slots[i].EndsAt))
+		for _, slot := range slots[i:j] {
+			if free == 0 {
+				break
+			}
+			out = append(out, slot)
+			free--
+		}
+		i = j
+	}
+	return out, nil
 }
 
 // professionals filtra el personal que ATIENDE y HACE ese servicio (F2c); un

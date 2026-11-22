@@ -84,6 +84,9 @@ func bookingJSON(b domain.Booking) gin.H {
 	out["client_name"] = b.ClientName
 	out["service_id"] = optionalID(b.ServiceID)
 	out["covered_from"] = optionalID(b.CoveredFrom)
+	// resource_unit_id (F2e) es la unidad de equipo que ocupa el turno, o null
+	// si no ocupa ninguna (turno del calendario o servicio sin equipo).
+	out["resource_unit_id"] = optionalID(b.ResourceUnitID)
 	return out
 }
 

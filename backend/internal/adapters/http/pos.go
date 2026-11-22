@@ -37,6 +37,8 @@ func serviceJSON(s domain.Service) gin.H {
 		"price_cents":    s.PriceCents,
 		"commission_pct": s.CommissionPct,
 		"active":         s.Active,
+		// resource_type_id (F2e) puede ser null: el servicio no usa equipo.
+		"resource_type_id": optionalID(s.ResourceTypeID),
 	}
 }
 
@@ -55,12 +57,15 @@ func (h ServiceHandler) Create(c *gin.Context) {
 		// ProfessionalIDs es opcional (S-F2c-5): sin él el servicio nace sin
 		// nadie que lo haga. Máximo 50, todos reservables del salón.
 		ProfessionalIDs []string `json:"professional_ids"`
+		// ResourceTypeID es el equipo que el servicio ocupa (F2e): string o null.
+		// Un tipo de otro salón es 400 "Equipo inválido".
+		ResourceTypeID string `json:"resource_type_id"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		badBody(c)
 		return
 	}
-	svc, err := h.Services.Create(actor, salonID, in.Name, in.DurationMin, in.PriceCents, in.CommissionPct, in.ProfessionalIDs)
+	svc, err := h.Services.Create(actor, salonID, in.Name, in.DurationMin, in.PriceCents, in.CommissionPct, in.ProfessionalIDs, in.ResourceTypeID)
 	if err != nil {
 		respondErr(c, err)
 		return
@@ -82,6 +87,8 @@ func (h ServiceHandler) Update(c *gin.Context) {
 		PriceCents    int    `json:"price_cents"`
 		CommissionPct int    `json:"commission_pct"`
 		Active        *bool  `json:"active"` // ausente = sigue activo
+		// ResourceTypeID: "" o null = el servicio deja de usar equipo.
+		ResourceTypeID string `json:"resource_type_id"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		badBody(c)
@@ -91,7 +98,7 @@ func (h ServiceHandler) Update(c *gin.Context) {
 	if in.Active != nil {
 		active = *in.Active
 	}
-	svc, err := h.Services.Update(actor, salonID, serviceID, in.Name, in.DurationMin, in.PriceCents, in.CommissionPct, active)
+	svc, err := h.Services.Update(actor, salonID, serviceID, in.Name, in.DurationMin, in.PriceCents, in.CommissionPct, active, in.ResourceTypeID)
 	if err != nil {
 		respondErr(c, err)
 		return

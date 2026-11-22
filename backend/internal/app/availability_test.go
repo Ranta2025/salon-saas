@@ -24,11 +24,13 @@ type publicEnv struct {
 	// comportamiento de siempre).
 	hours *fakeWeeklyHours
 	// F2d2: ausencias de las profesionales (vacío = nadie está ausente).
-	timeOff  *fakeTimeOff
-	corte    domain.Service
-	viejo    domain.Service
-	events   *fakeEvents
-	notifier *fakeNotifier
+	timeOff *fakeTimeOff
+	// F2e: tipos y unidades de equipo del salón (sin tipos = sin equipamiento).
+	resources *fakeResources
+	corte     domain.Service
+	viejo     domain.Service
+	events    *fakeEvents
+	notifier  *fakeNotifier
 	// T12: email de la reserva pública. nil por defecto = email deshabilitado
 	// (los tests que no lo necesitan no mandan nada).
 	mailer *fakeMailer
@@ -65,18 +67,21 @@ func newPublicEnv(t *testing.T) *publicEnv {
 	clients := &fakeClients{}
 	hours := &fakeWeeklyHours{}
 	timeOff := &fakeTimeOff{}
+	resources := &fakeResources{bookings: bookings}
 	return &publicEnv{
 		avail: AvailabilityService{
 			Salons: salons, Services: services, Settings: settings, Staff: staff,
 			Bookings: bookings, Professionals: profs, Hours: hours, TimeOff: timeOff,
+			Resources: resources,
 		},
 		book: PublicBookingService{
 			Salons: salons, Services: services, Settings: settings, Staff: staff,
 			Bookings: bookings, Professionals: profs, Clients: clients,
 			Events: events, Notifier: notifier, Hours: hours, TimeOff: timeOff,
+			Resources: resources,
 		},
 		bookings: bookings, staff: staff, profs: profs, settings: settings, services: services, clients: clients,
-		hours: hours, timeOff: timeOff,
+		hours: hours, timeOff: timeOff, resources: resources,
 		corte: corte, viejo: viejo, events: events, notifier: notifier,
 	}
 }

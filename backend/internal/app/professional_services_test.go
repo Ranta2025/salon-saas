@@ -534,7 +534,7 @@ func TestServiceService_create_professional_ids(t *testing.T) {
 
 	// Sin professional_ids: el servicio no lo hace nadie (la excepción
 	// consciente de S-F2c-5; el aviso de la pantalla lo dice).
-	corte, err := svc.Create(owner, "s1", "Corte", 30, 100000, 20, nil)
+	corte, err := svc.Create(owner, "s1", "Corte", 30, 100000, 20, nil, "")
 	if err != nil {
 		t.Fatalf("crear sin profesionales: %v", err)
 	}
@@ -543,7 +543,7 @@ func TestServiceService_create_professional_ids(t *testing.T) {
 	}
 
 	// Con una profesional: queda asignado a ella, y solo a ella.
-	keratina, err := svc.Create(owner, "s1", "Keratina", 60, 250000, 15, []string{"u-prof"})
+	keratina, err := svc.Create(owner, "s1", "Keratina", 60, 250000, 15, []string{"u-prof"}, "")
 	if err != nil {
 		t.Fatalf("crear con profesional: %v", err)
 	}
@@ -555,11 +555,11 @@ func TestServiceService_create_professional_ids(t *testing.T) {
 	}
 
 	// Recepción no es reservable: 400 y el servicio NO se crea.
-	if _, err := svc.Create(owner, "s1", "Color", 60, 250000, 15, []string{"u-recep"}); !errors.Is(err, domain.ErrValidation) {
+	if _, err := svc.Create(owner, "s1", "Color", 60, 250000, 15, []string{"u-recep"}, ""); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("profesional no reservable: %v", err)
 	}
 	// Un id de otro salón (o inexistente) tampoco.
-	if _, err := svc.Create(owner, "s1", "Color", 60, 250000, 15, []string{"u-otro"}); !errors.Is(err, domain.ErrValidation) {
+	if _, err := svc.Create(owner, "s1", "Color", 60, 250000, 15, []string{"u-otro"}, ""); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("profesional de otro salón: %v", err)
 	}
 	list, _ := services.List("s1", true)
@@ -574,7 +574,7 @@ func TestServiceService_create_professional_ids(t *testing.T) {
 	for i := 0; i < 51; i++ {
 		tooMany = append(tooMany, "u-prof")
 	}
-	if _, err := svc.Create(owner, "s1", "Planchado", 45, 200000, 10, tooMany); !errors.Is(err, domain.ErrValidation) {
+	if _, err := svc.Create(owner, "s1", "Planchado", 45, 200000, 10, tooMany, ""); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("más de 50 profesionales: %v", err)
 	}
 }
