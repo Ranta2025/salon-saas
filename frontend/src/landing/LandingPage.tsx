@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { fetchPublicSalon } from '../lib/api'
 import { preloadLandingHero, releaseLandingHero } from '../lib/landingPreload'
 import { toLandingServices } from '../lib/publicSalon'
+import type { SalonDay } from '../lib/weeklyHours'
 import type { LandingService } from './content'
 import { SERVICES, TRUST_POINTS } from './content'
 import { BookingCta } from './components/BookingCta'
@@ -23,6 +24,9 @@ export function LandingPage() {
   const { slug } = useParams<{ slug?: string }>()
   const [preselected, setPreselected] = useState<LandingService | null>(null)
   const [services, setServices] = useState<readonly LandingService[]>(SERVICES)
+  // Real opening hours of the salon (F2d1). `null` means the API did not send
+  // them: the landing asks to confirm on WhatsApp instead of inventing hours.
+  const [hours, setHours] = useState<readonly SalonDay[] | null>(null)
 
   // Client-side navigation to the landing still starts the hero early.
   useEffect(() => {
@@ -34,10 +38,12 @@ export function LandingPage() {
     let active = true
     // The bundled catalogue is the fallback for a slow or unavailable API.
     setServices(SERVICES)
+    setHours(null)
     fetchPublicSalon(slug ?? DEFAULT_SLUG)
       .then((salon) => {
         if (active) {
           setServices(toLandingServices(salon.services, SERVICES))
+          setHours(salon.hours)
         }
       })
       .catch(() => {
@@ -69,9 +75,14 @@ export function LandingPage() {
         <GallerySection />
         <WhyUsSection />
         <TestimonialsSection />
-        <BookingCta slug={slug ?? DEFAULT_SLUG} services={services} preselected={preselected} />
+        <BookingCta
+          slug={slug ?? DEFAULT_SLUG}
+          services={services}
+          preselected={preselected}
+          hours={hours}
+        />
       </main>
-      <SiteFooter />
+      <SiteFooter hours={hours} />
     </>
   )
 }

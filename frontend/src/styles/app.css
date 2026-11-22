@@ -2659,3 +2659,257 @@
     color: var(--ink-muted);
   }
 }
+
+/* ==========================================================================
+   Fase 6 — F2d1: weekly hours of the salon and of each professional
+   ========================================================================== */
+
+/* Seven rows of the salon editor (`/panel/ajustes`) and one card per bookable
+   member (`/panel/equipo`). The switch reuses the `.attends` drawing of F2a; the
+   time inputs keep the 44 px of base.css and the select is keyboard operable. */
+.hours-card {
+  min-width: 0;
+}
+
+.hours-card__retry {
+  margin-left: 0.75rem;
+}
+
+.hours-form {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.hours-list {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.hours-row {
+  min-width: 0;
+  margin: 0;
+  padding: 0.55rem 0.75rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.hours-row__day {
+  padding: 0 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.hours-row[data-closed='true'] .hours-row__day {
+  color: var(--ink-soft);
+}
+
+.hours-row[data-closed='true'] .input:disabled {
+  color: var(--ink-muted);
+  background: var(--shell-bg);
+}
+
+.hours-row__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.4rem 0.9rem;
+  align-items: end;
+  min-width: 0;
+}
+
+@media (min-width: 760px) {
+  .hours-row__grid {
+    grid-template-columns: minmax(9rem, auto) minmax(0, 20rem) minmax(0, 1fr);
+  }
+}
+
+/* Two time inputs while there is room for the full `09:00 a.m.` and its clock
+   icon; one column on a narrow phone so nothing is clipped. */
+.hours-row__times {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.hours-row__times .input {
+  min-width: 0;
+}
+
+.hours-row__copy {
+  min-width: 0;
+}
+
+.hours-row__copy .select {
+  width: 100%;
+  min-width: 0;
+}
+
+.hours-row__error {
+  grid-column: 1 / -1;
+}
+
+.hours-row .attends {
+  padding: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.hours-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+}
+
+/* One card per bookable member. */
+.hours-grid {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.member-hours {
+  display: grid;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.hours-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.1rem 1.25rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.hours-mode legend {
+  padding: 0;
+  font-size: var(--step--1);
+  font-weight: 600;
+}
+
+.hours-mode__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.2rem 0.4rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.hours-mode__option input {
+  width: 1.125rem;
+  height: 1.125rem;
+  margin: 0;
+  accent-color: var(--wine);
+}
+
+.hours-days {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.hours-day {
+  min-width: 0;
+  padding: 0.55rem 0.75rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.hours-day__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.15rem 0.75rem;
+}
+
+.hours-day__head h4 {
+  font-size: 1rem;
+}
+
+.hours-day__summary {
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+
+.hours-day__block {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.hours-segment {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.45rem 0.6rem;
+  align-items: end;
+  min-width: 0;
+  padding-top: 0.5rem;
+}
+
+.hours-segment .input {
+  min-width: 0;
+}
+
+.hours-segment .btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+/* Small buttons inside the editors still get the 44 px target: "Quitar" and
+   "Agregar tramo" are touched with the thumb on a phone. */
+.hours-segment .btn,
+.hours-day__actions .btn {
+  min-height: 44px;
+}
+
+@media (min-width: 700px) {
+  .hours-segment {
+    grid-template-columns: repeat(2, minmax(0, 9rem)) auto;
+  }
+
+  .hours-segment .btn {
+    grid-column: auto;
+  }
+}
+
+/* The gap between two segments is a real break: it is visible and labelled. */
+.hours-break {
+  margin: 0.2rem 0 0.35rem;
+  padding-left: 0.7rem;
+  border-left: 3px solid var(--champagne);
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+
+.hours-day__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+  margin-top: 0.45rem;
+}
+
+.hours-day__actions .field__hint {
+  margin: 0;
+}
+
+.hours-day__copy {
+  flex: 1 1 12rem;
+  width: auto;
+  max-width: 18rem;
+  min-width: 0;
+}

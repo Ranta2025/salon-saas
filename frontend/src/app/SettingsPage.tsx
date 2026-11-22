@@ -14,6 +14,7 @@ import {
 import { useSalon } from './SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
 import { PageHeader } from './components/PageHeader'
+import { SalonHoursCard } from './components/SalonHoursCard'
 
 const STEP_LABEL: Record<number, string> = {
   15: 'Cada 15 minutos',
@@ -21,7 +22,10 @@ const STEP_LABEL: Record<number, string> = {
   60: 'Cada 60 minutos',
 }
 
-/** `/panel/ajustes`: time zone, opening window and slot step (owner/admin). */
+/**
+ * `/panel/ajustes`: time zone, opening window, slot step and the weekly hours of
+ * the salon (F2d1, S-F2d1-6), owner/admin.
+ */
 export function SettingsPage() {
   const { salonId, salons } = useSalon()
   const role = activeRole(salons, salonId)
@@ -141,7 +145,8 @@ export function SettingsPage() {
       {loading && !loaded ? <LoadingState label="Cargando configuración…" /> : null}
 
       {loaded ? (
-        <form className="panel-card settings-form" onSubmit={handleSubmit} noValidate>
+        <>
+          <form className="panel-card settings-form" onSubmit={handleSubmit} noValidate>
           <div className="settings-form__grid">
             <div className="field settings-form__wide">
               <label htmlFor="settings-timezone">Zona horaria</label>
@@ -252,7 +257,12 @@ export function SettingsPage() {
               Descartar cambios
             </button>
           </div>
-        </form>
+          </form>
+          <SalonHoursCard
+            salonId={salonId}
+            defaults={{ open: draft.openTime, close: draft.closeTime }}
+          />
+        </>
       ) : null}
     </>
   )

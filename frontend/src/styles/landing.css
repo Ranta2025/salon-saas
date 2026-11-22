@@ -1163,3 +1163,33 @@
   font-size: 0.75rem;
   color: var(--ink-muted);
 }
+
+/* F2d1: the footer prints the real `hours` of the public salon, marks today and
+   says «Cerrado» on the days without hours. */
+.site-footer__hours li[data-today='true'] {
+  color: var(--cream);
+  font-weight: 600;
+}
+
+.site-footer__hours li[data-closed='true'] {
+  color: var(--cream-muted);
+}
+
+.site-footer__hours-today {
+  margin-left: 0.45rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-pill);
+  background: var(--gold-tint);
+  color: var(--champagne);
+  font-family: var(--font-sans);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* The fallback sentence is a paragraph on the dark footer: cream, not
+   --ink-muted, so it is readable. */
+.site-footer__hours-note {
+  color: var(--cream-soft);
+}

@@ -1,8 +1,25 @@
 import { Link } from 'react-router-dom'
-import { ATTRIBUTION, NAV_LINKS, PUBLIC_HOURS_NOTE, SALON } from '../content'
+import { ATTRIBUTION, NAV_LINKS, PUBLIC_HOURS_FALLBACK, SALON } from '../content'
+import { publicHoursRows, todayWeekday, type SalonDay } from '../../lib/weeklyHours'
+import { visitorTimeZone } from '../../lib/publicBooking'
+
+type SiteFooterProps = {
+  /**
+   * `hours` of `GET /public/salons/:slug` (F2d1). `null` when the API did not
+   * send the field: the footer then asks to confirm the hours on WhatsApp
+   * instead of printing invented ones.
+   */
+  hours: readonly SalonDay[] | null
+}
 
 /** Footer with salon contact details and the licence attribution of every photo. */
-export function SiteFooter() {
+export function SiteFooter({ hours }: SiteFooterProps) {
+  // The public payload has no zone, so the week is read in the visitor's zone:
+  // a visitor near midnight may highlight a different day than the salon, but
+  // the printed hours are always the real ones of the salon.
+  const today = todayWeekday(new Date(), visitorTimeZone())
+  const rows = hours === null ? [] : publicHoursRows(hours, today)
+
   return (
     <footer className="site-footer">
       <div className="container site-footer__grid">
@@ -17,18 +34,31 @@ export function SiteFooter() {
             <br />
             <a href={`mailto:${SALON.email}`}>{SALON.email}</a>
           </address>
-          <ul className="site-footer__hours">
-            {SALON.hours.map((slot) => (
-              <li key={slot.days}>
-                <span>{slot.days}</span>
-                <span>{slot.time}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="site-footer__hours-note">
-            {PUBLIC_HOURS_NOTE.charAt(0).toUpperCase() + PUBLIC_HOURS_NOTE.slice(1)}: confirma tu
-            horario al reservar.
-          </p>
+          {hours === null ? (
+            <p className="site-footer__hours-note">
+              {PUBLIC_HOURS_FALLBACK}:{' '}
+              <a href={`https://wa.me/${SALON.whatsapp}`} target="_blank" rel="noreferrer">
+                {SALON.phone}
+              </a>
+            </p>
+          ) : (
+            <ul className="site-footer__hours" aria-label="Horario de atención">
+              {rows.map((row) => (
+                <li
+                  key={row.weekday}
+                  data-today={row.isToday ? 'true' : undefined}
+                  data-closed={row.closed ? 'true' : undefined}
+                  aria-current={row.isToday ? 'date' : undefined}
+                >
+                  <span>
+                    {row.label}
+                    {row.isToday ? <span className="site-footer__hours-today">Hoy</span> : null}
+                  </span>
+                  <span>{row.time}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <nav className="site-footer__nav" aria-label="Enlaces del pie de página">

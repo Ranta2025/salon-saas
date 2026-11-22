@@ -21,7 +21,8 @@ import {
   type BookingFailure,
   type PublicBookingCreated,
 } from '../../lib/publicBooking'
-import { PUBLIC_HOURS_NOTE, SALON, type LandingService } from '../content'
+import { weekSummary, type SalonDay } from '../../lib/weeklyHours'
+import { PUBLIC_HOURS_FALLBACK, SALON, type LandingService } from '../content'
 
 /** `2025-03-14` → `viernes, 14 de marzo de 2025` without shifting the day. */
 function longDate(dateValue: string): string {
@@ -54,6 +55,11 @@ type BookingCtaProps = {
   services: readonly LandingService[]
   /** Service preselected when a service card was clicked. */
   preselected: LandingService | null
+  /**
+   * `hours` of the public salon (F2d1): the real schedule when the API sends it,
+   * `null` when the field is missing (the block asks to confirm on WhatsApp).
+   */
+  hours: readonly SalonDay[] | null
 }
 
 /**
@@ -62,7 +68,7 @@ type BookingCtaProps = {
  * visitor's local time, and the request carries a `client_op_id` so a retry is
  * never a double booking. WhatsApp stays as the secondary channel.
  */
-export function BookingCta({ slug, services, preselected }: BookingCtaProps) {
+export function BookingCta({ slug, services, preselected, hours }: BookingCtaProps) {
   // Minimum date and slot times use the visitor's local calendar (not UTC).
   const timeZone = useMemo(() => visitorTimeZone(), [])
   const today = toDateInputValue(new Date(), timeZone)
@@ -302,10 +308,16 @@ export function BookingCta({ slug, services, preselected }: BookingCtaProps) {
             </li>
             <li>
               <span className="booking__label">Horario</span>
-              <span>
-                {SALON.hours[0]?.days}: {SALON.hours[0]?.time} · {SALON.hours[1]?.days}:{' '}
-                {SALON.hours[1]?.time} ({PUBLIC_HOURS_NOTE})
-              </span>
+              {hours === null ? (
+                <span>
+                  {PUBLIC_HOURS_FALLBACK}:{' '}
+                  <a href={`https://wa.me/${SALON.whatsapp}`} target="_blank" rel="noreferrer">
+                    {SALON.phone}
+                  </a>
+                </span>
+              ) : (
+                <span>{weekSummary(hours)}</span>
+              )}
             </li>
           </ul>
         </div>

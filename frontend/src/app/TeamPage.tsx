@@ -34,8 +34,11 @@ import {
   isManager,
   roleLabel,
 } from '../lib/permissions'
+import { fetchSalonHours } from '../lib/settings'
+import type { SalonDay } from '../lib/weeklyHours'
 import { useSalon } from './SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
+import { MemberHoursCard } from './components/MemberHoursCard'
 import { PageHeader } from './components/PageHeader'
 
 /** `/panel/equipo`: team of the salon (owner/admin). */
@@ -59,6 +62,9 @@ export function TeamPage() {
   const [attendsError, setAttendsError] = useState<string | null>(null)
   const [workServices, setWorkServices] = useState<Service[]>([])
   const [workServicesError, setWorkServicesError] = useState<string | null>(null)
+  // Weekly hours of the salon (F2d1): the default of every professional card.
+  const [salonDays, setSalonDays] = useState<readonly SalonDay[]>([])
+  const [salonHoursError, setSalonHoursError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
@@ -114,6 +120,30 @@ export function TeamPage() {
       .catch((err: unknown) => {
         if (active) {
           setWorkServicesError(describeApiError(err, 'No pudimos cargar los servicios.').message)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [salonId, allowed])
+
+  useEffect(() => {
+    if (!salonId || !allowed) {
+      return
+    }
+    let active = true
+    setSalonHoursError(null)
+    fetchSalonHours(salonId)
+      .then((hours) => {
+        if (active) {
+          setSalonDays(hours.days)
+        }
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setSalonHoursError(
+            describeApiError(err, 'No pudimos cargar el horario del salón.').message,
+          )
         }
       })
     return () => {
@@ -452,6 +482,40 @@ export function TeamPage() {
                 services={workServices}
                 onSaveTrade={(trade) => handleSaveTrade(member, trade)}
                 onSaveServices={(serviceIds) => handleSaveServices(member, serviceIds)}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {loaded ? (
+        <section className="panel-card" aria-labelledby="team-hours-title">
+          <div className="panel-card__head">
+            <h2 id="team-hours-title">Horario de quien atiende</h2>
+            <span className="panel-card__meta">{bookable.length} personas</span>
+          </div>
+          <p className="page-head__desc">
+            Por defecto cada persona trabaja con el horario del salón. Con «Horario propio» define
+            sus días, hasta cuatro tramos por día y los descansos entre tramos: la reserva pública
+            solo ofrece turnos que caben enteros en un tramo.
+          </p>
+          {salonHoursError ? (
+            <p className="notice notice--error" role="alert">
+              {salonHoursError}
+            </p>
+          ) : null}
+          {bookable.length === 0 ? (
+            <p className="empty-state">
+              Nadie atiende clientes todavía, así que no hay horarios que asignar.
+            </p>
+          ) : null}
+          <div className="hours-grid">
+            {bookable.map((member) => (
+              <MemberHoursCard
+                key={member.id}
+                salonId={salonId}
+                member={member}
+                salonDays={salonDays}
               />
             ))}
           </div>

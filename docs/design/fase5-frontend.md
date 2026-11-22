@@ -830,3 +830,144 @@ del conteo.
   la etiqueta del rol en la tarjeta (decía «Atiende» donde debía decir el rol).
 - Fuera de alcance de esta entrega: consumir `trade` de `/staff` y
   `booking.service_id` (no los usa ninguna de las dos pantallas).
+
+## 16. Fase 6 — F2d1: horario semanal del salón y de cada profesional
+
+Contrato `odd/tasks/fase6-roadmap.md`, «Contrato F2d1» (S-F2d1-4 forma del
+contrato y S-F2d1-6). Sin dependencias nuevas. El backend se implementa en
+paralelo y no se tocó: la UI consume `GET/PUT /salons/:id/hours`,
+`GET/PUT /salons/:id/members/:uid/hours` y el campo `hours` de
+`GET /public/salons/:slug`. Semana ISO 1..7 (lunes primero) leída en la zona del
+salón, horas `HH:MM` de 24 h.
+
+### 16.1 Reglas puras (`src/lib/weeklyHours.ts`)
+
+| helper | regla |
+| --- | --- |
+| `parseClock` / `formatClock` / `formatClockShort` / `isClock` | `HH:MM` estricto ↔ minutos desde medianoche; `09:00` para la API y los `input type="time"`, `9:00` para los resúmenes |
+| `normalizeSalonHours` / `normalizeMemberHours` | lectura del contrato: filas con día 1..7, hora válida e inicio < fin; el salón respeta el flag `custom`, la profesional lo deriva de las filas (lista vacía = «igual que el salón») |
+| `weekDraft` / `draftToDays` / `setDraftDay` | editor de 7 filas: el día cerrado conserva la ventana única como borrador y `PUT` solo manda los días abiertos |
+| `copyDraftDay` / `copyTargets` | copiar un día a todos, a lunes–viernes, al fin de semana o a un día concreto |
+| `validateDraft` / `validateSegments` | mensajes del API verbatim: «Horario inválido: el inicio debe ser anterior al fin», «Los tramos de un mismo día no pueden solaparse», «Máximo 4 tramos por día», «Día inválido»; formato inválido se explica antes de enviar |
+| `weekSummary` | «Lun a vie 9:00–19:00 · Sáb 9:00–14:00 · Dom cerrado»: agrupa días consecutivos iguales y dice «cerrado» donde no hay fila |
+| `segmentsSummary` / `daySummary` | la misma agrupación para los tramos de una profesional, con «libre» en el día sin tramos |
+| `segmentsForDay` / `setDaySegments` / `addSegment` / `removeSegment` | edición de un día a la vez; el quinto tramo no se agrega |
+| `copySegmentsDay` | copia los tramos de un día a los días elegidos (un día origen vacío los deja libres) |
+| `dayBreaks` / `breakLabel` | los huecos entre tramos son los descansos: «Descanso 13:00–14:00» |
+| `followsSalon` / `salonSegments` / `sameSegments` | «igual que el salón» = sin filas; los tramos del salón son el punto de partida del horario propio |
+| `todayWeekday` | día ISO de un instante **en la zona del salón**: 2026-03-10T02:30Z es lunes en Ciudad de México y martes en UTC; una zona inválida cae en UTC en vez de romper |
+| `publicHoursRows` | siete filas de la landing con «Cerrado» donde no hay fila y la marca de hoy |
+| `beginSave` / `commitSave` / `rollbackSave` | guardado optimista genérico: se muestra el valor nuevo y `rollbackSave` devuelve exactamente el guardado |
+
+### 16.2 Cliente de API
+
+- `fetchSalonHours` / `saveSalonHours` (`src/lib/settings.ts`) contra
+  `/salons/:id/hours`; la lista vacía de `saveSalonHours` es «volver al horario
+  único». Un `400` conserva la frase del servidor, que se imprime tal cual.
+- `fetchMemberHours` / `saveMemberHours` (`src/lib/members.ts`) contra
+  `/members/:uid/hours`; `segments: []` significa «igual que el salón».
+- `normalizePublicSalon` (`src/lib/publicSalon.ts`) suma `hours: SalonDay[] | null`:
+  `null` cuando el campo falta o no trae ninguna fila usable.
+
+### 16.3 `/panel/ajustes` (S-F2d1-6)
+
+- Debajo del formulario de zona/apertura/cierre/paso aparece la tarjeta
+  «Horario semanal» (`SalonHoursCard`) con siete filas: interruptor
+  Abierto/Cerrado (checkbox con `role="switch"`, `aria-label` «Abierto: Lunes»,
+  operable con `Space` y 44 px), hora de apertura y de cierre (`type="time"`,
+  deshabilitadas cuando el día está cerrado) y «Copiar este día a…».
+- «Guardar horario» valida antes de enviar y muestra el campo con error en
+  `role="alert"`; si el servidor rechaza, su frase se lee verbatim dentro de la
+  tarjeta con «Reintentar».
+- «Volver al horario único» solo existe con días propios y pide confirmación en
+  línea («Sí, volver» / «Cancelar»); al guardar, el servidor devuelve la ventana
+  única expandida a los siete días (`custom=false`) y la tarjeta vuelve al aviso
+  informativo.
+- El editor existente (zona horaria, apertura, cierre, paso) no cambió.
+
+### 16.4 `/panel/equipo` (S-F2d1-6)
+
+- Nueva tarjeta «Horario de quien atiende» con un bloque por persona reservable
+  (`bookableMembers`, la regla de F2a). Cada bloque
+  (`MemberHoursCard`) tiene:
+  - `fieldset` «Horario de trabajo» con dos radios: «Igual que el salón» (por
+    defecto, muestran el resumen del salón) y «Horario propio» (arranca con los
+    tramos del salón como copia).
+  - Con horario propio, siete días con hasta cuatro tramos cada uno: «Desde» y
+    «Hasta» (`type="time"` con etiqueta propia), «Quitar» por tramo, «Agregar
+    tramo» (deshabilitado en el cuarto) y «Copiar este día a…».
+  - Los huecos se dibujan como «Descanso 13:00–14:00» entre los tramos, y el día
+    sin tramos dice «Día libre».
+  - «Guardar horario» envía el reemplazo atómico: el estado se aplica antes de
+    la respuesta (`beginSave`), el éxito confirma con `role="status"` y un
+    rechazo del servidor vuelve exactamente al horario guardado
+    (`rollbackSave`) y muestra la frase del servidor en `role="alert"`
+    («Máximo 4 tramos por día», «Los tramos de un mismo día no pueden
+    solaparse»…). «Descartar cambios» también vuelve al guardado.
+- Si `/hours` del salón falla, la sección avisa y los bloques no inventan el
+  resumen del salón.
+
+### 16.5 Landing (S-F2d1-6)
+
+- `LandingPage` guarda `hours` de `GET /public/salons/:slug` y lo pasa al pie y al
+  bloque de contacto del CTA. Se eliminaron `PUBLIC_OPENING_HOURS`,
+  `PUBLIC_HOURS_NOTE` y `SALON.hours`: desaparece el texto «horario indicativo»
+  y con él la limitación conocida de §11.7.
+- El pie imprime las siete filas con la hora real, «Cerrado» donde el salón no
+  abre y una marca «Hoy» en el día actual. El bloque de contacto del CTA muestra
+  el resumen de la semana (`weekSummary`).
+- Si la respuesta no trae `hours` (API vieja o campo ausente), ambos lugares
+  dicen «Consultá el horario por WhatsApp» con el enlace al número: la landing
+  nunca inventa horas.
+- El formulario de reserva no cambió: sigue eligiendo servicio, fecha y hueco
+  contra `/availability`.
+- El payload público no incluye la zona del salón, así que el día de hoy se lee
+  en la zona del visitante (la misma que ya usa el formulario para los huecos).
+  Es una desviación consciente: las horas impresas son siempre las del salón.
+
+### 16.6 Accesibilidad y estilos
+
+`app.css` suma «F2d1: weekly hours»: `.hours-row` (fieldset con `legend`),
+`.hours-row__grid` (una columna en el teléfono, tres desde 760 px),
+`.hours-row__times`/`.hours-segment` con `repeat(auto-fit, minmax(8.5rem, 1fr))`
+para que un `input type="time"` nunca recorte «09:00 a.m.» a 390 px,
+`.attends` reutilizado para el interruptor, `.hours-mode` (radios de 44 px),
+`.hours-break` (descanso con filete dorado), `.hours-day__actions` y
+`.hours-card__actions`. «Quitar» y «Agregar tramo» suben a 44 px dentro de los
+editores. En la landing, `landing.css` marca `[data-today]`, `[data-closed]` y
+`.site-footer__hours-today` («Hoy»), y la frase de respaldo usa `--cream-soft`
+para ser legible sobre el pie oscuro.
+
+### 16.7 Verificación
+
+- `npx tsc --noEmit` sin errores, `npm test` (238 tests, node --test; 213 eran
+  de la entrega anterior, 25 nuevas) y `npm run build` en verde.
+- TDD en `src/lib` (primero en rojo: `ERR_MODULE_NOT_FOUND` del módulo nuevo y
+  exports faltantes en `settings.ts`/`members.ts`/`publicSalon.ts`):
+  `weeklyHours.test.ts` (relojes, borrador de siete filas, validaciones con las
+  frases exactas, resumen y agrupación, copia de día, tramos/descansos,
+  «igual que el salón», día de hoy con un instante cerca de medianoche en dos
+  zonas, filas públicas, guardado optimista con vuelta atrás y normalización),
+  `settings.test.ts` y `members.test.ts` (rutas, cuerpos `{days}`/`{segments}`,
+  lista vacía y frase del servidor tal cual) y `publicSalon.test.ts` (`hours`
+  presente, vacío y ausente).
+- Revisión visual con el bundle de `vite build` servido con `vite preview`
+  contra una API simulada en `/tmp/f2d1-shot` (horario del salón con domingo
+  cerrado y sábado corto, una profesional con descanso de 13 a 14, otra «igual
+  que el salón», un salón público con `hours` y `/salon/legacy` sin el campo) y
+  Chromium headless por protocolo DevTools (el flag `--screenshot` se cuelga en
+  este entorno) a 390 y 1280 px: `/panel/ajustes` (editor completo, día cerrado,
+  error del servidor con «Reintentar», copia de lunes a todos, confirmación y
+  vuelta al horario único), `/panel/equipo` (bloques «igual que el salón» y con
+  horario propio, descansos, rollback con «Máximo 4 tramos por día») y la
+  landing (pie con siete días y «Hoy», bloque de contacto con el resumen, y el
+  respaldo por WhatsApp sin `hours`). Comprobado en el navegador:
+  `scrollWidth === clientWidth` en ambas páginas y anchos; interruptor de 44 px,
+  `Space` que conmuta (`aria-checked` incluido), `Tab` del interruptor al campo
+  «Apertura» con `outline: solid 3px`, radios de 44 px, `input type="time"` de
+  46 px, select de 44 px y botones pequeños de los editores a 44 px. Se
+  corrigieron en la revisión: el texto «09:00 a.m.» recortado dentro de los
+  tramos a 390 px (ahora cada hora usa su propia fila cuando no entra) y
+  «Quitar»/«Agregar tramo» de 38 px.
+- Fuera de alcance de esta entrega: vacaciones y días libres puntuales (F2d2) y
+  cubrir ausencias (F2d3).
