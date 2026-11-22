@@ -25,6 +25,7 @@ catálogo/POS sigue en [`pos-servicios.md`](./pos-servicios.md) y el de avisos e
 | `SMTP_FROM` | no | `turnos@salon.local` | Remitente de los correos. |
 | `SMTP_TLS` | no | `none` | `none`, `starttls` o `tls` (implícito). Un valor desconocido impide arrancar. |
 | `REMINDER_INTERVAL` | no | `60s` | Cada cuánto la tarea mira la cola de recordatorios (duración de Go, > 0). |
+| `TRUSTED_PROXIES` | no | vacío | De qué peers se acepta `X-Forwarded-For` (la IP del cliente para el rate limit y el log). **Vacío = no se confía en nadie**: la IP del cliente es el peer directo y la cabecera se ignora. `private` = los rangos privados históricos (`127.0.0.1`, `::1`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`). O una lista de IPs/CIDR separada por comas (`172.18.0.0/16,203.0.113.7`). Un valor que no sea IP, CIDR ni `private` impide arrancar. |
 
 El proceso aplica las migraciones al arrancar (con lock global, ver abajo),
 escucha en `:$PORT`, y ante `SIGINT`/`SIGTERM` deja de aceptar conexiones, espera
@@ -56,7 +57,8 @@ Access-Control-Request-Method: POST
 
 | Límite | Valor | Respuesta al excederse |
 |---|---|---|
-| Body JSON | 1 MB | `400 {"error":"body inválido"}` |
+| Body JSON (todas las rutas salvo la subida de fotos) | 1 MB | `413 {"error":"body demasiado grande"}`. Se aplica **por ruta**, no por `Content-Type`: un `multipart/form-data` o `image/png` falseado en un endpoint JSON no lo apaga. Si el body no declara `Content-Length`, el tope corta la lectura y la ruta responde `400 body inválido`. |
+| Subida de foto (`POST /salons/:id/clients/:cid/photos`) | 8 MB (archivo) + 1 MB de overhead del multipart | `400` (no lleva el tope JSON: tiene el suyo) |
 | Login / registro | 20 intentos por IP por minuto | `429 {"error":"demasiados intentos, esperá un minuto y volvé a probar"}` |
 | Reserva pública (`POST /public/salons/:slug/bookings`) | 20 intentos por IP por minuto | `429` (mismo mensaje). El `GET` de disponibilidad y la vidriera **no** se limitan. |
 | Venta: unidades por línea | 1000 | `400` |
@@ -70,6 +72,20 @@ Access-Control-Request-Method: POST
 
 `500` siempre responde `{"error":"error interno"}`; el detalle (SQL, pgx) queda
 solo en el log del servidor.
+
+### IP del cliente y proxies confiables (`TRUSTED_PROXIES`)
+
+La IP que usan el rate limit y el log de acceso sale del peer TCP, salvo que ese
+peer esté en `TRUSTED_PROXIES`: recién ahí se lee `X-Forwarded-For`.
+
+- `TRUSTED_PROXIES` **vacío** (default): `X-Forwarded-For` se ignora siempre. Un
+  cliente que inventa la cabecera no puede elegir su cubo del rate limit.
+- **Detrás de un reverse proxy hay que setearla** (por ejemplo la IP del nginx o
+  el CIDR de la red Docker, `172.18.0.0/16`), si no todas las personas llegan
+  con la IP del proxy y comparten el mismo límite de intentos.
+- `TRUSTED_PROXIES=private` mantiene el comportamiento de la fase 5 (loopback +
+  rangos privados).
+- Un valor inválido impide arrancar y el error nombra la variable.
 
 ## Endpoints nuevos
 
@@ -106,6 +122,9 @@ rol). Es la fuente del select de profesional de la agenda.
 - Orden: por nombre.
 - `staff` es siempre un array.
 - No miembro → `403`. Sin token → `401`.
+- Si la consulta de la membresía falla por un problema del servidor (DB caída),
+  la respuesta es `500 {"error":"error interno"}` y el detalle queda en el log:
+  no se disfraza de `403` (que era el bug de la revisión de la fase 5).
 
 ### `GET /public/salons/:slug`
 
@@ -466,6 +485,19 @@ defaults apuntan al Mailpit del stack (UI `http://localhost:8025`).
   falsa cuando el usuario no existe).
 - **`GET /api/v1/ws?token=...`**: el token ya no queda escrito en los logs de
   acceso (`token=***`), y el `Origin` se valida contra `CORS_ORIGINS`.
+- **Tope de body (todas las rutas)**: pasa a aplicarse **por ruta** y no por
+  `Content-Type`. Un body de más de 1 MB con `Content-Length` declarado ahora
+  responde `413 {"error":"body demasiado grande"}` (antes el JSON daba `400` y
+  el `multipart/form-data`/`image/png` falseado se saltaba el tope por completo).
+  La subida de fotos conserva su tope de 8 MB. Sin `Content-Length`, el tope
+  corta la lectura y la respuesta sigue siendo `400`.
+- **IP del cliente**: sale del peer TCP y `X-Forwarded-For` solo se lee si el
+  peer está en `TRUSTED_PROXIES` (vacío = no se confía en nadie). Detrás de un
+  reverse proxy hay que configurarla o el rate limit cuenta a todo el mundo con
+  la misma IP.
+- **`GET /salons/:id/staff`**: una falla del servidor al leer la membresía ya no
+  se disfraza de `403`: responde `500 {"error":"error interno"}` y el detalle
+  queda en el log.
 
 ## Migraciones
 

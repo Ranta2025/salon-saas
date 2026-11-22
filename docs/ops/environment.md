@@ -80,6 +80,12 @@ SMTP_TLS=none
 # Cada cuánto la API mira la cola de recordatorios (duración de Go: 60s, 2s...).
 REMINDER_INTERVAL=60s
 
+# De qué peers se acepta X-Forwarded-For (IP del cliente para el rate limit y
+# el log). Vacío = no se confía en nadie: la IP es el peer directo.
+# "private" = loopback + rangos privados (comportamiento de la fase 5).
+# Detrás de un reverse proxy hay que setearlo (IP del proxy o CIDR de su red).
+TRUSTED_PROXIES=
+
 # Opcional: perfil "files" (ver docs/ops/minio.md)
 MINIO_IMAGE=pgsty/minio:latest
 MINIO_ROOT_USER=salon
@@ -91,6 +97,35 @@ MINIO_CONSOLE_PORT=9001
 Compose arma `DATABASE_URL` solo con las piezas `POSTGRES_*`. Si corrés la API
 sin Docker, exportá `DATABASE_URL` y `JWT_SECRET` en tu shell (en fish:
 `set -x JWT_SECRET ...`; en bash: `export JWT_SECRET=...`).
+
+## IP del cliente y proxies confiables (`TRUSTED_PROXIES`)
+
+El rate limit por IP y el log de acceso usan la IP del peer TCP. `X-Forwarded-For`
+la manda el cliente, así que solo se mira si el peer está en la lista de proxies
+confiables.
+
+| Valor de `TRUSTED_PROXIES` | Qué hace |
+|---|---|
+| vacío (default, también en Compose) | No se confía en ningún proxy: la IP del cliente es el peer directo y `X-Forwarded-For` se ignora. Es lo correcto cuando la API escucha directo (el `API_PORT` publicado del compose). |
+| `private` | Loopback + rangos privados (`127.0.0.1`, `::1`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`): el comportamiento de la fase 5. |
+| IPs/CIDR separados por comas | Solo esos peers son proxies de confianza (`172.18.0.0/16,203.0.113.7`). |
+
+**Detrás de un reverse proxy (nginx, Caddy, Traefik, un balanceador) hay que
+setearla**: si no, todas las personas llegan con la IP del proxy y comparten el
+mismo cubo del rate limit (20 intentos por minuto para todo el mundo). Poné la IP
+del proxy o el CIDR de su red:
+
+```dotenv
+# nginx en otra máquina
+TRUSTED_PROXIES=203.0.113.7
+# nginx/contenedor en la red de Docker
+TRUSTED_PROXIES=172.18.0.0/16
+```
+
+Un valor que no sea una IP, un CIDR ni `private` **impide arrancar**, con un error
+que nombra la variable. Al iniciar, la API loguea la lista con la que quedó (o
+"trusted proxies: ninguno").
+
 
 ## Email a clientes (`SMTP_*` y `REMINDER_INTERVAL`)
 
