@@ -31,8 +31,12 @@ func notFound(err error) error {
 
 type Users struct{ Pool *pgxpool.Pool }
 
-func (r Users) Save(u domain.User) error {
-	_, err := r.Pool.Exec(context.Background(),
+func (r Users) Save(u domain.User) error { return saveUser(r.Pool, u) }
+
+// saveUser es la ÚNICA forma de escribir una cuenta: la usan el registro y el
+// canje de una invitación (F2g1), que crea la cuenta dentro de su transacción.
+func saveUser(q querier, u domain.User) error {
+	_, err := q.Exec(context.Background(),
 		`INSERT INTO users(id,name,email,pass_hash,created_at)
 		 VALUES($1,$2,$3,$4,$5)
 		 ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name`,
@@ -127,15 +131,20 @@ func (r Salons) SaveSettings(s domain.SalonSettings) error {
 
 type Memberships struct{ Pool *pgxpool.Pool }
 
-func (r Memberships) Save(m domain.Membership) error {
+func (r Memberships) Save(m domain.Membership) error { return saveMembership(r.Pool, m) }
+
+// saveMembership es la ÚNICA forma de escribir una membresía: la usan el alta de
+// equipo y el canje de una invitación (F2g1), que la crea dentro de su
+// transacción.
+func saveMembership(q querier, m domain.Membership) error {
 	// attends viaja en el upsert: la membresía es una sola fila (un rol por
 	// persona y salón) y cambiar el rol recalcula la marca por defecto
 	// (professional atiende, el resto no) en vez de arrastrar la vieja.
-	_, err := r.Pool.Exec(context.Background(),
+	_, err := q.Exec(context.Background(),
 		`INSERT INTO memberships(user_id,salon_id,role,attends,trade) VALUES($1,$2,$3,$4,$5)
 		 ON CONFLICT (user_id,salon_id) DO UPDATE SET role=EXCLUDED.role, attends=EXCLUDED.attends, trade=EXCLUDED.trade`,
 		m.UserID, m.SalonID, string(m.Role), m.Attends, m.Trade)
-	return err
+	return pgError(err)
 }
 
 func (r Memberships) Find(userID, salonID string) (domain.Membership, error) {
