@@ -7,6 +7,9 @@ package pgstore
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -211,5 +214,164 @@ func TestBookingEmails_FindEmail_scopesSalon(t *testing.T) {
 	}
 	if _, err := emails.FindEmail("s-it-f2d3", sin.ID); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("turno sin email: %v", err)
+	}
+}
+
+// S-F2d3-6: covered_from viaja en TODAS las escrituras del turno (alta y el
+// UPDATE dentro de la transacción del "Reasignar todo") y se lee en todas las
+// SELECT (FindByID y ListRange). Vacío queda en NULL, no en texto vacío.
+func TestBookings_covered_from_roundtrip(t *testing.T) {
+	repo, _ := coverageFixture(t)
+
+	// Alta sin cobertura: la columna queda NULL y se lee como "".
+	fresh := coverageBooking(t, "b-f2d3-cover-1", "u-bea-f2d3", coverageTime(t, 2, 10), 45)
+	if err := repo.Save(fresh); err != nil {
+		t.Fatalf("guardar: %v", err)
+	}
+	var isNull bool
+	if err := repo.Pool.QueryRow(context.Background(),
+		`SELECT covered_from IS NULL FROM bookings WHERE id=$1`, fresh.ID).Scan(&isNull); err != nil {
+		t.Fatalf("leer covered_from: %v", err)
+	}
+	if !isNull {
+		t.Fatal("sin cobertura la columna tiene que ser NULL")
+	}
+	stored, err := repo.FindByID("s-it-f2d3", fresh.ID)
+	if err != nil {
+		t.Fatalf("leer el turno: %v", err)
+	}
+	if stored.CoveredFrom != "" {
+		t.Fatalf("sin cobertura: %q", stored.CoveredFrom)
+	}
+
+	// El UPDATE de la reasignación la persiste (Bea -> Ana: la tenía Bea).
+	moved, err := stored.Reassign("u-ana-f2d3")
+	if err != nil {
+		t.Fatalf("reasignar: %v", err)
+	}
+	if err := repo.InSalonTx("s-it-f2d3", func(tx ports.BookingTx) error { return tx.Update(moved) }); err != nil {
+		t.Fatalf("update en la transacción: %v", err)
+	}
+	stored, err = repo.FindByID("s-it-f2d3", fresh.ID)
+	if err != nil {
+		t.Fatalf("releer: %v", err)
+	}
+	if stored.ProfessionalID != "u-ana-f2d3" || stored.CoveredFrom != "u-bea-f2d3" {
+		t.Fatalf("el update tiene que guardar covered_from: %+v", stored)
+	}
+
+	// Un alta que ya viene cubierta también lo escribe.
+	second := coverageBooking(t, "b-f2d3-cover-2", "u-ana-f2d3", coverageTime(t, 2, 11), 45)
+	second.CoveredFrom = "u-bea-f2d3"
+	if err := repo.Save(second); err != nil {
+		t.Fatalf("guardar la cubierta: %v", err)
+	}
+
+	// ListRange (la agenda del salón) lo lee en cada fila.
+	list, err := repo.ListRange("s-it-f2d3", coverageTime(t, 2, 0), coverageTime(t, 2, 23))
+	if err != nil {
+		t.Fatalf("listar: %v", err)
+	}
+	got := map[string]string{}
+	for _, b := range list {
+		got[b.ID] = b.CoveredFrom
+	}
+	if got["b-f2d3-cover-1"] != "u-bea-f2d3" || got["b-f2d3-cover-2"] != "u-bea-f2d3" {
+		t.Fatalf("covered_from en el listado: %+v", got)
+	}
+}
+
+// S-F2d3-6: la 019 agrega bookings.covered_from (text, null, SIN FK) y se puede
+// aplicar dos veces. Una base que ya tenía turnos los deja en NULL: no hay
+// backfill.
+func TestMigration019_booking_covered_from(t *testing.T) {
+	pool := itPool(t)
+	defer pool.Close()
+	ctx := context.Background()
+
+	raw, err := os.ReadFile(filepath.Join(migrationsDir(t), "019_booking_covered_from.sql"))
+	if err != nil {
+		t.Fatalf("leer la migración 019: %v", err)
+	}
+	sql := string(raw)
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	schema := fmt.Sprintf("f2d3_019_%d", time.Now().UnixNano())
+	if _, err := tx.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatalf("esquema de prueba: %v", err)
+	}
+	if _, err := tx.Exec(ctx, "SET LOCAL search_path TO "+schema); err != nil {
+		t.Fatalf("search_path: %v", err)
+	}
+
+	// Estado pre-019: un salón con un turno ya agendado.
+	for _, q := range []string{
+		`CREATE TABLE bookings (
+		   id              TEXT PRIMARY KEY,
+		   salon_id        TEXT NOT NULL,
+		   professional_id TEXT NOT NULL,
+		   starts_at       TIMESTAMPTZ NOT NULL,
+		   ends_at         TIMESTAMPTZ NOT NULL,
+		   status          TEXT NOT NULL
+		 )`,
+		`INSERT INTO bookings(id,salon_id,professional_id,starts_at,ends_at,status)
+		 VALUES('b-viejo','s1','u-ana','2026-12-01T15:00:00Z','2026-12-01T16:00:00Z','booked')`,
+	} {
+		if _, err := tx.Exec(ctx, q); err != nil {
+			t.Fatalf("estado previo: %v", err)
+		}
+	}
+
+	// Dos pasadas: la segunda no puede fallar.
+	for i := 0; i < 2; i++ {
+		if _, err := tx.Exec(ctx, sql); err != nil {
+			t.Fatalf("aplicar 019 (pasada %d): %v", i+1, err)
+		}
+	}
+
+	var dataType, isNullable string
+	if err := tx.QueryRow(ctx,
+		`SELECT data_type, is_nullable FROM information_schema.columns
+		  WHERE table_schema=$1 AND table_name='bookings' AND column_name='covered_from'`,
+		schema).Scan(&dataType, &isNullable); err != nil {
+		t.Fatalf("la columna covered_from: %v", err)
+	}
+	if dataType != "text" || isNullable != "YES" {
+		t.Fatalf("covered_from tiene que ser text null: %s %s", dataType, isNullable)
+	}
+
+	// Sin FK: la persona puede dejar el equipo y su nombre queda como historia.
+	var fks int
+	if err := tx.QueryRow(ctx,
+		`SELECT COUNT(*)::int FROM pg_constraint c
+		   JOIN pg_class t ON t.oid = c.conrelid
+		   JOIN pg_namespace n ON n.oid = t.relnamespace
+		  WHERE n.nspname=$1 AND t.relname='bookings' AND c.contype='f'`, schema).Scan(&fks); err != nil {
+		t.Fatalf("contar FKs: %v", err)
+	}
+	if fks != 0 {
+		t.Fatalf("covered_from no lleva FK (y la tabla de prueba no tenía): %d", fks)
+	}
+
+	// El turno que ya existía queda sin cobertura (sin backfill).
+	var covered *string
+	if err := tx.QueryRow(ctx, `SELECT covered_from FROM bookings WHERE id='b-viejo'`).Scan(&covered); err != nil {
+		t.Fatalf("leer el turno viejo: %v", err)
+	}
+	if covered != nil {
+		t.Fatalf("los turnos existentes quedan en NULL, dio %q", *covered)
+	}
+
+	// Se puede escribir y limpiar (la cobertura vuelve a quien la tenía).
+	if _, err := tx.Exec(ctx, `UPDATE bookings SET covered_from='u-zoe' WHERE id='b-viejo'`); err != nil {
+		t.Fatalf("escribir covered_from: %v", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE bookings SET covered_from=NULL WHERE id='b-viejo'`); err != nil {
+		t.Fatalf("limpiar covered_from: %v", err)
 	}
 }

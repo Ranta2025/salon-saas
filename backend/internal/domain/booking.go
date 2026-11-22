@@ -32,6 +32,10 @@ type Booking struct {
 	// siempre (para saber qué se hace) y la reserva de staff puede no llevarlo
 	// (el calendario agenda a mano un turno sin servicio) (S-F2c-2).
 	ServiceID string
+	// CoveredFrom es la profesional que TENÍA el turno antes de que lo cubriera
+	// otra persona (S-F2d3-6). Vacío = nadie lo cubre. Solo lo escribe la
+	// reasignación; reprogramar, cambiar estado y las reservas lo dejan igual.
+	CoveredFrom string
 	// ClientOpID identifica la operación en el cliente (cola offline). Igual
 	// que en las ventas: si viene repetido, el servidor devuelve la reserva YA
 	// registrada en vez de agendar un turno nuevo.

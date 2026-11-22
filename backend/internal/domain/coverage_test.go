@@ -171,6 +171,69 @@ func TestBooking_reassign_keeps_time_and_status(t *testing.T) {
 	}
 }
 
+// S-F2d3-6: quién tenía el turno. La primera reasignación guarda a la
+// profesional anterior; los cambios siguientes la conservan (Ana -> Cata -> Bea
+// sigue diciendo Ana); si el turno vuelve a esa persona, se limpia.
+func TestBooking_reassign_tracks_who_covered(t *testing.T) {
+	b := coverBooking(t, "sv-corte") // de Ana
+	if b.CoveredFrom != "" {
+		t.Fatalf("un turno recién agendado no tiene cobertura: %q", b.CoveredFrom)
+	}
+	toCata, err := b.Reassign("u-cata")
+	if err != nil {
+		t.Fatalf("Ana -> Cata: %v", err)
+	}
+	if toCata.CoveredFrom != "u-ana" {
+		t.Fatalf("la primera cobertura guarda a Ana: %q", toCata.CoveredFrom)
+	}
+	toBea, err := toCata.Reassign("u-bea")
+	if err != nil {
+		t.Fatalf("Cata -> Bea: %v", err)
+	}
+	if toBea.CoveredFrom != "u-ana" {
+		t.Fatalf("Ana -> Cata -> Bea sigue diciendo Ana: %q", toBea.CoveredFrom)
+	}
+	back, err := toBea.Reassign("u-ana")
+	if err != nil {
+		t.Fatalf("Bea -> Ana: %v", err)
+	}
+	if back.CoveredFrom != "" {
+		t.Fatalf("el turno volvió a Ana: covered_from se limpia, quedó %q", back.CoveredFrom)
+	}
+	// Ana -> Ana no es una cobertura: no puede decir que lo cubre otra.
+	same, err := b.Reassign("u-ana")
+	if err != nil {
+		t.Fatalf("misma profesional: %v", err)
+	}
+	if same.CoveredFrom != "" {
+		t.Fatalf("reasignar a la misma persona no marca cobertura: %q", same.CoveredFrom)
+	}
+}
+
+// S-F2d3-6: ningún otro flujo toca covered_from: reprogramar y cambiar estado lo
+// dejan como está, y una reserva nueva nace vacía.
+func TestBooking_other_flows_leave_covered_from(t *testing.T) {
+	b := coverBooking(t, "sv-corte") // de Ana, cubierto desde Zoe
+	b.CoveredFrom = "u-zoe"
+	moved, err := b.Reschedule("", b.StartsAt.Add(24*time.Hour), b.EndsAt.Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("reprogramar: %v", err)
+	}
+	if moved.CoveredFrom != "u-zoe" {
+		t.Fatalf("reprogramar no toca covered_from: %q", moved.CoveredFrom)
+	}
+	done, err := b.SetStatus(BookingDone)
+	if err != nil {
+		t.Fatalf("cambiar estado: %v", err)
+	}
+	if done.CoveredFrom != "u-zoe" {
+		t.Fatalf("cambiar estado no toca covered_from: %q", done.CoveredFrom)
+	}
+	if fresh := coverBooking(t, ""); fresh.CoveredFrom != "" {
+		t.Fatalf("una reserva nueva nace sin cobertura: %q", fresh.CoveredFrom)
+	}
+}
+
 // S-F2d3-2: el motivo de una cancelación se recorta y no puede romper el aviso
 // interno (mismo criterio que el motivo de una ausencia).
 func TestCoverage_normalize_cancel_reason(t *testing.T) {

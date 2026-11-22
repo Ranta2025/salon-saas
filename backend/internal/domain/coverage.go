@@ -118,10 +118,25 @@ func (b Booking) Coverable() error {
 // estado. No usa Reschedule a propósito: cubrir una ausencia no mueve la hora
 // (la clienta la conserva, S-F2d3-4) y un turno en curso tiene que poder
 // cubrirse, cosa que la validación de "no agendar en el pasado" impediría.
+//
+// S-F2d3-6: también deja escrito quién TENÍA el turno. Si CoveredFrom está
+// vacío se guarda la profesional anterior; si ya tenía valor se conserva (Ana ->
+// Cata -> Bea sigue diciendo Ana); si el turno vuelve a quien figura ahí, se
+// limpia. Reasignar a la misma persona no es una cobertura y no toca nada.
 func (b Booking) Reassign(professionalID string) (Booking, error) {
 	p := strings.TrimSpace(professionalID)
 	if p == "" {
 		return Booking{}, NewMessage(ErrValidation, MsgCoverNoCandidate)
+	}
+	if p == b.ProfessionalID {
+		return b, nil
+	}
+	switch b.CoveredFrom {
+	case "":
+		b.CoveredFrom = b.ProfessionalID
+	case p:
+		// Vuelve a quien lo tenía: ya no lo cubre nadie.
+		b.CoveredFrom = ""
 	}
 	b.ProfessionalID = p
 	return b, nil

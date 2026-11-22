@@ -14,7 +14,7 @@ func scanBooking(scan func(...interface{}) error) (domain.Booking, error) {
 	var b domain.Booking
 	var status string
 	err := scan(&b.ID, &b.SalonID, &b.ProfessionalID, &b.ClientName, &b.ClientPhone,
-		&b.StartsAt, &b.EndsAt, &status, &b.ClientOpID, &b.CreatedAt, &b.ServiceID)
+		&b.StartsAt, &b.EndsAt, &status, &b.ClientOpID, &b.CreatedAt, &b.ServiceID, &b.CoveredFrom)
 	if err != nil {
 		return domain.Booking{}, err
 	}
@@ -30,18 +30,19 @@ func scanBooking(scan func(...interface{}) error) (domain.Booking, error) {
 type Bookings struct{ Pool *pgxpool.Pool }
 
 // bookingColumns es la lista única de columnas del turno. service_id va con
-// COALESCE porque es NULL para los turnos del calendario: así el escaneo no
-// necesita tipos anulables en Go.
-const bookingColumns = `id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at,COALESCE(service_id,'')`
+// COALESCE porque es NULL para los turnos del calendario, y covered_from porque
+// es NULL en todo turno que nadie cubrió: así el escaneo no necesita tipos
+// anulables en Go (S-F2d3-6).
+const bookingColumns = `id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at,COALESCE(service_id,''),COALESCE(covered_from,'')`
 
 func (r Bookings) Save(b domain.Booking) error { return saveBooking(r.Pool, b) }
 
 func saveBooking(q querier, b domain.Booking) error {
 	_, err := q.Exec(context.Background(),
-		`INSERT INTO bookings(id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at,service_id)
-		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''))`,
+		`INSERT INTO bookings(id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at,service_id,covered_from)
+		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''),NULLIF($12,''))`,
 		b.ID, b.SalonID, b.ProfessionalID, b.ClientName, b.ClientPhone,
-		b.StartsAt, b.EndsAt, string(b.Status), b.ClientOpID, b.CreatedAt, b.ServiceID)
+		b.StartsAt, b.EndsAt, string(b.Status), b.ClientOpID, b.CreatedAt, b.ServiceID, b.CoveredFrom)
 	return pgError(err)
 }
 
@@ -81,18 +82,19 @@ func findBooking(q querier, salonID, id string) (domain.Booking, error) {
 	return b, nil
 }
 
-// Update persiste estado/horario de un turno existente. El WHERE lleva el
-// salon_id (un id de otro tenant no se toca) y la EXCLUDE sigue siendo el
-// árbitro del solape: 23P01 -> ErrAlreadyExists -> 409.
+// Update persiste estado/horario/profesional y quién tenía el turno de un turno
+// existente (S-F2d3-6: covered_from se escribe en TODA escritura del turno). El
+// WHERE lleva el salon_id (un id de otro tenant no se toca) y la EXCLUDE sigue
+// siendo el árbitro del solape: 23P01 -> ErrAlreadyExists -> 409.
 func (r Bookings) Update(b domain.Booking) error { return updateBooking(r.Pool, b) }
 
 func updateBooking(q querier, b domain.Booking) error {
 	tag, err := q.Exec(context.Background(),
 		`UPDATE bookings
-		 SET professional_id=$3, client_name=$4, client_phone=$5, starts_at=$6, ends_at=$7, status=$8, service_id=NULLIF($9,'')
+		 SET professional_id=$3, client_name=$4, client_phone=$5, starts_at=$6, ends_at=$7, status=$8, service_id=NULLIF($9,''), covered_from=NULLIF($10,'')
 		 WHERE salon_id=$1 AND id=$2`,
 		b.SalonID, b.ID, b.ProfessionalID, b.ClientName, b.ClientPhone,
-		b.StartsAt, b.EndsAt, string(b.Status), b.ServiceID)
+		b.StartsAt, b.EndsAt, string(b.Status), b.ServiceID, b.CoveredFrom)
 	if err != nil {
 		return pgError(err)
 	}
