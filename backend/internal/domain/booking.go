@@ -32,6 +32,11 @@ type Booking struct {
 	// siempre (para saber qué se hace) y la reserva de staff puede no llevarlo
 	// (el calendario agenda a mano un turno sin servicio) (S-F2c-2).
 	ServiceID string
+	// ResourceUnitID es la unidad de equipo que este turno ocupa durante toda su
+	// duración (F2e, S-F2e-1). Vacío = el turno no ocupa equipo: la reserva de
+	// staff desde el calendario no lo hace (S-F2e-4) y los servicios sin tipo
+	// tampoco.
+	ResourceUnitID string
 	// CoveredFrom es la profesional que TENÍA el turno antes de que lo cubriera
 	// otra persona (S-F2d3-6). Vacío = nadie lo cubre. Solo lo escribe la
 	// reasignación; reprogramar, cambiar estado y las reservas lo dejan igual.

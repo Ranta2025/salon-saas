@@ -138,6 +138,51 @@ type TimeOffRepository interface {
 	Delete(salonID, id string) error
 }
 
+// ResourceRepository: puestos y equipamiento con capacidad (F2e).
+//
+// Un TIPO agrupa unidades ("Puesto de peluquería" x 3) y un SERVICIO puede
+// exigir un tipo; cada TURNO ocupa una UNIDAD concreta. La capacidad no es un
+// contador: es una fila por unidad con su propia EXCLUDE en la DB (migración
+// 020), así dos reservas simultáneas nunca se llevan la última.
+//
+// Todas las queries van scopeadas por salon_id: el equipo de otro tenant no se
+// lista, no se encuentra y no se borra (ErrNotFound -> 404).
+//
+// Sin backfill: un servicio sin tipo de equipo (y un turno sin unidad) se
+// comporta exactamente como antes.
+type ResourceRepository interface {
+	// CreateType crea el tipo y sus unidades en UNA transacción (el alta con
+	// `count` no puede quedar a medias).
+	CreateType(t domain.ResourceType, units []domain.ResourceUnit) error
+	// SaveType actualiza el nombre (sin tocar identidad ni salón).
+	SaveType(t domain.ResourceType) error
+	// DeleteType borra el tipo y sus unidades en UNA transacción, scopeado por
+	// salón; ErrNotFound si es de otro tenant. La FK de servicios (RESTRICT) y
+	// una unidad con turnos lo frenan con ErrAlreadyExists: el caso de uso ya lo
+	// verificó, el adaptador es la garantía dura.
+	DeleteType(salonID, id string) error
+	FindType(salonID, id string) (domain.ResourceType, error)
+	ListTypes(salonID string) ([]domain.ResourceType, error)
+
+	// SaveUnit inserta o actualiza una unidad (nombre y active).
+	SaveUnit(u domain.ResourceUnit) error
+	FindUnit(salonID, id string) (domain.ResourceUnit, error)
+	// ListUnits trae las unidades de un tipo, incluidas las desactivadas.
+	ListUnits(salonID, typeID string) ([]domain.ResourceUnit, error)
+	// ActiveUnits son las que la disponibilidad puede ofrecer.
+	ActiveUnits(salonID, typeID string) ([]domain.ResourceUnit, error)
+	// UnitsWithBookings cuenta unidades del tipo con algún turno `booked`: es lo
+	// que impide borrar el tipo.
+	UnitsWithBookings(salonID, typeID string) (int, error)
+	// UnitFutureBookings cuenta los turnos `booked` que empiezan después de now
+	// y usan la unidad (informativo al desactivarla).
+	UnitFutureBookings(salonID, unitID string, now time.Time) (int, error)
+	// OccupiedUnits trae los intervalos tomados por turnos `booked` con unidad
+	// en [from,to). excludeBookingID permite reprogramar un turno sin que su
+	// propio intervalo cuente como ocupado.
+	OccupiedUnits(salonID string, from, to time.Time, excludeBookingID string) ([]domain.UnitOccupancy, error)
+}
+
 // BookingTx es la vista transaccional de la agenda: cubrir una ausencia mueve
 // TODOS sus turnos o ninguno (S-F2d3-3). Es el mismo repositorio de reservas que
 // fuera de la transacción, para que el caso de uso no tenga dos formas de leer

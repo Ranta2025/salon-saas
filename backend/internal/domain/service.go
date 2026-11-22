@@ -16,6 +16,10 @@ type Service struct {
 	PriceCents    int
 	CommissionPct int // 0..100: % que se lleva quien lo atiende
 	Active        bool
+	// ResourceTypeID es el tipo de equipo que el servicio ocupa durante toda su
+	// duración (F2e, S-F2e-1). Vacío = el servicio no necesita equipo y se
+	// comporta como antes de F2e.
+	ResourceTypeID string
 }
 
 // NewService valida y crea un servicio activo.

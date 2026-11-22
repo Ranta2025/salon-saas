@@ -2,6 +2,8 @@ package pgstore
 
 import (
 	"context"
+	"errors"
+	"github.com/jackc/pgx/v5/pgconn"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -14,7 +16,7 @@ func scanBooking(scan func(...interface{}) error) (domain.Booking, error) {
 	var b domain.Booking
 	var status string
 	err := scan(&b.ID, &b.SalonID, &b.ProfessionalID, &b.ClientName, &b.ClientPhone,
-		&b.StartsAt, &b.EndsAt, &status, &b.ClientOpID, &b.CreatedAt, &b.ServiceID, &b.CoveredFrom)
+		&b.StartsAt, &b.EndsAt, &status, &b.ClientOpID, &b.CreatedAt, &b.ServiceID, &b.CoveredFrom, &b.ResourceUnitID)
 	if err != nil {
 		return domain.Booking{}, err
 	}
@@ -38,16 +40,60 @@ type Bookings struct {
 // COALESCE porque es NULL para los turnos del calendario, y covered_from porque
 // es NULL en todo turno que nadie cubrió: así el escaneo no necesita tipos
 // anulables en Go (S-F2d3-6).
-const bookingColumns = `id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at,COALESCE(service_id,''),COALESCE(covered_from,'')`
+const bookingColumns = `id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at,COALESCE(service_id,''),COALESCE(covered_from,''),COALESCE(resource_unit_id,'')`
 
-func (r Bookings) Save(b domain.Booking) error { return saveBooking(r.Pool, b) }
+func (r Bookings) Save(b domain.Booking) error {
+	return r.inWriteLock(b.SalonID, func(q querier) error { return saveBooking(q, b) })
+}
+
+// inWriteLock serializa las ESCRITURAS de turnos de un mismo salón con un lock
+// corto (xact lock: se libera solo al commit o rollback). Un turno tiene dos
+// restricciones de solape (profesional y unidad de equipo); dos INSERT
+// simultáneos del mismo salón se esperaban entre sí y Postgres abortaba a uno
+// con un interbloqueo (40P01) tras un segundo de espera, de modo que una clienta
+// recibía "sin lugar" aunque quedaran puestos libres. Con el lock, solo un
+// INSERT está en vuelo por salón: no hay espera cruzada y las EXCLUDE quedan
+// como la red de seguridad que rechaza el doble turno. La sección crítica es un
+// solo INSERT/UPDATE; salones distintos no se esperan entre sí.
+func (r Bookings) inWriteLock(salonID string, fn func(q querier) error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	defer cancel()
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer rollbackTx(tx)
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, "booking-write:"+salonID); err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
 
 func saveBooking(q querier, b domain.Booking) error {
 	_, err := q.Exec(context.Background(),
-		`INSERT INTO bookings(id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at,service_id,covered_from)
-		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''),NULLIF($12,''))`,
+		`INSERT INTO bookings(id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at,service_id,covered_from,resource_unit_id)
+		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''),NULLIF($12,''),NULLIF($13,''))`,
 		b.ID, b.SalonID, b.ProfessionalID, b.ClientName, b.ClientPhone,
-		b.StartsAt, b.EndsAt, string(b.Status), b.ClientOpID, b.CreatedAt, b.ServiceID, b.CoveredFrom)
+		b.StartsAt, b.EndsAt, string(b.Status), b.ClientOpID, b.CreatedAt, b.ServiceID, b.CoveredFrom, b.ResourceUnitID)
+	return bookingWriteError(err)
+}
+
+// bookingWriteError traduce el error de escribir un turno. Además de lo que ya
+// traduce pgError (la EXCLUDE rechaza el doble turno: 23P01), un turno tiene
+// DOS restricciones de solape (la de la profesional y la de la unidad de
+// equipo): dos altas simultáneas que se pisan pueden esperarse la una a la otra
+// y Postgres aborta a una con 40P01 (deadlock) o 40001. Eso NO es un error
+// interno: es una carrera perdida por el mismo hueco, igual que un 23P01, y la
+// transacción ya se deshizo, así que es seguro reintentar con otro par.
+// Va acá y no en pgError porque en ventas o caja "ya existe" sería engañoso.
+func bookingWriteError(err error) error {
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) && (pg.Code == "40P01" || pg.Code == "40001") {
+		return domain.ErrAlreadyExists
+	}
 	return pgError(err)
 }
 
@@ -91,17 +137,20 @@ func findBooking(q querier, salonID, id string) (domain.Booking, error) {
 // existente (S-F2d3-6: covered_from se escribe en TODA escritura del turno). El
 // WHERE lleva el salon_id (un id de otro tenant no se toca) y la EXCLUDE sigue
 // siendo el árbitro del solape: 23P01 -> ErrAlreadyExists -> 409.
-func (r Bookings) Update(b domain.Booking) error { return updateBooking(r.Pool, b) }
+func (r Bookings) Update(b domain.Booking) error {
+	return r.inWriteLock(b.SalonID, func(q querier) error { return updateBooking(q, b) })
+}
 
 func updateBooking(q querier, b domain.Booking) error {
 	tag, err := q.Exec(context.Background(),
 		`UPDATE bookings
-		 SET professional_id=$3, client_name=$4, client_phone=$5, starts_at=$6, ends_at=$7, status=$8, service_id=NULLIF($9,''), covered_from=NULLIF($10,'')
+		 SET professional_id=$3, client_name=$4, client_phone=$5, starts_at=$6, ends_at=$7, status=$8,
+		     service_id=NULLIF($9,''), covered_from=NULLIF($10,''), resource_unit_id=NULLIF($11,'')
 		 WHERE salon_id=$1 AND id=$2`,
 		b.SalonID, b.ID, b.ProfessionalID, b.ClientName, b.ClientPhone,
-		b.StartsAt, b.EndsAt, string(b.Status), b.ServiceID, b.CoveredFrom)
+		b.StartsAt, b.EndsAt, string(b.Status), b.ServiceID, b.CoveredFrom, b.ResourceUnitID)
 	if err != nil {
-		return pgError(err)
+		return bookingWriteError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound

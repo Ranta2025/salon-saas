@@ -12,25 +12,28 @@ type Services struct{ Pool *pgxpool.Pool }
 
 func scanService(scan func(...interface{}) error) (domain.Service, error) {
 	var s domain.Service
-	if err := scan(&s.ID, &s.SalonID, &s.Name, &s.DurationMin, &s.PriceCents, &s.CommissionPct, &s.Active); err != nil {
+	if err := scan(&s.ID, &s.SalonID, &s.Name, &s.DurationMin, &s.PriceCents, &s.CommissionPct, &s.Active, &s.ResourceTypeID); err != nil {
 		return domain.Service{}, err
 	}
 	return s, nil
 }
 
-const serviceColumns = `id,salon_id,name,duration_min,price_cents,commission_pct,active`
+// serviceColumns: resource_type_id va con COALESCE porque NULL significa "el
+// servicio no usa equipo" (F2e) y el escaneo no necesita tipos anulables.
+const serviceColumns = `id,salon_id,name,duration_min,price_cents,commission_pct,active,COALESCE(resource_type_id,'')`
 
 func (r Services) Save(s domain.Service) error {
 	_, err := r.Pool.Exec(context.Background(),
-		`INSERT INTO services(id,salon_id,name,duration_min,price_cents,commission_pct,active)
-		 VALUES($1,$2,$3,$4,$5,$6,$7)
+		`INSERT INTO services(id,salon_id,name,duration_min,price_cents,commission_pct,active,resource_type_id)
+		 VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''))
 		 ON CONFLICT (id) DO UPDATE SET
 		   name=EXCLUDED.name,
 		   duration_min=EXCLUDED.duration_min,
 		   price_cents=EXCLUDED.price_cents,
 		   commission_pct=EXCLUDED.commission_pct,
-		   active=EXCLUDED.active`,
-		s.ID, s.SalonID, s.Name, s.DurationMin, s.PriceCents, s.CommissionPct, s.Active)
+		   active=EXCLUDED.active,
+		   resource_type_id=EXCLUDED.resource_type_id`,
+		s.ID, s.SalonID, s.Name, s.DurationMin, s.PriceCents, s.CommissionPct, s.Active, s.ResourceTypeID)
 	// Nombre activo duplicado -> índice único -> ErrAlreadyExists (409).
 	return pgError(err)
 }
