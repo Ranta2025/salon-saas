@@ -112,6 +112,32 @@ type WeeklyHoursRepository interface {
 	AllMemberHours(salonID string) (map[string][]domain.HoursSegment, error)
 }
 
+// TimeOffRepository: ausencias (vacaciones y días libres puntuales) de las
+// profesionales de un salón (F2d2).
+//
+// Una ausencia es un período [starts_at, ends_at) en UTC de UNA persona
+// reservable. Todas las queries van scopeadas por salon_id: la ausencia de otro
+// tenant no se lista, no se encuentra y no se borra (ErrNotFound -> 404).
+//
+// No hay unicidad de período en la DB a propósito: "dos ausencias de la misma
+// persona no se pisan" es una regla de negocio que el caso de uso verifica
+// contra las filas existentes (el CHECKing de rangos en SQL necesitaría una
+// EXCLUDE y una migración de extensión; el mensaje tiene que ser en español).
+type TimeOffRepository interface {
+	// Save inserta la ausencia. La FK (user_id, salon_id) impide dejar una
+	// ausencia colgada de alguien que no es del salón.
+	Save(t domain.TimeOff) error
+	// ListRange trae las ausencias del salón que PISAN [from, to) ordenadas por
+	// inicio: es la query de la pantalla de equipo y de la disponibilidad.
+	ListRange(salonID string, from, to time.Time) ([]domain.TimeOff, error)
+	// FindByID resuelve una ausencia scopeada por salón (ErrNotFound si es de
+	// otro tenant).
+	FindByID(salonID, id string) (domain.TimeOff, error)
+	// Delete borra la ausencia del salón; otra id o de otro salón es ErrNotFound
+	// (nunca un borrado silencioso).
+	Delete(salonID, id string) error
+}
+
 // --- Seguridad (puertos de salida hacia crypto/tokens) ---
 
 type PasswordHasher interface {
