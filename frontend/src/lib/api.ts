@@ -262,6 +262,21 @@ function salonPath(salonId: string, suffix = ''): string {
   return `/api/v1/salons/${encodeURIComponent(salonId)}${suffix}`
 }
 
+/**
+ * `resource_type_id` of a service body (S-F2e-3): a trimmed type id, `null` for
+ * "no equipment" and `undefined` when the client did not send the key at all.
+ */
+function normalizeResourceTypeId(value: unknown): string | null | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  if (typeof value !== 'string') {
+    return null
+  }
+  const id = value.trim()
+  return id === '' ? null : id
+}
+
 // --- auth ---
 
 export async function login(email: string, password: string): Promise<string> {
@@ -331,6 +346,14 @@ export async function createService(salonId: string, input: ServiceInput): Promi
   } else {
     delete body['professional_ids']
   }
+  // S-F2e-3: the equipment type travels as a type id or `null` for none; an
+  // absent key keeps the request of an older client untouched.
+  const resourceTypeId = normalizeResourceTypeId(input.resource_type_id)
+  if (resourceTypeId === undefined) {
+    delete body['resource_type_id']
+  } else {
+    body['resource_type_id'] = resourceTypeId
+  }
   await request<unknown>(salonPath(salonId, '/services'), { method: 'POST', body })
 }
 
@@ -339,9 +362,16 @@ export async function updateService(
   serviceId: string,
   input: ServiceUpdateInput,
 ): Promise<void> {
+  const body: Record<string, unknown> = { ...input }
+  const resourceTypeId = normalizeResourceTypeId(input.resource_type_id)
+  if (resourceTypeId === undefined) {
+    delete body['resource_type_id']
+  } else {
+    body['resource_type_id'] = resourceTypeId
+  }
   await request<unknown>(salonPath(salonId, `/services/${encodeURIComponent(serviceId)}`), {
     method: 'PUT',
-    body: input,
+    body,
   })
 }
 

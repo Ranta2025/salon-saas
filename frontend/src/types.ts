@@ -8,6 +8,12 @@ export type Service = {
   price_cents: number
   commission_pct: number
   active: boolean
+  /**
+   * F2e: type of equipment the service uses (S-F2e-3). Optional because an API
+   * without the field leaves it undefined; read it through
+   * `serviceResourceTypeId` of `lib/equipment.ts`.
+   */
+  resource_type_id?: string | null
 }
 
 /** Body accepted by POST services. The server assigns id, salon_id and active=true. */
@@ -18,6 +24,11 @@ export type ServiceInput = {
   commission_pct: number
   /** Optional (S-F2c-5): bookable members that do the new service, max 50. */
   professional_ids?: string[]
+  /**
+   * Equipment type the service uses (S-F2e-3): a type id, or `null` for none.
+   * Omitted when absent so an older server sees the body of always.
+   */
+  resource_type_id?: string | null
 }
 
 /** Body accepted by PUT services; `active` absent means "keep active". */
@@ -111,6 +122,8 @@ export type Booking = {
    * the field undefined and "Mi agenda" simply has no notice to show.
    */
   covered_from?: string | null
+  /** F2e: unit of equipment the turn occupies (`null` when it uses none). */
+  resource_unit_id?: string | null
 }
 
 export type AuthUser = {
