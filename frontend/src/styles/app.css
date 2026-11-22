@@ -1888,19 +1888,13 @@
 
 .booking-detail__fields {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.7rem;
 }
 
 .booking-detail__hint {
   font-size: 0.75rem;
   color: var(--ink-muted);
-}
-
-@media (min-width: 640px) {
-  .booking-detail__fields {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-items: start;
-  }
 }
 
 /* ---------- team and settings ---------- */
@@ -1940,17 +1934,194 @@
   }
 }
 
-/* ---------- mobile navigation: every entry visible, never clipped ---------- */
+/* ---------- mobile navigation: compact, scrollable, 44px targets ---------- */
 
 @media (max-width: 899px) {
+  /* Brand + actions share one row and the nav scrolls horizontally, so the
+     content starts near the top instead of after a three-row grid of links. */
+  .shell__sidebar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'brand foot'
+      'nav nav';
+    align-items: center;
+    gap: 0.45rem 0.75rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .shell__brand {
+    grid-area: brand;
+    min-width: 0;
+  }
+
+  .shell__brand-name {
+    font-size: 1.2rem;
+  }
+
+  .shell__brand-kicker {
+    display: none;
+  }
+
+  .shell__sidebar-foot {
+    grid-area: foot;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.4rem;
+  }
+
+  .shell__public-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 0.1rem;
+    font-size: 0.7rem;
+  }
+
+  .shell__sidebar-foot .btn--quiet {
+    min-height: 44px;
+    padding: 0.35rem 0.7rem;
+  }
+
+  .shell__nav {
+    grid-area: nav;
+  }
+
+  /* Every entry keeps its whole label: the row wraps into two lines instead of
+     scrolling, so no entry is ever cut off at the edge of the screen. */
   .shell__nav ul {
-    grid-template-columns: repeat(auto-fit, minmax(5.4rem, 1fr));
-    gap: 0.3rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    padding: 0;
+  }
+
+  .shell__nav li {
+    flex: 0 1 auto;
+    min-width: 0;
   }
 
   .shell__nav a {
-    padding: 0.5rem 0.3rem;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 0.7rem;
     font-size: 0.8125rem;
     letter-spacing: 0;
+    white-space: nowrap;
+    border-radius: var(--radius-sm);
+  }
+
+  /* The top bar keeps one compact row: the currency note is repeated on the
+     pages that show amounts, and dropping it here gives the wrapped menu room. */
+  .shell__topbar {
+    flex-wrap: nowrap;
+    padding: 0.4rem 0.75rem;
+  }
+
+  .shell__topbar-main {
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+
+  /* A long salon name truncates instead of pushing the bell off screen. */
+  .shell__topbar .shell__salon {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .shell__salon-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .shell__hint {
+    display: none;
+  }
+}
+
+/* ---------- clients: manual file creation ---------- */
+
+.clients-form__form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.clients-form__fields {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.clients-form__notes {
+  grid-column: 1 / -1;
+}
+
+.clients-form__form .input,
+.clients-form__form textarea {
+  width: 100%;
+}
+
+.clients-form__form .btn[type='submit'] {
+  justify-self: start;
+}
+
+@media (min-width: 640px) {
+  .clients-form__fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+/* ---------- calendar + booking drawer ---------- */
+
+.calendar-layout {
+  display: grid;
+  gap: var(--space-4);
+  align-items: start;
+  min-width: 0;
+}
+
+.calendar-layout__grid {
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .calendar-layout--detail {
+    grid-template-columns: minmax(0, 1fr) 22rem;
+  }
+
+  /* The actions panel stays next to the grid instead of falling below the fold. */
+  .calendar-layout--detail .booking-detail {
+    position: sticky;
+    top: var(--space-4);
+    max-height: calc(100vh - 2 * var(--space-4));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* The day grid shares the row with the panel: narrower columns fit three
+     specialists without clipping; a bigger team keeps the horizontal scroll. */
+  .calendar-layout--detail .timeline__column {
+    flex: 1 0 10rem;
+    min-width: 10rem;
+  }
+}
+
+@media (max-width: 899px) {
+  /* Full-width sheet above the content: the grid is not pushed off screen. */
+  .calendar-layout--detail .booking-detail {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    max-height: 82vh;
+    overflow-y: auto;
+    padding: var(--space-4);
+    border-radius: 1rem 1rem 0 0;
+    box-shadow: 0 -14px 40px rgba(59, 30, 51, 0.28);
+    background: var(--surface);
   }
 }

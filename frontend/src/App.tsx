@@ -4,9 +4,9 @@ import { AppShell } from './app/AppShell'
 import { CalendarPage } from './app/CalendarPage'
 import { ClientDetailPage } from './app/ClientDetailPage'
 import { ClientsPage } from './app/ClientsPage'
-import { DashboardPage } from './app/DashboardPage'
 import { LoginPage } from './app/LoginPage'
 import { NotificationsPage } from './app/NotificationsPage'
+import { PanelHome } from './app/PanelHome'
 import { PosPage } from './app/PosPage'
 import { RequireAuth } from './app/RequireAuth'
 import { ServicesPage } from './app/ServicesPage'
@@ -66,7 +66,7 @@ export function App() {
             </RequireAuth>
           }
         >
-          <Route index element={<DashboardPage />} />
+          <Route index element={<PanelHome />} />
           <Route path="calendario" element={<CalendarPage />} />
           <Route path="pos" element={<PosPage />} />
           <Route path="servicios" element={<ServicesPage />} />

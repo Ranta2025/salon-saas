@@ -232,3 +232,144 @@ dependencias nuevas y con la misma paleta de `src/styles/theme.css`.
   la reserva (formulario, horarios, confirmación, 409), del calendario con
   acciones (owner y professional), de equipo, de ajustes y de la navegación
   móvil con las ocho entradas.
+
+## 11. Ronda 3 — hardening de la auditoría end-to-end (E-02…E-13)
+
+Cierre de los hallazgos de la auditoría en navegador sobre la fase 5. Sin
+dependencias nuevas ni cambios de API: todo lo que sigue usa los endpoints ya
+documentados.
+
+### 11.1 Roles y `/panel` (E-02)
+
+- `SalonRole` reconoce `reception` (antes se degradaba a `professional`), con
+  etiqueta «Recepción». `reception` no es manager: no ve Equipo ni Ajustes, pero
+  sí administra turnos y crea fichas, como el backend.
+- `panelHomePath(role)` devuelve `/panel/calendario` para `professional` y
+  `null` para el resto. El índice de `/panel` (`PanelHome`) redirige antes de
+  montar `DashboardPage`, así que un professional **nunca** pide `/dashboard` y
+  nunca ve el 403. Mientras `/me` carga se muestra un estado de carga, no el
+  panel.
+- `describeApiError` reemplaza a `friendlyApiMessage` para las páginas: un 403
+  devuelve el texto amable con `retryable: false`, y `ErrorNotice` no dibuja
+  «Reintentar» cuando reintentar no puede ayudar. El resto de errores conserva
+  el mensaje del servidor y su botón.
+
+### 11.2 Fichas de clientes a mano (E-03, mitad UI)
+
+- `/panel/clientes` tiene el formulario «Nueva clienta» (nombre, teléfono,
+  correo, notas) que llama a `POST /salons/:id/clients`. Solo aparece para
+  `owner`, `admin` y `reception` (`canCreateClient`): un professional no ve un
+  formulario que respondería 403.
+- La lista se mantiene alfabética al insertar la ficha nueva y cada tarjeta
+  muestra teléfono y **correo** (o «Sin correo»).
+- La copia dejó de mentir: las fichas se crean solas cuando alguien reserva en
+  el sitio público **o** a mano con el formulario.
+
+### 11.3 Cola offline: motivo real del descarte (E-05)
+
+Cada operación descartada guarda `cause`:
+
+| `cause` | cuándo | copia en el banner |
+| --- | --- | --- |
+| `server_rejected` | 4xx definitivo (400/403/404/409/422) | «El servidor rechazó esta operación: &lt;mensaje del servidor&gt;» |
+| `attempts_exhausted` | red o 5xx hasta agotar los 8 intentos | «Se agotaron los intentos: &lt;último error&gt;» |
+
+Se acabó el «error desconocido»: el motivo del servidor (por ejemplo que la
+profesional ya no pertenece al salón) llega tal cual a la persona. El estado
+antiguo sin `cause` se lee como `attempts_exhausted`. En ese momento la cola ya
+no tiene nada pendiente, así que el banner titula «Operaciones descartadas» y no
+imprime «0 operaciones esperan al servidor».
+
+### 11.4 POS y service worker sin conexión (E-06)
+
+- `POSPanel` muestra el error de `/staff` **solo** cuando no hay equipo en
+  memoria (`staff.length === 0`). Con datos guardados el select sigue usable y
+  no aparece el mensaje alarmante.
+- El service worker (`salon-v3`) ya no responde a un GET de API sin red con un
+  fetch rechazado: devuelve JSON `{"error": "...", "offline": true}` con estado
+  `503`, y el cliente lo convierte en `NetworkError` (no en `ApiError`), de modo
+  que la UI lo trata como conectividad y no imprime errores de consola por una
+  situación esperada.
+- Un GET de API servido desde la caché sale con la cabecera
+  `X-Salon-Offline-Cache: 1`; `request()` avisa por `salon:offline-data` y la
+  pantalla sabe que está mostrando datos guardados (ver 11.6).
+
+### 11.5 Calendario: panel de acciones, horas y plural (E-08)
+
+- `Timeline` recibe la ventana del salón: `GET /salons/:id/settings`
+  (`open_time`/`close_time`) se convierte con `timelineWindowFromHours` (la
+  apertura redondea hacia abajo y el cierre hacia arriba para no recortar citas;
+  un valor inusable conserva 09:00–20:00). Las líneas, la regla de horas y la
+  posición de cada cita usan esa ventana.
+- El panel de la cita ya no cae debajo de la grilla: en ≥900 px es una columna
+  fija (`position: sticky`, 22 rem) al lado del calendario, con scroll propio y
+  altura máxima de la ventana; por debajo de 900 px es una hoja de ancho
+  completo anclada abajo (82 vh como máximo, con scroll propio). El foco se mueve
+  al título del panel al abrirlo.
+- Con el panel abierto la grilla cede ancho, así que las columnas bajan a 10 rem
+  y tres especialistas siguen viéndose enteras; con más equipo la fila mantiene
+  su scroll horizontal. Los campos de reprogramación van en una sola columna: en
+  22 rem, tres campos en línea recortaban la fecha y el nombre de la profesional.
+- `canReschedule` sólo acepta turnos abiertos (`booked` o estado vacío): un turno
+  atendido, cancelado o `no_show` no ofrece «Reprogramar» y explica por qué.
+- El encabezado de cada columna usa `bookingCountLabel`: «1 cita», «2 citas».
+
+### 11.6 Calendario sin API: datos guardados, nunca vacío (E-10)
+
+`CalendarPage` escucha `salon:offline-data` y marca la lista como guardada
+cuando el service worker la sirvió de su caché; además `online === false` marca
+lo mismo. En ese estado muestra «Sin conexión: mostrando datos guardados…» y, si
+la copia del día no tiene citas, lo dice explícitamente en lugar del «No hay
+citas agendadas para este día» (que se lee como dato real). Si la request falla
+sin copia, se muestra el error con su botón; el estado vacío sólo aparece con
+una respuesta viva y vacía.
+
+### 11.7 Landing: horario (E-09) y precarga del hero (E-11)
+
+- **Limitación conocida**: la API pública no expone el horario del salón.
+  `GET /public/salons/:slug` devuelve salón y servicios, y
+  `/public/salons/:slug/availability` devuelve **huecos libres** dentro del
+  horario, no la ventana: derivar «abre a las 9» del primer hueco sería falso en
+  cuanto la mañana esté ocupada (y el endpoint exige `service_id` y fecha). Por
+  eso la landing sigue mostrando horas estáticas, pero salen de **una sola
+  constante** (`PUBLIC_OPENING_HOURS` en `src/landing/content.ts`), cada bloque
+  las etiqueta como «horario indicativo» y la copia invita a confirmar al
+  reservar. Cuando el backend publique el horario público, basta cambiar
+  `content.ts` y quitar la etiqueta.
+- `index.html` ya no precarga `hero-atwork.webp` en todas las rutas. La precarga
+  la inyecta `main.tsx` sólo si la URL actual es la landing (`isLandingPath`) y
+  `LandingPage` la repite (idempotente) al navegar dentro del SPA; así el panel
+  no dispara el warning «preload not used» de Chrome.
+
+### 11.8 Navegación móvil compacta (E-13)
+
+Por debajo de 900 px la barra lateral es una cabecera de tres filas: marca y
+acciones (sitio público, cerrar sesión) en la primera, las entradas del panel en
+la segunda y la barra del salón en una sola línea. Las entradas van en una fila
+que **envuelve** (`flex-wrap: wrap`): con ocho secciones en 390 px quedan dos
+líneas de cuatro, todas completas. Cada entrada mide 44 px de alto, conserva el
+`outline` de foco visible y ninguna queda recortada ni exige scroll horizontal
+(probado a 375 y 390 px: `scrollWidth === clientWidth` en la lista). La nota de
+moneda de la barra superior se oculta en móvil para que esa barra ocupe una sola
+línea, con lo que el contenido empieza a ~213 px del borde superior en vez de a
+~270 px, sin perder ninguna entrada como en la versión con scroll horizontal.
+
+### 11.9 Verificación de la ronda 3
+
+- `npx tsc --noEmit`, `npm test` (156 tests, node --test) y `npm run build` en
+  verde.
+- TDD en `src/lib`: `describeApiError` y respuesta offline del worker
+  (`api.test.ts`), causa y motivo del descarte (`offlineQueue.test.ts`),
+  `timelineWindowFromHours` (`datetime.test.ts`), `canReschedule` cerrado y
+  `bookingCountLabel` (`bookingActions.test.ts`), `panelHomePath`,
+  `canCreateClient` y `reception` (`permissions.test.ts`, `me.test.ts`),
+  `offlineData.test.ts` y `landingPreload.test.ts`.
+- Revisión visual con `vite preview` contra una API simulada en `/tmp` y
+  capturas Chromium headless a 390 y 1280 px de `/panel`, `/panel/calendario`
+  (panel de acciones abierto, también con un turno cerrado), `/panel/clientes`
+  (formulario y creación de una ficha), `/panel/pos` (sin conexión, venta en
+  cola y operación descartada con el motivo del servidor), `/panel` como
+  professional, y la landing con la nota de horario. Estados sin conexión
+  revisados con el emulador de red de Chromium: el calendario muestra la copia
+  guardada y, sin copia del día, dice que es una copia guardada; no aparece
+  «No hay citas» como dato real y la consola queda sin errores.
