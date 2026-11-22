@@ -180,6 +180,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F2e: puestos y equipamiento con capacidad (tipos, unidades y la unidad que
 	// ocupa cada turno). Sin backfill: sin tipos el comportamiento es el de antes.
 	resourceRepo := pgstore.Resources{Pool: pool}
+	// F2g1: invitaciones de equipo. El adaptador es lectura + transacción (el
+	// canje es atómico); el token se guarda solo como SHA-256.
+	invitationRepo := pgstore.Invitations{Pool: pool}
 
 	// Realtime: el hub es el EventPublisher de los casos de uso (no saben que
 	// hay websockets). Autentica el JWT del query param, valida el Origin con la
@@ -267,6 +270,18 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	}
 	// La cola de recordatorios vive en su propia tabla (014).
 	bookingEmails := pgstore.BookingEmails{Pool: pool}
+	// F2g1: invitaciones de equipo (el alta manda el correo y devuelve el enlace
+	// una sola vez) y el canje público (cuenta nueva + membresía + invitación
+	// aceptada en una transacción). Con el mailer nil la invitación existe igual
+	// y la respuesta dice email_sent=false.
+	invitationSvc := app.InvitationService{
+		Invitations: invitationRepo, Tx: invitationRepo, Memberships: mems, Users: users,
+		Salons: salons, Settings: salons, Mailer: mailer, AppURL: cfg.AppURL,
+	}
+	invitationPublicSvc := app.InvitationPublicService{
+		Invitations: invitationRepo, Tx: invitationRepo, Users: users, Salons: salons,
+		Hasher: hasher, Tokens: tokens,
+	}
 	// F2d3 avisa a la clienta del cambio de turno por el mismo email.
 	coverageSvc.Mailer = mailer
 	coverageSvc.Emails = bookingEmails
@@ -322,11 +337,17 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		TimeOff:   httpapi.TimeOffHandler{TimeOff: timeOffSvc, Memberships: mems},
 		Absences:  httpapi.AbsenceHandler{Coverage: coverageSvc, Memberships: mems},
 		Resources: httpapi.ResourceHandler{Resources: resourceSvc, Memberships: mems},
+		Invitations: httpapi.InvitationHandler{
+			Invitations: invitationSvc, Public: invitationPublicSvc, Memberships: mems,
+		},
 		// La reserva pública es la única escritura sin auth: rate limit por IP
 		// como en /auth (el GET de disponibilidad no pasa por acá).
 		PublicBookingLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/salons/"),
-		WS:                 hub.ServeWS,
-		TokenIssuer:        tokens,
+		// F2g1: el lookup y el canje de una invitación son las otras escrituras
+		// sin sesión; van bajo el mismo límite por IP que /auth.
+		PublicInvitationLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/invitations/"),
+		WS:                    hub.ServeWS,
+		TokenIssuer:           tokens,
 	}
 	httpapi.RegisterRoutes(router, deps)
 	return router, deps, reminders

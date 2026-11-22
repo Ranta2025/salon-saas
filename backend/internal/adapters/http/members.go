@@ -18,8 +18,16 @@ type MemberHandler struct {
 }
 
 func (h MemberHandler) loadActor(c *gin.Context, salonID string) (domain.Membership, bool) {
+	return loadActor(h.Memberships, c, salonID)
+}
+
+// loadActor resuelve la membresía del usuario del token en el salón de la ruta.
+// Vive una sola vez porque lo usan la pantalla de equipo y las invitaciones
+// (F2g1): sin membresía no hay acceso, y el 403 no distingue por qué.
+func loadActor(memberships ports.MembershipRepository, c *gin.Context, salonID string) (domain.Membership, bool) {
 	uid, _ := c.Get("userID")
-	m, err := h.Memberships.Find(uid.(string), salonID)
+	userID, _ := uid.(string)
+	m, err := memberships.Find(userID, salonID)
 	if err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "sin acceso al salón"})
 		return domain.Membership{}, false

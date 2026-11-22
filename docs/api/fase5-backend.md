@@ -25,6 +25,7 @@ catálogo/POS sigue en [`pos-servicios.md`](./pos-servicios.md) y el de avisos e
 | `SMTP_FROM` | no | `turnos@salon.local` | Remitente de los correos. |
 | `SMTP_TLS` | no | `none` | `none`, `starttls` o `tls` (implícito). Un valor desconocido impide arrancar. |
 | `REMINDER_INTERVAL` | no | `60s` | Cada cuánto la tarea mira la cola de recordatorios (duración de Go, > 0). |
+| `APP_URL` | no | `http://localhost:8081` | Base pública del frontend (la web del compose). Con ella se arma el enlace de la invitación de equipo: `<APP_URL>/invitacion#<token>`. Tiene que ser una URL `http(s)` absoluta con host; un valor inválido **impide arrancar** y la barra final se quita. |
 | `TRUSTED_PROXIES` | no | vacío | De qué peers se acepta `X-Forwarded-For` (la IP del cliente para el rate limit y el log). **Vacío = no se confía en nadie**: la IP del cliente es el peer directo y la cabecera se ignora. `private` = los rangos privados históricos (`127.0.0.1`, `::1`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`). O una lista de IPs/CIDR separada por comas (`172.18.0.0/16,203.0.113.7`). Un valor que no sea IP, CIDR ni `private` impide arrancar. |
 
 El proceso aplica las migraciones al arrancar (con lock global, ver abajo),
@@ -61,6 +62,7 @@ Access-Control-Request-Method: POST
 | Subida de foto (`POST /salons/:id/clients/:cid/photos`) | 8 MB (archivo) + 1 MB de overhead del multipart | `400` (no lleva el tope JSON: tiene el suyo) |
 | Login / registro | 20 intentos por IP por minuto | `429 {"error":"demasiados intentos, esperá un minuto y volvé a probar"}` |
 | Reserva pública (`POST /public/salons/:slug/bookings`) | 20 intentos por IP por minuto | `429` (mismo mensaje). El `GET` de disponibilidad y la vidriera **no** se limitan. |
+| Invitación pública (`POST /public/invitations/lookup` y `/accept`) | 20 intentos por IP por minuto | `429` (mismo mensaje). Son las otras escrituras sin sesión (F2g1). |
 | Venta: unidades por línea | 1000 | `400` |
 | Venta: precio unitario | ≤ 10.000.000 centavos | `400` |
 | Venta: líneas | 50 | `400` |
@@ -981,6 +983,138 @@ de uso **reintenta con otro par hasta 3 veces** antes de responder.
 - La reserva de staff desde el calendario **sin servicio** no ocupa unidad
   (como hoy) y se reprograma sin mirar el equipamiento.
 
+## Fase 6 — F2g1: invitaciones de equipo
+
+Hasta acá `POST /members` exigía que la persona **ya tuviera cuenta**
+(`400 {"error":"La persona todavía no tiene cuenta"}`). La invitación resuelve el
+alta de gente nueva: el salón emite un enlace de un solo uso, la persona crea su
+cuenta y entra con el rol asignado.
+
+Reglas de seguridad (no negociables):
+
+- El token son **32 bytes aleatorios de `crypto/rand` en base64url** (43
+  caracteres). En la base se guarda **solo su SHA-256**: el token en claro no
+  existe en la tabla, ni en el log, ni en ningún listado.
+- El enlace lo lleva en el **fragmento**: `<APP_URL>/invitacion#<token>`. Lo que
+  va después del `#` no se manda al servidor, así que no queda en el log de la
+  API ni en el de nginx. Las rutas públicas reciben el token en el **cuerpo**
+  (nunca en la ruta ni en el query) y están bajo el rate limit por IP, como
+  `/auth`.
+- **Un solo uso y vence a los 7 días.** El canje es atómico: dos canjes
+  simultáneos del mismo token — uno gana y el otro recibe el 404 genérico.
+- **Sin oráculo**: token inexistente, vencido, usado o revocado responden
+  exactamente lo mismo (`404 {"error":"Invitación inválida o vencida"}`). El
+  lookup público jamás dice si un email tiene cuenta salvo por `has_account`, y
+  solo con un token válido.
+
+### `POST /salons/:id/invitations` → `201`
+
+Solo `owner`/`admin` del salón. `attends` es opcional (default del rol, igual que
+`POST /members`).
+
+```json
+POST {"email":"lucia@mail.com","role":"professional"}
+-> 201 {
+     "invitation": { "id": "i_...", "email": "lucia@mail.com", "role": "professional",
+                     "attends": true, "expires_at": "2027-03-08T12:00:00Z",
+                     "created_at": "2027-03-01T12:00:00Z" },
+     "link": "http://localhost:8081/invitacion#<token>",
+     "email_sent": true
+   }
+```
+
+- El `link` se devuelve **solo en esta respuesta** (sirve para compartirlo a mano
+  si el correo falla) y no se puede recuperar después.
+- **Reinvitar al mismo email revoca la anterior** y emite un token nuevo: el
+  token viejo pasa a dar el 404 genérico.
+- Máximo **50 pendientes** por salón; reinvitar no suma (la anterior se revoca
+  antes de contar).
+- El rol sigue la **misma regla de `POST /members`** (`Role.AddableBy`): un
+  `owner` invita `admin`/`professional`/`reception`; un `admin` no invita admins;
+  nadie invita `client` ni un segundo `owner`.
+
+| Caso | HTTP | `error` |
+|---|---|---|
+| El rol no se puede invitar (admin→admin, `client`, `owner`, inexistente) | `400` | `No podés invitar con ese rol` |
+| Email sin forma de dirección | `400` | `Email inválido` |
+| Ya es parte del equipo | `409` | `Esa persona ya es parte del equipo` |
+| 50 pendientes | `400` | `Máximo 50 invitaciones pendientes` |
+| Quien pide no es owner/admin del salón | `403` | `sin acceso al salón` / `sin permiso` |
+
+### `GET /salons/:id/invitations` → `200`
+
+Pendientes (ni aceptadas, ni revocadas, ni vencidas), de la más vieja a la más
+nueva. **Nunca** incluye el token ni su hash:
+
+```json
+{ "invitations": [ { "id": "i_...", "email": "lucia@mail.com", "role": "professional",
+                     "attends": true, "expires_at": "...", "created_at": "..." } ] }
+```
+
+### `DELETE /salons/:id/invitations/:iid` → `204`
+
+Revoca una pendiente del salón. Una invitación de otro salón, ya revocada o ya
+aceptada da `404`. Después de revocar, el token responde el 404 genérico.
+
+### `POST /public/invitations/lookup` (sin sesión) → `200`
+
+```json
+POST {"token":"<token>"}
+-> 200 { "salon_name": "Navajas de Oro", "role": "professional",
+         "role_label": "profesional", "email_hint": "l***@mail.com",
+         "expires_at": "2027-03-08T12:00:00Z", "has_account": false }
+```
+
+`email_hint` es la dirección enmascarada (primera letra + `***` + dominio).
+Token inválido/vencido/usado/revocado: `404 {"error":"Invitación inválida o vencida"}`
+en los **cuatro** casos (mismo código y mismo cuerpo).
+
+### `POST /public/invitations/accept` (sin sesión) → `200`
+
+```json
+POST {"token":"<token>","name":"Lucía","password":"secreta123"}
+-> 200 { "token": "<jwt>" }
+```
+
+- La respuesta es **la misma sesión del login** (`{"token"}`): el JWT se usa igual
+  en `/me` y en el resto de la API.
+- La cuenta se crea con la **política de contraseña vigente** (8 a 72 bytes, la
+  del registro) y se valida **antes** de gastar bcrypt.
+- La cuenta, la membresía (con el rol y el `attends` de la invitación) y el
+  estado de la invitación se guardan en **una sola transacción**: si la membresía
+  falla no queda ni la cuenta ni la invitación usada.
+- El email ya tiene cuenta → `409 {"error":"Ya tenés cuenta: iniciá sesión para aceptar la invitación"}`
+  (para eso está la ruta autenticada).
+
+### `POST /invitations/accept` (con sesión) → `200`
+
+Es el camino de quien ya tiene cuenta. Solo une al salón si la invitación es para
+**su** email.
+
+```json
+POST {"token":"<token>"}   (Authorization: Bearer <jwt>)
+-> 200 { "salon": { "id": "s_...", "slug": "navajas", "name": "Navajas de Oro" },
+         "role": "reception", "role_label": "recepción" }
+```
+
+- Email de la cuenta ≠ email de la invitación →
+  `403 {"error":"Esta invitación es para otra cuenta"}`.
+- Sin sesión → `401`. Token que no sirve → el 404 genérico.
+- Alguien que ya es miembro del salón → `409 {"error":"Esa persona ya es parte del equipo"}`
+  (el canje no cambia el rol de quien ya está adentro).
+
+### Correo al invitado (S-F2g1-5)
+
+Asunto `<Salón> te invitó a su equipo`. Texto + HTML con el rol en español, la
+fecha de vencimiento en el día local del salón y el enlace. El HTML escapa el
+nombre del salón. Sale por el mismo `MailSender` del T12.
+
+- Es **best effort**: si el SMTP falla (o `SMTP_HOST` está vacío) la invitación
+  existe igual y la respuesta dice `"email_sent": false`; el enlace se puede
+  pasar a mano.
+- El token y el enlace **nunca** se loguean: el log solo nombra el id de la
+  invitación y el salón.
+
 ## Ronda 3 (T9): ficha desde la reserva, email de la ficha, hora del salón y mensajes
 
 Hallazgos E-03, E-04 y E-07 de la auditoría en navegador real. Los códigos HTTP
@@ -1304,7 +1438,31 @@ Migración de la fase 6 (F2e):
     `services_resource_type_idx (salon_id, resource_type_id) WHERE
     resource_type_id IS NOT NULL` (uso del tipo y rechazo del borrado).
 
-Las 19 migraciones se probaron aplicándolas dos veces con
+Migración de la fase 6 (F2g1):
+
+- `021_invitations.sql`:
+  - `invitations(id TEXT PRIMARY KEY, salon_id TEXT NOT NULL REFERENCES salons(id)
+    ON DELETE CASCADE, email TEXT NOT NULL, role TEXT NOT NULL, attends BOOLEAN NOT
+    NULL DEFAULT false, token_hash TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL,
+    accepted_at TIMESTAMPTZ, accepted_by TEXT NOT NULL DEFAULT '', revoked_at
+    TIMESTAMPTZ, created_by TEXT NOT NULL DEFAULT '', created_at TIMESTAMPTZ NOT
+    NULL DEFAULT now())` con `CHECK (char_length(token_hash) = 64)` (SHA-256 en
+    hex, nombre `invitations_token_hash_len`) y `CHECK (char_length(email) <= 254)`
+    (`invitations_email_len`).
+  - `invitations_token_hash_key`: índice **único** de `token_hash` (el canje es
+    inequívoco y la búsqueda por token — la única sin `salon_id` — es barata).
+  - `invitations_pending_email_idx`: índice **único parcial** de
+    `(salon_id, lower(email)) WHERE accepted_at IS NULL AND revoked_at IS NULL`:
+    una sola pendiente por email y salón. Revocadas, vencidas y aceptadas no
+    ocupan el lugar.
+  - **Sin backfill**: una base migrada no tiene invitaciones hasta que alguien
+    emite una. La vigencia **no** se chequea contra `created_at` a propósito: un
+    entorno de prueba adelanta `expires_at` para probar el vencimiento y el que
+    decide es el `UPDATE` condicional del canje.
+  - Guardas en `pg_indexes` de `current_schema()` y `CREATE INDEX IF NOT EXISTS`:
+    una segunda ejecución no falla ni duplica nada.
+
+Las 20 migraciones se probaron aplicándolas dos veces con
 `psql -v ON_ERROR_STOP=1` sobre una base limpia y sobre una ya migrada, y el
 binario arranca contra esas bases. La 020 se probó además sobre una base migrada
 **solo hasta la 019** con dos servicios y dos turnos ya creados: los servicios

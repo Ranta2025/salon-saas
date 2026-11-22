@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -56,6 +57,9 @@ type config struct {
 	// ReminderInterval es la cadencia de la tarea de recordatorios, en duración
 	// de Go: 60s en producción, 2s para probar en desarrollo.
 	ReminderInterval time.Duration
+	// AppURL es la base pública del frontend: con ella se arma el enlace de la
+	// invitación de equipo (F2g1), "<APP_URL>/invitacion#<token>".
+	AppURL string
 }
 
 // loadConfig lee la configuración desde getenv (os.Getenv en producción; un
@@ -109,6 +113,15 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("REMINDER_INTERVAL debe ser mayor que cero (dio %s)", interval)
 	}
 	cfg.ReminderInterval = interval
+	// APP_URL es la base del enlace de la invitación (F2g1): sin una URL http(s)
+	// válida el correo llevaría a un lugar que no existe, y eso no se arregla
+	// después de enviado. La barra final se quita porque el enlace agrega
+	// "/invitacion#<token>".
+	appURL, err := parseAppURL(envOr(getenv, "APP_URL", "http://localhost:8081"))
+	if err != nil {
+		return config{}, err
+	}
+	cfg.AppURL = appURL
 	// Con endpoint S3, el bucket no puede quedar vacío (S3_BUCKET="" explícito).
 	if cfg.S3Endpoint != "" && strings.TrimSpace(cfg.S3Bucket) == "" {
 		return config{}, fmt.Errorf("S3_BUCKET es obligatoria cuando S3_ENDPOINT está definida")
@@ -122,6 +135,18 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("JWT_SECRET debe tener al menos %d caracteres en release (tiene %d)", minJWTSecretLen, len(cfg.JWTSecret))
 	}
 	return cfg, nil
+}
+
+// parseAppURL valida la base pública del frontend. Tiene que ser una URL
+// absoluta http(s) con host: un enlace de invitación roto no se puede corregir
+// después de mandado el correo.
+func parseAppURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return "", fmt.Errorf("APP_URL debe ser una URL http(s) absoluta (por ejemplo http://localhost:8081): %q", raw)
+	}
+	return strings.TrimRight(raw, "/"), nil
 }
 
 // parseTrustedProxies lee TRUSTED_PROXIES: lista de IPs/CIDR separadas por

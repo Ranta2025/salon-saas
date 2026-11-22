@@ -29,6 +29,13 @@ type Deps struct {
 	Absences AbsenceHandler
 	// Resources es el equipamiento con capacidad (F2e).
 	Resources ResourceHandler
+	// Invitations son las invitaciones de equipo (F2g1): alta, listado y
+	// revocación del salón, más el lookup y el canje públicos.
+	Invitations InvitationHandler
+	// PublicInvitationLimit limita por IP el lookup y el canje públicos (nil =
+	// sin límite, como en los tests unitarios del router). Van bajo el mismo
+	// cubo que la reserva pública: son las escrituras sin sesión.
+	PublicInvitationLimit gin.HandlerFunc
 	// PublicBookingLimit limita por IP el POST público de reservas (nil = sin
 	// límite, como en los tests unitarios del router).
 	PublicBookingLimit gin.HandlerFunc
@@ -59,6 +66,18 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	}
 	v1.POST("/public/salons/:slug/bookings", publicBooking...)
 
+	// F2g1: el canje de una invitación también es público (la persona todavía no
+	// tiene sesión) y va bajo el rate limit por IP, como /auth. El token viaja en
+	// el CUERPO: nunca en la ruta ni en el query, así no queda en ningún log.
+	publicInvitation := func(h gin.HandlerFunc) []gin.HandlerFunc {
+		if d.PublicInvitationLimit == nil {
+			return []gin.HandlerFunc{h}
+		}
+		return []gin.HandlerFunc{d.PublicInvitationLimit, h}
+	}
+	v1.POST("/public/invitations/lookup", publicInvitation(d.Invitations.Lookup)...)
+	v1.POST("/public/invitations/accept", publicInvitation(d.Invitations.Accept)...)
+
 	authed := v1.Group("", AuthMiddleware(d.TokenIssuer))
 	// Quién soy y en qué salones estoy (el frontend elige el salón activo).
 	authed.GET("/me", d.Me.Get)
@@ -81,6 +100,16 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	// qué servicios hace (PUT, lista completa).
 	authed.PATCH("/salons/:id/members/:uid", d.Members.Update)
 	authed.PUT("/salons/:id/members/:uid/services", d.Members.SetServices)
+
+	// F2g1: invitaciones de equipo (alta, listado y revocación). Solo
+	// dueño/administración; la regla de qué rol puede invitar cada quien vive en
+	// el caso de uso (la misma de `POST /members`).
+	authed.POST("/salons/:id/invitations", d.Invitations.Create)
+	authed.GET("/salons/:id/invitations", d.Invitations.List)
+	authed.DELETE("/salons/:id/invitations/:iid", d.Invitations.Revoke)
+	// Canje para una cuenta que YA existe: la sesión es la del login, la ruta no
+	// es pública y la invitación tiene que ser de SU email.
+	authed.POST("/invitations/accept", d.Invitations.AcceptAs)
 
 	// F2d1: horario semanal del salón y de cada profesional.
 	authed.GET("/salons/:id/hours", d.Hours.GetSalon)

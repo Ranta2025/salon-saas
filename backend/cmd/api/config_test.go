@@ -147,3 +147,43 @@ func TestLoadConfig_SMTP(t *testing.T) {
 		t.Fatal("REMINDER_INTERVAL=0s debe fallar")
 	}
 }
+
+// S-F2g1-5: APP_URL es la base del enlace de invitación. Tiene default de
+// desarrollo, se le quita la barra final (el enlace agrega "/invitacion#...") y
+// un valor que no es una URL http(s) impide arrancar: un enlace roto en un correo
+// no se puede arreglar después.
+func TestLoadConfig_app_url(t *testing.T) {
+	base := map[string]string{"JWT_SECRET": strings.Repeat("s", 32), "GIN_MODE": "release"}
+
+	cfg, err := loadConfig(loadEnv(base))
+	if err != nil {
+		t.Fatalf("default: %v", err)
+	}
+	if cfg.AppURL != "http://localhost:8081" {
+		t.Fatalf("APP_URL por defecto: %q", cfg.AppURL)
+	}
+	withApp := map[string]string{}
+	for k, v := range base {
+		withApp[k] = v
+	}
+	withApp["APP_URL"] = "https://turnos.misalon.com/"
+	cfg, err = loadConfig(loadEnv(withApp))
+	if err != nil {
+		t.Fatalf("APP_URL propia: %v", err)
+	}
+	if cfg.AppURL != "https://turnos.misalon.com" {
+		t.Fatalf("la barra final se quita: %q", cfg.AppURL)
+	}
+	for _, bad := range []string{"misalon.com", "ftp://misalon.com", "http://", "/invitacion"} {
+		values := map[string]string{}
+		for k, v := range base {
+			values[k] = v
+		}
+		values["APP_URL"] = bad
+		if _, err := loadConfig(loadEnv(values)); err == nil {
+			t.Fatalf("APP_URL %q tiene que rechazarse", bad)
+		} else if !strings.Contains(err.Error(), "APP_URL") {
+			t.Fatalf("el error tiene que nombrar la variable: %v", err)
+		}
+	}
+}

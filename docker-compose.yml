@@ -46,6 +46,10 @@ services:
       SMTP_TLS: ${SMTP_TLS:-none}
       # Cada cuánto mira la cola de recordatorios (duración de Go).
       REMINDER_INTERVAL: ${REMINDER_INTERVAL:-60s}
+      # Base pública del frontend: el enlace de la invitación de equipo se arma
+      # como "<APP_URL>/invitacion#<token>" (F2g1). Con el compose, la web está
+      # en WEB_PORT (8081).
+      APP_URL: ${APP_URL:-http://localhost:8081}
     ports:
       - "${API_PORT:-8080}:${PORT:-8080}"
     volumes:

@@ -167,7 +167,9 @@ type posEnv struct {
 	timeOff *mtimeoff
 	// F2e: tipos y unidades de equipo con capacidad.
 	resources *mresources
-	d         Deps
+	// F2g1: invitaciones de equipo (con su reloj para probar el vencimiento).
+	inv *minvitations
+	d   Deps
 }
 
 // deps devuelve lo mismo que monta newPOSEnv, para armar routers alternativos
@@ -196,6 +198,7 @@ func newPOSEnv() *posEnv {
 		resources: &mresources{},
 	}
 	env.resources.bookings = env.bookings
+	env.inv = &minvitations{rows: map[string]domain.Invitation{}, users: env.users, mems: env.mems}
 	env.members = &mmembers{mems: env.mems, users: env.users}
 	env.profs = &mprof{mems: env.mems}
 	hasher := security.BcryptHasher{}
@@ -230,6 +233,17 @@ func newPOSEnv() *posEnv {
 	memberSvc := app.MemberService{
 		Members: env.members, Memberships: env.mems, Users: env.users,
 		Professionals: env.profs, Services: env.services,
+	}
+	// F2g1: invitaciones de equipo. El reloj sale del fake para poder vencer una
+	// invitación sin esperar los 7 días.
+	invitationSvc := app.InvitationService{
+		Invitations: env.inv, Tx: env.inv, Memberships: env.mems, Users: env.users,
+		Salons: env.salons, Settings: env.settings, Mailer: env.mailer,
+		AppURL: "http://localhost:8081", Now: env.inv.now,
+	}
+	invitationPublicSvc := app.InvitationPublicService{
+		Invitations: env.inv, Tx: env.inv, Users: env.users, Salons: env.salons,
+		Hasher: hasher, Tokens: tokens, Now: env.inv.now,
 	}
 	availabilitySvc := app.AvailabilityService{
 		Salons: env.salons, Services: env.services, Settings: env.settings,
@@ -267,6 +281,7 @@ func newPOSEnv() *posEnv {
 		TimeOff:     TimeOffHandler{TimeOff: timeOffSvc, Memberships: env.mems},
 		Absences:    AbsenceHandler{Coverage: coverageSvc, Memberships: env.mems},
 		Resources:   ResourceHandler{Resources: app.ResourceService{Resources: env.resources, Services: env.services, Memberships: env.mems}, Memberships: env.mems},
+		Invitations: InvitationHandler{Invitations: invitationSvc, Public: invitationPublicSvc, Memberships: env.mems},
 		WS:          hub.ServeWS,
 		TokenIssuer: tokens,
 	}

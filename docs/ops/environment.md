@@ -37,6 +37,11 @@ MEDIA_DIR=/data/media
 # SIN el sufijo /api/v1 (el frontend ya agrega /api/v1 a cada ruta).
 VITE_API_URL=http://localhost:8080
 
+# Base pública del frontend: con ella se arma el enlace de la invitación de
+# equipo ("<APP_URL>/invitacion#<token>"). Tiene que ser una URL http(s)
+# absoluta. En producción, el dominio real del panel.
+APP_URL=http://localhost:8081
+
 # Puertos del host
 API_PORT=8080
 WEB_PORT=8081
@@ -97,6 +102,25 @@ MINIO_CONSOLE_PORT=9001
 Compose arma `DATABASE_URL` solo con las piezas `POSTGRES_*`. Si corrés la API
 sin Docker, exportá `DATABASE_URL` y `JWT_SECRET` en tu shell (en fish:
 `set -x JWT_SECRET ...`; en bash: `export JWT_SECRET=...`).
+
+## Enlaces de invitación (`APP_URL`)
+
+Cuando alguien invita a una persona al equipo (Fase 6, F2g1), la API manda un
+correo con un enlace del tipo:
+
+```
+<APP_URL>/invitacion#<token>
+```
+
+| Variable | Default en Compose | Qué hace |
+|---|---|---|
+| `APP_URL` | `http://localhost:8081` | Base pública del frontend. Debe ser una URL `http(s)` absoluta con host; un valor inválido **impide arrancar** y el error nombra la variable. La barra final se quita sola. |
+
+El token viaja en el **fragmento** (`#`), no en la ruta: el navegador no lo manda
+al servidor, así que no aparece en ningún log de la API ni de nginx. Se muestra
+una sola vez (en la respuesta del alta) y en la base queda solo su SHA-256.
+Con `APP_URL` apuntando a `localhost` el enlace solo sirve en tu máquina: en
+producción poné el dominio real del panel.
 
 ## IP del cliente y proxies confiables (`TRUSTED_PROXIES`)
 
