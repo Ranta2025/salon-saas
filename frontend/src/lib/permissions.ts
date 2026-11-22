@@ -38,11 +38,11 @@ export function canCreateClient(role: Role | null | undefined): boolean {
 
 /**
  * Home of `/panel` for a role. A professional has no dashboard (the API answers
- * 403), so the index sends them straight to the agenda instead of asking for it.
- * `null` means the dashboard is the right page.
+ * 403) and lands on their own agenda (S-F2b-4). `null` means the dashboard is
+ * the right page: owner/admin keep it, with a "Mi agenda" card when they attend.
  */
 export function panelHomePath(role: Role | null | undefined): string | null {
-  return role === 'professional' ? '/panel/calendario' : null
+  return role === 'professional' ? '/panel/mi-agenda' : null
 }
 
 /**

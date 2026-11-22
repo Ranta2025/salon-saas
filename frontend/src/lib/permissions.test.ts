@@ -73,8 +73,8 @@ test('reception is its own role and not a manager', () => {
   assert.equal(canEditSettings('reception'), false)
 })
 
-test('a professional does not land on the dashboard after login', () => {
-  assert.equal(panelHomePath('professional'), '/panel/calendario')
+test('a professional lands on their own agenda after login (S-F2b-4)', () => {
+  assert.equal(panelHomePath('professional'), '/panel/mi-agenda')
   assert.equal(panelHomePath('owner'), null)
   assert.equal(panelHomePath('admin'), null)
   assert.equal(panelHomePath('reception'), null)
