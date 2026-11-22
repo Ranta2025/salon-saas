@@ -15,7 +15,9 @@ verificada y commiteada.
 - [ ] F2c Oficio y servicios por profesional: cada profesional tiene un oficio visible (barbero, estilista, colorista, manicurista; texto libre) y la lista de servicios que hace (`professional_services`); la disponibilidad se calcula por profesional (sabe hacer el servicio ∩ sin turno ∩ su horario) y se une; hoy se asume que todo el equipo hace todos los servicios
 - [ ] F2e Puestos y equipamiento con capacidad: el administrador define tipos de recurso y cuántas unidades hay (p. ej. 3 puestos de peluquería, 2 sillas de barbería, 1 lavacabezas); cada servicio indica qué tipo de recurso usa; un turno ocupa una profesional Y una unidad del recurso. Cada unidad es una fila con nombre y su propia EXCLUDE (unit_id, rango) igual que las profesionales: la capacidad queda garantizada por la base y no por un contador
 - [ ] F2d Horario por día de la semana, descansos y bloqueos (vacaciones, días libres por profesional)
-- [ ] F3 Comisiones por profesional + reporte por período
+- [ ] F2g Contratar por invitación: el dueño/administración invita por email con enlace de un solo uso y vencimiento (7 días), la persona crea su cuenta y entra con el rol ya asignado (hoy exige que ya tenga cuenta). Quitar a alguien DESACTIVA su membresía (`ended_at`) en vez de borrarla: conserva el historial de turnos y ventas y puede reactivarse
+- [ ] F3 Nómina y comisiones: cada profesional tiene su modelo de pago (sueldo fijo, % de comisión o mixto); la comisión sale de `services.commission_pct`, que YA existe; liquidación por período (semana, quincena o mes), detalle por profesional, marca de pagado y exportación
+- [ ] F3b Gastos y ganancias: registrar gastos (alquiler, insumos, servicios, otros) con fecha y categoría; ganancia neta = ingresos - gastos - nómina por período; panel de ganancias por día/semana/mes
 - [ ] F4 Exportar CSV (ventas, cierres, clientes)
 - [ ] F5 Historial de la clienta (visitas, gasto, última visita, alergias)
 - [ ] F6 Productos e inventario en el POS (stock, alerta de stock bajo)
@@ -47,6 +49,17 @@ Regla: una persona es RESERVABLE (aparece en agenda, disponibilidad y selectores
 - S-F2a-6 UI Equipo (`/panel/equipo`): interruptor "Atiende clientes" en dueño y administración (llama al PATCH, estado optimista con vuelta atrás ante error), etiqueta fija "Atiende" en profesionales, nada en recepción; aviso visible si NADIE atiende ("Nadie atiende todavía: activá 'Atiende clientes' en alguien para recibir turnos"). Textos en español, accesible por teclado, objetivos de 44 px.
 - Fuera de alcance de F2a: oficios, servicios por profesional, horarios, puestos (F2b..F2e).
 
+## Permisos de dinero y gestión (decisión del usuario, L6)
+| Acción | dueño | admin | recepción | profesional |
+|---|---|---|---|---|
+| Contratar / desactivar personal, equipamiento (F2e) | sí | sí | no | no |
+| Ventas y cierre de caja | sí | sí | sí | no |
+| Sueldos de todos y ganancia neta (F3, F3b) | sí | sí | NO | NO |
+| Gastos (registrar y ver) | sí | sí | no | no |
+| Sus propias comisiones | sí | sí | no | sí (solo las suyas) |
+Frontera de alcance: salon-saas lleva el dinero operativo (caja, comisiones, gastos, nómina del período); la contabilidad completa queda para mipyme-os.
+Riesgo: F3 y F3b tocan dinero y permisos (item 2 de alto riesgo): cada una en su commit y con revisión nativa propia.
+
 ## Riesgos conocidos
 - F11 toca dinero (riesgo alto): el estado del pago lo fija solo el servidor, el callback va firmado y es idempotente, nunca se confía en el navegador.
 - F10 y F11 piden revisión nativa RDD propia, cada una en su commit.
@@ -66,3 +79,6 @@ Respuesta del usuario: la clienta elige SOLO el servicio; el sistema asigna a un
 
 L5 (usuario, verbatim): "puedo tener 5 trabajadoras pero en la instalacion las roto porque tengo equipamiendo para que trabajen 3 a eso me refiero que eso se puede definir en la app el administrador , tantos de esto y tantos del otro, y el lo del turno no son varios turnos es un turno y si necesita mas tiempo se registra en el turno pero ejemplo si tengo un turno a las 11 ya dado a las 10:30 no puedo dar un turno de una hora"
 Decisión: el límite viene del EQUIPAMIENTO, no de un número anónimo de personas. Se modela con unidades de recurso con nombre (F2e), cada una con su EXCLUDE; un turno es UNO solo con su duración total y ocupa profesional + unidad. El choque de intervalos ("un turno a las 11 impide uno de 1 h a las 10:30") ya lo cubre hoy `FindOverlapping` + la EXCLUDE por profesional.
+
+L6 (usuario, verbatim): "no esta de mas decirlo que el dueno o administrador deben poder contratar gente y agregar o quitar equipamiento y todas esas cosas que ban por la canaleta , ver las ganancias salarios a pagar todo eso"
+Decisión (respuesta del usuario): sueldos y ganancia neta los ven dueño Y administración; el profesional solo sus comisiones; recepción no ve sueldos. Verificado en el código: `services.commission_pct` ya existe; no existen tablas de gastos ni de nómina; `POST /members` falla si la persona no tiene cuenta; quitar un miembro hoy hace DELETE.
