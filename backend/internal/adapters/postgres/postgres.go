@@ -8,9 +8,19 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/domain"
 )
+
+// querier es lo que comparten *pgxpool.Pool y pgx.Tx: las queries se escriben UNA
+// sola vez y corren igual fuera (la agenda, la caja) y dentro de una transacción
+// (el cierre de caja con lock y el "Reasignar todo" de F2d3).
+type querier interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
 
 func notFound(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {

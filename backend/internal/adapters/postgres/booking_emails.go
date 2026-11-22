@@ -105,3 +105,20 @@ func (r BookingEmails) MarkReminderSent(bookingID string) error {
 }
 
 var _ ports.BookingEmailRepository = BookingEmails{}
+
+// FindEmail implementa ports.BookingEmailFinder: la dirección con la que F2d3
+// avisa que el turno cambió de profesional (o se canceló). La query va scopeada
+// por salon_id: el turno de otro tenant no existe acá. Sin fila es ErrNotFound
+// (el turno se agendó sin email: no hay a quién escribir).
+func (r BookingEmails) FindEmail(salonID, bookingID string) (string, error) {
+	var email string
+	err := r.Pool.QueryRow(context.Background(),
+		`SELECT email FROM booking_emails
+		 WHERE salon_id=$1 AND booking_id=$2`, salonID, bookingID).Scan(&email)
+	if err != nil {
+		return "", notFound(err)
+	}
+	return email, nil
+}
+
+var _ ports.BookingEmailFinder = BookingEmails{}

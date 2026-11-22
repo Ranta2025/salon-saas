@@ -138,6 +138,31 @@ type TimeOffRepository interface {
 	Delete(salonID, id string) error
 }
 
+// BookingTx es la vista transaccional de la agenda: cubrir una ausencia mueve
+// TODOS sus turnos o ninguno (S-F2d3-3). Es el mismo repositorio de reservas que
+// fuera de la transacción, para que el caso de uso no tenga dos formas de leer
+// un turno.
+type BookingTx interface {
+	BookingRepository
+}
+
+// BookingTxRunner abre una transacción con un lock por salón (el mismo patrón que
+// el cierre de caja): dos "cubrir la ausencia" simultáneos sobre el mismo salón
+// no se pisan y la EXCLUDE de bookings sigue siendo la que decide el solape.
+type BookingTxRunner interface {
+	InSalonTx(salonID string, fn func(tx BookingTx) error) error
+}
+
+// BookingEmailFinder resuelve la dirección con la que se avisa un cambio de
+// turno (cubrir una ausencia o cancelar, F2d3). Va aparte de
+// BookingEmailRepository (ISP): quien solo avisa no carga con la cola de
+// recordatorios.
+type BookingEmailFinder interface {
+	// FindEmail devuelve la dirección guardada del turno del salón. Sin fila es
+	// ErrNotFound (el turno se agendó sin email: no hay a quién escribir).
+	FindEmail(salonID, bookingID string) (string, error)
+}
+
 // --- Seguridad (puertos de salida hacia crypto/tokens) ---
 
 type PasswordHasher interface {

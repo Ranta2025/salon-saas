@@ -6,7 +6,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/domain"
 )
@@ -148,12 +147,6 @@ func (r Sales) SumCents(salonID string, from, to time.Time, method domain.Paymen
 		return 0, err
 	}
 	return total, nil
-}
-
-// querier es lo que comparten *pgxpool.Pool y pgx.Tx: la suma corre igual
-// dentro o fuera de una transacción.
-type querier interface {
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
 func (r Sales) sumCents(ctx context.Context, q querier, salonID string, from, to time.Time, method domain.PaymentMethod) (int, error) {
