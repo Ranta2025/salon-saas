@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { describeApiError, fetchBookings, fetchStaff, type ApiErrorNotice } from '../lib/api'
 import { subscribeOfflineData } from '../lib/offlineData'
 import {
@@ -10,11 +11,11 @@ import {
 import { activeRole, canManageBooking } from '../lib/permissions'
 import { timeZoneLabel } from '../lib/publicBooking'
 import { fetchSettings } from '../lib/settings'
+import { fetchTimeOff, timeOffBands, type TimeOff } from '../lib/timeOff'
 import {
   DEFAULT_WINDOW,
   TIME_ZONE,
   addDaysToDateValue,
-  dayRange,
   fromDateInputValue,
   timelineWindowFromHours,
   toDateInputValue,
@@ -34,8 +35,14 @@ export function CalendarPage() {
   const { salonId, salons, user } = useSalon()
   const { subscribe } = useRealtime()
   const { online } = useOffline()
-  const [dateValue, setDateValue] = useState(() => toDateInputValue(new Date()))
+  const [searchParams] = useSearchParams()
+  // «Ver el calendario de ese día» of a created absence links to `?date=`.
+  const dateParam = searchParams.get('date')
+  const [dateValue, setDateValue] = useState(() =>
+    dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : toDateInputValue(new Date()),
+  )
   const [bookings, setBookings] = useState<Booking[]>([])
+  const [absences, setAbsences] = useState<TimeOff[]>([])
   const [loadedDay, setLoadedDay] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<ApiErrorNotice | null>(null)
@@ -51,6 +58,10 @@ export function CalendarPage() {
   const [reloadKey, setReloadKey] = useState(0)
   /** null until the person chooses; whoever attends starts on their agenda. */
   const [view, setView] = useState<CalendarView | null>(null)
+  // Window of the visible day in the salon zone: the bookings and the absences
+  // of the day are asked with it.
+  const dayFrom = fromDateInputValue(dateValue, timeZone)
+  const dayTo = fromDateInputValue(addDaysToDateValue(dateValue, 1), timeZone)
   // The service worker flags a cached answer before the fetch resolves, so the
   // load below reads this ref to know whether the data it got is saved data.
   const cachedAnswer = useRef(false)
@@ -114,15 +125,22 @@ export function CalendarPage() {
   }, [salonId])
 
   useEffect(() => {
+    if (!salonId || !dateParam || !/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      return
+    }
+    setDateValue(dateParam)
+    setSelectedId(null)
+  }, [salonId, dateParam])
+
+  useEffect(() => {
     if (!salonId) {
       return
     }
-    const { from, to } = dayRange(new Date(fromDateInputValue(dateValue, timeZone)), timeZone)
     const controller = new AbortController()
     cachedAnswer.current = false
     setLoading(true)
     setError(null)
-    fetchBookings(salonId, from, to, controller.signal)
+    fetchBookings(salonId, dayFrom, dayTo, controller.signal)
       .then((list) => {
         setBookings(list)
         setLoadedDay(dateValue)
@@ -139,8 +157,21 @@ export function CalendarPage() {
           setLoading(false)
         }
       })
+    // The absence band of the day is extra information: if it fails the day
+    // agenda of §11 stays exactly as it was, never a page error.
+    fetchTimeOff(salonId, dayFrom, dayTo, controller.signal)
+      .then((list) => {
+        if (!controller.signal.aborted) {
+          setAbsences(list)
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setAbsences([])
+        }
+      })
     return () => controller.abort()
-  }, [salonId, dateValue, timeZone, reloadKey])
+  }, [salonId, dateValue, dayFrom, dayTo, reloadKey])
 
   // A salon switch recalculates bookability, so the view starts over there.
   useEffect(() => {
@@ -164,6 +195,15 @@ export function CalendarPage() {
   // still marks my own column (S-F2b-6).
   const visibleProfessionals =
     calendarView === 'mine' ? staff.filter((member) => member.id === user?.id) : staff
+  // «Ausente» band of the day, with the reason only for those who may read it.
+  const absenceBands = timeOffBands(absences, {
+    from: dayFrom,
+    to: dayTo,
+    timeZone,
+    actorRole: role,
+    viewerId: user?.id ?? null,
+    names: staff,
+  })
   const selected = bookings.find((booking) => booking.id === selectedId) ?? null
   // Saved or failed data is never presented as today's real agenda.
   const showingSavedData = savedData || !online
@@ -282,6 +322,7 @@ export function CalendarPage() {
               gridWindow={gridWindow}
               savedData={showingSavedData}
               highlightProfessionalId={bookable ? user?.id ?? null : null}
+              absenceBands={absenceBands}
               emptyLabel={
                 calendarView === 'mine' ? 'No tenés citas agendadas para este día.' : undefined
               }

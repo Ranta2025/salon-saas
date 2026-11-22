@@ -11,6 +11,7 @@ import {
   type TimelineWindow,
 } from '../../lib/datetime'
 import { bookingCountLabel, statusLabel } from '../../lib/bookingActions'
+import type { TimeOffBand } from '../../lib/timeOff'
 import type { Booking } from '../../types'
 
 const HOUR_HEIGHT = 56
@@ -31,6 +32,8 @@ type TimelineProps = {
   savedData?: boolean
   /** Column of the signed-in professional: the "Mi agenda" view highlights it. */
   highlightProfessionalId?: string | null
+  /** «Ausente» band of the day, one per professional with an absence (S-F2d2-7). */
+  absenceBands?: readonly TimeOffBand[]
   /** Copy of the empty state when the page is filtered ("Mi agenda"). */
   emptyLabel?: string
 }
@@ -78,6 +81,7 @@ export function Timeline({
   gridWindow = DEFAULT_WINDOW,
   savedData = false,
   highlightProfessionalId = null,
+  absenceBands = [],
   emptyLabel,
 }: TimelineProps) {
   const groups = groupByProfessional(bookings, professionals)
@@ -86,14 +90,33 @@ export function Timeline({
     (_, index) => gridWindow.startHour + index,
   )
   const bodyHeight = (gridWindow.endHour - gridWindow.startHour) * HOUR_HEIGHT
+  const bandsOf = (userId: string) => absenceBands.filter((band) => band.userId === userId)
 
   if (bookings.length === 0) {
     return (
-      <p className="empty-state">
-        {savedData
-          ? 'Sin conexión: la copia guardada de este día no tiene citas. Actualiza cuando vuelva la red.'
-          : emptyLabel ?? 'No hay citas agendadas para este día. Las reservas nuevas aparecen aquí.'}
-      </p>
+      <>
+        {absenceBands.length > 0 ? (
+          <div className="timeline-absences" role="group" aria-label="Ausencias del día">
+            {absenceBands.map((band) => (
+              <p className="timeline__absence" key={band.userId}>
+                <span className="timeline__absence-label">{band.label}</span>
+                {band.hours ? (
+                  <span className="timeline__absence-hours">{band.hours}</span>
+                ) : null}
+                {band.name ? <span className="timeline__absence-name">{band.name}</span> : null}
+                {band.reason ? (
+                  <span className="timeline__absence-reason">{band.reason}</span>
+                ) : null}
+              </p>
+            ))}
+          </div>
+        ) : null}
+        <p className="empty-state">
+          {savedData
+            ? 'Sin conexión: la copia guardada de este día no tiene citas. Actualiza cuando vuelva la red.'
+            : emptyLabel ?? 'No hay citas agendadas para este día. Las reservas nuevas aparecen aquí.'}
+        </p>
+      </>
     )
   }
 
@@ -126,6 +149,17 @@ export function Timeline({
                   <h2>{group.name}</h2>
                   <span>{bookingCountLabel(group.bookings.length)}</span>
                 </header>
+                {bandsOf(group.id).map((band) => (
+                  <p className="timeline__absence" key={`absence-${group.id}`}>
+                    <span className="timeline__absence-label">{band.label}</span>
+                    {band.hours ? (
+                      <span className="timeline__absence-hours">{band.hours}</span>
+                    ) : null}
+                    {band.reason ? (
+                      <span className="timeline__absence-reason">{band.reason}</span>
+                    ) : null}
+                  </p>
+                ))}
                 <div className="timeline__body" style={{ height: bodyHeight }}>
                   {hours.map((hour) => (
                     <div
@@ -182,10 +216,24 @@ export function Timeline({
       </div>
 
       <div className="agenda">
-        {groups.filter((group) => group.bookings.length > 0).map((group) => (
+        {groups
+          .filter((group) => group.bookings.length > 0 || bandsOf(group.id).length > 0)
+          .map((group) => (
           <section className="agenda__group" key={`agenda-${group.id}`}>
             <h2 className="agenda__title">{group.name}</h2>
             <ul>
+              {bandsOf(group.id).map((band) => (
+                <li
+                  className="agenda__row agenda__row--absence"
+                  key={`absence-row-${group.id}`}
+                >
+                  <span className="agenda__time">{band.hours || 'Todo el día'}</span>
+                  <span className="agenda__client">
+                    {band.label}
+                    {band.reason ? ` · ${band.reason}` : ''}
+                  </span>
+                </li>
+              ))}
               {group.bookings.map((booking) => (
                 <li key={booking.id} className="agenda__row" data-status={booking.status}>
                   <span className="agenda__time">

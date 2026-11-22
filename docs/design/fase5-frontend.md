@@ -971,3 +971,124 @@ para ser legible sobre el pie oscuro.
   «Quitar»/«Agregar tramo» de 38 px.
 - Fuera de alcance de esta entrega: vacaciones y días libres puntuales (F2d2) y
   cubrir ausencias (F2d3).
+
+## 17. Fase 6 — F2d2: vacaciones y días libres puntuales
+
+Contrato `odd/tasks/fase6-roadmap.md`, «Contrato F2d2» (mitad frontend de
+S-F2d2-5, más S-F2d2-6 y S-F2d2-7). Sin dependencias nuevas. El backend se
+implementa en paralelo y no se tocó: la UI consume
+`GET /salons/:id/time-off?from&to` (`{time_off:[…]}` con el motivo vacío para
+quien no puede leerlo), `POST /salons/:id/members/:uid/time-off` (201
+`{time_off, conflicts}`) y `DELETE /salons/:id/time-off/:tid` (204).
+
+### 17.1 Reglas puras (`src/lib/timeOff.ts`)
+
+| helper | regla |
+| --- | --- |
+| `timeOffRange({fromDate,toDate,fromTime?,toTime?}, zone)` | día completo = 00:00 local al 00:00 local del día siguiente al último; con horas parciales usa esos relojes de pared. Se apoya en `fromDateInputValue`/`toDateTimeIso`/`addDaysToDateValue`, así que sobrevive un cambio de horario (2026-03-08 en Nueva York es un día de 23 h) y una fecha cerca de medianoche (23:30 local del 24 ya es el 25 en UTC) |
+| `validateTimeOff` | reglas del servidor en su orden y con sus frases exactas: «El fin debe ser posterior al inicio», «Una ausencia no puede durar más de 90 días», «No se puede cargar una ausencia que ya terminó», «Ya hay una ausencia en ese período»; el motivo se normaliza (trim, una línea, 120) |
+| `validateTimeOffDraft` | lo mismo desde el formulario: primero las dos fechas («Elegí la fecha de inicio y la de fin»), después las dos horas del horario parcial («Completá las dos horas del horario parcial»), después la validación anterior. Esos dos textos son del formulario, no del API |
+| `overlapsRange` / `absencesOnDay` / `absenceDays` | `[inicio, fin)` tocándose en el borde no se pisa; el día es el del salón, no el de UTC; una ausencia que termina en la medianoche del 27 no marca el 27 |
+| `canSeeReason` / `visibleReason` | la administración lee todos los motivos; cualquier otra persona solo los de sus propias ausencias. Un payload que traiga el texto no lo imprime fuera de esa regla |
+| `formatTimeOffRange` | «Del 24 al 26 de diciembre», «Del 24 de diciembre al 3 de enero», «El 24 de diciembre», «Hoy de 10:00 a 12:00»; el último día impreso de una ausencia de días completos es el que realmente cubre (el fin es exclusivo) |
+| `timeOffSentence` | la misma frase en minúscula para el aviso: «Estás ausente del 24 al 26 de diciembre» |
+| `currentAbsence` / `upcomingAbsences` | la ausencia en curso y, si no hay, la próxima; las terminadas no cuentan |
+| `conflictsNotice` | «Tiene 1 turno en ese período: reasignalo o cancelalo desde el calendario» / «Tiene 3 turnos en ese período: reasignalos o cancelalos desde el calendario» |
+| `timeOffBands` | una banda por persona para la ventana visible (un día), con las horas cuando la ausencia cubre solo una parte y el motivo solo si quien mira puede leerlo; `names` agrega el nombre para el día sin citas |
+| `canEditAbsences` | solo dueño/administración (el API responde 403 al resto) |
+
+`normalizeTimeOff`, `normalizeConflicts` y `normalizeTimeOffCreated` leen el
+contrato y descartan filas sin id, sin persona o con fechas inutilizables.
+
+### 17.2 `/panel/equipo` (S-F2d2-6)
+
+- Nueva tarjeta **«Ausencias de quien atiende»** con un bloque (`TimeOffCard`)
+  por persona reservable (`bookableMembers`, la regla de F2a). La lista de
+  ausencias se pide **una vez** para todo el equipo
+  (`GET /time-off?from&to`, desde hoy hasta 91 días después) con la zona de
+  `/settings` (respaldo `TIME_ZONE`).
+- Cada bloque muestra las ausencias **en curso y próximas** con su rango
+  («Hoy», «El 22 de noviembre», «Del 26 al 27 de noviembre»), la etiqueta «En
+  curso», el motivo y «Borrar» con confirmación en línea («¿Borrar la
+  ausencia?» / «Sí, borrar» / «Volver»). Sin ausencias dice «No tiene ausencias
+  cargadas de hoy en adelante».
+- Alta: **Desde** y **Hasta** (`type="date"`), dos horas opcionales para una
+  ausencia parcial y un **Motivo** opcional (120). Se valida con
+  `validateTimeOffDraft` antes de enviar (el mensaje va junto al formulario en
+  `role="alert"`), el `POST` manda `starts_at`/`ends_at` en UTC y `reason` solo
+  cuando tiene texto. Éxito: «Ausencia cargada.» y la lista se recarga.
+- Si la respuesta trae `conflicts`, aparece el aviso de
+  `conflictsNotice(n)` con la lista de turnos (`HH:MM–HH:MM · clienta`) y el
+  enlace **«Ver el calendario de ese día»** a
+  `/panel/calendario?date=<día local del primer conflicto>`. `CalendarPage`
+  acepta ese `?date=` (solo si es `YYYY-MM-DD`) como día inicial y al cambiar.
+- Si `/time-off` falla, la tarjeta muestra el error del servidor y no inventa
+  ausencias.
+
+### 17.3 Calendario (S-F2d2-7)
+
+- `CalendarPage` pide las ausencias del día visible con la misma ventana que
+  las citas y las proyecta con `timeOffBands`. Un fallo de esa request deja la
+  agenda como estaba (§11): nunca convierte la página en un error.
+- `Timeline` dibuja la banda **«Ausente»** debajo del encabezado de la columna:
+  las horas cuando la ausencia no cubre el día completo (`14:00–18:00`) y el
+  motivo solo si quien mira puede leerlo. En la agenda móvil la banda es una
+  fila más del grupo (`Todo el día` / `HH:MM–HH:MM`, «Ausente · motivo»), y con
+  un día sin citas las bandas se imprimen encima del estado vacío.
+- La banda aparece en la columna que se está dibujando: en «Mi agenda» se ve la
+  propia, en «Todo el salón» la de todo el equipo.
+
+### 17.4 Mi agenda (S-F2d2-7)
+
+- Las ausencias de la semana se piden con el mismo rango que los turnos y se
+  filtran a la persona (`timeOffForUser`). Si hay una en curso o próxima:
+  **«Estás ausente del 24 al 26 de diciembre.»** (`role="status"`, solo con la
+  respuesta viva, nunca durante un error).
+- Cada día de la tira semanal con ausencia lleva un punto visible
+  (`data-absent`) y el nombre accesible lo dice («Sábado 21: 1 turno,
+  ausente»).
+
+### 17.5 Accesibilidad y estilos
+
+`app.css` suma el bloque «F2d2»: `.timeoff-card`/`.timeoff-list`/`.timeoff-item`
+(con borde vino para la ausencia en curso y la etiqueta «En curso»),
+`.timeoff-form__grid` (`repeat(auto-fit, minmax(9.5rem, 1fr))`: una columna en el
+teléfono para que un `type="date"` no se recorte, dos desde que entran),
+`.timeoff-conflicts` (aviso en dorado tenue con la lista y el enlace),
+`.timeline__absence`/`.timeline-absences` (banda sobre la columna) y
+`.week-strip__absent` (punto de la tira). Todos los controles nuevos son
+`label` reales y botones de 44 px; el foco es el anillo de 3 px de `base.css`.
+A 390 y 1280 px no hay scroll horizontal (`scrollWidth === clientWidth`).
+
+### 17.6 Verificación
+
+- `npx tsc --noEmit` sin errores, `npm test` (260 tests, node --test; 238 eran
+  de la entrega anterior, 22 nuevas) y `npm run build` en verde.
+- TDD en `src/lib` (primero en rojo: `ERR_MODULE_NOT_FOUND` del módulo nuevo):
+  `timeOff.test.ts` cubre la conversión local→UTC (día completo, un solo día,
+  cambio de año, 23:30 local que en UTC ya es el día siguiente, cambio de
+  horario de 23 h, horas parciales), el borrador del formulario, la
+  normalización del motivo, las cinco frases del servidor en su orden, el límite
+  de 90 días exacto, la ausencia en curso, el solape con borde exclusivo, el día
+  local de cada ausencia, la tira semanal, la privacidad del motivo, las bandas
+  del calendario (con y sin horas, con y sin nombre), el aviso de conflictos en
+  singular y plural, el cliente de API (`from`/`to`, cuerpo sin `reason` cuando
+  está vacío, frase del servidor verbatim, `DELETE` 204) y `canEditAbsences`.
+- Revisión visual con el bundle de `vite build` servido con `vite preview`
+  contra una API simulada en `/tmp/f2d2-shot` (owner y una profesional, dos
+  ausencias de hoy —una parcial y una de día completo—, dos próximas, un `POST`
+  que devuelve dos conflictos) y Chromium headless por protocolo DevTools (el
+  flag `--screenshot` se cuelga en este entorno) a 390 y 1280 px:
+  `/panel/equipo` (lista, etiqueta «En curso», formulario y aviso de conflictos
+  con el enlace), `/panel/calendario` (banda «Ausente» con horas y motivo, y
+  sin motivo al mirarla otra profesional) y `/panel/mi-agenda` (aviso «Estás
+  ausente…» y puntos de la tira). Comprobado en el navegador:
+  `scrollWidth === clientWidth` en las tres páginas a 390 y 1280 px, campos de
+  fecha y hora de 46 px, botones de 44 px, foco visible con `outline: solid
+  3px`, y el calendario sin red mostrando la copia guardada (§11.6) pese a la
+  request nueva. Se corrigieron en la revisión: el nombre accesible de «Borrar»
+  («del el 22 de noviembre») y el espacio entre el rango y la etiqueta «En
+  curso».
+- Fuera de alcance de esta entrega: reasignar los turnos en conflicto (F2d3),
+  que la profesional pida sus propias ausencias y las ausencias del salón
+  completo.

@@ -34,12 +34,15 @@ import {
   isManager,
   roleLabel,
 } from '../lib/permissions'
-import { fetchSalonHours } from '../lib/settings'
+import { fetchSalonHours, fetchSettings } from '../lib/settings'
+import { TIME_ZONE, addDaysToDateValue, fromDateInputValue, toDateInputValue } from '../lib/datetime'
+import { fetchTimeOff, type TimeOff } from '../lib/timeOff'
 import type { SalonDay } from '../lib/weeklyHours'
 import { useSalon } from './SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
 import { MemberHoursCard } from './components/MemberHoursCard'
 import { PageHeader } from './components/PageHeader'
+import { TimeOffCard } from './components/TimeOffCard'
 
 /** `/panel/equipo`: team of the salon (owner/admin). */
 export function TeamPage() {
@@ -65,6 +68,13 @@ export function TeamPage() {
   // Weekly hours of the salon (F2d1): the default of every professional card.
   const [salonDays, setSalonDays] = useState<readonly SalonDay[]>([])
   const [salonHoursError, setSalonHoursError] = useState<string | null>(null)
+  // Absences of the team (F2d2): one list for every card, read for the window
+  // the API allows and converted with the zone of the salon.
+  const [timeZone, setTimeZone] = useState<string>(TIME_ZONE)
+  const [absences, setAbsences] = useState<TimeOff[]>([])
+  const [absencesError, setAbsencesError] = useState<string | null>(null)
+  const [absencesLoaded, setAbsencesLoaded] = useState(false)
+  const [now] = useState(() => new Date())
   const [reloadKey, setReloadKey] = useState(0)
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
@@ -150,6 +160,58 @@ export function TeamPage() {
       active = false
     }
   }, [salonId, allowed])
+
+  // The zone of the salon converts the local dates of an absence to UTC.
+  useEffect(() => {
+    if (!salonId || !allowed) {
+      return
+    }
+    let active = true
+    fetchSettings(salonId)
+      .then((settings) => {
+        if (active) {
+          setTimeZone(settings.timezone)
+        }
+      })
+      .catch(() => {
+        // TIME_ZONE stays as the fallback
+      })
+    return () => {
+      active = false
+    }
+  }, [salonId, allowed])
+
+  // Absences to come and in progress: today plus the 91 days the API allows.
+  useEffect(() => {
+    if (!salonId || !allowed) {
+      return
+    }
+    let active = true
+    setAbsencesError(null)
+    setAbsencesLoaded(false)
+    const today = toDateInputValue(now, timeZone)
+    fetchTimeOff(
+      salonId,
+      fromDateInputValue(today, timeZone),
+      fromDateInputValue(addDaysToDateValue(today, 91), timeZone),
+    )
+      .then((list) => {
+        if (active) {
+          setAbsences(list)
+          setAbsencesLoaded(true)
+        }
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setAbsencesError(
+            describeApiError(err, 'No pudimos cargar las ausencias del equipo.').message,
+          )
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [salonId, allowed, timeZone, now, reloadKey])
 
   useEffect(() => {
     if (options.length > 0 && !options.includes(newRole)) {
@@ -482,6 +544,43 @@ export function TeamPage() {
                 services={workServices}
                 onSaveTrade={(trade) => handleSaveTrade(member, trade)}
                 onSaveServices={(serviceIds) => handleSaveServices(member, serviceIds)}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {loaded ? (
+        <section className="panel-card" aria-labelledby="team-timeoff-title">
+          <div className="panel-card__head">
+            <h2 id="team-timeoff-title">Ausencias de quien atiende</h2>
+            <span className="panel-card__meta">{absences.length} cargadas</span>
+          </div>
+          <p className="page-head__desc">
+            Vacaciones y días libres puntuales. Una ausencia bloquea la disponibilidad pública de esa
+            persona; los turnos que ya tenía no se cancelan solos: el aviso indica cuáles hay que
+            reasignar o cancelar desde el calendario.
+          </p>
+          {absencesError ? (
+            <p className="notice notice--error" role="alert">
+              {absencesError}
+            </p>
+          ) : null}
+          {absencesLoaded && bookable.length === 0 ? (
+            <p className="empty-state">
+              Nadie atiende clientes todavía, así que no hay ausencias que cargar.
+            </p>
+          ) : null}
+          <div className="hours-grid">
+            {bookable.map((member) => (
+              <TimeOffCard
+                key={member.id}
+                salonId={salonId}
+                member={member}
+                entries={absences}
+                timeZone={timeZone}
+                now={now}
+                onChanged={reload}
               />
             ))}
           </div>

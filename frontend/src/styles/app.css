@@ -2913,3 +2913,207 @@
   max-width: 18rem;
   min-width: 0;
 }
+
+/* ==========================================================================
+   Fase 6 — F2d2: vacations and one-off days off (absences)
+   ========================================================================== */
+
+/* One card per bookable member in `/panel/equipo`: the absences in progress and
+   to come, the form of a new one and the conflicts notice of S-F2d2-6. */
+.timeoff-card {
+  display: grid;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.timeoff-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeoff-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  min-width: 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--champagne);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 0.875rem;
+}
+
+.timeoff-item[data-running='true'] {
+  border-left-color: var(--wine);
+}
+
+.timeoff-item__range {
+  font-weight: 600;
+}
+
+.timeoff-item__tag {
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--plum);
+  color: var(--cream);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.timeoff-item__reason {
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.timeoff-item__action,
+.timeoff-item .photo-confirm .btn {
+  min-height: 44px;
+}
+
+.timeoff-item__action,
+.timeoff-item .photo-confirm {
+  margin-left: auto;
+}
+
+.timeoff-form {
+  display: grid;
+  gap: 0.6rem;
+  min-width: 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line);
+}
+
+.timeoff-form__title {
+  font-size: 1rem;
+}
+
+/* Two dates and two optional hours: one column while a `type="date"` would be
+   clipped at 390 px, two as soon as they fit. */
+.timeoff-form__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.45rem 0.75rem;
+  min-width: 0;
+}
+
+.timeoff-form__grid .input {
+  min-width: 0;
+}
+
+.timeoff-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+}
+
+.timeoff-form__actions .btn {
+  min-height: 44px;
+}
+
+/* Conflicts of S-F2d2-4: the notice and the bookings that fall inside. */
+.timeoff-conflicts {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.2rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--champagne);
+  border-radius: var(--radius-sm);
+  background: var(--gold-tint);
+}
+
+.timeoff-conflicts__text {
+  color: #6d1526;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.timeoff-conflicts__list {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeoff-conflicts .btn {
+  justify-self: start;
+  min-height: 44px;
+}
+
+/* «Ausente» band of the calendar column and of the mobile agenda (S-F2d2-7).
+   The reason only reaches the DOM when the viewer may read it. */
+.timeline__absence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.1rem 0.45rem;
+  margin: 0;
+  padding: 0.35rem 0.75rem;
+  background: rgba(140, 29, 51, 0.09);
+  border-bottom: 1px solid var(--line);
+  font-size: 0.75rem;
+  color: var(--ink);
+}
+
+.timeline__absence-label {
+  color: var(--wine);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.timeline__absence-hours {
+  font-family: var(--font-mono);
+}
+
+.timeline__absence-name {
+  font-weight: 600;
+}
+
+.timeline__absence-reason {
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.timeline-absences {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: var(--space-3);
+}
+
+.timeline-absences .timeline__absence {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.agenda__row--absence .agenda__client {
+  color: var(--wine);
+  font-weight: 600;
+}
+
+/* Week strip of "Mi agenda": a dot marks the days an absence covers. */
+.week-strip__absent {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--wine);
+}
+
+.week-strip__day[data-selected='true'] .week-strip__absent {
+  background: var(--champagne);
+}
+
+/* The notice keeps the width of the page and does not crowd the strip. */
+.my-agenda__absence {
+  margin: 0;
+}

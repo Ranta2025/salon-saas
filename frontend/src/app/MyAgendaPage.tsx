@@ -14,11 +14,20 @@ import {
   selectMyBookings,
   todayAgendaCount,
   todayCountLabel,
+  weekDates,
   weekOverview,
   weekRange,
   weekStartOf,
 } from '../lib/myAgenda'
 import { subscribeOfflineData } from '../lib/offlineData'
+import {
+  absenceDays,
+  currentAbsence,
+  fetchTimeOff,
+  timeOffForUser,
+  timeOffSentence,
+  type TimeOff,
+} from '../lib/timeOff'
 import { activeRole, canManageBooking } from '../lib/permissions'
 import { timeZoneLabel } from '../lib/publicBooking'
 import { fetchSettings } from '../lib/settings'
@@ -51,6 +60,8 @@ export function MyAgendaPage() {
   const [staffError, setStaffError] = useState<string | null>(null)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [bookings, setBookings] = useState<Booking[]>([])
+  // Absences of the visible week (F2d2): the notice and the marks of the strip.
+  const [absences, setAbsences] = useState<TimeOff[]>([])
   const [loadedWeek, setLoadedWeek] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<ApiErrorNotice | null>(null)
@@ -166,6 +177,19 @@ export function MyAgendaPage() {
           setLoading(false)
         }
       })
+    // The absence of the day is extra information: a failed request never turns
+    // the agenda into an error (§11.6 rule).
+    fetchTimeOff(salonId, from, to, controller.signal)
+      .then((list) => {
+        if (!controller.signal.aborted) {
+          setAbsences(list)
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setAbsences([])
+        }
+      })
     return () => controller.abort()
   }, [salonId, weekStart, timeZone, reloadKey])
 
@@ -177,6 +201,10 @@ export function MyAgendaPage() {
     role,
   })
   const mine = selectMyBookings(bookings, user?.id)
+  const myId = user?.id ?? ''
+  const myAbsences = timeOffForUser(absences, myId)
+  const absence = currentAbsence(myAbsences, myId, now)
+  const absentDates = absenceDays(myAbsences, weekDates(weekStart), timeZone)
   const week = weekOverview(mine, weekStart, timeZone, todayValue)
   const todayEntries = agendaMarkers(
     mine.filter((booking) => bookingLocalDate(booking.starts_at, timeZone) === todayValue),
@@ -263,6 +291,12 @@ export function MyAgendaPage() {
         </section>
       ) : null}
 
+      {!hasError && loadedWeek !== null && absence ? (
+        <p className="notice notice--info my-agenda__absence" role="status">
+          {`Estás ausente ${timeOffSentence(absence, { timeZone, today: todayValue })}.`}
+        </p>
+      ) : null}
+
       {!hasError && loadedWeek !== null ? (
         <ol className="week-strip" aria-label={`Semana del ${formatAgendaDate(weekStart)}`}>
           {week.map((day) => (
@@ -272,9 +306,12 @@ export function MyAgendaPage() {
               className="week-strip__day"
               data-today={day.isToday}
               data-selected={day.date === effectiveDate}
+              data-absent={absentDates.includes(day.date)}
               aria-pressed={day.date === effectiveDate}
               aria-current={day.isToday ? 'date' : undefined}
-              aria-label={`${day.label} ${day.dayNumber}: ${dayLabel(day.count)}`}
+              aria-label={`${day.label} ${day.dayNumber}: ${dayLabel(day.count)}${
+                absentDates.includes(day.date) ? ', ausente' : ''
+              }`}
               onClick={() => {
                 setSelectedDate(day.date)
                 setSelectedId(null)
@@ -284,6 +321,9 @@ export function MyAgendaPage() {
               <span className="week-strip__name">{day.shortLabel}</span>
               <span className="week-strip__number">{day.dayNumber}</span>
               <span className="week-strip__count">{day.count}</span>
+              {absentDates.includes(day.date) ? (
+                <span className="week-strip__absent" aria-hidden="true" />
+              ) : null}
               </button>
             </li>
           ))}
