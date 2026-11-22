@@ -105,7 +105,7 @@ export function ServiceForm({ service, onSubmit, onCancel }: ServiceFormProps) {
           />
         </div>
         <div className="field">
-          <label htmlFor="service-price">Precio (MXN)</label>
+          <label htmlFor="service-price">Precio (USD)</label>
           <input
             id="service-price"
             className="input"

@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { PhoneInput } from '../../components/PhoneInput'
 import { toDateInputValue } from '../../lib/datetime'
+import {
+  EMAIL_INVALID_MESSAGE,
+  isEmailErrorMessage,
+  isValidEmail,
+  normalizeEmail,
+} from '../../lib/email'
+import { splitPhone, validatePhone } from '../../lib/phone'
 import {
   BookingAttempt,
   createPublicBooking,
@@ -35,6 +43,8 @@ type Confirmation = {
   serviceName: string
   dateLabel: string
   timeLabel: string
+  /** Empty when the visitor booked anonymously. */
+  email: string
 }
 
 type BookingCtaProps = {
@@ -65,7 +75,11 @@ export function BookingCta({ slug, services, preselected }: BookingCtaProps) {
   const [slotsKey, setSlotsKey] = useState(0)
   const [selectedStart, setSelectedStart] = useState<string | null>(null)
   const [name, setName] = useState('')
+  // `+<code><digits>` (e.g. `+5355528595`); it stays a plain string everywhere.
   const [phone, setPhone] = useState('')
+  const [phoneError, setPhoneError] = useState<string | null>(null)
+  const [email, setEmail] = useState('')
+  const [emailError, setEmailError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [failure, setFailure] = useState<BookingFailure | null>(null)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
@@ -163,6 +177,8 @@ export function BookingCta({ slug, services, preselected }: BookingCtaProps) {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
     setFailure(null)
+    setPhoneError(null)
+    setEmailError(null)
     if (service === null) {
       setFailure({ kind: 'validation', message: 'Elige el servicio que quieres reservar.' })
       return
@@ -178,8 +194,15 @@ export function BookingCta({ slug, services, preselected }: BookingCtaProps) {
       })
       return
     }
-    if (phone.replace(/\D/g, '').length < 8) {
-      setFailure({ kind: 'validation', message: 'Escribe un teléfono de al menos 8 dígitos.' })
+    const phoneProblem = validatePhone(splitPhone(phone))
+    if (phoneProblem !== null) {
+      // The message is shown by the phone field itself (role="alert").
+      setPhoneError(phoneProblem)
+      return
+    }
+    // The email is optional; a filled one must pass the same rule as the API.
+    if (!isValidEmail(email)) {
+      setEmailError(EMAIL_INVALID_MESSAGE)
       return
     }
     const input = {
@@ -187,6 +210,7 @@ export function BookingCta({ slug, services, preselected }: BookingCtaProps) {
       // Without professional_id the salon assigns whoever is free at that time.
       clientName: name,
       clientPhone: phone,
+      clientEmail: email,
       startsAt: selectedGroup.startsAt,
     }
     if (attempt.current === null) {
@@ -202,12 +226,18 @@ export function BookingCta({ slug, services, preselected }: BookingCtaProps) {
         serviceName: service.name,
         dateLabel: longDate(date),
         timeLabel: formatSlotRange(booking.startsAt, booking.endsAt, timeZone),
+        email: normalizeEmail(email),
       })
       attempt.current.renew()
       attempt.current = null
     } catch (err: unknown) {
       const next = describeBookingError(err)
-      setFailure(next)
+      if (next.kind === 'validation' && isEmailErrorMessage(next.message)) {
+        // A 400 `{"error":"Email inválido"}` belongs next to the email field.
+        setEmailError(next.message)
+      } else {
+        setFailure(next)
+      }
       if (next.kind === 'slot_taken') {
         // Somebody else took it: reload the day and keep what the visitor typed.
         setSelectedStart(null)
@@ -315,6 +345,18 @@ export function BookingCta({ slug, services, preselected }: BookingCtaProps) {
                   <dd className="booking__summary-id">{confirmation.booking.id}</dd>
                 </div>
               </dl>
+              {confirmation.email !== '' ? (
+                <p className="booking__note">
+                  Te enviamos la confirmación a <strong>{confirmation.email}</strong>. También te
+                  escribimos un recordatorio el día antes; si no llega, revisa el correo no
+                  deseado.
+                </p>
+              ) : (
+                <p className="booking__note">
+                  Reservaste sin correo, así que no podemos enviarte recordatorios. La próxima vez
+                  agrega tu correo y te avisamos antes de la cita.
+                </p>
+              )}
               <p className="booking__note">
                 Te esperamos en {SALON.address}. Si necesitas mover la cita, escríbenos por
                 WhatsApp con el folio de tu reserva.
@@ -470,20 +512,48 @@ export function BookingCta({ slug, services, preselected }: BookingCtaProps) {
                     />
                   </div>
                   <div className="field">
-                    <label htmlFor="booking-phone">Teléfono o WhatsApp</label>
+                    <label htmlFor="booking-email">
+                      Correo electrónico (te enviamos la confirmación y un recordatorio)
+                    </label>
                     <input
-                      id="booking-phone"
+                      id="booking-email"
                       className="input"
-                      name="phone"
-                      type="tel"
-                      inputMode="tel"
-                      autoComplete="tel"
-                      placeholder="55 1234 5678"
-                      value={phone}
-                      onChange={(event) => setPhone(event.target.value)}
-                      required
+                      name="email"
+                      type="email"
+                      inputMode="email"
+                      autoComplete="email"
+                      placeholder="tucorreo@ejemplo.com"
+                      value={email}
+                      onChange={(event) => {
+                        setEmail(event.target.value)
+                        setEmailError(null)
+                      }}
+                      aria-describedby="booking-email-hint"
+                      aria-invalid={emailError !== null ? true : undefined}
                     />
+                    <p className="field__hint" id="booking-email-hint">
+                      Opcional. Sin correo la cita se agenda igual, pero no te enviamos
+                      recordatorio.
+                    </p>
+                    {emailError !== null ? (
+                      <p className="field__error" role="alert">
+                        {emailError}
+                      </p>
+                    ) : null}
                   </div>
+                  <PhoneInput
+                    id="booking-phone"
+                    className="booking__field--wide"
+                    label="Teléfono o WhatsApp"
+                    name="phone"
+                    value={phone}
+                    error={phoneError}
+                    onChange={(next) => {
+                      setPhone(next)
+                      setPhoneError(null)
+                    }}
+                    required
+                  />
                 </div>
               </fieldset>
 

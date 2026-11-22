@@ -94,7 +94,7 @@ export function ServicesPage() {
       <PageHeader
         eyebrow="Catálogo"
         title="Servicios y precios"
-        description="Precios finales en pesos mexicanos, con duración y comisión de cada servicio."
+        description="Precios finales en dólares estadounidenses, con duración y comisión de cada servicio."
         actions={
           <button
             type="button"

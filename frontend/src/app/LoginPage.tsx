@@ -78,7 +78,7 @@ export function LoginPage() {
         <ul className="login__list">
           <li>Agenda del día por profesional</li>
           <li>Cobro con total calculado en el servidor</li>
-          <li>Catálogo de servicios y precios en pesos</li>
+          <li>Catálogo de servicios y precios en dólares</li>
         </ul>
       </section>
 

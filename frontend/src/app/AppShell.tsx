@@ -142,7 +142,7 @@ function ShellChrome() {
         <header className="shell__topbar">
           <div className="shell__topbar-main">
             <SalonSwitcher />
-            <p className="shell__hint">Los montos se muestran en pesos mexicanos (MXN).</p>
+            <p className="shell__hint">Los montos se muestran en dólares estadounidenses (USD).</p>
           </div>
           <div className="shell__topbar-actions">
             <SyncStatusChip />

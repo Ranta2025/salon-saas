@@ -174,6 +174,18 @@ test('bookingPayload sends the snake_case body of the contract with the client_o
   assert.deepEqual(bookingPayload({ ...bookingInput, professionalId: 'u2' }, 'op-2').professional_id, 'u2')
 })
 
+test('bookingPayload only sends client_email when the visitor typed one', () => {
+  const anonymous = bookingPayload(bookingInput, 'op-1')
+  assert.equal('client_email' in anonymous, false)
+  assert.equal(typeof anonymous.client_phone, 'string')
+
+  const withEmail = bookingPayload({ ...bookingInput, clientEmail: ' Lia@Mail.com ' }, 'op-2')
+  assert.equal(withEmail.client_email, 'lia@mail.com')
+  assert.equal(withEmail.client_phone, '5512345678')
+
+  assert.equal('client_email' in bookingPayload({ ...bookingInput, clientEmail: '   ' }, 'op-3'), false)
+})
+
 test('BookingAttempt keeps the same client_op_id across retries and renews it after a confirmation', () => {
   const attempt = new BookingAttempt(bookingInput, 'op-fixed')
   assert.equal(attempt.payload().client_op_id, 'op-fixed')

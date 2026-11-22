@@ -91,7 +91,7 @@ export function toLandingServices(
       name: service.name,
       durationMin: service.durationMin,
       priceCents: service.priceCents,
-      description: known?.description ?? 'Servicio del salón, con precio final en pesos.',
+      description: known?.description ?? 'Servicio del salón, con precio final en dólares.',
       tag: known?.tag,
     }
   })

@@ -1,12 +1,20 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  CURRENCY,
+  CURRENCY_LABEL,
   formatCents,
   parseAmountToCents,
   sumCents,
   percentOf,
   formatMinutes,
 } from './money.ts'
+
+test('the salon works in US dollars but keeps the `$1,234.55` shape', () => {
+  assert.equal(CURRENCY, 'USD')
+  assert.equal(CURRENCY_LABEL, 'USD')
+  assert.equal(formatCents(123455), '$1,234.55')
+})
 
 test('formatCents renders salon currency without float drift', () => {
   assert.equal(formatCents(35000), '$350.00')

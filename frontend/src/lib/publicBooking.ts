@@ -8,6 +8,7 @@
  */
 
 import { ApiError, NetworkError, request } from './api.ts'
+import { normalizeEmail } from './email.ts'
 import { newClientOpId } from './offlineQueue.ts'
 
 export type AvailabilitySlot = {
@@ -34,6 +35,8 @@ export type PublicBookingInput = {
   professionalId?: string
   clientName: string
   clientPhone: string
+  /** Optional: only sent when the visitor filled it (reminder/confirmation mail). */
+  clientEmail?: string
   startsAt: string
 }
 
@@ -42,6 +45,7 @@ export type PublicBookingPayload = {
   professional_id?: string
   client_name: string
   client_phone: string
+  client_email?: string
   starts_at: string
   client_op_id: string
 }
@@ -278,6 +282,12 @@ export function bookingPayload(input: PublicBookingInput, clientOpId: string): P
   const professionalId = input.professionalId?.trim() ?? ''
   if (professionalId !== '') {
     payload.professional_id = professionalId
+  }
+  // An anonymous booking sends no client_email at all (the API treats it as
+  // "no mail"); the phone stays a plain string, as the offline queue expects.
+  const email = normalizeEmail(input.clientEmail ?? '')
+  if (email !== '') {
+    payload.client_email = email
   }
   return payload
 }

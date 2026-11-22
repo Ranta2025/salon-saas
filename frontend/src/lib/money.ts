@@ -1,9 +1,10 @@
 /** Money helpers. All amounts travel and are stored as integer cents. */
 
 /** ISO code of the currency used by the salon. */
-export const CURRENCY = 'MXN'
+export const CURRENCY = 'USD'
 /** Human readable currency label used in copy and price tags. */
-export const CURRENCY_LABEL = 'MXN'
+export const CURRENCY_LABEL = 'USD'
+/** `es-MX` keeps the `$1,234.55` shape the salon prints (comma groups, dot cents). */
 export const LOCALE = 'es-MX'
 
 function assertCents(value: number): void {

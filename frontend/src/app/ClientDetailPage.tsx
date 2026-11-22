@@ -9,6 +9,7 @@ import {
   type ApiErrorNotice,
 } from '../lib/api'
 import { formatBytes, validatePhotoFile } from '../lib/photos'
+import { displayPhone } from '../lib/phone'
 import type { Client, ClientPhoto } from '../types'
 import { useSalon } from './SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
@@ -177,7 +178,7 @@ export function ClientDetailPage() {
             </div>
             <div>
               <dt>Teléfono</dt>
-              <dd>{client?.phone ?? 'Sin teléfono'}</dd>
+              <dd>{displayPhone(client?.phone ?? '') || 'Sin teléfono'}</dd>
             </div>
             <div>
               <dt>Correo</dt>

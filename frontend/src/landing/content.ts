@@ -18,14 +18,26 @@ export const PUBLIC_OPENING_HOURS = {
 
 export const PUBLIC_HOURS_NOTE = 'horario indicativo'
 
+/**
+ * Contact phone of the salon: ONE constant for the header, the footer and the
+ * booking CTA. `display` is what the page prints, `tel` is the link of the
+ * header/footer and `whatsapp` is the digits-only number `wa.me` expects.
+ */
+export const CONTACT_PHONE = {
+  e164: '+5355528595',
+  display: '+53 5552 8595',
+  tel: 'tel:+5355528595',
+  whatsapp: '5355528595',
+} as const
+
 export const SALON = {
   name: 'Aurelia',
   tagline: 'Estudio de belleza',
   district: 'Roma Norte, Ciudad de México',
   address: 'Av. Álvaro Obregón 128, Roma Norte, 06700, CDMX',
-  phone: '+52 55 4821 9074',
-  phoneHref: 'tel:+525548219074',
-  whatsapp: '525548219074',
+  phone: CONTACT_PHONE.display,
+  phoneHref: CONTACT_PHONE.tel,
+  whatsapp: CONTACT_PHONE.whatsapp,
   email: 'hola@aurelia.mx',
   instagram: '@aurelia.estudio',
   instagramUrl: 'https://instagram.com/',

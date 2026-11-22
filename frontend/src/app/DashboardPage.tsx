@@ -118,7 +118,7 @@ export function DashboardPage() {
           <section className="panel-card" aria-labelledby="top-services-title">
             <div className="panel-card__head">
               <h2 id="top-services-title">Servicios más vendidos hoy</h2>
-              <span className="panel-card__meta">Montos en pesos</span>
+              <span className="panel-card__meta">Montos en dólares</span>
             </div>
             {data.top_services.length === 0 ? (
               <p className="muted">

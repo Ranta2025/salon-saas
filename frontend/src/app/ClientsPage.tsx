@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { PhoneInput } from '../components/PhoneInput'
 import { createClient, describeApiError, fetchClients, type ApiErrorNotice } from '../lib/api'
+import { EMAIL_INVALID_MESSAGE, isValidEmail } from '../lib/email'
 import { activeRole, canCreateClient } from '../lib/permissions'
+import { displayPhone } from '../lib/phone'
 import type { Client, ClientInput } from '../types'
 import { useSalon } from './SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
@@ -85,6 +88,11 @@ export function ClientsPage() {
       setFormError('Escribe el nombre de la clienta.')
       return
     }
+    // Same rule and message as the server (and as the public booking form).
+    if (!isValidEmail(draft.email)) {
+      setFormError(EMAIL_INVALID_MESSAGE)
+      return
+    }
     setSaving(true)
     try {
       const created = await createClient(salonId, draft)
@@ -134,18 +142,12 @@ export function ClientsPage() {
                   required
                 />
               </div>
-              <div className="field">
-                <label htmlFor="new-client-phone">Teléfono</label>
-                <input
-                  id="new-client-phone"
-                  className="input"
-                  type="tel"
-                  value={draft.phone}
-                  onChange={(event) => setDraft({ ...draft, phone: event.target.value })}
-                  autoComplete="tel"
-                  placeholder="55 1234 5678"
-                />
-              </div>
+              <PhoneInput
+                id="new-client-phone"
+                label="Teléfono"
+                value={draft.phone}
+                onChange={(phone) => setDraft({ ...draft, phone })}
+              />
               <div className="field">
                 <label htmlFor="new-client-email">Correo</label>
                 <input
@@ -157,6 +159,9 @@ export function ClientsPage() {
                   autoComplete="email"
                   placeholder="clienta@correo.com"
                 />
+                <p className="field__hint">
+                  Opcional. La reserva pública lo pide para confirmar y recordar el turno.
+                </p>
               </div>
               <div className="field clients-form__notes">
                 <label htmlFor="new-client-notes">Notas</label>
@@ -234,7 +239,9 @@ export function ClientsPage() {
                     to={`/panel/clientes/${encodeURIComponent(client.id)}`}
                   >
                     <span className="client-card__name">{client.name}</span>
-                    <span className="client-card__meta">{client.phone ?? 'Sin teléfono'}</span>
+                    <span className="client-card__meta">
+                      {displayPhone(client.phone ?? '') || 'Sin teléfono'}
+                    </span>
                     <span className="client-card__meta">{client.email ?? 'Sin correo'}</span>
                     <span className="client-card__id">{client.id}</span>
                   </Link>

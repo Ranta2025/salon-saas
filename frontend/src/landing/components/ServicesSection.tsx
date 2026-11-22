@@ -14,8 +14,8 @@ export function ServicesSection({ services, onSelect }: ServicesSectionProps) {
           <p className="eyebrow">Servicios y precios</p>
           <h2 id="services-title">Todo lo que tu cabello necesita, en una sola visita</h2>
           <p className="lede">
-            Precios finales en pesos mexicanos; el largo y el volumen del cabello pueden ajustar el
-            costo de coloración y alisados. Te confirmamos el total antes de empezar.
+            Precios finales en dólares estadounidenses; el largo y el volumen del cabello pueden
+            ajustar el costo de coloración y alisados. Te confirmamos el total antes de empezar.
           </p>
         </div>
 
