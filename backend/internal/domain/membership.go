@@ -1,6 +1,10 @@
 package domain
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+	"unicode/utf8"
+)
 
 // Role define qué puede hacer un usuario dentro de un salón (RBAC mínimo).
 type Role string
@@ -28,6 +32,9 @@ type Membership struct {
 	SalonID string
 	Role    Role
 	Attends bool
+	// Trade es el oficio visible de quien atiende ("Barbero", "Colorista"): un
+	// dato de la persona, no un permiso (S-F2c-1). Vacío es válido.
+	Trade string
 }
 
 // NewMembership valida la unión usuario-salón-rol.
@@ -69,6 +76,26 @@ func (m Membership) SetAttends(attends bool) (Membership, error) {
 		return Membership{}, NewMessage(ErrValidation, "Ese rol no atiende clientes")
 	}
 	m.Attends = attends
+	return m, nil
+}
+
+// SetTrade devuelve la membresía con el oficio cambiado. Solo quien atiende
+// tiene oficio: recepción y cliente nunca, y el dueño/administración solo con
+// la marca encendida. El texto va recortado, sin saltos de línea y con tope de
+// MaxTextTrade caracteres.
+func (m Membership) SetTrade(trade string) (Membership, error) {
+	if !m.Bookable() {
+		return Membership{}, NewMessage(ErrValidation, "Ese rol no tiene oficio")
+	}
+	clean := strings.TrimSpace(trade)
+	if strings.ContainsAny(clean, "\r\n") {
+		return Membership{}, NewMessage(ErrValidation, "El oficio no puede tener saltos de línea")
+	}
+	if utf8.RuneCountInString(clean) > MaxTextTrade {
+		return Membership{}, NewMessage(ErrValidation,
+			fmt.Sprintf("El oficio no puede superar los %d caracteres", MaxTextTrade))
+	}
+	m.Trade = clean
 	return m, nil
 }
 

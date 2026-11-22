@@ -9,6 +9,9 @@ type StaffMember struct {
 	Name    string
 	Role    Role
 	Attends bool
+	// Trade es el oficio visible (barbero, estilista...). La agenda lo muestra
+	// junto al nombre y no expone qué servicios hace cada quien (S-F2c-3).
+	Trade string
 }
 
 // Bookable dice si esta persona atiende clientes. La regla NO vive acá: es

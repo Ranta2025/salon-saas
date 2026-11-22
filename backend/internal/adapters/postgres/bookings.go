@@ -12,7 +12,7 @@ func scanBooking(scan func(...interface{}) error) (domain.Booking, error) {
 	var b domain.Booking
 	var status string
 	err := scan(&b.ID, &b.SalonID, &b.ProfessionalID, &b.ClientName, &b.ClientPhone,
-		&b.StartsAt, &b.EndsAt, &status, &b.ClientOpID, &b.CreatedAt)
+		&b.StartsAt, &b.EndsAt, &status, &b.ClientOpID, &b.CreatedAt, &b.ServiceID)
 	if err != nil {
 		return domain.Booking{}, err
 	}
@@ -27,12 +27,17 @@ func scanBooking(scan func(...interface{}) error) (domain.Booking, error) {
 
 type Bookings struct{ Pool *pgxpool.Pool }
 
+// bookingColumns es la lista única de columnas del turno. service_id va con
+// COALESCE porque es NULL para los turnos del calendario: así el escaneo no
+// necesita tipos anulables en Go.
+const bookingColumns = `id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at,COALESCE(service_id,'')`
+
 func (r Bookings) Save(b domain.Booking) error {
 	_, err := r.Pool.Exec(context.Background(),
-		`INSERT INTO bookings(id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at)
-		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		`INSERT INTO bookings(id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at,service_id)
+		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''))`,
 		b.ID, b.SalonID, b.ProfessionalID, b.ClientName, b.ClientPhone,
-		b.StartsAt, b.EndsAt, string(b.Status), b.ClientOpID, b.CreatedAt)
+		b.StartsAt, b.EndsAt, string(b.Status), b.ClientOpID, b.CreatedAt, b.ServiceID)
 	return pgError(err)
 }
 
@@ -41,7 +46,7 @@ func (r Bookings) Save(b domain.Booking) error {
 // DB, el índice único deja pasar uno y el otro se resuelve por acá.
 func (r Bookings) FindByClientOpID(salonID, clientOpID string) (domain.Booking, error) {
 	row := r.Pool.QueryRow(context.Background(),
-		`SELECT id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at
+		`SELECT `+bookingColumns+`
 		 FROM bookings WHERE salon_id=$1 AND client_op_id=$2 AND client_op_id <> ''`,
 		salonID, clientOpID)
 	b, err := scanBooking(row.Scan)
@@ -55,7 +60,7 @@ func (r Bookings) FindByClientOpID(salonID, clientOpID string) (domain.Booking, 
 // existe (404). Es la autorización del PATCH.
 func (r Bookings) FindByID(salonID, id string) (domain.Booking, error) {
 	row := r.Pool.QueryRow(context.Background(),
-		`SELECT id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at
+		`SELECT `+bookingColumns+`
 		 FROM bookings WHERE salon_id=$1 AND id=$2`, salonID, id)
 	b, err := scanBooking(row.Scan)
 	if err != nil {
@@ -70,10 +75,10 @@ func (r Bookings) FindByID(salonID, id string) (domain.Booking, error) {
 func (r Bookings) Update(b domain.Booking) error {
 	tag, err := r.Pool.Exec(context.Background(),
 		`UPDATE bookings
-		 SET professional_id=$3, client_name=$4, client_phone=$5, starts_at=$6, ends_at=$7, status=$8
+		 SET professional_id=$3, client_name=$4, client_phone=$5, starts_at=$6, ends_at=$7, status=$8, service_id=NULLIF($9,'')
 		 WHERE salon_id=$1 AND id=$2`,
 		b.SalonID, b.ID, b.ProfessionalID, b.ClientName, b.ClientPhone,
-		b.StartsAt, b.EndsAt, string(b.Status))
+		b.StartsAt, b.EndsAt, string(b.Status), b.ServiceID)
 	if err != nil {
 		return pgError(err)
 	}
@@ -85,7 +90,7 @@ func (r Bookings) Update(b domain.Booking) error {
 
 func (r Bookings) FindOverlapping(salonID, professionalID string, start, end time.Time) ([]domain.Booking, error) {
 	rows, err := r.Pool.Query(context.Background(),
-		`SELECT id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at
+		`SELECT `+bookingColumns+`
 		 FROM bookings
 		 WHERE salon_id=$1 AND professional_id=$2 AND status='booked'
 		   AND tstzrange(starts_at,ends_at) && tstzrange($3,$4)`,
@@ -107,7 +112,7 @@ func (r Bookings) FindOverlapping(salonID, professionalID string, start, end tim
 
 func (r Bookings) ListRange(salonID string, from, to time.Time) ([]domain.Booking, error) {
 	rows, err := r.Pool.Query(context.Background(),
-		`SELECT id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at
+		`SELECT `+bookingColumns+`
 		 FROM bookings
 		 WHERE salon_id=$1 AND starts_at >= $2 AND starts_at < $3
 		 ORDER BY starts_at`,

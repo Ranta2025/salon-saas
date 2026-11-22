@@ -15,7 +15,7 @@ import (
 // (F2a): la pantalla la muestra y la cambia con SetAttends.
 func (r Memberships) ListMembers(salonID string) ([]domain.Member, error) {
 	rows, err := r.Pool.Query(context.Background(),
-		`SELECT u.id, u.name, u.email, m.role, m.attends
+		`SELECT u.id, u.name, u.email, m.role, m.attends, m.trade
 		 FROM memberships m
 		 JOIN users u ON u.id = m.user_id
 		 WHERE m.salon_id=$1
@@ -28,7 +28,7 @@ func (r Memberships) ListMembers(salonID string) ([]domain.Member, error) {
 	for rows.Next() {
 		var role string
 		var m domain.Member
-		if err := rows.Scan(&m.ID, &m.Name, &m.Email, &role, &m.Attends); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.Email, &role, &m.Attends, &m.Trade); err != nil {
 			return nil, err
 		}
 		m.Role = domain.Role(role)
@@ -43,6 +43,21 @@ func (r Memberships) SetAttends(userID, salonID string, attends bool) error {
 	tag, err := r.Pool.Exec(context.Background(),
 		`UPDATE memberships SET attends=$3 WHERE user_id=$1 AND salon_id=$2`,
 		userID, salonID, attends)
+	if err != nil {
+		return pgError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+// SetTrade guarda el oficio de un miembro. Mismo contrato que SetAttends: el
+// WHERE lleva el salon_id y una fila de otro tenant es ErrNotFound.
+func (r Memberships) SetTrade(userID, salonID, trade string) error {
+	tag, err := r.Pool.Exec(context.Background(),
+		`UPDATE memberships SET trade=$3 WHERE user_id=$1 AND salon_id=$2`,
+		userID, salonID, trade)
 	if err != nil {
 		return pgError(err)
 	}

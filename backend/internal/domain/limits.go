@@ -18,6 +18,9 @@ const (
 	MaxTextEmail = 254  // límite práctico de un email (RFC 5321)
 	MaxTextTitle = 120  // título de un aviso
 	MaxTextBody  = 500  // cuerpo de un aviso
+	// MaxTextTrade es el oficio que se muestra en la agenda ("barbero",
+	// "estilista", "colorista"): una etiqueta, no una biografía (S-F2c-1).
+	MaxTextTrade = 40
 
 	// Credenciales.
 	MinPasswordBytes = 8

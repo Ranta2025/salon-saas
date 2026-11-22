@@ -28,6 +28,10 @@ type Booking struct {
 	StartsAt       time.Time
 	EndsAt         time.Time
 	Status         BookingStatus
+	// ServiceID es el servicio reservado. Opcional: la reserva pública lo deja
+	// siempre (para saber qué se hace) y la reserva de staff puede no llevarlo
+	// (el calendario agenda a mano un turno sin servicio) (S-F2c-2).
+	ServiceID string
 	// ClientOpID identifica la operación en el cliente (cola offline). Igual
 	// que en las ventas: si viene repetido, el servidor devuelve la reserva YA
 	// registrada en vez de agendar un turno nuevo.

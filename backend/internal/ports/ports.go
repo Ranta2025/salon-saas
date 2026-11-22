@@ -60,6 +60,24 @@ type MemberAdminRepository interface {
 	// es la autorización y el scope: si la persona no pertenece a ESE salón no
 	// se afectan filas (ErrNotFound, nunca un upsert).
 	SetAttends(userID, salonID string, attends bool) error
+	// SetTrade guarda el oficio visible ("Barbero"). Mismo scope que SetAttends:
+	// un miembro de otro salón no se toca (ErrNotFound).
+	SetTrade(userID, salonID, trade string) error
+}
+
+// ProfessionalServiceRepository: qué servicios hace cada profesional (F2c).
+// El oficio es un texto (no un permiso); esta tabla es la que decide quién
+// puede recibir un turno de cada servicio.
+type ProfessionalServiceRepository interface {
+	// ListServiceIDs trae los servicios que hace un miembro de ESE salón,
+	// ordenados por id (una lista vacía es válida: no hace ninguno).
+	ListServiceIDs(salonID, userID string) ([]string, error)
+	// SetServices REEMPLAZA la lista del miembro en una transacción: o queda la
+	// lista nueva entera o queda la anterior, nunca media lista.
+	SetServices(salonID, userID string, serviceIDs []string) error
+	// ListProfessionalsFor trae quien ATIENDE (Membership.Bookable) y hace ese
+	// servicio: los elegibles de la disponibilidad y de la reserva pública.
+	ListProfessionalsFor(salonID, serviceID string) ([]domain.StaffMember, error)
 }
 
 // SalonSettingsRepository: configuración operativa del salón (zona horaria,

@@ -122,18 +122,18 @@ func (r Memberships) Save(m domain.Membership) error {
 	// persona y salón) y cambiar el rol recalcula la marca por defecto
 	// (professional atiende, el resto no) en vez de arrastrar la vieja.
 	_, err := r.Pool.Exec(context.Background(),
-		`INSERT INTO memberships(user_id,salon_id,role,attends) VALUES($1,$2,$3,$4)
-		 ON CONFLICT (user_id,salon_id) DO UPDATE SET role=EXCLUDED.role, attends=EXCLUDED.attends`,
-		m.UserID, m.SalonID, string(m.Role), m.Attends)
+		`INSERT INTO memberships(user_id,salon_id,role,attends,trade) VALUES($1,$2,$3,$4,$5)
+		 ON CONFLICT (user_id,salon_id) DO UPDATE SET role=EXCLUDED.role, attends=EXCLUDED.attends, trade=EXCLUDED.trade`,
+		m.UserID, m.SalonID, string(m.Role), m.Attends, m.Trade)
 	return err
 }
 
 func (r Memberships) Find(userID, salonID string) (domain.Membership, error) {
-	var role string
+	var role, trade string
 	var attends bool
 	err := r.Pool.QueryRow(context.Background(),
-		`SELECT role, attends FROM memberships WHERE user_id=$1 AND salon_id=$2`, userID, salonID,
-	).Scan(&role, &attends)
+		`SELECT role, attends, trade FROM memberships WHERE user_id=$1 AND salon_id=$2`, userID, salonID,
+	).Scan(&role, &attends, &trade)
 	if err != nil {
 		return domain.Membership{}, notFound(err)
 	}
@@ -142,6 +142,7 @@ func (r Memberships) Find(userID, salonID string) (domain.Membership, error) {
 		return domain.Membership{}, err
 	}
 	m.Attends = attends
+	m.Trade = trade
 	return m, nil
 }
 
@@ -149,16 +150,16 @@ func (r Memberships) Find(userID, salonID string) (domain.Membership, error) {
 // que solo tienen el JWT: rooms del websocket y "marcar notificación leída".
 func (r Memberships) ListByUser(userID string) ([]domain.Membership, error) {
 	rows, err := r.Pool.Query(context.Background(),
-		`SELECT salon_id, role, attends FROM memberships WHERE user_id=$1 ORDER BY salon_id`, userID)
+		`SELECT salon_id, role, attends, trade FROM memberships WHERE user_id=$1 ORDER BY salon_id`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []domain.Membership
 	for rows.Next() {
-		var salonID, role string
+		var salonID, role, trade string
 		var attends bool
-		if err := rows.Scan(&salonID, &role, &attends); err != nil {
+		if err := rows.Scan(&salonID, &role, &attends, &trade); err != nil {
 			return nil, err
 		}
 		m, err := domain.NewMembership(userID, salonID, domain.Role(role))
@@ -166,6 +167,7 @@ func (r Memberships) ListByUser(userID string) ([]domain.Membership, error) {
 			return nil, err
 		}
 		m.Attends = attends
+		m.Trade = trade
 		out = append(out, m)
 	}
 	return out, rows.Err()

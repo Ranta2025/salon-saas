@@ -258,7 +258,15 @@ func TestPublicBooking_IT_carrera_un_solo_gana(t *testing.T) {
 	if err := services.Save(svc); err != nil {
 		t.Fatalf("guardar servicio: %v", err)
 	}
-	svcBooking := app.PublicBookingService{Salons: salons, Services: services, Settings: salons, Staff: mems, Bookings: bookings}
+	// F2c: la reserva pública solo asigna a quien HACE el servicio.
+	professionals := ProfessionalServices{Pool: pool}
+	if err := professionals.SetServices("s-it-r2", "u-it-r2-prof", []string{svc.ID}); err != nil {
+		t.Fatalf("servicios de la profesional: %v", err)
+	}
+	svcBooking := app.PublicBookingService{
+		Salons: salons, Services: services, Settings: salons, Staff: mems,
+		Bookings: bookings, Professionals: professionals,
+	}
 	start := time.Date(2027, 3, 1, 16, 0, 0, 0, time.UTC) // 10:00 CDMX
 
 	var wg sync.WaitGroup
