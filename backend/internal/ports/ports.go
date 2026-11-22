@@ -87,6 +87,31 @@ type SalonSettingsRepository interface {
 	SaveSettings(s domain.SalonSettings) error
 }
 
+// WeeklyHoursRepository: horario semanal del salón y de cada profesional (F2d1).
+//
+// La ausencia de filas es comportamiento, no dato faltante: un salón sin filas
+// usa la ventana única de /settings todos los días y una profesional sin filas
+// sigue el horario del salón. Por eso no hay backfill en la migración 017.
+// Todas las queries van scopeadas por salon_id: el horario de otro tenant no
+// existe acá.
+type WeeklyHoursRepository interface {
+	// SalonHours trae las ventanas por día del salón (vacío = sin horario
+	// propio). El día sin fila, cuando hay filas, está cerrado.
+	SalonHours(salonID string) ([]domain.WeekdayHours, error)
+	// SaveSalonHours REEMPLAZA el horario en una transacción: o queda el nuevo
+	// entero o queda el anterior. Lista vacía = volver al horario único.
+	SaveSalonHours(salonID string, days []domain.WeekdayHours) error
+	// MemberHours trae los tramos de un miembro de ESE salón (vacío = sigue al
+	// salón).
+	MemberHours(salonID, userID string) ([]domain.HoursSegment, error)
+	// SaveMemberHours REEMPLAZA los tramos del miembro en una transacción.
+	// Lista vacía = vuelve a seguir el horario del salón.
+	SaveMemberHours(salonID, userID string, segments []domain.HoursSegment) error
+	// AllMemberHours trae los tramos de todo el salón indexados por persona: la
+	// disponibilidad pregunta una vez por día, no una query por profesional.
+	AllMemberHours(salonID string) (map[string][]domain.HoursSegment, error)
+}
+
 // --- Seguridad (puertos de salida hacia crypto/tokens) ---
 
 type PasswordHasher interface {
