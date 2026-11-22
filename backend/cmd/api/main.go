@@ -223,6 +223,14 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F2d2: las ausencias se cargan desde Equipo y las consultan la agenda (con
 	// los turnos en conflicto) y la disponibilidad pública.
 	timeOffSvc := app.TimeOffService{TimeOff: timeOffRepo, Bookings: bookings, Memberships: mems}
+	// F2d3: cubrir una ausencia reasignando los turnos a otra profesional. La
+	// transacción con lock por salón es lo que hace el "todo o nada".
+	coverageSvc := app.CoverageService{
+		Bookings: bookings, Memberships: mems, Staff: mems, Professionals: professionals,
+		Hours: weeklyHours, TimeOff: timeOffRepo, Services: servicesRepo,
+		Settings: salons, Salons: salons, Tx: bookings,
+		Events: hub, Notifier: notifSvc,
+	}
 	memberSvc := app.MemberService{
 		Members: mems, Memberships: mems, Users: users,
 		Professionals: professionals, Services: servicesRepo,
@@ -248,6 +256,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	}
 	// La cola de recordatorios vive en su propia tabla (014).
 	bookingEmails := pgstore.BookingEmails{Pool: pool}
+	// F2d3 avisa a la clienta del cambio de turno por el mismo email.
+	coverageSvc.Mailer = mailer
+	coverageSvc.Emails = bookingEmails
 	reminders := app.ReminderService{Emails: bookingEmails, Mailer: mailer, Settings: salons}
 	publicBookingSvc := app.PublicBookingService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems, Bookings: bookings,
@@ -296,7 +307,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Hours: httpapi.HoursHandler{
 			Salon: salonHoursSvc, Professional: professionalHoursSvc, Memberships: mems,
 		},
-		TimeOff: httpapi.TimeOffHandler{TimeOff: timeOffSvc, Memberships: mems},
+		TimeOff:  httpapi.TimeOffHandler{TimeOff: timeOffSvc, Memberships: mems},
+		Absences: httpapi.AbsenceHandler{Coverage: coverageSvc, Memberships: mems},
 		// La reserva pública es la única escritura sin auth: rate limit por IP
 		// como en /auth (el GET de disponibilidad no pasa por acá).
 		PublicBookingLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/salons/"),

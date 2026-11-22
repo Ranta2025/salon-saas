@@ -145,6 +145,14 @@ func (s TimeOffService) conflicts(salonID, userID string, startsAt, endsAt time.
 	if err != nil {
 		return nil, err
 	}
+	return bookedOverlaps(window, userID, startsAt, endsAt), nil
+}
+
+// bookedOverlaps filtra de una ventana de agenda los turnos `booked` de esa
+// persona que se pisan con [startsAt, endsAt), ordenados por inicio. Lo comparten
+// el alta de una ausencia (F2d2, los turnos en conflicto) y el "Reasignar todo"
+// de F2d3: la misma definición de "turno que hay que mover".
+func bookedOverlaps(window []domain.Booking, userID string, startsAt, endsAt time.Time) []domain.Booking {
 	out := make([]domain.Booking, 0, len(window))
 	for _, b := range window {
 		if b.ProfessionalID != userID || b.Status != domain.BookingBooked {
@@ -155,7 +163,7 @@ func (s TimeOffService) conflicts(salonID, userID string, startsAt, endsAt time.
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].StartsAt.Before(out[j].StartsAt) })
-	return out, nil
+	return out
 }
 
 // member es la autorización: el actor tiene que pertenecer al salón de la ruta.

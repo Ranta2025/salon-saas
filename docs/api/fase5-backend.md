@@ -676,6 +676,140 @@ POST { "starts_at": "2026-12-02T05:00:00Z", "ends_at": "2026-12-03T05:00:00Z",
   **se pisan**: ese hueco no se ofrece (el turno tiene que entrar entero fuera de
   la ausencia).
 
+## Fase 6 — F2d3: cubrir una ausencia reasignando los turnos
+
+Cuando alguien falta, el salón **reasigna** sus turnos a otra profesional que
+pueda tomarlos y **avisa a la clienta**. Es una acción **manual** del
+dueño/administración: elegir quién cubre es una decisión del salón, el servidor
+no la toma por su cuenta.
+
+- **No hay tabla nueva** (S-F2d3-1): reasignar es un `UPDATE` del
+  `professional_id` del turno, con el mismo `starts_at`/`ends_at` y el mismo
+  estado. La **EXCLUDE de `bookings`** (migración 002) sigue siendo la garantía
+  de que nadie quede con dos turnos a la misma hora; su rechazo se traduce a
+  `409`, nunca a `500`.
+- **Todo o nada** (S-F2d3-3): "reasignar todo" corre en **una transacción** con
+  un advisory lock por salón. Si un turno no entra, la operación responde `409`
+  con el detalle y **no se movió ninguno**.
+- Solo `owner`/`admin` (`403`); sin token `401`; un ajeno al salón `403`. El
+  motivo de la ausencia es privado, por eso no lo ve cualquiera.
+
+Quién puede **cubrir** un turno (reglas de F2a, F2c, F2d1 y F2d2 juntas):
+
+| Condición | Mensaje exacto |
+|---|---|
+| No atiende clientes (recepción, cliente, dueño/administración sin `attends`, o alguien de **otro salón**) | `Esa persona no atiende clientes` |
+| No está de turno ese día: descanso semanal / día libre / salón cerrado (F2d1) **o** ausente (F2d2) | `Esa persona no está de turno ese día` |
+| El turno tiene `service_id` y esa persona no lo hace (F2c) | `Esa persona no hace ese servicio` |
+| El turno es de otra persona o no cae dentro de la ausencia | `Ese turno no es de esa ausencia` |
+| El turno ya no está `booked` (cancelado, hecho o no-show) | `El turno ya no está reservado` |
+| No se nombró destino | `No hay a quién reasignar` |
+| El destino **ya tiene un turno** en ese horario (409, lo decide la EXCLUDE) | `Ya tiene un turno a esa hora` |
+
+- Un turno **sin** `service_id` (agendado a mano desde el calendario) lo puede
+  tomar **cualquier** persona reservable que esté de turno: el oficio solo se
+  exige cuando el turno dice qué servicio es.
+- Los tres primeros son `400` (la regla no se cumple); el turno cerrado y el
+  horario ocupado son `409` (choque de estado). En todos los casos el cuerpo
+  lleva el detalle: `{"error":"...","bookings":[{"id","client_name","starts_at"}]}`
+  (array vacío cuando el pedido no nombra a nadie).
+
+### `GET /salons/:id/absences?from&to`
+
+```json
+GET /api/v1/salons/s_.../absences?from=2026-12-01T00:00:00Z&to=2026-12-08T00:00:00Z -> 200 {
+  "absences": [ {
+    "id": "t_...", "user_id": "u_...", "user_name": "Ana",
+    "starts_at": "2026-12-02T16:00:00Z", "ends_at": "2026-12-02T19:00:00Z",
+    "reason": "Vacaciones",
+    "bookings": [ {
+      "id": "b_...", "client_name": "Lía",
+      "starts_at": "2026-12-02T16:00:00Z", "ends_at": "2026-12-02T16:45:00Z",
+      "service_id": "sv_...", "service_name": "Corte",
+      "candidates": [
+        { "professional_id": "u-...", "name": "Bea", "available": true,  "reason": "" },
+        { "professional_id": "u-...", "name": "Ana", "available": false,
+          "reason": "Esa persona no está de turno ese día" }
+      ] } ]
+  } ]
+}
+```
+
+- Para cada persona ausente en el período, sus turnos **`booked`** que se pisan
+  (ordenados por inicio) con las candidatas y el motivo por el que no sirven: el
+  `reason` es **el mismo texto** que devuelve el `POST` al rechazarla, y
+  `available` es `reason == ""`. Una candidata **ocupada** en ese horario aparece
+  como `"reason":"Ya tiene un turno a esa hora"`.
+- `reason` de la ausencia se devuelve siempre (solo dueño/administración llega a
+  este endpoint; para el resto es `403`).
+- `from`/`to` son obligatorios, RFC3339 y con tope de **92 días**, con los mismos
+  mensajes que `GET /time-off`: `Indicá el rango de fechas (from y to)`,
+  `Rango inválido: el fin debe ser posterior al inicio`,
+  `El rango no puede superar los 92 días` (`400`). Fechas ilegibles →
+  `400 {"error":"Fecha inválida: usá RFC3339"}`.
+- El salón de la ruta es el único que se mira: una ausencia de otro salón no
+  aparece.
+
+### `POST /salons/:id/absences/:tid/reassign`
+
+```json
+POST { "professional_id": "u-..." }                       // TODOS los turnos de la ausencia
+POST { "professional_id": "u-...", "booking_ids": ["b_..."] } // solo esos
+
+200 { "reassigned": 2,
+      "bookings": [ { "id": "b_...", "client_name": "Lía",
+                      "starts_at": "2026-12-02T16:00:00Z" } ] }
+```
+
+- Mueve los turnos `booked` de la ausencia a esa profesional, con el **mismo
+  horario**. `booking_ids` es opcional: sin lista se mueven todos; con lista, solo
+  esos (y uno que no sea de esa ausencia es
+  `400 {"error":"Ese turno no es de esa ausencia"}`). Una lista vacía se trata
+  como "todos".
+- Una ausencia sin turnos reservados responde `200 {"reassigned":0,"bookings":[]}`.
+- Una ausencia de **otro salón** es `404`.
+- Si un turno no entra, `409` (o `400` según la tabla de arriba) con el detalle y
+  **ningún** turno movido: la transacción se deshace entera.
+
+### `POST /salons/:id/bookings/:bid/reassign`
+
+```json
+POST { "professional_id": "u-..." } -> 200 {"reassigned":1,"bookings":[{...}]}
+POST { "cancel": true, "reason": "Se enfermó" }
+     -> 200 { "cancelled": true, "booking": { ...el turno cancelado... } }
+```
+
+- Reasigna **un** turno suelto (el calendario, o uno que la ausencia no explica),
+  con las mismas reglas de destino.
+- `{"cancel":true}` cancela el turno y **registra el motivo** en la notificación
+  interna (`Turno cancelado · Lía · 02/12 10:00 · Motivo: Se enfermó`). El motivo
+  es opcional, se recorta y no admite saltos de línea ni más de 120 caracteres
+  (`El motivo no puede tener saltos de línea` / `El motivo no puede superar los
+  120 caracteres`). Un turno ya cerrado es
+  `409 {"error":"El turno ya no está reservado"}`. F1 formalizará el enlace del
+  email; acá solo se cancela y se avisa.
+- Un turno de otro salón es `404`; reasignar y cancelar son de
+  dueño/administración (`403` para el resto).
+
+### Aviso a la clienta (S-F2d3-4)
+
+- **Reasignar**: el aviso interno dice `Turno reasignado · Lía · 02/12 10:00 ·
+  ahora la atiende Bea` y publica `booking.updated` para que los calendarios
+  abiertos se refresquen. La clienta recibe un correo (T12) con **el mismo
+  horario** y quién la atiende ahora; sin email guardado del turno no se manda
+  nada (no hay a quién escribir) y la operación termina bien igual.
+- **Cancelar**: el aviso interno lleva el motivo y la clienta recibe que el turno
+  fue cancelado y que el salón se va a comunicar con ella.
+- Los correos salen en segundo plano (como la confirmación): un SMTP lento no
+  demora la respuesta ni tumba la operación.
+
+### Disponibilidad, reserva pública y PATCH clásico: sin cambios
+
+- F2d3 **no** toca la disponibilidad pública, la reserva web ni el `PATCH
+  /bookings/:bid` de siempre (estado y reprogramación): siguen con las mismas
+  reglas de F2a/F2c/F2d1/F2d2. La cobertura es una acción aparte, explícita y
+  auditada en la bandeja de avisos.
+
 ## Ronda 3 (T9): ficha desde la reserva, email de la ficha, hora del salón y mensajes
 
 Hallazgos E-03, E-04 y E-07 de la auditoría en navegador real. Los códigos HTTP
@@ -964,6 +1098,11 @@ Migración de la fase 6 (F2d2):
     lo verifica el caso de uso contra las filas existentes, antes de escribir.
   - Guardas miradas en `current_schema()` y `CREATE INDEX IF NOT EXISTS`: una
     segunda ejecución no falla ni duplica nada.
+
+Fase 6 (F2d3): **sin migración nueva**. Reasignar es un `UPDATE` del
+`professional_id` de un turno y la garantía anti-solape es la `EXCLUDE
+bookings_no_overlap` de la 002; el "todo o nada" lo da la transacción del
+adaptador Postgres (`pg_advisory_xact_lock` por salón), no el esquema.
 
 Las 18 migraciones se probaron aplicándolas dos veces con
 `psql -v ON_ERROR_STOP=1` sobre una base limpia y sobre una ya migrada, y el

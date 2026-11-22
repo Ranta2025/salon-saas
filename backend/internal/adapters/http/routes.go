@@ -25,6 +25,8 @@ type Deps struct {
 	Hours HoursHandler
 	// TimeOff son las ausencias de las profesionales (F2d2).
 	TimeOff TimeOffHandler
+	// Absences cubre una ausencia reasignando sus turnos (F2d3).
+	Absences AbsenceHandler
 	// PublicBookingLimit limita por IP el POST público de reservas (nil = sin
 	// límite, como en los tests unitarios del router).
 	PublicBookingLimit gin.HandlerFunc
@@ -89,6 +91,13 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.GET("/salons/:id/time-off", d.TimeOff.List)
 	authed.POST("/salons/:id/members/:uid/time-off", d.TimeOff.Create)
 	authed.DELETE("/salons/:id/time-off/:tid", d.TimeOff.Delete)
+
+	// F2d3: cubrir una ausencia. Solo dueño/administración (el motivo es privado).
+	// Reasignar es un PATCH de professional_id apoyado en la EXCLUDE de turnos: no
+	// hay tabla nueva ni endpoint de alta.
+	authed.GET("/salons/:id/absences", d.Absences.List)
+	authed.POST("/salons/:id/absences/:tid/reassign", d.Absences.ReassignAbsence)
+	authed.POST("/salons/:id/bookings/:bid/reassign", d.Absences.ReassignBooking)
 
 	// Equipo del salón (select de profesional de la agenda)
 	authed.GET("/salons/:id/staff", d.Staff.List)

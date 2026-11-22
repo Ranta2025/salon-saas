@@ -215,6 +215,14 @@ func newPOSEnv() *posEnv {
 	salonHoursSvc := app.SalonHoursService{Hours: env.weekly, Settings: env.settings, Memberships: env.mems}
 	professionalHoursSvc := app.ProfessionalHoursService{Hours: env.weekly, Memberships: env.mems}
 	timeOffSvc := app.TimeOffService{TimeOff: env.timeOff, Bookings: env.bookings, Memberships: env.mems}
+	// F2d3: cubrir una ausencia (reasignar los turnos de quien falta).
+	coverageSvc := app.CoverageService{
+		Bookings: env.bookings, Memberships: env.mems, Staff: env.mems,
+		Professionals: env.profs, Hours: env.weekly, TimeOff: env.timeOff,
+		Services: env.services, Settings: env.settings, Salons: env.salons,
+		Tx: &mBookingTx{bookings: env.bookings}, Events: env.events, Notifier: notifSvc,
+		Mailer: env.mailer, Emails: env.emails,
+	}
 	memberSvc := app.MemberService{
 		Members: env.members, Memberships: env.mems, Users: env.users,
 		Professionals: env.profs, Services: env.services,
@@ -253,6 +261,7 @@ func newPOSEnv() *posEnv {
 			Salon: salonHoursSvc, Professional: professionalHoursSvc, Memberships: env.mems,
 		},
 		TimeOff:     TimeOffHandler{TimeOff: timeOffSvc, Memberships: env.mems},
+		Absences:    AbsenceHandler{Coverage: coverageSvc, Memberships: env.mems},
 		WS:          hub.ServeWS,
 		TokenIssuer: tokens,
 	}

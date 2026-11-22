@@ -1,0 +1,481 @@
+package httpapi
+
+// F2d3: los tres endpoints de cobertura (listar ausencias con sus turnos,
+// reasignar todos los de una ausencia y reasignar/cancelar un turno suelto). Los
+// códigos, los mensajes exactos y la forma del JSON son parte del contrato
+// (S-F2d3-2/3/4).
+import (
+	"fmt"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+
+	"salon-saas/internal/domain"
+	"salon-saas/internal/ports"
+)
+
+// mBookingTx: la transacción del "Reasignar todo" sobre la agenda fake, con la
+// semántica de Postgres (rollback a la foto y EXCLUDE en el UPDATE).
+type mBookingTx struct{ bookings *mb }
+
+type mBookingTxView struct{ parent *mBookingTx }
+
+func (v mBookingTxView) Save(b domain.Booking) error { return v.parent.bookings.Save(b) }
+func (v mBookingTxView) FindByClientOpID(salonID, op string) (domain.Booking, error) {
+	return v.parent.bookings.FindByClientOpID(salonID, op)
+}
+func (v mBookingTxView) FindByID(salonID, id string) (domain.Booking, error) {
+	return v.parent.bookings.FindByID(salonID, id)
+}
+func (v mBookingTxView) FindOverlapping(salonID, professionalID string, start, end time.Time) ([]domain.Booking, error) {
+	return v.parent.bookings.FindOverlapping(salonID, professionalID, start, end)
+}
+func (v mBookingTxView) ListRange(salonID string, from, to time.Time) ([]domain.Booking, error) {
+	return v.parent.bookings.ListRange(salonID, from, to)
+}
+
+func (v mBookingTxView) Update(b domain.Booking) error {
+	busy, err := v.parent.bookings.FindOverlapping(b.SalonID, b.ProfessionalID, b.StartsAt, b.EndsAt)
+	if err != nil {
+		return err
+	}
+	for _, other := range busy {
+		if other.ID != b.ID {
+			return domain.ErrAlreadyExists
+		}
+	}
+	return v.parent.bookings.Update(b)
+}
+
+func (t *mBookingTx) InSalonTx(salonID string, fn func(ports.BookingTx) error) error {
+	snapshot := append([]domain.Booking(nil), t.bookings.all...)
+	if err := fn(mBookingTxView{parent: t}); err != nil {
+		t.bookings.all = snapshot
+		return err
+	}
+	return nil
+}
+
+var _ ports.BookingTxRunner = (*mBookingTx)(nil)
+
+// Formas del contrato F2d3 (el frontend codifica contra esto).
+type candidateBodyJSON struct {
+	ProfessionalID string `json:"professional_id"`
+	Name           string `json:"name"`
+	Available      bool   `json:"available"`
+	Reason         string `json:"reason"`
+}
+
+type absenceBookingBodyJSON struct {
+	ID          string              `json:"id"`
+	ClientName  string              `json:"client_name"`
+	StartsAt    string              `json:"starts_at"`
+	EndsAt      string              `json:"ends_at"`
+	ServiceID   *string             `json:"service_id"`
+	ServiceName string              `json:"service_name"`
+	Candidates  []candidateBodyJSON `json:"candidates"`
+}
+
+type absenceBodyJSON struct {
+	ID       string                   `json:"id"`
+	UserID   string                   `json:"user_id"`
+	UserName string                   `json:"user_name"`
+	StartsAt string                   `json:"starts_at"`
+	EndsAt   string                   `json:"ends_at"`
+	Reason   string                   `json:"reason"`
+	Bookings []absenceBookingBodyJSON `json:"bookings"`
+}
+
+type absencesListJSON struct {
+	Absences []absenceBodyJSON `json:"absences"`
+}
+
+type reassignedBookingJSON struct {
+	ID         string `json:"id"`
+	ClientName string `json:"client_name"`
+	StartsAt   string `json:"starts_at"`
+}
+
+type reassignBodyJSON struct {
+	Reassigned int                     `json:"reassigned"`
+	Bookings   []reassignedBookingJSON `json:"bookings"`
+}
+
+type conflictBody struct {
+	Error    string                  `json:"error"`
+	Bookings []reassignedBookingJSON `json:"bookings"`
+}
+
+// coverageSalon deja un salón con dueño, dos profesionales, recepción y un
+// servicio. Devuelve el id del salón, el id del servicio y los ids de la gente.
+type coverageEnv struct {
+	env      *posEnv
+	salonID  string
+	service  string
+	ownerTok string
+	ownerID  string
+	anaTok   string
+	anaID    string
+	beaTok   string
+	beaID    string
+	recTok   string
+	recID    string
+}
+
+func newCoverageEnv(t *testing.T, slug string) *coverageEnv {
+	t.Helper()
+	env := newPOSEnv()
+	c := &coverageEnv{env: env}
+	c.ownerTok, c.ownerID = env.register(t, "owner@"+slug+".com")
+	c.salonID = env.salon(t, c.ownerTok, slug)
+	c.service = env.seedService(t, c.ownerTok, c.salonID, "Corte", 150000)
+	salonSettings(env, c.salonID)
+	// Horario ancho para que el turno del test caiga dentro de la ventana del
+	// salón sin depender de la hora del reloj: 00:00 a 23:59, todos los días.
+	env.settings.bySalon[c.salonID] = domain.SalonSettings{
+		SalonID: c.salonID, Timezone: "America/Mexico_City",
+		OpenTime: "00:00", CloseTime: "23:59", SlotStepMin: 30,
+	}
+
+	_, c.anaID = env.register(t, "ana@"+slug+".com")
+	_, c.beaID = env.register(t, "bea@"+slug+".com")
+	_, c.recID = env.register(t, "rec@"+slug+".com")
+	addMember(t, env, c.salonID, c.ownerTok, "ana@"+slug+".com", "professional")
+	addMember(t, env, c.salonID, c.ownerTok, "bea@"+slug+".com", "professional")
+	addMember(t, env, c.salonID, c.ownerTok, "rec@"+slug+".com", "reception")
+	// Los tokens de las profesionales, para los casos de permisos.
+	c.anaTok = loginToken(t, env, "ana@"+slug+".com")
+	c.beaTok = loginToken(t, env, "bea@"+slug+".com")
+	c.recTok = loginToken(t, env, "rec@"+slug+".com")
+	return c
+}
+
+// loginToken devuelve el token de una cuenta ya registrada.
+func loginToken(t *testing.T, env *posEnv, email string) string {
+	t.Helper()
+	w := doReq(env.r, "POST", "/api/v1/auth/login",
+		fmt.Sprintf(`{"email":%q,"password":"secreta123"}`, email), "")
+	var out struct {
+		Token string `json:"token"`
+	}
+	mustJSON(t, w.Body.Bytes(), &out)
+	if out.Token == "" {
+		t.Fatalf("login de %s: %d %s", email, w.Code, w.Body.String())
+	}
+	return out.Token
+}
+
+// seedCoveredBooking deja un turno reservado a nombre de una profesional.
+func (c *coverageEnv) seedCoveredBooking(t *testing.T, id, userID string, start time.Time, serviceID string) domain.Booking {
+	t.Helper()
+	b, err := domain.NewBooking(c.salonID, userID, "Lía", "555", start, start.Add(45*time.Minute))
+	if err != nil {
+		t.Fatalf("turno %s: %v", id, err)
+	}
+	b.ID = id
+	b.ServiceID = serviceID
+	if err := c.env.bookings.Save(b); err != nil {
+		t.Fatalf("guardar turno: %v", err)
+	}
+	return b
+}
+
+// seedAbsence crea la ausencia por el endpoint real (F2d2) y devuelve su id.
+func (c *coverageEnv) seedAbsence(t *testing.T, userID string, from, to time.Time, reason string) string {
+	t.Helper()
+	w := doReq(c.env.r, "POST", "/api/v1/salons/"+c.salonID+"/members/"+userID+"/time-off",
+		fmt.Sprintf(`{"starts_at":%q,"ends_at":%q,"reason":%q}`, rfc3339(from), rfc3339(to), reason),
+		c.ownerTok)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("alta de ausencia: %d %s", w.Code, w.Body.String())
+	}
+	var out timeOffCreateJSON
+	mustJSON(t, w.Body.Bytes(), &out)
+	return out.TimeOff.ID
+}
+
+func candidateOf(t *testing.T, b absenceBookingBodyJSON, professionalID string) candidateBodyJSON {
+	t.Helper()
+	for _, c := range b.Candidates {
+		if c.ProfessionalID == professionalID {
+			return c
+		}
+	}
+	t.Fatalf("la persona %s no está en la lista de candidatas: %+v", professionalID, b.Candidates)
+	return candidateBodyJSON{}
+}
+
+// S-F2d3-2/4: listar (con candidatas y motivos), reasignar todo y ver el aviso
+// interno, el correo y el turno movido con la MISMA hora.
+func TestHTTP_absences_flow(t *testing.T) {
+	c := newCoverageEnv(t, "cobertura")
+	start := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Hour)
+	booking := c.seedCoveredBooking(t, "b-cover-1", c.anaID, start, c.service)
+	if err := c.env.emails.Save(c.salonID, booking.ID, "lia@mail.com"); err != nil {
+		t.Fatalf("email del turno: %v", err)
+	}
+	absenceID := c.seedAbsence(t, c.anaID, start.Add(-time.Hour), start.Add(2*time.Hour), "Vacaciones")
+
+	listURL := "/api/v1/salons/" + c.salonID + "/absences?from=" +
+		rfc3339(start.Add(-time.Hour)) + "&to=" + rfc3339(start.Add(2*time.Hour))
+	w := doReq(c.env.r, "GET", listURL, "", c.ownerTok)
+	if w.Code != http.StatusOK {
+		t.Fatalf("listar ausencias: %d %s", w.Code, w.Body.String())
+	}
+	var list absencesListJSON
+	mustJSON(t, w.Body.Bytes(), &list)
+	if len(list.Absences) != 1 {
+		t.Fatalf("esperaba una ausencia: %+v", list.Absences)
+	}
+	got := list.Absences[0]
+	if got.ID != absenceID || got.UserID != c.anaID || got.Reason != "Vacaciones" {
+		t.Fatalf("ausencia: %+v", got)
+	}
+	if len(got.Bookings) != 1 || got.Bookings[0].ID != booking.ID {
+		t.Fatalf("turnos de la ausencia: %+v", got.Bookings)
+	}
+	if got.Bookings[0].ServiceID == nil || *got.Bookings[0].ServiceID != c.service ||
+		got.Bookings[0].ServiceName != "Corte" {
+		t.Fatalf("servicio del turno: %+v", got.Bookings[0])
+	}
+	// La ausente no puede cubrir su propio turno; su compañera sí.
+	if cand := candidateOf(t, got.Bookings[0], c.anaID); cand.Available || cand.Reason != "Esa persona no está de turno ese día" {
+		t.Fatalf("candidata ausente: %+v", cand)
+	}
+	if cand := candidateOf(t, got.Bookings[0], c.beaID); !cand.Available || cand.Reason != "" {
+		t.Fatalf("candidata libre: %+v", cand)
+	}
+	// Recepción no es una candidata: no atiende clientes y no está en la lista
+	// (el POST que la nombra lo dice con el mensaje del contrato).
+	for _, cand := range got.Bookings[0].Candidates {
+		if cand.ProfessionalID == c.recID {
+			t.Fatalf("recepción no debería ser candidata: %+v", cand)
+		}
+	}
+
+	// Reasignar todo a la compañera.
+	w = doReq(c.env.r, "POST", "/api/v1/salons/"+c.salonID+"/absences/"+absenceID+"/reassign",
+		fmt.Sprintf(`{"professional_id":%q}`, c.beaID), c.ownerTok)
+	if w.Code != http.StatusOK {
+		t.Fatalf("reasignar: %d %s", w.Code, w.Body.String())
+	}
+	var res reassignBodyJSON
+	mustJSON(t, w.Body.Bytes(), &res)
+	if res.Reassigned != 1 || len(res.Bookings) != 1 || res.Bookings[0].ID != booking.ID {
+		t.Fatalf("respuesta de la reasignación: %+v", res)
+	}
+	// La clienta conserva el horario y el turno cambió de profesional.
+	if res.Bookings[0].StartsAt != rfc3339(start) {
+		t.Fatalf("el horario se movió: %+v", res.Bookings[0])
+	}
+	stored, err := c.env.bookings.FindByID(c.salonID, booking.ID)
+	if err != nil || stored.ProfessionalID != c.beaID {
+		t.Fatalf("turno guardado: %+v %v", stored, err)
+	}
+	// Aviso interno y correo a la clienta (T12).
+	if len(c.env.notifs.all) == 0 {
+		t.Fatal("falta el aviso interno de la reasignación")
+	}
+	last := c.env.notifs.all[len(c.env.notifs.all)-1]
+	if last.Title != "Turno reasignado" || !strings.Contains(last.Body, c.beaID) {
+		t.Fatalf("aviso interno: %+v", last)
+	}
+	sent := c.env.mailer.waitCount(t, 1)
+	if sent[0].To != "lia@mail.com" || !strings.Contains(sent[0].Text, "se mantiene") {
+		t.Fatalf("correo de la reasignación: %+v", sent[0])
+	}
+}
+
+// S-F2d3-3: los mensajes EXACTOS del destino y el 409 del doble turno con el
+// detalle de los turnos que no se movieron.
+func TestHTTP_absences_reassign_errors(t *testing.T) {
+	c := newCoverageEnv(t, "cobertura-errores")
+	start := time.Now().UTC().Add(72 * time.Hour).Truncate(time.Hour)
+	booking := c.seedCoveredBooking(t, "b-err-1", c.anaID, start, c.service)
+	absenceID := c.seedAbsence(t, c.anaID, start.Add(-time.Hour), start.Add(2*time.Hour), "")
+	reassignURL := "/api/v1/salons/" + c.salonID + "/absences/" + absenceID + "/reassign"
+
+	// Recepción no atiende clientes.
+	w := doReq(c.env.r, "POST", reassignURL, fmt.Sprintf(`{"professional_id":%q}`, c.recID), c.ownerTok)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "Esa persona no atiende clientes") {
+		t.Fatalf("recepción: %d %s", w.Code, w.Body.String())
+	}
+	// Un candidato de otro salón: para ESTE salón no atiende.
+	_, otroProID := c.env.register(t, "otro-pro@mail.com")
+	otroSalon := c.env.salon(t, c.ownerTok, "cobertura-otro")
+	addMember(t, c.env, otroSalon, c.ownerTok, "otro-pro@mail.com", "professional")
+	w = doReq(c.env.r, "POST", reassignURL, fmt.Sprintf(`{"professional_id":%q}`, otroProID), c.ownerTok)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "Esa persona no atiende clientes") {
+		t.Fatalf("candidato de otro salón: %d %s", w.Code, w.Body.String())
+	}
+	// De descanso ese día (F2d1): la compañera solo trabaja otro día de la semana.
+	salonLoc, err := time.LoadLocation("America/Mexico_City")
+	if err != nil {
+		t.Fatalf("zona: %v", err)
+	}
+	weekday := domain.IsoWeekday(start, salonLoc)
+	other := weekday%7 + 1
+	if c.env.weekly.memberSeg == nil {
+		c.env.weekly.memberSeg = map[string][]domain.HoursSegment{}
+	}
+	c.env.weekly.memberSeg[c.salonID+"|"+c.beaID] = []domain.HoursSegment{
+		{Weekday: other, Start: "00:00", End: "23:59"},
+	}
+	w = doReq(c.env.r, "POST", reassignURL, fmt.Sprintf(`{"professional_id":%q}`, c.beaID), c.ownerTok)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "Esa persona no está de turno ese día") {
+		t.Fatalf("de descanso: %d %s", w.Code, w.Body.String())
+	}
+	// Sin horario propio vuelve a poder cubrir.
+	delete(c.env.weekly.memberSeg, c.salonID+"|"+c.beaID)
+
+	// El turno de otra profesional no es de esa ausencia.
+	otroTurno := c.seedCoveredBooking(t, "b-err-otro", c.beaID, start.Add(time.Hour), c.service)
+	w = doReq(c.env.r, "POST", reassignURL,
+		fmt.Sprintf(`{"professional_id":%q,"booking_ids":[%q]}`, c.beaID, otroTurno.ID), c.ownerTok)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "Ese turno no es de esa ausencia") {
+		t.Fatalf("turno de otra persona: %d %s", w.Code, w.Body.String())
+	}
+
+	// Doble turno: la compañera ya tiene ese horario -> 409 con el detalle y nada
+	// movido.
+	c.seedCoveredBooking(t, "b-err-busy", c.beaID, start, c.service)
+	w = doReq(c.env.r, "POST", reassignURL, fmt.Sprintf(`{"professional_id":%q}`, c.beaID), c.ownerTok)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("doble turno: %d %s", w.Code, w.Body.String())
+	}
+	var conflict conflictBody
+	mustJSON(t, w.Body.Bytes(), &conflict)
+	if !strings.Contains(conflict.Error, "Ya tiene un turno a esa hora") || len(conflict.Bookings) != 1 || conflict.Bookings[0].ID != booking.ID {
+		t.Fatalf("conflicto: %+v", conflict)
+	}
+	if stored, _ := c.env.bookings.FindByID(c.salonID, booking.ID); stored.ProfessionalID != c.anaID {
+		t.Fatalf("el turno se movió igual: %+v", stored)
+	}
+
+	// Permisos: una profesional no administra la cobertura, recepción tampoco.
+	for _, tok := range []string{c.anaTok, c.beaTok, c.recTok} {
+		if w := doReq(c.env.r, "POST", reassignURL, fmt.Sprintf(`{"professional_id":%q}`, c.beaID), tok); w.Code != http.StatusForbidden {
+			t.Fatalf("un miembro sin permiso reasigna: %d %s", w.Code, w.Body.String())
+		}
+	}
+	// Sin token: 401.
+	if w := doReq(c.env.r, "POST", reassignURL, `{"professional_id":"x"}`, ""); w.Code != http.StatusUnauthorized {
+		t.Fatalf("sin token: %d", w.Code)
+	}
+	// Una ausencia de otro salón no existe acá (404).
+	otra := c.seedAbsenceForOtherSalon(t, otroSalon)
+	w = doReq(c.env.r, "POST", "/api/v1/salons/"+c.salonID+"/absences/"+otra+"/reassign",
+		fmt.Sprintf(`{"professional_id":%q}`, c.beaID), c.ownerTok)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("ausencia de otro salón: %d %s", w.Code, w.Body.String())
+	}
+	// El listado también es solo de dueño/administración.
+	listURL := "/api/v1/salons/" + c.salonID + "/absences?from=" +
+		rfc3339(start.Add(-time.Hour)) + "&to=" + rfc3339(start.Add(2*time.Hour))
+	if w := doReq(c.env.r, "GET", listURL, "", c.anaTok); w.Code != http.StatusForbidden {
+		t.Fatalf("listado sin permiso: %d %s", w.Code, w.Body.String())
+	}
+	// Rango inválido o demasiado ancho: 400 con los textos de F2d2.
+	if w := doReq(c.env.r, "GET", "/api/v1/salons/"+c.salonID+"/absences?from="+rfc3339(start), "", c.ownerTok); w.Code != http.StatusBadRequest {
+		t.Fatalf("sin to: %d %s", w.Code, w.Body.String())
+	}
+	longURL := "/api/v1/salons/" + c.salonID + "/absences?from=" + rfc3339(start) + "&to=" + rfc3339(start.Add(93*24*time.Hour))
+	if w := doReq(c.env.r, "GET", longURL, "", c.ownerTok); w.Code != http.StatusBadRequest ||
+		!strings.Contains(w.Body.String(), "El rango no puede superar los 92 días") {
+		t.Fatalf("rango largo: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// seedAbsenceForOtherSalon crea una ausencia en OTRO salón y devuelve su id.
+func (c *coverageEnv) seedAbsenceForOtherSalon(t *testing.T, otroSalonID string) string {
+	t.Helper()
+	off := domain.TimeOff{
+		ID: "off-otro-" + otroSalonID, SalonID: otroSalonID, UserID: c.ownerID,
+		StartsAt: time.Now().UTC().Add(72 * time.Hour), EndsAt: time.Now().UTC().Add(96 * time.Hour),
+	}
+	// La dueña del salón propio no pertenece al otro: se guarda directo en el
+	// fake para probar el scope de la ruta.
+	if err := c.env.timeOff.Save(off); err != nil {
+		t.Fatalf("ausencia de otro salón: %v", err)
+	}
+	return off.ID
+}
+
+// S-F2d3-2: un turno suelto se reasigna o se cancela con motivo.
+func TestHTTP_bookings_reassign_and_cancel(t *testing.T) {
+	c := newCoverageEnv(t, "cobertura-suelto")
+	start := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Hour)
+	booking := c.seedCoveredBooking(t, "b-suelto-1", c.anaID, start, "")
+	if err := c.env.emails.Save(c.salonID, booking.ID, "lia@mail.com"); err != nil {
+		t.Fatalf("email: %v", err)
+	}
+	url := "/api/v1/salons/" + c.salonID + "/bookings/" + booking.ID + "/reassign"
+
+	// Reasignar: el turno no tiene servicio, así que cualquier reservable sirve.
+	w := doReq(c.env.r, "POST", url, fmt.Sprintf(`{"professional_id":%q}`, c.recID), c.ownerTok)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "Esa persona no atiende clientes") {
+		t.Fatalf("recepción: %d %s", w.Code, w.Body.String())
+	}
+	w = doReq(c.env.r, "POST", url, fmt.Sprintf(`{"professional_id":%q}`, c.beaID), c.ownerTok)
+	if w.Code != http.StatusOK {
+		t.Fatalf("reasignar suelto: %d %s", w.Code, w.Body.String())
+	}
+	var res reassignBodyJSON
+	mustJSON(t, w.Body.Bytes(), &res)
+	if res.Reassigned != 1 || res.Bookings[0].ID != booking.ID {
+		t.Fatalf("respuesta: %+v", res)
+	}
+	if stored, _ := c.env.bookings.FindByID(c.salonID, booking.ID); stored.ProfessionalID != c.beaID ||
+		!stored.StartsAt.Equal(start) {
+		t.Fatalf("turno: %+v", stored)
+	}
+
+	// Cancelar: 200, estado cancelado y el motivo en el aviso interno.
+	second := c.seedCoveredBooking(t, "b-suelto-2", c.anaID, start.Add(2*time.Hour), "")
+	if err := c.env.emails.Save(c.salonID, second.ID, "lia@mail.com"); err != nil {
+		t.Fatalf("email: %v", err)
+	}
+	w = doReq(c.env.r, "POST", "/api/v1/salons/"+c.salonID+"/bookings/"+second.ID+"/reassign",
+		`{"cancel":true,"reason":"  se enfermó  "}`, c.ownerTok)
+	if w.Code != http.StatusOK {
+		t.Fatalf("cancelar: %d %s", w.Code, w.Body.String())
+	}
+	var cancelled struct {
+		Cancelled bool           `json:"cancelled"`
+		Booking   map[string]any `json:"booking"`
+	}
+	mustJSON(t, w.Body.Bytes(), &cancelled)
+	if !cancelled.Cancelled || cancelled.Booking["status"] != "cancelled" {
+		t.Fatalf("cancelación: %+v", cancelled)
+	}
+	last := c.env.notifs.all[len(c.env.notifs.all)-1]
+	if last.Title != "Turno cancelado" || !strings.Contains(last.Body, "se enfermó") {
+		t.Fatalf("el motivo tiene que quedar registrado: %+v", last)
+	}
+	sent := c.env.mailer.waitCount(t, 2)
+	if !strings.Contains(sent[len(sent)-1].Text, "cancelado") {
+		t.Fatalf("correo de la cancelación: %+v", sent[len(sent)-1])
+	}
+
+	// Un turno ya cancelado no se vuelve a cancelar (409) ni se reasigna.
+	w = doReq(c.env.r, "POST", "/api/v1/salons/"+c.salonID+"/bookings/"+second.ID+"/reassign",
+		`{"cancel":true}`, c.ownerTok)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "El turno ya no está reservado") {
+		t.Fatalf("doble cancelación: %d %s", w.Code, w.Body.String())
+	}
+	// Sin profesional ni cancelación: no hay a quién reasignar.
+	w = doReq(c.env.r, "POST", url, `{}`, c.ownerTok)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "No hay a quién reasignar") {
+		t.Fatalf("pedido vacío: %d %s", w.Code, w.Body.String())
+	}
+	// Un turno de otro salón no existe (404).
+	if w := doReq(c.env.r, "POST", "/api/v1/salons/cobertura-suelto-otro/bookings/"+booking.ID+"/reassign",
+		fmt.Sprintf(`{"professional_id":%q}`, c.beaID), c.ownerTok); w.Code != http.StatusForbidden {
+		t.Fatalf("salón ajeno: %d %s", w.Code, w.Body.String())
+	}
+	// Permisos: la profesional no.
+	if w := doReq(c.env.r, "POST", url, fmt.Sprintf(`{"professional_id":%q}`, c.beaID), c.anaTok); w.Code != http.StatusForbidden {
+		t.Fatalf("profesional reasigna: %d %s", w.Code, w.Body.String())
+	}
+}

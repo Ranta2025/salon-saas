@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
 
@@ -152,4 +153,13 @@ func (f *fakeMailer) waitCount(t *testing.T, n int) []ports.Message {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+}
+
+// FindEmail resuelve la dirección guardada del turno (ports.BookingEmailFinder):
+// la vuelve a usar F2d3 para avisar que el turno cambió de profesional.
+func (f *fakeBookingEmails) FindEmail(salonID, bookingID string) (string, error) {
+	if saved, ok := f.savedFor(bookingID); ok && saved.SalonID == salonID {
+		return saved.Email, nil
+	}
+	return "", domain.ErrNotFound
 }

@@ -69,6 +69,19 @@ func (f *mbookingEmails) ClaimDueReminders(time.Time, int) ([]ports.DueReminder,
 
 func (f *mbookingEmails) MarkReminderSent(string) error { return nil }
 
+// FindEmail: la lectura que usa F2d3 para avisar un cambio de turno.
+func (f *mbookingEmails) FindEmail(salonID, bookingID string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	prefix := salonID + "|" + bookingID + "|"
+	for _, saved := range f.saved {
+		if strings.HasPrefix(saved, prefix) {
+			return strings.TrimPrefix(saved, prefix), nil
+		}
+	}
+	return "", domain.ErrNotFound
+}
+
 func (f *mbookingEmails) savedEmails() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
