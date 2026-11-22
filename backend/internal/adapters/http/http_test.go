@@ -111,7 +111,10 @@ func (f *mm) ListStaff(salonID string) ([]domain.StaffMember, error) {
 	var out []domain.StaffMember
 	for _, m := range f.byKey {
 		if m.SalonID == salonID && m.Bookable() {
-			out = append(out, domain.StaffMember{ID: m.UserID, Name: m.UserID, Role: m.Role, Attends: m.Attends})
+			out = append(out, domain.StaffMember{
+				ID: m.UserID, Name: m.UserID, Role: m.Role,
+				Attends: m.Attends, Trade: m.Trade,
+			})
 		}
 	}
 	return out, nil

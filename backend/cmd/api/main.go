@@ -169,6 +169,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	salesRepo := pgstore.Sales{Pool: pool}
 	closesRepo := pgstore.CashCloses{Pool: pool}
 	servicesRepo := pgstore.Services{Pool: pool}
+	// F2c: qué servicios hace cada quien (disponibilidad, reserva pública y
+	// pantalla de equipo).
+	professionals := pgstore.ProfessionalServices{Pool: pool}
 
 	// Realtime: el hub es el EventPublisher de los casos de uso (no saben que
 	// hay websockets). Autentica el JWT del query param, valida el Origin con la
@@ -189,7 +192,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// Settings: los avisos de turno se formatean en la zona horaria del salón.
 	bookSvc := app.BookingService{Bookings: bookings, Memberships: mems, Settings: salons, Events: hub, Notifier: notifSvc}
 	clientsRepo := pgstore.Clients{Pool: pool}
-	svcSvc := app.ServiceService{Services: servicesRepo, Memberships: mems}
+	svcSvc := app.ServiceService{Services: servicesRepo, Memberships: mems, Professionals: professionals}
 	saleSvc := app.SaleService{Sales: salesRepo, Services: servicesRepo, Memberships: mems, Events: hub}
 	// Tx: el cierre corre en una transacción con advisory lock por salón (B-09).
 	// Settings: la ventana del cierre es el día LOCAL del salón (su zona), no UTC.
@@ -208,8 +211,14 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	staffSvc := app.StaffService{Staff: mems, Memberships: mems}
 	publicSvc := app.PublicSalonService{Salons: salons, Services: servicesRepo}
 	settingsSvc := app.SettingsService{Settings: salons, Memberships: mems}
-	memberSvc := app.MemberService{Members: mems, Memberships: mems, Users: users}
-	availabilitySvc := app.AvailabilityService{Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems, Bookings: bookings}
+	memberSvc := app.MemberService{
+		Members: mems, Memberships: mems, Users: users,
+		Professionals: professionals, Services: servicesRepo,
+	}
+	availabilitySvc := app.AvailabilityService{
+		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems,
+		Bookings: bookings, Professionals: professionals,
+	}
 	// Email a clientes (T12): adaptador SMTP del puerto MailSender. Sin
 	// SMTP_HOST el sender queda deshabilitado y los casos de uso lo ven como
 	// nil (no hay correo en este entorno).
@@ -229,8 +238,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	reminders := app.ReminderService{Emails: bookingEmails, Mailer: mailer, Settings: salons}
 	publicBookingSvc := app.PublicBookingService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems, Bookings: bookings,
-		Clients: clientsRepo, // cada reserva pública deja la ficha de la clienta (E-03)
-		Events:  hub, Notifier: notifSvc,
+		Professionals: professionals,
+		Clients:       clientsRepo, // cada reserva pública deja la ficha de la clienta (E-03)
+		Events:        hub, Notifier: notifSvc,
 		Mailer: mailer, Emails: bookingEmails,
 	}
 

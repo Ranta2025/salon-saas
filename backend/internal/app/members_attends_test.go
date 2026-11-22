@@ -82,7 +82,7 @@ func TestMemberService_setAttends(t *testing.T) {
 	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
 
 	// El dueño puede apagarse a sí mismo: deja de atender sin dejar de mandar.
-	m, err := svc.SetAttends(owner, "s1", "u-owner", false)
+	m, err := svc.Update(owner, "s1", "u-owner", attendsPatch(false))
 	if err != nil {
 		t.Fatalf("dueño se apaga: %v", err)
 	}
@@ -93,17 +93,17 @@ func TestMemberService_setAttends(t *testing.T) {
 		t.Fatalf("la marca no se persistió: %+v", got)
 	}
 	// La administración la enciende y la apaga (el admin también administra).
-	if _, err := svc.SetAttends(admin, "s1", "u-admin", true); err != nil {
+	if _, err := svc.Update(admin, "s1", "u-admin", attendsPatch(true)); err != nil {
 		t.Fatalf("admin se enciende: %v", err)
 	}
 	if got, _ := mems.Find("u-admin", "s1"); !got.Attends || !got.Bookable() {
 		t.Fatalf("admin con attends: %+v", got)
 	}
-	if _, err := svc.SetAttends(admin, "s1", "u-admin", false); err != nil {
+	if _, err := svc.Update(admin, "s1", "u-admin", attendsPatch(false)); err != nil {
 		t.Fatalf("admin se apaga: %v", err)
 	}
 	// Profesional en false: 400 con el mensaje exacto y sin tocar la marca.
-	_, err = svc.SetAttends(owner, "s1", "u-prof", false)
+	_, err = svc.Update(owner, "s1", "u-prof", attendsPatch(false))
 	if !errors.Is(err, domain.ErrValidation) || err.Error() != "Las profesionales siempre atienden" {
 		t.Fatalf("profesional en false: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestMemberService_setAttends(t *testing.T) {
 	}
 	// Recepción/cliente: 400 con el mensaje exacto, con cualquier valor.
 	for _, v := range []bool{true, false} {
-		_, err := svc.SetAttends(owner, "s1", "u-recep", v)
+		_, err := svc.Update(owner, "s1", "u-recep", attendsPatch(v))
 		if !errors.Is(err, domain.ErrValidation) || err.Error() != "Ese rol no atiende clientes" {
 			t.Fatalf("recepción en %v: %v", v, err)
 		}
@@ -122,21 +122,24 @@ func TestMemberService_setAttends(t *testing.T) {
 	}
 	// Miembro de otro salón: 404 (no se confirma ni se niega su existencia).
 	miembro(mems, "u-ajeno", "s2", domain.RoleAdmin)
-	if _, err := svc.SetAttends(owner, "s1", "u-ajeno", true); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := svc.Update(owner, "s1", "u-ajeno", attendsPatch(true)); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("miembro de otro salón: %v", err)
 	}
 	if got, _ := mems.Find("u-ajeno", "s2"); got.Attends {
 		t.Fatalf("la marca del otro salón no se toca: %+v", got)
 	}
 	// Sin permiso: el profesional y el dueño de otro salón reciben 403.
-	if _, err := svc.SetAttends(prof, "s1", "u-recep", true); !errors.Is(err, domain.ErrForbidden) {
+	if _, err := svc.Update(prof, "s1", "u-recep", attendsPatch(true)); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("profesional administrando: %v", err)
 	}
-	if _, err := svc.SetAttends(recep, "s1", "u-admin", true); !errors.Is(err, domain.ErrForbidden) {
+	if _, err := svc.Update(recep, "s1", "u-admin", attendsPatch(true)); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("recepción administrando: %v", err)
 	}
 	ajeno, _ := mems.Find("u-owner", "s2")
-	if _, err := svc.SetAttends(ajeno, "s1", "u-admin", true); !errors.Is(err, domain.ErrForbidden) {
+	if _, err := svc.Update(ajeno, "s1", "u-admin", attendsPatch(true)); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("dueño de otro salón: %v", err)
 	}
 }
+
+// attendsPatch arma el patch de solo marca (el PATCH de F2a tal cual).
+func attendsPatch(v bool) MemberPatch { return MemberPatch{Attends: &v} }

@@ -112,7 +112,9 @@ func TestHTTP_members_attends(t *testing.T) {
 	}{
 		{"profesional en false", profID, `{"attends":false}`, ownerTok, http.StatusBadRequest, "Las profesionales siempre atienden"},
 		{"recepción en true", recepID, `{"attends":true}`, ownerTok, http.StatusBadRequest, "Ese rol no atiende clientes"},
-		{"sin la marca", adminID, `{}`, ownerTok, http.StatusBadRequest, "body inválido"},
+		// F2c: el PATCH acepta attends y/o trade; sin ninguno de los dos el
+		// mensaje dice qué falta (antes era "body inválido").
+		{"sin campos", adminID, `{}`, ownerTok, http.StatusBadRequest, "Indicá qué cambiar"},
 		{"profesional administrando", recepID, `{"attends":true}`, profTok, http.StatusForbidden, "sin permiso"},
 	}
 	for _, c := range casos {

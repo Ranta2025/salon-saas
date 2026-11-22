@@ -338,10 +338,114 @@ PATCH {"attends": true} -> 200 { "id": "u_...", "name": "Ana", "email": "ana@mai
 | Quien pide no es owner/admin del salón | `403` | `sin permiso` / `sin acceso al salón` |
 
 - El dueño puede apagarse a sí mismo: deja de atender sin dejar de administrar.
-- `PATCH` sin `attends` en el cuerpo → `400 {"error":"body inválido"}` (la marca
-  no se adivina).
+- Desde F2c el `PATCH` también acepta `trade`; sin **ninguno** de los dos campos
+  → `400 {"error":"Indicá qué cambiar"}` (antes: `body inválido`). Ver «Oficio y
+  servicios por profesional».
 - El alta de un salón deja al `owner` con `attends = true` (salón de una sola
   persona) y agregar un `professional` lo deja atendiendo.
+
+## Fase 6 — F2c: oficio y servicios por profesional
+
+Hasta acá la agenda asumía que **todo el equipo hacía todos los servicios**: la
+disponibilidad ofrecía a cualquiera que atendiera y la reserva pública asignaba
+al primero libre. Ahora un turno público solo se ofrece y se asigna a una
+persona reservable (F2a) **que hace ese servicio**. El oficio (barbero,
+estilista, colorista...) es un texto visible, no un permiso: la clienta sigue
+eligiendo solo el servicio.
+
+### `PATCH /salons/:id/members/:uid` — ahora con `trade`
+
+```json
+PATCH {"trade": "Barbero"}          -> 200 (el miembro, con oficio y servicios)
+PATCH {"attends": true, "trade": "Estilista"} -> 200 (los dos a la vez)
+PATCH {}                            -> 400 {"error":"Indicá qué cambiar"}
+```
+
+- Cuerpo: `attends` y `trade` son **opcionales**, pero al menos uno tiene que
+  venir. Los campos ausentes no cambian.
+- `trade`: 1–40 caracteres, se guarda recortado y **sin saltos de línea**
+  (`400 {"error":"El oficio no puede tener saltos de línea"}` / `400 {"error":"El oficio no puede superar los 40 caracteres"}`).
+  Vacío borra el oficio.
+- `trade` solo en quien atiende: recepción/cliente, o un dueño/administración
+  con `attends = false` → `400 {"error":"Ese rol no tiene oficio"}`.
+- Permisos, `404` de un miembro de otro salón y `403` sin permiso no cambian.
+- La respuesta es el miembro completo (`id`, `name`, `email`, `role`,
+  `attends`, `trade`, `service_ids`).
+
+### `PUT /salons/:id/members/:uid/services`
+
+Reemplaza la **lista completa** de servicios que hace esa persona.
+
+```
+PUT {"service_ids":["svc_...","svc_..."]} -> 200 {"service_ids":["svc_..."]}
+PUT {"service_ids":[]}                    -> 200 {"service_ids":[]}
+```
+
+- Solo `owner`/`admin` del salón (`403`). Tiene que ser un miembro reservable:
+  si no, `400 {"error":"Ese rol no hace servicios"}`.
+- Un `service_id` inexistente **o de otro salón** → `400 {"error":"Servicio inválido"}`
+  y la lista anterior queda intacta (la escritura es un reemplazo atómico: se
+  valida todo antes de tocar la tabla y el `UPDATE` corre en una transacción).
+- Lista vacía permitida: esa persona no hace ninguno. Se devuelve sin repetidos
+  y ordenada por id.
+- Miembro de otro salón → `404`. Sin token → `401`.
+
+### Campos nuevos en las lecturas
+
+```json
+GET /salons/:id/members -> { "members": [
+  { "id": "u_...", "name": "Bruno", "email": "bruno@mail.com", "role": "professional",
+    "attends": true, "trade": "Barbero", "service_ids": ["svc_..."] } ] }
+
+GET /salons/:id/staff -> { "staff": [
+  { "id": "u_...", "name": "Bruno", "role": "professional", "attends": true, "trade": "Barbero" } ] }
+```
+
+- `members` lleva `trade` y `service_ids` (siempre array; vacío si no hace
+  ninguno). Es la fuente del conteo «N profesionales lo hacen» de la pantalla de
+  servicios (owner/admin).
+- `staff` lleva solo `trade`: lo consulta cualquier miembro del salón y **no**
+  expone qué hace cada quien.
+- Los JSON de turno de staff (`POST /salons/:id/bookings`, `GET .../bookings` y
+  el `PATCH`) agregan `service_id`, que puede ser `null`: un turno agendado a
+  mano desde el calendario no exige servicio.
+
+### Alta de un servicio: `professional_ids` opcional
+
+```json
+POST /salons/:id/services
+{ "name": "Keratina", "duration_min": 60, "price_cents": 250000,
+  "professional_ids": ["u_..."] }
+```
+
+- Sin `professional_ids` el servicio **nace sin nadie que lo haga**: a partir de
+  F2c eso significa que no se ofrecen turnos para ese servicio hasta asignarlo
+  desde Equipo (la pantalla de servicios avisa «Nadie hace este servicio»). Es
+  una excepción consciente: el aviso es lo que evita que el salón se quede sin
+  turnos sin darse cuenta.
+- `professional_ids`: máximo 50 (`400 {"error":"No se pueden asignar más de 50 profesionales"}`),
+  cada id tiene que ser alguien que **atiende** en ese salón
+  (`400 {"error":"Profesional inválido"}`). Todos los ids se validan antes de
+  guardar: un alta rechazada no deja el servicio creado.
+- Un profesional nuevo nace sin servicios y se le asignan desde Equipo.
+
+### Disponibilidad y reserva pública: filtradas por servicio
+
+- `GET /public/salons/:slug/availability`: los profesionales que se ofrecen son
+  los reservables (F2a) **que hacen el servicio**. Un `professional_id` que no
+  lo hace responde `404` (no existe para esa búsqueda).
+- **Si nadie hace el servicio** la respuesta es `200 {"slots": []}`, no un
+  error: no hay agenda que ofrecer.
+- `POST /public/salons/:slug/bookings`: sin `professional_id` se asigna el
+  primer reservable **que hace el servicio** y está libre. Si no queda ninguno
+  → `409` (nunca `500`). Con `professional_id` de alguien que no hace ese
+  servicio → `400 {"error":"... el profesional elegido no hace ese servicio"}`;
+  un id que no atiende sigue siendo `404`.
+- El turno público guarda `bookings.service_id` (el servicio reservado). Si el
+  servicio se borra, el turno queda sin servicio (`ON DELETE SET NULL`): no se
+  pierde la historia de la agenda.
+- La reserva de staff (`POST /salons/:id/bookings`) **no** exige servicio y no
+  cambia: el calendario agenda turnos sin catálogo.
 
 ### Fotos con URL firmada
 
@@ -611,6 +715,28 @@ Migración de la fase 6 (F2a):
   encender a quien se apagó desde la pantalla de equipo. La guarda mira
   `current_schema()`, no cualquier tabla `memberships` del catálogo.
 
-Las 15 migraciones se probaron aplicándolas dos veces con
+Migración de la fase 6 (F2c):
+
+- `016_professional_services.sql`:
+  - `memberships.trade TEXT NOT NULL DEFAULT ''` con `CHECK (char_length(trade) <= 40)`
+    (nombre `memberships_trade_len`).
+  - Tabla `professional_services(salon_id, user_id, service_id)` con PK
+    `(salon_id, user_id, service_id)`, FK `(user_id, salon_id)` a
+    `memberships` y FK `service_id` a `services(id)`, **las dos con
+    `ON DELETE CASCADE`** (si la persona sale del salón o el servicio se borra,
+    las filas se van con ellos), e índice `(salon_id, service_id)`.
+  - `bookings.service_id TEXT NULL` con FK a `services(id) ON DELETE SET NULL`.
+  - **Backfill solo al crear la tabla**: cada miembro reservable (profesional, o
+    dueño/administración con `attends = true`) × cada servicio de su salón. No
+    cambia lo que hay hoy. Una segunda pasada no duplica ni repisa lo que se
+    asignó o se quitó desde Equipo, y un servicio creado después no se asigna
+    solo.
+  - Guardas miradas en `current_schema()` (columna, CHECK y FK): una segunda
+    ejecución no hace nada y una tabla homónima de otro esquema no la confunde.
+
+Las 16 migraciones se probaron aplicándolas dos veces con
 `psql -v ON_ERROR_STOP=1` sobre una base limpia y sobre una ya migrada, y el
-binario arranca contra esas bases.
+binario arranca contra esas bases. El backfill de la 016 se probó además sobre
+una base migrada **solo hasta la 015**, con dueño/administración/profesional/
+recepción, dos servicios y un turno ya creados: los tres reservables quedan con
+los dos servicios, recepción con ninguno y el turno con `service_id` NULL.

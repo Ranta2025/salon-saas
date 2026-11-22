@@ -20,27 +20,27 @@ func TestServiceService_create_ok_y_permisos(t *testing.T) {
 
 	// owner y admin configuran el catálogo.
 	for _, actor := range []domain.Membership{owner, admin} {
-		if _, err := svc.Create(actor, "s1", "Corte "+actor.UserID, 30, 100000, 20); err != nil {
+		if _, err := svc.Create(actor, "s1", "Corte "+actor.UserID, 30, 100000, 20, nil); err != nil {
 			t.Fatalf("%s debe poder crear: %v", actor.Role, err)
 		}
 	}
 	// Profesional, recepción y miembro de otro salón: 403.
 	for _, actor := range []domain.Membership{profe, recep, ajeno} {
-		if _, err := svc.Create(actor, "s1", "Corte "+actor.UserID, 30, 100000, 20); !errors.Is(err, domain.ErrForbidden) {
+		if _, err := svc.Create(actor, "s1", "Corte "+actor.UserID, 30, 100000, 20, nil); !errors.Is(err, domain.ErrForbidden) {
 			t.Fatalf("%s no debe poder crear, dio %v", actor.Role, err)
 		}
 	}
 	// Ni siquiera owner de otro salón puede escribir acá.
-	if _, err := svc.Create(ajeno, "s1", "X", 30, 1, 0); !errors.Is(err, domain.ErrForbidden) {
+	if _, err := svc.Create(ajeno, "s1", "X", 30, 1, 0, nil); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("cross-salón debe dar Forbidden, dio %v", err)
 	}
 	// Actor que no es miembro (aunque diga tener rol): 403.
 	fantasma := domain.Membership{UserID: "nadie", SalonID: "s1", Role: domain.RoleOwner}
-	if _, err := svc.Create(fantasma, "s1", "X", 30, 1, 0); !errors.Is(err, domain.ErrForbidden) {
+	if _, err := svc.Create(fantasma, "s1", "X", 30, 1, 0, nil); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("no-miembro debe dar Forbidden, dio %v", err)
 	}
 	// Validación de dominio: 400.
-	if _, err := svc.Create(owner, "s1", "  ", 30, 1, 0); !errors.Is(err, domain.ErrValidation) {
+	if _, err := svc.Create(owner, "s1", "  ", 30, 1, 0, nil); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("nombre vacío debe dar Validation, dio %v", err)
 	}
 }
@@ -51,19 +51,19 @@ func TestServiceService_duplicado_activo(t *testing.T) {
 	svc := ServiceService{Services: services, Memberships: mems}
 	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
 
-	if _, err := svc.Create(owner, "s1", "Corte", 30, 100000, 20); err != nil {
+	if _, err := svc.Create(owner, "s1", "Corte", 30, 100000, 20, nil); err != nil {
 		t.Fatalf("primero: %v", err)
 	}
 	// Duplicado exacto y con otras mayúsculas/espacios: 409 (el índice de la DB
 	// es sobre lower(name), el caso de uso lo refleja igual).
 	for _, dup := range []string{"Corte", "corte", "  CORTE  "} {
-		if _, err := svc.Create(owner, "s1", dup, 45, 120000, 25); !errors.Is(err, domain.ErrAlreadyExists) {
+		if _, err := svc.Create(owner, "s1", dup, 45, 120000, 25, nil); !errors.Is(err, domain.ErrAlreadyExists) {
 			t.Fatalf("duplicado %q debe dar AlreadyExists, dio %v", dup, err)
 		}
 	}
 	// Otro salón puede usar el mismo nombre.
 	otro := miembro(mems, "u-otro", "s2", domain.RoleOwner)
-	if _, err := svc.Create(otro, "s2", "Corte", 30, 90000, 20); err != nil {
+	if _, err := svc.Create(otro, "s2", "Corte", 30, 90000, 20, nil); err != nil {
 		t.Fatalf("mismo nombre en otro salón debe entrar: %v", err)
 	}
 	// Si el original se desactiva, el nombre queda libre.
@@ -75,7 +75,7 @@ func TestServiceService_duplicado_activo(t *testing.T) {
 	if up.Active {
 		t.Fatal("quedó activo")
 	}
-	if _, err := svc.Create(owner, "s1", "Corte", 30, 100000, 20); err != nil {
+	if _, err := svc.Create(owner, "s1", "Corte", 30, 100000, 20, nil); err != nil {
 		t.Fatalf("nombre libre tras desactivar: %v", err)
 	}
 }
@@ -88,7 +88,7 @@ func TestServiceService_update(t *testing.T) {
 	profe := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
 	ajeno := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
 
-	created, err := svc.Create(owner, "s1", "Corte", 30, 100000, 20)
+	created, err := svc.Create(owner, "s1", "Corte", 30, 100000, 20, nil)
 	if err != nil {
 		t.Fatalf("crear: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestServiceService_update(t *testing.T) {
 		t.Fatalf("inexistente debe dar NotFound, dio %v", err)
 	}
 	// Servicio de otro salón -> 404 (no filtramos existencia cross-tenant).
-	otroSvc, err := svc.Create(ajeno, "s2", "Manicura", 45, 90000, 10)
+	otroSvc, err := svc.Create(ajeno, "s2", "Manicura", 45, 90000, 10, nil)
 	if err != nil {
 		t.Fatalf("crear en s2: %v", err)
 	}
@@ -132,8 +132,8 @@ func TestServiceService_list(t *testing.T) {
 	profe := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
 	ajeno := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
 
-	a, _ := svc.Create(owner, "s1", "Corte", 30, 100000, 20)
-	if _, err := svc.Create(owner, "s1", "Color", 90, 250000, 25); err != nil {
+	a, _ := svc.Create(owner, "s1", "Corte", 30, 100000, 20, nil)
+	if _, err := svc.Create(owner, "s1", "Color", 90, 250000, 25, nil); err != nil {
 		t.Fatalf("segundo: %v", err)
 	}
 	if _, err := svc.Update(owner, "s1", a.ID, a.Name, a.DurationMin, a.PriceCents, a.CommissionPct, false); err != nil {

@@ -60,7 +60,7 @@ func (h BookingHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"id": b.ID, "professional_id": b.ProfessionalID, "client_name": b.ClientName,
 		"starts_at": b.StartsAt.Format(time.RFC3339), "ends_at": b.EndsAt.Format(time.RFC3339),
-		"status": string(b.Status),
+		"status": string(b.Status), "service_id": optionalID(b.ServiceID),
 	})
 }
 
@@ -77,10 +77,22 @@ func publicBookingJSON(b domain.Booking) gin.H {
 }
 
 // bookingJSON es la reserva completa (calendario del salón y PATCH).
+// `service_id` (F2c) es el servicio reservado y puede ser null: el turno que se
+// agenda a mano desde el calendario no exige servicio.
 func bookingJSON(b domain.Booking) gin.H {
 	out := publicBookingJSON(b)
 	out["client_name"] = b.ClientName
+	out["service_id"] = optionalID(b.ServiceID)
 	return out
+}
+
+// optionalID serializa un id opcional como texto o null (nunca ""): el
+// frontend distingue "sin servicio" de "servicio vacío".
+func optionalID(id string) any {
+	if id == "" {
+		return nil
+	}
+	return id
 }
 
 // Update: PATCH /salons/:id/bookings/:bid
@@ -167,7 +179,7 @@ func (h BookingHandler) List(c *gin.Context) {
 		out = append(out, gin.H{
 			"id": b.ID, "professional_id": b.ProfessionalID, "client_name": b.ClientName,
 			"starts_at": b.StartsAt.Format(time.RFC3339), "ends_at": b.EndsAt.Format(time.RFC3339),
-			"status": string(b.Status),
+			"status": string(b.Status), "service_id": optionalID(b.ServiceID),
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"bookings": out})

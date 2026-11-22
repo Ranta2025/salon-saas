@@ -35,6 +35,9 @@ type AvailabilityService struct {
 	Settings ports.SalonSettingsRepository
 	Staff    ports.StaffLister
 	Bookings ports.BookingRepository
+	// Professionals dice quién HACE el servicio (F2c): la disponibilidad es
+	// saber hacerlo ∩ estar libre, no "todo el equipo hace todo".
+	Professionals ports.ProfessionalServiceRepository
 }
 
 // Day calcula los huecos libres de una fecha local del salón, para un servicio
@@ -61,7 +64,7 @@ func (s AvailabilityService) Day(slug, date, serviceID, professionalID string) (
 	if err != nil {
 		return DayAvailability{}, err
 	}
-	professionals, err := s.professionals(salon.ID, professionalID)
+	professionals, err := s.professionals(salon.ID, service.ID, professionalID)
 	if err != nil {
 		return DayAvailability{}, err
 	}
@@ -102,21 +105,33 @@ func (s AvailabilityService) Day(slug, date, serviceID, professionalID string) (
 	return DayAvailability{Date: day.Format(dateLayout), Slots: slots}, nil
 }
 
-// professionals filtra el personal que atiende en el salón; un id que no es
-// del equipo del salón simplemente no existe acá (404).
+// professionals filtra el personal que ATIENDE y HACE ese servicio (F2c); un
+// id que no es del equipo del salón, o que no hace el servicio, simplemente no
+// existe acá (404).
 //
 // La regla de quién atiende es la del dominio (professional siempre, dueño y
 // administración solo con la marca attends). El repo ya devuelve solo esa gente
 // y acá se vuelve a aplicar: si el filtro del adaptador se rompiera, el dueño
 // que no atiende volvería a inflar la disponibilidad, que es el bug de F2a.
-func (s AvailabilityService) professionals(salonID, professionalID string) ([]domain.StaffMember, error) {
+//
+// Si NADIE hace el servicio la lista vuelve vacía y los huecos también: la
+// respuesta es {"slots":[]}, nunca un error.
+func (s AvailabilityService) professionals(salonID, serviceID, professionalID string) ([]domain.StaffMember, error) {
 	staff, err := s.Staff.ListStaff(salonID)
 	if err != nil {
 		return nil, err
 	}
+	eligible, err := s.Professionals.ListProfessionalsFor(salonID, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	does := make(map[string]bool, len(eligible))
+	for _, m := range eligible {
+		does[m.ID] = true
+	}
 	bookable := make([]domain.StaffMember, 0, len(staff))
 	for _, m := range staff {
-		if m.Bookable() {
+		if m.Bookable() && does[m.ID] {
 			bookable = append(bookable, m)
 		}
 	}

@@ -155,6 +155,7 @@ type posEnv struct {
 	// las URLs de fotos.
 	settings *msettings
 	members  *mmembers
+	profs    *mprof
 	signer   ports.PhotoURLSigner
 	// T12: email de la reserva pública (la confirmación viaja en goroutine,
 	// por eso los fakes tienen mutex).
@@ -186,13 +187,14 @@ func newPOSEnv() *posEnv {
 		emails:   &mbookingEmails{},
 	}
 	env.members = &mmembers{mems: env.mems, users: env.users}
+	env.profs = &mprof{mems: env.mems}
 	hasher := security.BcryptHasher{}
 	tokens := security.JWTIssuer{Secret: "test-secret"}
 	authSvc := app.AuthService{Users: env.users, Hasher: hasher, Tokens: tokens}
 	tenSvc := app.TenantService{Salons: env.salons, Memberships: env.mems}
 	notifSvc := app.NotificationService{Notifications: env.notifs, Salons: env.mems, Events: env.events}
 	bookSvc := app.BookingService{Bookings: env.bookings, Memberships: env.mems, Events: env.events, Notifier: notifSvc}
-	svcSvc := app.ServiceService{Services: env.services, Memberships: env.mems}
+	svcSvc := app.ServiceService{Services: env.services, Memberships: env.mems, Professionals: env.profs}
 	saleSvc := app.SaleService{Sales: env.sales, Services: env.services, Memberships: env.mems, Events: env.events}
 	cashSvc := app.CashCloseService{CashCloses: env.closes, Sales: env.sales, Memberships: env.mems, Tx: &mCashTx{closes: env.closes, sales: env.sales}, Events: env.events, Notifier: notifSvc}
 	dashSvc := app.DashboardService{Sales: env.sales, Agenda: env.bookings, Staff: env.mems, Memberships: env.mems}
@@ -201,9 +203,19 @@ func newPOSEnv() *posEnv {
 	staffSvc := app.StaffService{Staff: env.mems, Memberships: env.mems}
 	publicSvc := app.PublicSalonService{Salons: env.salons, Services: env.services}
 	settingsSvc := app.SettingsService{Settings: env.settings, Memberships: env.mems}
-	memberSvc := app.MemberService{Members: env.members, Memberships: env.mems, Users: env.users}
-	availabilitySvc := app.AvailabilityService{Salons: env.salons, Services: env.services, Settings: env.settings, Staff: env.mems, Bookings: env.bookings}
-	publicBookingSvc := app.PublicBookingService{Salons: env.salons, Services: env.services, Settings: env.settings, Staff: env.mems, Bookings: env.bookings, Events: env.events, Notifier: notifSvc, Mailer: env.mailer, Emails: env.emails}
+	memberSvc := app.MemberService{
+		Members: env.members, Memberships: env.mems, Users: env.users,
+		Professionals: env.profs, Services: env.services,
+	}
+	availabilitySvc := app.AvailabilityService{
+		Salons: env.salons, Services: env.services, Settings: env.settings,
+		Staff: env.mems, Bookings: env.bookings, Professionals: env.profs,
+	}
+	publicBookingSvc := app.PublicBookingService{
+		Salons: env.salons, Services: env.services, Settings: env.settings,
+		Staff: env.mems, Bookings: env.bookings, Professionals: env.profs,
+		Events: env.events, Notifier: notifSvc, Mailer: env.mailer, Emails: env.emails,
+	}
 	env.signer = security.NewPhotoSigner("test-secret")
 	hub := realtime.NewHub(tokens, env.mems, realtime.HubOrigins("http://localhost:5173"))
 	env.hub = hub
@@ -260,7 +272,11 @@ var _ ports.SalonTxRunner = (*mCashTx)(nil)
 // seedProfessional hace que userID atienda en el salón: el professional_id de
 // una venta o reserva tiene que ser personal del salón (B-12).
 func seedProfessional(env *posEnv, salonID, userID string) {
-	_ = env.mems.Save(domain.Membership{UserID: userID, SalonID: salonID, Role: domain.RoleProfessional})
+	// Attends=true como lo deja domain.NewMembership: un profesional atiende
+	// siempre, y la marca tiene que reflejarlo también en la fila.
+	_ = env.mems.Save(domain.Membership{
+		UserID: userID, SalonID: salonID, Role: domain.RoleProfessional, Attends: true,
+	})
 }
 
 // register registra+loguea un usuario y devuelve (token, userID).

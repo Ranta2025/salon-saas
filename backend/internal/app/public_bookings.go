@@ -35,6 +35,9 @@ type PublicBookingService struct {
 	Settings ports.SalonSettingsRepository
 	Staff    ports.StaffLister
 	Bookings ports.BookingRepository
+	// Professionals dice quién hace el servicio: solo esa gente puede recibir
+	// el turno (F2c). Si nadie lo hace, la reserva es 409.
+	Professionals ports.ProfessionalServiceRepository
 	// Clients deja la ficha del visitante cuando la reserva entra (E-03). Es
 	// opcional como los avisos: nil = este entorno no lleva fichas.
 	Clients ports.ClientRepository
@@ -92,6 +95,12 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 	if err != nil {
 		return domain.Booking{}, err
 	}
+	// Quién puede recibir ESTE turno: quien atiende y hace el servicio. El
+	// oficio no alcanza, la marca attends tampoco: el servicio manda (F2c).
+	eligible, err := s.professionalIDs(salon.ID, service.ID)
+	if err != nil {
+		return domain.Booking{}, err
+	}
 
 	startsAt := in.StartsAt.UTC()
 	endsAt := startsAt.Add(time.Duration(service.DurationMin) * time.Minute)
@@ -106,13 +115,16 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 
 	professionalID := strings.TrimSpace(in.ProfessionalID)
 	if professionalID == "" {
-		professionalID, err = s.freeProfessional(staff, salon.ID, startsAt, endsAt)
+		professionalID, err = s.freeProfessional(staff, eligible, salon.ID, startsAt, endsAt)
 		if err != nil {
 			return domain.Booking{}, err
 		}
 	} else {
 		if !staffHas(staff, professionalID) {
 			return domain.Booking{}, domain.ErrNotFound
+		}
+		if !eligible[professionalID] {
+			return domain.Booking{}, fmt.Errorf("%w: el profesional elegido no hace ese servicio", domain.ErrValidation)
 		}
 		busy, err := s.Bookings.FindOverlapping(salon.ID, professionalID, startsAt, endsAt)
 		if err != nil {
@@ -128,6 +140,9 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 		return domain.Booking{}, err
 	}
 	b.ClientOpID = opID
+	// El turno guarda qué se va a hacer: es lo que después permite contar
+	// servicios, comisiones y "N profesionales lo hacen".
+	b.ServiceID = service.ID
 	if err := s.Bookings.Save(b); err != nil {
 		// Carrera real: la EXCLUDE dejó pasar a otro. El reintento con op id
 		// devuelve la reserva que sí entró.
@@ -212,13 +227,18 @@ func (s PublicBookingService) upsertClient(salonID, name, phone string) {
 	}
 }
 
-// freeProfessional elige el primer profesional del equipo sin turno en el
-// hueco. Si todos están ocupados es un 409, no una reserva sin profesional.
-func (s PublicBookingService) freeProfessional(staff []domain.StaffMember, salonID string, start, end time.Time) (string, error) {
+// freeProfessional elige el primer profesional del equipo que HACE el servicio
+// y está sin turno en el hueco. Si no queda ninguno es un 409, no una reserva
+// sin profesional (ni un 500 cuando nadie hace el servicio).
+func (s PublicBookingService) freeProfessional(staff []domain.StaffMember, eligible map[string]bool, salonID string, start, end time.Time) (string, error) {
 	for _, m := range staff {
 		// Solo quien atiende: un dueño/administración sin la marca no recibe
 		// turnos por asignación automática (F2a).
 		if !m.Bookable() {
+			continue
+		}
+		// Y solo quien hace el servicio (F2c).
+		if !eligible[m.ID] {
 			continue
 		}
 		busy, err := s.Bookings.FindOverlapping(salonID, m.ID, start, end)
@@ -230,6 +250,20 @@ func (s PublicBookingService) freeProfessional(staff []domain.StaffMember, salon
 		}
 	}
 	return "", fmt.Errorf("%w: no hay profesional libre en ese horario", domain.ErrAlreadyExists)
+}
+
+// professionalIDs devuelve el conjunto de miembros que hacen el servicio, para
+// preguntarlo una sola vez por reserva.
+func (s PublicBookingService) professionalIDs(salonID, serviceID string) (map[string]bool, error) {
+	list, err := s.Professionals.ListProfessionalsFor(salonID, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(list))
+	for _, m := range list {
+		out[m.ID] = true
+	}
+	return out, nil
 }
 
 // staffHas dice si userID atiende en el salón.

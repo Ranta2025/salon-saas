@@ -49,11 +49,20 @@ Sin el query param solo devuelve activos. Orden: por nombre.
 
 ### `POST /salons/:id/services` → `201`
 
-Body (todos los campos obligatorios):
+Body (los cuatro campos del servicio son obligatorios; `professional_ids` es
+opcional desde F2c):
 
 ```json
-{ "name": "Corte de dama", "duration_min": 45, "price_cents": 150000, "commission_pct": 20 }
+{ "name": "Corte de dama", "duration_min": 45, "price_cents": 150000, "commission_pct": 20,
+  "professional_ids": ["u_..."] }
 ```
+
+`professional_ids` (máx. 50, todos tienen que atender en el salón; si no,
+`400 {"error":"Profesional inválido"}` / `400 {"error":"No se pueden asignar más de 50 profesionales"}`)
+asigna el servicio nuevo a esas personas. Sin él el servicio nace **sin nadie
+que lo haga**: no se ofrecen turnos para ese servicio hasta asignarlo desde
+Equipo (`PUT /salons/:id/members/:uid/services`, ver
+[`fase5-backend.md`](./fase5-backend.md)).
 
 Responde **la entidad plana** (mismos campos que el listado, no envuelta en
 `{"service": ...}`) para que el frontend guarde el `id` que acaba de crear.

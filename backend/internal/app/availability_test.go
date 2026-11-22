@@ -16,6 +16,7 @@ type publicEnv struct {
 	book     PublicBookingService
 	bookings *fb
 	staff    *fakeStaffLister
+	profs    *fakeProfessionalServices
 	settings *fakeSettings
 	services *fakeServices
 	clients  *fakeClients
@@ -52,14 +53,22 @@ func newPublicEnv(t *testing.T) *publicEnv {
 		{ID: "prof1", Name: "Ana", Role: domain.RoleProfessional},
 		{ID: "prof2", Name: "Bruno", Role: domain.RoleProfessional},
 	}}}
+	profs := &fakeProfessionalServices{staff: staff}
 	bookings := &fb{}
 	events := &fakeEvents{}
 	notifier := &fakeNotifier{}
 	clients := &fakeClients{}
 	return &publicEnv{
-		avail:    AvailabilityService{Salons: salons, Services: services, Settings: settings, Staff: staff, Bookings: bookings},
-		book:     PublicBookingService{Salons: salons, Services: services, Settings: settings, Staff: staff, Bookings: bookings, Clients: clients, Events: events, Notifier: notifier},
-		bookings: bookings, staff: staff, settings: settings, services: services, clients: clients,
+		avail: AvailabilityService{
+			Salons: salons, Services: services, Settings: settings, Staff: staff,
+			Bookings: bookings, Professionals: profs,
+		},
+		book: PublicBookingService{
+			Salons: salons, Services: services, Settings: settings, Staff: staff,
+			Bookings: bookings, Professionals: profs, Clients: clients,
+			Events: events, Notifier: notifier,
+		},
+		bookings: bookings, staff: staff, profs: profs, settings: settings, services: services, clients: clients,
 		corte: corte, viejo: viejo, events: events, notifier: notifier,
 	}
 }

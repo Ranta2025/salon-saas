@@ -52,12 +52,15 @@ func (h ServiceHandler) Create(c *gin.Context) {
 		DurationMin   int    `json:"duration_min"`
 		PriceCents    int    `json:"price_cents"`
 		CommissionPct int    `json:"commission_pct"`
+		// ProfessionalIDs es opcional (S-F2c-5): sin él el servicio nace sin
+		// nadie que lo haga. Máximo 50, todos reservables del salón.
+		ProfessionalIDs []string `json:"professional_ids"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		badBody(c)
 		return
 	}
-	svc, err := h.Services.Create(actor, salonID, in.Name, in.DurationMin, in.PriceCents, in.CommissionPct)
+	svc, err := h.Services.Create(actor, salonID, in.Name, in.DurationMin, in.PriceCents, in.CommissionPct, in.ProfessionalIDs)
 	if err != nil {
 		respondErr(c, err)
 		return

@@ -28,10 +28,17 @@ func (h MemberHandler) loadActor(c *gin.Context, salonID string) (domain.Members
 }
 
 // memberJSON es la forma única de serializar un miembro del equipo.
-// `attends` (F2a) dice si esa persona atiende clientes; es lo que muestra la
-// pantalla de equipo y lo que decide la agenda.
+// `attends` (F2a) dice si esa persona atiende clientes, `trade` es su oficio y
+// `service_ids` los servicios que hace (F2c). Las dos listas salen siempre como
+// array: el frontend no tiene que distinguir null de [].
 func memberJSON(m domain.Member) gin.H {
-	return gin.H{"id": m.ID, "name": m.Name, "email": m.Email, "role": string(m.Role), "attends": m.Attends}
+	ids := make([]string, 0, len(m.ServiceIDs))
+	ids = append(ids, m.ServiceIDs...)
+	return gin.H{
+		"id": m.ID, "name": m.Name, "email": m.Email,
+		"role": string(m.Role), "attends": m.Attends,
+		"trade": m.Trade, "service_ids": ids,
+	}
 }
 
 // List: GET /api/v1/salons/:id/members -> {"members":[{id,name,email,role,attends}]}
@@ -78,28 +85,57 @@ func (h MemberHandler) Add(c *gin.Context) {
 	c.JSON(http.StatusCreated, memberJSON(m))
 }
 
-// UpdateAttends: PATCH /api/v1/salons/:id/members/:uid {"attends":true|false}
-// -> 200 con el miembro ya actualizado (F2a). El body es obligatorio: la marca
-// no se adivina.
-func (h MemberHandler) UpdateAttends(c *gin.Context) {
+// Update: PATCH /api/v1/salons/:id/members/:uid
+// {"attends":true|false,"trade":"Barbero"} -> 200 con el miembro ya actualizado.
+// Las dos cosas son opcionales pero una tiene que venir (S-F2c-3: si no, 400
+// "Indicá qué cambiar"): la marca y el oficio no se adivinan.
+func (h MemberHandler) Update(c *gin.Context) {
 	salonID := c.Param("id")
 	actor, ok := h.loadActor(c, salonID)
 	if !ok {
 		return
 	}
 	var in struct {
-		Attends *bool `json:"attends"`
+		Attends *bool   `json:"attends"`
+		Trade   *string `json:"trade"`
 	}
-	if err := c.ShouldBindJSON(&in); err != nil || in.Attends == nil {
+	if err := c.ShouldBindJSON(&in); err != nil {
 		badBody(c)
 		return
 	}
-	m, err := h.Members.SetAttends(actor, salonID, c.Param("uid"), *in.Attends)
+	m, err := h.Members.Update(actor, salonID, c.Param("uid"),
+		app.MemberPatch{Attends: in.Attends, Trade: in.Trade})
 	if err != nil {
 		respondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, memberJSON(m))
+}
+
+// SetServices: PUT /api/v1/salons/:id/members/:uid/services
+// {"service_ids":["svc_..."]} -> 200 {"service_ids":[...]}. Reemplaza la lista
+// entera: la vacía es válida (esa persona no hace ninguno más).
+func (h MemberHandler) SetServices(c *gin.Context) {
+	salonID := c.Param("id")
+	actor, ok := h.loadActor(c, salonID)
+	if !ok {
+		return
+	}
+	var in struct {
+		ServiceIDs []string `json:"service_ids"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		badBody(c)
+		return
+	}
+	ids, err := h.Members.SetServices(actor, salonID, c.Param("uid"), in.ServiceIDs)
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	out := make([]string, 0, len(ids))
+	out = append(out, ids...)
+	c.JSON(http.StatusOK, gin.H{"service_ids": out})
 }
 
 // Remove: DELETE /api/v1/salons/:id/members/:uid -> 204.
