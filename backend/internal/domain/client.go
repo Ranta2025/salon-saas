@@ -38,15 +38,9 @@ func NewClient(salonID, name, phone, email, notes string) (Client, error) {
 	if err := validateText("el teléfono", phone, MaxTextPhone); err != nil {
 		return Client{}, err
 	}
-	email = NormalizeEmail(email)
-	if email != "" {
-		// Misma regla que el email de una cuenta (NewUser): forma mínima y tope
-		// de largo. Un email inventado no rompe nada, pero tampoco entra.
-		if !strings.Contains(email, "@") || len(email) < 5 || len(email) > MaxTextEmail {
-			// Texto para la pantalla: el prefijo interno del error de dominio
-			// ("validación:") no le dice nada a quien llena el formulario.
-			return Client{}, NewMessage(ErrValidation, "Email inválido")
-		}
+	email, err := NormalizeAndValidateEmail(email)
+	if err != nil {
+		return Client{}, err
 	}
 	notes = strings.TrimSpace(notes)
 	if err := validateText("las notas", notes, MaxTextNotes); err != nil {
@@ -61,6 +55,25 @@ func NewClient(salonID, name, phone, email, notes string) (Client, error) {
 		Notes:     notes,
 		CreatedAt: time.Now().UTC(),
 	}, nil
+}
+
+// NormalizeAndValidateEmail normaliza (minúsculas, sin espacios) y valida un
+// email de contacto: la MISMA regla que el email de una cuenta (NewUser). Vacío
+// es válido ("sin email"); cualquier otra cosa inválida devuelve el mensaje
+// limpio que ve la persona, sin el prefijo interno del error de dominio.
+//
+// Vive acá y no en cada caso de uso para que la ficha del mostrador y la
+// reserva pública no puedan divergir: un email que entra por una puerta tiene
+// que entrar por la otra.
+func NormalizeAndValidateEmail(email string) (string, error) {
+	email = NormalizeEmail(email)
+	if email == "" {
+		return "", nil
+	}
+	if !strings.Contains(email, "@") || len(email) < 5 || len(email) > MaxTextEmail {
+		return "", NewMessage(ErrValidation, "Email inválido")
+	}
+	return email, nil
 }
 
 // NormalizePhone deja solo los dígitos del teléfono: es la forma de COMPARAR

@@ -4,6 +4,7 @@
 package ports
 
 import (
+	"context"
 	"time"
 
 	"salon-saas/internal/domain"
@@ -192,6 +193,52 @@ type NotificationRepository interface {
 	List(salonID, userID string, limit int) ([]domain.Notification, error)
 	MarkRead(salonID, userID, id string) error
 	UnreadCount(salonID, userID string) (int, error)
+}
+
+// --- Email a clientes ---
+
+// Message es un correo ya armado (texto plano + HTML alternativos). El caso de
+// uso decide el contenido y el adaptador solo habla SMTP.
+//
+// To y Subject son headers: el adaptador rechaza CR/LF en ellos (header
+// injection). Text y HTML son cuerpos completos, no fragmentos.
+type Message struct {
+	To      string
+	Subject string
+	Text    string
+	HTML    string
+}
+
+// MailSender es el puerto de salida hacia un servidor de correo. El adaptador
+// de cmd/api puede ser un no-op cuando SMTP_HOST está vacío (entorno sin
+// email): el caso de uso no tiene que saberlo.
+type MailSender interface {
+	Send(ctx context.Context, msg Message) error
+}
+
+// DueReminder es un recordatorio ya reclamado: trae todo lo que la plantilla
+// necesita (salón, reserva y email), así el envío no vuelve a consultar la DB.
+type DueReminder struct {
+	BookingID  string
+	SalonID    string
+	SalonName  string
+	ClientName string
+	Email      string
+	StartsAt   time.Time
+}
+
+// BookingEmailRepository: el email de un turno reservado por la web y la cola
+// de recordatorios. Vive en su propia tabla para no tocar las SELECT de
+// reservas (y para que un turno sin email no ocupe una fila de bookings).
+type BookingEmailRepository interface {
+	// Save guarda el email del turno. Un turno ya guardado no se pisa.
+	Save(salonID, bookingID, email string) error
+	// ClaimDueReminders reclama ATÓMICAMENTE hasta limit recordatorios que
+	// vencen en [now, now+24h) y todavía no se enviaron ni agotaron intentos.
+	// Lo reclamado no lo vuelve a tomar otro proceso (5 minutos de gracia).
+	ClaimDueReminders(now time.Time, limit int) ([]DueReminder, error)
+	// MarkReminderSent cierra el recordatorio del turno: no se reintenta más.
+	MarkReminderSent(bookingID string) error
 }
 
 // --- Clientes y adjuntos ---
