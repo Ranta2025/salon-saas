@@ -105,12 +105,13 @@ func (f *mm) ListByUser(userID string) ([]domain.Membership, error) {
 	return out, nil
 }
 
-// ListStaff: personal que atiende (owner/admin/professional) con nombre.
+// ListStaff: personal que ATIENDE (misma regla que pgstore: profesional
+// siempre, owner/admin con attends) con nombre.
 func (f *mm) ListStaff(salonID string) ([]domain.StaffMember, error) {
 	var out []domain.StaffMember
 	for _, m := range f.byKey {
-		if m.SalonID == salonID && m.Role.IsStaff() {
-			out = append(out, domain.StaffMember{ID: m.UserID, Name: m.UserID, Role: m.Role})
+		if m.SalonID == salonID && m.Bookable() {
+			out = append(out, domain.StaffMember{ID: m.UserID, Name: m.UserID, Role: m.Role, Attends: m.Attends})
 		}
 	}
 	return out, nil

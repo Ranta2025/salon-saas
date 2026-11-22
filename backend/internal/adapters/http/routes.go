@@ -69,6 +69,8 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.GET("/salons/:id/members", d.Members.List)
 	authed.POST("/salons/:id/members", d.Members.Add)
 	authed.DELETE("/salons/:id/members/:uid", d.Members.Remove)
+	// F2a: "atiende clientes" del dueño/administración (el dueño-barbero).
+	authed.PATCH("/salons/:id/members/:uid", d.Members.UpdateAttends)
 
 	// Equipo del salón (select de profesional de la agenda)
 	authed.GET("/salons/:id/staff", d.Staff.List)

@@ -216,7 +216,9 @@ func (s PublicBookingService) upsertClient(salonID, name, phone string) {
 // hueco. Si todos están ocupados es un 409, no una reserva sin profesional.
 func (s PublicBookingService) freeProfessional(staff []domain.StaffMember, salonID string, start, end time.Time) (string, error) {
 	for _, m := range staff {
-		if !m.Role.IsStaff() {
+		// Solo quien atiende: un dueño/administración sin la marca no recibe
+		// turnos por asignación automática (F2a).
+		if !m.Bookable() {
 			continue
 		}
 		busy, err := s.Bookings.FindOverlapping(salonID, m.ID, start, end)
@@ -233,7 +235,7 @@ func (s PublicBookingService) freeProfessional(staff []domain.StaffMember, salon
 // staffHas dice si userID atiende en el salón.
 func staffHas(staff []domain.StaffMember, userID string) bool {
 	for _, m := range staff {
-		if m.ID == userID && m.Role.IsStaff() {
+		if m.ID == userID && m.Bookable() {
 			return true
 		}
 	}

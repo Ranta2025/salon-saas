@@ -76,7 +76,7 @@ func TestMemberService_add(t *testing.T) {
 	admin, _ := mems.Find("u-admin", "s1")
 
 	// Owner suma un admin.
-	m, err := svc.Add(owner, "s1", "CARO@mail.com", domain.RoleAdmin)
+	m, err := svc.Add(owner, "s1", "CARO@mail.com", domain.RoleAdmin, nil)
 	if err != nil {
 		t.Fatalf("owner agrega admin: %v", err)
 	}
@@ -87,40 +87,40 @@ func TestMemberService_add(t *testing.T) {
 		t.Fatalf("membership persistida: %+v", got)
 	}
 	// Admin suma profesional y recepción.
-	if _, err := svc.Add(admin, "s1", "dani@mail.com", domain.RoleReception); err != nil {
+	if _, err := svc.Add(admin, "s1", "dani@mail.com", domain.RoleReception, nil); err != nil {
 		t.Fatalf("admin agrega recepción: %v", err)
 	}
 	// Admin no puede crear otro admin (escalada de privilegios): 403.
-	if _, err := svc.Add(admin, "s1", "eva@mail.com", domain.RoleAdmin); !errors.Is(err, domain.ErrForbidden) {
+	if _, err := svc.Add(admin, "s1", "eva@mail.com", domain.RoleAdmin, nil); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("admin agregando admin: %v", err)
 	}
 	// Nadie reparte el rol owner por la API: 403.
-	if _, err := svc.Add(owner, "s1", "eva@mail.com", domain.RoleOwner); !errors.Is(err, domain.ErrForbidden) {
+	if _, err := svc.Add(owner, "s1", "eva@mail.com", domain.RoleOwner, nil); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("owner agregando owner: %v", err)
 	}
 	// Profesional / recepción no administran: 403.
 	prof := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
-	if _, err := svc.Add(prof, "s1", "eva@mail.com", domain.RoleProfessional); !errors.Is(err, domain.ErrForbidden) {
+	if _, err := svc.Add(prof, "s1", "eva@mail.com", domain.RoleProfessional, nil); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("profesional agregando: %v", err)
 	}
 	// Cuenta inexistente: 400 con mensaje claro (no se crean cuentas desde acá).
-	if _, err := svc.Add(owner, "s1", "nadie@mail.com", domain.RoleProfessional); !errors.Is(err, domain.ErrValidation) {
+	if _, err := svc.Add(owner, "s1", "nadie@mail.com", domain.RoleProfessional, nil); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("email sin cuenta: %v", err)
 	}
-	if _, err := svc.Add(owner, "s1", "   ", domain.RoleProfessional); !errors.Is(err, domain.ErrValidation) {
+	if _, err := svc.Add(owner, "s1", "   ", domain.RoleProfessional, nil); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("email vacío: %v", err)
 	}
 	// Ya es miembro: 409.
-	if _, err := svc.Add(owner, "s1", "beto@mail.com", domain.RoleProfessional); !errors.Is(err, domain.ErrAlreadyExists) {
+	if _, err := svc.Add(owner, "s1", "beto@mail.com", domain.RoleProfessional, nil); !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("ya miembro: %v", err)
 	}
 	// Rol desconocido: 400.
-	if _, err := svc.Add(owner, "s1", "eva@mail.com", domain.Role("jefe")); !errors.Is(err, domain.ErrValidation) {
+	if _, err := svc.Add(owner, "s1", "eva@mail.com", domain.Role("jefe"), nil); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("rol desconocido: %v", err)
 	}
 	// Ajeno al salón: 403.
 	ajeno, _ := mems.Find("u-owner", "s2")
-	if _, err := svc.Add(ajeno, "s1", "eva@mail.com", domain.RoleProfessional); !errors.Is(err, domain.ErrForbidden) {
+	if _, err := svc.Add(ajeno, "s1", "eva@mail.com", domain.RoleProfessional, nil); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("ajeno agregando: %v", err)
 	}
 }
@@ -192,28 +192,28 @@ func TestMemberService_mensajes_para_la_persona(t *testing.T) {
 	}
 
 	// Ya es parte del equipo con ese rol.
-	_, err := svc.Add(owner, "s1", "beto@mail.com", domain.RoleAdmin)
+	_, err := svc.Add(owner, "s1", "beto@mail.com", domain.RoleAdmin, nil)
 	if !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("ya miembro debe seguir siendo AlreadyExists (409), dio %v", err)
 	}
 	sinPrefijo(err, "Ya tiene ese rol")
 
 	// Ya es parte del equipo con OTRO rol: se dice cuál, en español.
-	_, err = svc.Add(admin, "s1", "beto@mail.com", domain.RoleProfessional)
+	_, err = svc.Add(admin, "s1", "beto@mail.com", domain.RoleProfessional, nil)
 	if !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("ya miembro debe seguir siendo AlreadyExists (409), dio %v", err)
 	}
 	sinPrefijo(err, "Ya es parte del equipo como administración")
 
 	// La persona todavía no tiene cuenta.
-	_, err = svc.Add(owner, "s1", "nadie@mail.com", domain.RoleProfessional)
+	_, err = svc.Add(owner, "s1", "nadie@mail.com", domain.RoleProfessional, nil)
 	if !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("email sin cuenta debe seguir siendo Validation (400), dio %v", err)
 	}
 	sinPrefijo(err, "La persona todavía no tiene cuenta")
 
 	// Rol desconocido: se listan los roles válidos en español.
-	_, err = svc.Add(owner, "s1", "eva@mail.com", domain.Role("jefe"))
+	_, err = svc.Add(owner, "s1", "eva@mail.com", domain.Role("jefe"), nil)
 	if !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("rol desconocido debe seguir siendo Validation (400), dio %v", err)
 	}
@@ -227,7 +227,7 @@ func TestMemberService_mensajes_para_la_persona(t *testing.T) {
 	sinPrefijo(err, "No se puede quitar al último dueño")
 
 	// El email vacío tampoco arrastra el prefijo.
-	_, err = svc.Add(owner, "s1", "   ", domain.RoleProfessional)
+	_, err = svc.Add(owner, "s1", "   ", domain.RoleProfessional, nil)
 	if !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("email vacío: %v", err)
 	}

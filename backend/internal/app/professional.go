@@ -29,7 +29,9 @@ func ensureProfessional(memberships ports.MembershipRepository, salonID, profess
 		}
 		return err
 	}
-	if !m.Role.IsStaff() {
+	// Quién atiende lo decide el dominio (profesional siempre; dueño/administración
+	// solo con la marca attends): el rol solo ya no alcanza (F2a).
+	if !m.Bookable() {
 		return fmt.Errorf("%w: el profesional elegido no atiende en el salón", domain.ErrValidation)
 	}
 	return nil

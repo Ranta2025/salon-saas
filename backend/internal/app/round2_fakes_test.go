@@ -54,7 +54,7 @@ func (f *fakeMembers) ListMembers(salonID string) ([]domain.Member, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, domain.Member{ID: u.ID, Name: u.Name, Email: u.Email, Role: m.Role})
+		out = append(out, domain.Member{ID: u.ID, Name: u.Name, Email: u.Email, Role: m.Role, Attends: m.Attends})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
@@ -66,6 +66,18 @@ func (f *fakeMembers) DeleteMember(userID, salonID string) error {
 		return domain.ErrNotFound
 	}
 	delete(f.mems.byKey, key)
+	return nil
+}
+
+// SetAttends: mismo scope que pgstore (una fila por salón); sin fila, ErrNotFound.
+func (f *fakeMembers) SetAttends(userID, salonID string, attends bool) error {
+	key := userID + "|" + salonID
+	m, ok := f.mems.byKey[key]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	m.Attends = attends
+	f.mems.byKey[key] = m
 	return nil
 }
 

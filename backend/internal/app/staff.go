@@ -25,8 +25,14 @@ func (s StaffService) List(actor domain.Membership, salonID string) ([]domain.St
 	if err != nil {
 		return nil, err
 	}
-	if list == nil {
-		list = []domain.StaffMember{} // el frontend recibe [] y no null
+	// Solo quien atiende: el repo ya filtra por la misma regla del dominio y acá
+	// se vuelve a aplicar (F2a). Antes bastaba el rol y el dueño que solo
+	// administra aparecía en el select de profesional.
+	out := make([]domain.StaffMember, 0, len(list))
+	for _, m := range list {
+		if m.Bookable() {
+			out = append(out, m)
+		}
 	}
-	return list, nil
+	return out, nil // el frontend recibe [] y no null
 }

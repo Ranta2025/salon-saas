@@ -124,13 +124,19 @@ func TestSaleService_profesional_debe_ser_del_salon(t *testing.T) {
 	if _, err := svc.RegisterSale(recep, "s1", "u-prof2", "Lía", items, domain.MethodCash); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("profesional de otro salón debe dar ErrValidation, dio %v", err)
 	}
-	// Los tres roles que atienden sí pasan.
+	// Los tres roles que atienden sí pasan (F2a: el dueño y la administración
+	// con la marca de "atiende clientes", como hasta ahora).
 	for _, role := range []domain.Role{domain.RoleOwner, domain.RoleAdmin, domain.RoleProfessional} {
 		uid := "u-" + string(role)
-		miembro(mems, uid, "s1", role)
+		_ = mems.Save(domain.Membership{UserID: uid, SalonID: "s1", Role: role, Attends: true})
 		if _, err := svc.RegisterSale(recep, "s1", uid, "Lía", items, domain.MethodCash); err != nil {
 			t.Fatalf("%s debe poder ser el profesional de la venta: %v", role, err)
 		}
+	}
+	// F2a: el dueño que no atiende ya no es el profesional de una venta.
+	_ = mems.Save(domain.Membership{UserID: "u-duenio-escritorio", SalonID: "s1", Role: domain.RoleOwner})
+	if _, err := svc.RegisterSale(recep, "s1", "u-duenio-escritorio", "Lía", items, domain.MethodCash); !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("el dueño sin attends no atiende: %v", err)
 	}
 }
 
@@ -212,8 +218,11 @@ func TestMeService(t *testing.T) {
 func TestStaffService(t *testing.T) {
 	staff := &fakeStaffLister{bySalon: map[string][]domain.StaffMember{
 		"s1": {
-			{ID: "u-owner", Name: "Ana", Role: domain.RoleOwner},
+			{ID: "u-owner", Name: "Ana", Role: domain.RoleOwner, Attends: true},
 			{ID: "u-prof", Name: "Bruno", Role: domain.RoleProfessional},
+			// F2a: la administración sin la marca no atiende y no se lista.
+			{ID: "u-admin", Name: "Carla", Role: domain.RoleAdmin},
+			{ID: "u-recep", Name: "Dani", Role: domain.RoleReception, Attends: true},
 		},
 	}}
 	mems := &fakeMemberships{}
@@ -224,8 +233,8 @@ func TestStaffService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("staff: %v", err)
 	}
-	if len(list) != 2 {
-		t.Fatalf("esperaba 2, dio %+v", list)
+	if len(list) != 2 || list[0].ID != "u-owner" || list[1].ID != "u-prof" {
+		t.Fatalf("esperaba dueño (con attends) y profesional, dio %+v", list)
 	}
 	// No-miembro: 403 (no se filtra el equipo de otro salón).
 	if _, err := svc.List(domain.Membership{UserID: "u-ajeno", SalonID: "s2"}, "s1"); !errors.Is(err, domain.ErrForbidden) {

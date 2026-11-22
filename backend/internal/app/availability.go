@@ -104,20 +104,28 @@ func (s AvailabilityService) Day(slug, date, serviceID, professionalID string) (
 
 // professionals filtra el personal que atiende en el salón; un id que no es
 // del equipo del salón simplemente no existe acá (404).
+//
+// La regla de quién atiende es la del dominio (professional siempre, dueño y
+// administración solo con la marca attends). El repo ya devuelve solo esa gente
+// y acá se vuelve a aplicar: si el filtro del adaptador se rompiera, el dueño
+// que no atiende volvería a inflar la disponibilidad, que es el bug de F2a.
 func (s AvailabilityService) professionals(salonID, professionalID string) ([]domain.StaffMember, error) {
 	staff, err := s.Staff.ListStaff(salonID)
 	if err != nil {
 		return nil, err
 	}
+	bookable := make([]domain.StaffMember, 0, len(staff))
+	for _, m := range staff {
+		if m.Bookable() {
+			bookable = append(bookable, m)
+		}
+	}
 	want := strings.TrimSpace(professionalID)
 	if want == "" {
-		if len(staff) == 0 {
-			return nil, nil
-		}
-		return staff, nil
+		return bookable, nil
 	}
-	for _, m := range staff {
-		if m.ID == want && m.Role.IsStaff() {
+	for _, m := range bookable {
+		if m.ID == want {
 			return []domain.StaffMember{m}, nil
 		}
 	}

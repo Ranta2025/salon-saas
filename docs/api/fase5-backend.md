@@ -114,11 +114,14 @@ Requiere `Authorization: Bearer <jwt>` y ser **miembro** del salón (cualquier
 rol). Es la fuente del select de profesional de la agenda.
 
 ```json
-{ "staff": [ { "id": "u_...", "name": "Bruno", "role": "professional" } ] }
+{ "staff": [ { "id": "u_...", "name": "Bruno", "role": "professional", "attends": true } ] }
 ```
 
-- Roles incluidos: `owner`, `admin`, `professional`. `reception` y `client` no
-  atienden, así que no aparecen.
+- Incluye **solo a quien atiende** (F2a, ver «Quién atiende»): rol
+  `professional`, o `owner`/`admin` con `attends = true`. `reception` y `client`
+  no aparecen nunca, aunque la fila tenga la marca encendida.
+- `attends` explica por qué está en la lista: el profesional atiende por rol y
+  el dueño/administración por la marca.
 - Orden: por nombre.
 - `staff` es siempre un array.
 - No miembro → `403`. Sin token → `401`.
@@ -196,8 +199,10 @@ no es un patch parcial).
   se solapen cuando el paso es menor que la duración: cada hueco es válido por
   separado y, al reservar uno, el listado siguiente ya refleja el solape.
 - `professional_id` opcional: limita el resultado a esa persona. Un id que no
-  atiende en el salón → `404`. Los profesionales salen del equipo con rol
-  `owner`, `admin` o `professional`.
+  atiende en el salón → `404`. Los profesionales salen de quien atiende (F2a):
+  rol `professional`, o `owner`/`admin` con `attends = true`.
+- Un salón donde **nadie** atiende responde `200` con `"slots": []`, no un
+  error: no hay agenda que ofrecer.
 - `service_id` obligatorio; servicio inexistente, de otro salón o inactivo →
   `400`. `date` inválida → `400`. Slug inexistente → `404`. `slots` siempre es
   un array (`[]` si no hay huecos).
@@ -218,8 +223,9 @@ no es un patch parcial).
 
 - `ends_at` lo calcula el servidor con la duración del servicio (el cuerpo no
   lleva `ends_at`).
-- `professional_id` opcional: sin él se elige el primer miembro del equipo
-  (rol `owner`/`admin`/`professional`) sin turno en ese hueco.
+- `professional_id` opcional: sin él se elige el primer miembro del equipo que
+  atiende (la misma regla de «Quién atiende») y está libre en ese hueco. Sin
+  gente que atienda: `409`.
 - `client_op_id` opcional: reintento idempotente (misma reserva, no duplica).
 - El turno debe entrar completo dentro del horario del salón (en su zona) y no
   ser pasado: `400` si no.
@@ -268,15 +274,26 @@ no es un patch parcial).
 Solo `owner` y `admin` (cualquier otro rol, incluido `professional`: `403`).
 
 ```json
-GET -> 200 { "members": [ { "id": "u_...", "name": "Ana", "email": "ana@mail.com", "role": "owner" } ] }
+GET -> 200 { "members": [ { "id": "u_...", "name": "Ana", "email": "ana@mail.com",
+                            "role": "owner", "attends": true } ] }
 
 POST {"email":"beto@mail.com","role":"professional"} -> 201
-     { "id": "u_...", "name": "Beto", "email": "beto@mail.com", "role": "professional" }
+     { "id": "u_...", "name": "Beto", "email": "beto@mail.com",
+       "role": "professional", "attends": true }
+
+PATCH {"attends": false} -> 200 (el miembro, con la marca nueva)
 
 DELETE /salons/:id/members/:uid -> 204 (sin body)
 ```
 
 - `members` es siempre un array, ordenado por nombre.
+- `attends` (F2a) dice si esa persona **atiende clientes**; sale en el listado,
+  en el alta y en el `PATCH`. Ver «Quién atiende» más abajo.
+- `POST` acepta `attends` **opcional**: sin él rige el default del rol —
+  `professional` nace atendiendo, `admin` y `reception` no
+  (`{"role":"admin","attends":true}` da de alta una administración que también
+  atiende). `attends` explícito que contradice el rol es `400` con los mismos
+  mensajes del `PATCH`.
 - Roles que se pueden asignar por la API: `admin`, `professional`, `reception`.
   El `owner` suma `admin`, `professional` y `reception`; un `admin` solo suma
   `professional` y `reception` (crear otro admin es escalar privilegios: `403`).
@@ -287,6 +304,44 @@ DELETE /salons/:id/members/:uid -> 204 (sin body)
   alguien que no es miembro de ese salón → `404`.
 - Aislamiento: el id del salón manda; un miembro de otro salón no se lista ni se
   borra desde acá.
+
+### Quién atiende (F2a): `attends` y `PATCH /salons/:id/members/:uid`
+
+Hasta la fase 5 el rol alcanzaba: `owner`, `admin` o `professional` aparecían en
+la agenda y en el select de profesional. Un dueño que solo administra inflaba la
+disponibilidad y recibía turnos. Ahora:
+
+| Rol | Atiende |
+|---|---|
+| `professional` | **siempre** (es su oficio) |
+| `owner` / `admin` | solo con `attends = true` (el dueño-barbero) |
+| `reception` / `client` | **nunca** |
+
+La misma regla decide la agenda (`GET /salons/:id/staff`), la disponibilidad
+pública, la asignación automática de la reserva pública y la validación del
+`professional_id` de un turno o de una venta. Un salón donde nadie atiende no
+ofrece turnos (`"slots": []`) y la reserva pública responde `409`.
+
+`PATCH /salons/:id/members/:uid` enciende o apaga la marca de un miembro. Solo
+`owner`/`admin` del salón; el cuerpo es obligatorio y la respuesta es el miembro.
+
+```json
+PATCH {"attends": true} -> 200 { "id": "u_...", "name": "Ana", "email": "ana@mail.com",
+                                 "role": "owner", "attends": true }
+```
+
+| Caso | HTTP | `error` |
+|---|---|---|
+| `professional` con `attends: false` | `400` | `Las profesionales siempre atienden` |
+| `reception` / `client` (cualquier valor) | `400` | `Ese rol no atiende clientes` |
+| Miembro de **otro** salón (o inexistente) | `404` | `no encontrado` |
+| Quien pide no es owner/admin del salón | `403` | `sin permiso` / `sin acceso al salón` |
+
+- El dueño puede apagarse a sí mismo: deja de atender sin dejar de administrar.
+- `PATCH` sin `attends` en el cuerpo → `400 {"error":"body inválido"}` (la marca
+  no se adivina).
+- El alta de un salón deja al `owner` con `attends = true` (salón de una sola
+  persona) y agregar un `professional` lo deja atendiendo.
 
 ### Fotos con URL firmada
 
@@ -465,7 +520,8 @@ defaults apuntan al Mailpit del stack (UI `http://localhost:8025`).
   `unit_price_cents` del body se usa solo para validar el pedido (fuera de rango →
   `400`); el que se cobra y se persiste es el `price_cents` del servicio. Un
   servicio inactivo ya no se vende (`400`). El `professional_id` tiene que ser
-  personal del salón con rol `owner`, `admin` o `professional` (`400` si no).
+  personal del salón que **atiende** (`400` si no): rol `professional`, o
+  `owner`/`admin` con `attends = true` (F2a).
 - **`POST /salons/:id/bookings`**: mismo requisito de `professional_id`; además el
   turno no puede durar más de 12 h ni empezar en el pasado.
 - **`POST /salons/:id/cash-closes`**: el cierre corre en una transacción con lock
@@ -546,6 +602,15 @@ Migración de la ronda 3 (T12):
   `bookings.id` es `TEXT`. Idempotente (`CREATE TABLE/INDEX IF NOT EXISTS` +
   guarda `DO` del `CHECK`).
 
-Las 14 migraciones se probaron aplicándolas dos veces con
+Migración de la fase 6 (F2a):
+
+- `015_membership_attends.sql`: `memberships.attends BOOLEAN NOT NULL DEFAULT
+  false` y backfill `true` para las filas existentes con rol `owner`, `admin` o
+  `professional` (recepción y cliente quedan en `false`). El backfill corre
+  **solo** cuando la columna se crea, así que una segunda pasada no vuelve a
+  encender a quien se apagó desde la pantalla de equipo. La guarda mira
+  `current_schema()`, no cualquier tabla `memberships` del catálogo.
+
+Las 15 migraciones se probaron aplicándolas dos veces con
 `psql -v ON_ERROR_STOP=1` sobre una base limpia y sobre una ya migrada, y el
 binario arranca contra esas bases.

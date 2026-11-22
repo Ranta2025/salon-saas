@@ -37,7 +37,7 @@ func (h StaffHandler) loadActor(c *gin.Context, salonID string) (domain.Membersh
 	return domain.Membership{}, false
 }
 
-// List: GET /api/v1/salons/:id/staff -> {"staff":[{"id","name","role"}]}
+// List: GET /api/v1/salons/:id/staff -> {"staff":[{"id","name","role","attends"}]}
 func (h StaffHandler) List(c *gin.Context) {
 	salonID := c.Param("id")
 	actor, ok := h.loadActor(c, salonID)
@@ -51,7 +51,9 @@ func (h StaffHandler) List(c *gin.Context) {
 	}
 	out := make([]gin.H, 0, len(list))
 	for _, m := range list {
-		out = append(out, gin.H{"id": m.ID, "name": m.Name, "role": string(m.Role)})
+		// attends explica por qué está en la lista: el profesional atiende por
+		// rol y el dueño/administración por la marca (F2a).
+		out = append(out, gin.H{"id": m.ID, "name": m.Name, "role": string(m.Role), "attends": m.Attends})
 	}
 	c.JSON(http.StatusOK, gin.H{"staff": out})
 }

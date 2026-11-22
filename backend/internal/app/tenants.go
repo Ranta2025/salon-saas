@@ -32,6 +32,9 @@ func (s TenantService) CreateSalon(ownerID, name, slug string) (domain.Salon, er
 	if err != nil {
 		return domain.Salon{}, err
 	}
+	// El salón nace de una sola persona y esa persona atiende: el dueño-barbero
+	// del día uno (S-F2a-4). La pantalla de equipo lo puede apagar después.
+	m.Attends = true
 	return salon, s.Memberships.Save(m)
 }
 

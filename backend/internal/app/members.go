@@ -35,7 +35,11 @@ func (s MemberService) List(actor domain.Membership, salonID string) ([]domain.M
 
 // Add suma a una persona que YA tiene cuenta. No crea usuarios: el salón no
 // inventa cuentas ni claves por terceros.
-func (s MemberService) Add(actor domain.Membership, salonID, email string, role domain.Role) (domain.Member, error) {
+//
+// `attends` es opcional (nil = el default del rol según S-F2a-4): un
+// profesional atiende siempre y la administración solo si el alta lo pide (el
+// dueño-barbero que además administra).
+func (s MemberService) Add(actor domain.Membership, salonID, email string, role domain.Role, attends *bool) (domain.Member, error) {
 	m, err := s.manager(actor, salonID)
 	if err != nil {
 		return domain.Member{}, err
@@ -64,6 +68,13 @@ func (s MemberService) Add(actor domain.Membership, salonID, email string, role 
 	if err != nil {
 		return domain.Member{}, err
 	}
+	if attends != nil {
+		// La misma regla que el PATCH: un rol que nunca atiende no se puede
+		// encender y un profesional no se puede apagar.
+		if membership, err = membership.SetAttends(*attends); err != nil {
+			return domain.Member{}, err
+		}
+	}
 	existing, err := s.Memberships.Find(user.ID, salonID)
 	switch {
 	case err == nil && existing.Role == role:
@@ -77,7 +88,36 @@ func (s MemberService) Add(actor domain.Membership, salonID, email string, role 
 	if err := s.Memberships.Save(membership); err != nil {
 		return domain.Member{}, err
 	}
-	return domain.Member{ID: user.ID, Name: user.Name, Email: user.Email, Role: role}, nil
+	return domain.Member{ID: user.ID, Name: user.Name, Email: user.Email, Role: role, Attends: membership.Attends}, nil
+}
+
+// SetAttends enciende o apaga "atiende clientes" de un miembro (PATCH
+// /salons/:id/members/:uid). Solo owner/admin; el miembro tiene que ser de ESTE
+// salón (404 si es de otro) y el rol decide si la marca se puede cambiar (ver
+// domain.Membership.SetAttends).
+func (s MemberService) SetAttends(actor domain.Membership, salonID, userID string, attends bool) (domain.Member, error) {
+	if _, err := s.manager(actor, salonID); err != nil {
+		return domain.Member{}, err
+	}
+	target, err := s.Memberships.Find(userID, salonID)
+	if err != nil {
+		// No distingue "no existe" de "es de otro salón": las dos son 404.
+		return domain.Member{}, domain.ErrNotFound
+	}
+	updated, err := target.SetAttends(attends)
+	if err != nil {
+		return domain.Member{}, err
+	}
+	if err := s.Members.SetAttends(userID, salonID, updated.Attends); err != nil {
+		return domain.Member{}, err
+	}
+	user, err := s.Users.FindByID(userID)
+	if err != nil {
+		return domain.Member{}, err
+	}
+	return domain.Member{
+		ID: user.ID, Name: user.Name, Email: user.Email, Role: target.Role, Attends: updated.Attends,
+	}, nil
 }
 
 // Remove saca a alguien del salón. El último owner no se va: sin dueño nadie

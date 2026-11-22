@@ -28,11 +28,13 @@ func (h MemberHandler) loadActor(c *gin.Context, salonID string) (domain.Members
 }
 
 // memberJSON es la forma única de serializar un miembro del equipo.
+// `attends` (F2a) dice si esa persona atiende clientes; es lo que muestra la
+// pantalla de equipo y lo que decide la agenda.
 func memberJSON(m domain.Member) gin.H {
-	return gin.H{"id": m.ID, "name": m.Name, "email": m.Email, "role": string(m.Role)}
+	return gin.H{"id": m.ID, "name": m.Name, "email": m.Email, "role": string(m.Role), "attends": m.Attends}
 }
 
-// List: GET /api/v1/salons/:id/members -> {"members":[{id,name,email,role}]}
+// List: GET /api/v1/salons/:id/members -> {"members":[{id,name,email,role,attends}]}
 func (h MemberHandler) List(c *gin.Context) {
 	salonID := c.Param("id")
 	actor, ok := h.loadActor(c, salonID)
@@ -51,7 +53,8 @@ func (h MemberHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"members": out})
 }
 
-// Add: POST /api/v1/salons/:id/members {"email","role"} -> 201 miembro.
+// Add: POST /api/v1/salons/:id/members {"email","role","attends?"} -> 201 miembro.
+// `attends` es opcional: sin él manda el default del rol (S-F2a-4).
 func (h MemberHandler) Add(c *gin.Context) {
 	salonID := c.Param("id")
 	actor, ok := h.loadActor(c, salonID)
@@ -59,19 +62,44 @@ func (h MemberHandler) Add(c *gin.Context) {
 		return
 	}
 	var in struct {
-		Email string `json:"email"`
-		Role  string `json:"role"`
+		Email   string `json:"email"`
+		Role    string `json:"role"`
+		Attends *bool  `json:"attends"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		badBody(c)
 		return
 	}
-	m, err := h.Members.Add(actor, salonID, in.Email, domain.Role(in.Role))
+	m, err := h.Members.Add(actor, salonID, in.Email, domain.Role(in.Role), in.Attends)
 	if err != nil {
 		respondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, memberJSON(m))
+}
+
+// UpdateAttends: PATCH /api/v1/salons/:id/members/:uid {"attends":true|false}
+// -> 200 con el miembro ya actualizado (F2a). El body es obligatorio: la marca
+// no se adivina.
+func (h MemberHandler) UpdateAttends(c *gin.Context) {
+	salonID := c.Param("id")
+	actor, ok := h.loadActor(c, salonID)
+	if !ok {
+		return
+	}
+	var in struct {
+		Attends *bool `json:"attends"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil || in.Attends == nil {
+		badBody(c)
+		return
+	}
+	m, err := h.Members.SetAttends(actor, salonID, c.Param("uid"), *in.Attends)
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, memberJSON(m))
 }
 
 // Remove: DELETE /api/v1/salons/:id/members/:uid -> 204.
