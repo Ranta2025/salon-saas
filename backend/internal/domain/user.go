@@ -28,11 +28,10 @@ func NewUser(name, email, passwordHash string) (User, error) {
 	if err := validateText("el nombre", name, MaxTextName); err != nil {
 		return User{}, err
 	}
-	if !strings.Contains(email, "@") || len(email) < 5 {
-		return User{}, fmt.Errorf("%w: email inválido", ErrValidation)
-	}
-	if len(email) > MaxTextEmail {
-		return User{}, fmt.Errorf("%w: el email no puede superar los %d caracteres", ErrValidation, MaxTextEmail)
+	// La forma del email vive en ValidateEmail: el registro y la invitación de
+	// equipo (F2g1) comparten la misma política, no dos parecidas.
+	if err := ValidateEmail(email); err != nil {
+		return User{}, err
 	}
 	if passwordHash == "" {
 		return User{}, fmt.Errorf("%w: falta hash de clave", ErrValidation)

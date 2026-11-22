@@ -65,6 +65,65 @@ type MemberAdminRepository interface {
 	SetTrade(userID, salonID, trade string) error
 }
 
+// InvitationRepository: LECTURA de las invitaciones de equipo (F2g1).
+//
+// Todas las queries van scopeadas por salon_id EXCEPTO FindByTokenHash: el
+// token es la capability que resuelve la invitación antes de saber de qué salón
+// es (la persona invitada todavía no tiene sesión ni conoce el salón).
+//
+// El token en claro no está en esta tabla ni en estas firmas: la DB guarda su
+// SHA-256 y el caso de uso hashea lo que llega.
+type InvitationRepository interface {
+	// ListPending trae las pendientes del salón (ni aceptadas, ni revocadas, ni
+	// vencidas) de la más vieja a la más nueva.
+	ListPending(salonID string, now time.Time) ([]domain.Invitation, error)
+	// FindByID resuelve una invitación del salón (el id de otro tenant es
+	// ErrNotFound).
+	FindByID(salonID, id string) (domain.Invitation, error)
+	// FindByTokenHash es la ÚNICA query sin salon_id del sistema: el hash del
+	// token es la capability. Sin fila es ErrNotFound (el caso de uso responde
+	// el 404 genérico).
+	FindByTokenHash(tokenHash string) (domain.Invitation, error)
+}
+
+// InvitationTx es la vista TRANSACCIONAL de las invitaciones: todas las
+// escrituras (emitir, revocar, canjear) pasan por acá, así nunca queda media
+// operación.
+//
+// El canje es lo más delicado: Claim es un UPDATE condicional
+// (accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()) que se
+// lleva la fila con un row lock; el segundo canje simultáneo del mismo token ve
+// 0 filas y recibe ErrNotFound. La cuenta, la membresía y el estado de la
+// invitación commitean juntos o no existen.
+type InvitationTx interface {
+	// CountPending cuenta las pendientes del salón (tope de 50).
+	CountPending(salonID string, now time.Time) (int, error)
+	// RevokePendingByEmail da de baja las pendientes de ese email: reinvitar
+	// revoca la anterior (y el índice único parcial deja emitir la nueva).
+	RevokePendingByEmail(salonID, email string, now time.Time) error
+	// Save inserta la invitación nueva.
+	Save(i domain.Invitation) error
+	// Claim marca la invitación como aceptada por userID y devuelve la fila
+	// reclamada. Sin filas (vencida, usada o revocada) es ErrNotFound.
+	Claim(id, userID string) (domain.Invitation, error)
+	// Revoke revoca una pendiente del salón (ErrNotFound si ya no lo está).
+	Revoke(salonID, id string, now time.Time) error
+	// SaveUser crea la cuenta de quien acepta (solo el canje público).
+	SaveUser(u domain.User) error
+	// MembershipExists dice si la persona ya es parte del salón: el canje no
+	// cambia el rol de alguien que ya está adentro.
+	MembershipExists(salonID, userID string) (bool, error)
+	// SaveMembership crea la membresía con el rol y la marca de la invitación.
+	SaveMembership(m domain.Membership) error
+}
+
+// InvitationTxRunner abre la transacción de las invitaciones. No toma lock por
+// salón: la atomicidad la da el UPDATE condicional de Claim (row lock) y el
+// índice único parcial de las pendientes.
+type InvitationTxRunner interface {
+	InInvitationTx(fn func(tx InvitationTx) error) error
+}
+
 // ProfessionalServiceRepository: qué servicios hace cada profesional (F2c).
 // El oficio es un texto (no un permiso); esta tabla es la que decide quién
 // puede recibir un turno de cada servicio.
