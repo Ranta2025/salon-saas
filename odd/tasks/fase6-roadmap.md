@@ -60,6 +60,17 @@ Regla: una persona es RESERVABLE (aparece en agenda, disponibilidad y selectores
 Frontera de alcance: salon-saas lleva el dinero operativo (caja, comisiones, gastos, nómina del período); la contabilidad completa queda para mipyme-os.
 Riesgo: F3 y F3b tocan dinero y permisos (item 2 de alto riesgo): cada una en su commit y con revisión nativa propia.
 
+## Contrato F2b (Mi agenda) — solo frontend
+Quién: es "reservable" quien aparece en `GET /salons/:id/staff` (F2a: rol professional, o dueño/administración con `attends`). No hace falta backend nuevo: los turnos salen del mismo `GET /salons/:id/bookings?from&to` que usa el calendario, filtrados por `professional_id === user.id`, en la zona horaria del salón (`/settings`).
+- S-F2b-1 Página `/panel/mi-agenda`: título "Mi agenda" y la fecha de hoy en la zona del salón; resumen ("3 turnos hoy", próximo turno con hora y nombre); lista de MIS turnos de hoy en orden con estado, marca "Ahora" si está en curso y "Siguiente" para el próximo; estado vacío honesto "No tenés turnos hoy". Con la API caída: "Sin conexión: mostrando datos guardados" o el error, nunca el vacío como si fuera dato real (misma regla que E-10).
+- S-F2b-2 Tira de la semana (lunes a domingo) con la cantidad de mis turnos por día; tocar un día carga ese día; día de hoy marcado; navegable con teclado.
+- S-F2b-3 Acciones sobre mis turnos con la misma regla del calendario (`canManageBooking`: cancelar, no se presentó, atendida); reprogramar solo si el rol lo permite y el estado es "agendada".
+- S-F2b-4 Entrada: al iniciar sesión, quien tiene rol `professional` aterriza en `/panel/mi-agenda` (hoy va al calendario por E-02); dueño/administración que atienden siguen en `/panel` con una tarjeta/enlace "Mi agenda"; recepción y administración que no atienden no cambian.
+- S-F2b-5 Menú: la entrada "Mi agenda" aparece solo si el usuario es reservable en el salón activo; en el cambio de salón se recalcula.
+- S-F2b-6 Calendario: botón/alternador "Mi agenda / Todo el salón"; quien atiende lo abre resaltando su propia columna; recepción y administración sin atender siguen viendo todo el salón por defecto.
+- Reglas transversales: móvil 390 px y escritorio 1280 px sin desborde, objetivos de 44 px, foco visible, textos en español, lógica pura en `src/lib` con tests (selección de mis turnos, órdenes, "ahora/siguiente", conteo semanal, reglas de quién es reservable).
+- Fuera de alcance: privacidad de datos de otras profesionales, oficios y servicios (F2c), horarios (F2d).
+
 ## Riesgos conocidos
 - F11 toca dinero (riesgo alto): el estado del pago lo fija solo el servidor, el callback va firmado y es idempotente, nunca se confía en el navegador.
 - F10 y F11 piden revisión nativa RDD propia, cada una en su commit.
