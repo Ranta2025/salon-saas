@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	httpapi "salon-saas/internal/adapters/http"
 	"salon-saas/internal/adapters/imaging"
+	"salon-saas/internal/adapters/mail"
 	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/adapters/realtime"
 	"salon-saas/internal/adapters/security"
@@ -74,10 +75,17 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 
-	router, deps := buildRouter(cfg, pool)
+	router, deps, reminders := buildRouter(cfg, pool)
 	log.Printf("media: %s", cfg.MediaDir)
 	log.Printf("storage: s3 endpoint=%q bucket=%q ssl=%v", cfg.S3Endpoint, cfg.S3Bucket, cfg.S3UseSSL)
 	log.Printf("cors: %v", cfg.CORSOrigins)
+	// Una sola línea al arrancar: con SMTP_HOST vacío no hay correo y la tarea
+	// de recordatorios no reclama nada (los deja para un entorno con email).
+	if cfg.SMTPHost == "" {
+		log.Print("email deshabilitado (SMTP_HOST vacío)")
+	} else {
+		log.Printf("email: smtp %s:%s tls=%s", cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPTLS)
+	}
 	_ = deps
 
 	srv := &http.Server{
@@ -93,6 +101,10 @@ func main() {
 	// conexiones, termina las que están en curso y recién ahí se cierra el pool.
 	stopCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Recordatorios de turno (T12): la goroutine comparte el contexto del
+	// shutdown. Con email deshabilitado RunOnce no hace nada y no reclama.
+	go runReminders(stopCtx, reminders, cfg.ReminderInterval, log.Printf)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -137,7 +149,7 @@ func photoStorage(cfg config) (ports.PhotoStorage, error) {
 
 // buildRouter arma los adaptadores y monta las rutas. Devuelve el router y las
 // dependencias (los tests de humo lo usan).
-func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps) {
+func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app.ReminderService) {
 	users := pgstore.Users{Pool: pool}
 	salons := pgstore.Salons{Pool: pool}
 	mems := pgstore.Memberships{Pool: pool}
@@ -191,10 +203,28 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps) {
 	settingsSvc := app.SettingsService{Settings: salons, Memberships: mems}
 	memberSvc := app.MemberService{Members: mems, Memberships: mems, Users: users}
 	availabilitySvc := app.AvailabilityService{Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems, Bookings: bookings}
+	// Email a clientes (T12): adaptador SMTP del puerto MailSender. Sin
+	// SMTP_HOST el sender queda deshabilitado y los casos de uso lo ven como
+	// nil (no hay correo en este entorno).
+	mailSender, err := mail.New(mail.Config{
+		Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser,
+		Pass: cfg.SMTPPass, From: cfg.SMTPFrom, TLS: cfg.SMTPTLS,
+	})
+	if err != nil {
+		log.Fatalf("email: %v", err)
+	}
+	var mailer ports.MailSender
+	if mailSender.Enabled() {
+		mailer = mailSender
+	}
+	// La cola de recordatorios vive en su propia tabla (014).
+	bookingEmails := pgstore.BookingEmails{Pool: pool}
+	reminders := app.ReminderService{Emails: bookingEmails, Mailer: mailer, Settings: salons}
 	publicBookingSvc := app.PublicBookingService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems, Bookings: bookings,
 		Clients: clientsRepo, // cada reserva pública deja la ficha de la clienta (E-03)
 		Events:  hub, Notifier: notifSvc,
+		Mailer: mailer, Emails: bookingEmails,
 	}
 
 	router := gin.New()
@@ -240,5 +270,5 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps) {
 		TokenIssuer:        tokens,
 	}
 	httpapi.RegisterRoutes(router, deps)
-	return router, deps
+	return router, deps, reminders
 }

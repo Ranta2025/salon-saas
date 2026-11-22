@@ -22,8 +22,11 @@ type PublicBookingInput struct {
 	ProfessionalID string // vacío = el sistema elige uno libre
 	ClientName     string
 	ClientPhone    string
-	StartsAt       time.Time
-	ClientOpID     string // reintento del navegador: idempotencia
+	// ClientEmail es opcional: con email, la persona recibe la confirmación y,
+	// más tarde, el recordatorio. Vacío = reserva anónima, sin correos.
+	ClientEmail string
+	StartsAt    time.Time
+	ClientOpID  string // reintento del navegador: idempotencia
 }
 
 type PublicBookingService struct {
@@ -38,6 +41,11 @@ type PublicBookingService struct {
 	// Opcionales: nil = no avisa (tests sin infraestructura).
 	Events   ports.EventPublisher
 	Notifier Notifier
+	// Email a la persona que reserva (T12). Los dos son opcionales: nil = este
+	// entorno no manda correos. Mailer sin Emails manda la confirmación pero
+	// no deja recordatorio; Emails sin Mailer solo guarda la dirección.
+	Mailer ports.MailSender
+	Emails ports.BookingEmailRepository
 }
 
 // Book agenda un turno público. Errores: 404 (slug/profesional inexistente),
@@ -62,6 +70,14 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 		if !errors.Is(err, domain.ErrNotFound) {
 			return domain.Booking{}, err
 		}
+	}
+
+	// El email es opcional, pero si viene tiene que ser un email (misma regla
+	// que la ficha del mostrador). Se valida ANTES de agendar: un turno creado
+	// con un email que la persona no puede recibir no le sirve a nadie.
+	clientEmail, err := domain.NormalizeAndValidateEmail(in.ClientEmail)
+	if err != nil {
+		return domain.Booking{}, err
 	}
 
 	settings, err := loadSalonSettings(s.Settings, salon.ID)
@@ -131,6 +147,16 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 	// detalle en el log y la ficha se puede crear a mano desde el mostrador.
 	s.upsertClient(salon.ID, b.ClientName, b.ClientPhone)
 
+	// La dirección para la confirmación y el recordatorio. Best-effort igual
+	// que la ficha: si la DB falla, el turno ya entró y la confirmación se
+	// manda igual (lo único que se pierde es el recordatorio).
+	if clientEmail != "" && s.Emails != nil {
+		if err := s.Emails.Save(salon.ID, b.ID, clientEmail); err != nil {
+			// Sin la dirección en el log (dato personal): turno y salón alcanzan.
+			log.Printf("reserva pública: guardar el email del turno %s en el salón %s: %v", b.ID, salon.ID, err)
+		}
+	}
+
 	publish(s.Events, ports.Event{
 		Type:    "booking.created",
 		SalonID: salon.ID,
@@ -146,6 +172,8 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 	})
 	notify(s.Notifier, salon.ID, "", "Nuevo turno",
 		b.ClientName+" · "+FormatSalonTime(settings, b.StartsAt)+" (reserva web)", domain.KindBooking)
+	// La confirmación sale en segundo plano: la respuesta 201 no espera al SMTP.
+	s.sendBookingConfirmation(salon.Name, b, clientEmail, settings)
 	return b, nil
 }
 

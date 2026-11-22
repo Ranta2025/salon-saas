@@ -68,8 +68,11 @@ func (h PublicHandler) CreateBooking(c *gin.Context) {
 		ProfessionalID string `json:"professional_id"`
 		ClientName     string `json:"client_name"`
 		ClientPhone    string `json:"client_phone"`
-		StartsAt       string `json:"starts_at"`
-		ClientOpID     string `json:"client_op_id"`
+		// ClientEmail es opcional: con email, la persona recibe la confirmación
+		// y el recordatorio del turno. Vacío = sin correos.
+		ClientEmail string `json:"client_email"`
+		StartsAt    string `json:"starts_at"`
+		ClientOpID  string `json:"client_op_id"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		badBody(c)
@@ -89,6 +92,7 @@ func (h PublicHandler) CreateBooking(c *gin.Context) {
 		ProfessionalID: in.ProfessionalID,
 		ClientName:     in.ClientName,
 		ClientPhone:    in.ClientPhone,
+		ClientEmail:    in.ClientEmail,
 		StartsAt:       startsAt,
 		ClientOpID:     in.ClientOpID,
 	})

@@ -156,7 +156,11 @@ type posEnv struct {
 	settings *msettings
 	members  *mmembers
 	signer   ports.PhotoURLSigner
-	d        Deps
+	// T12: email de la reserva pública (la confirmación viaja en goroutine,
+	// por eso los fakes tienen mutex).
+	mailer *mmailer
+	emails *mbookingEmails
+	d      Deps
 }
 
 // deps devuelve lo mismo que monta newPOSEnv, para armar routers alternativos
@@ -178,6 +182,8 @@ func newPOSEnv() *posEnv {
 		store:    &mstorage{},
 		events:   &mevents{},
 		settings: &msettings{},
+		mailer:   &mmailer{},
+		emails:   &mbookingEmails{},
 	}
 	env.members = &mmembers{mems: env.mems, users: env.users}
 	hasher := security.BcryptHasher{}
@@ -197,7 +203,7 @@ func newPOSEnv() *posEnv {
 	settingsSvc := app.SettingsService{Settings: env.settings, Memberships: env.mems}
 	memberSvc := app.MemberService{Members: env.members, Memberships: env.mems, Users: env.users}
 	availabilitySvc := app.AvailabilityService{Salons: env.salons, Services: env.services, Settings: env.settings, Staff: env.mems, Bookings: env.bookings}
-	publicBookingSvc := app.PublicBookingService{Salons: env.salons, Services: env.services, Settings: env.settings, Staff: env.mems, Bookings: env.bookings, Events: env.events, Notifier: notifSvc}
+	publicBookingSvc := app.PublicBookingService{Salons: env.salons, Services: env.services, Settings: env.settings, Staff: env.mems, Bookings: env.bookings, Events: env.events, Notifier: notifSvc, Mailer: env.mailer, Emails: env.emails}
 	env.signer = security.NewPhotoSigner("test-secret")
 	hub := realtime.NewHub(tokens, env.mems, realtime.HubOrigins("http://localhost:5173"))
 	env.hub = hub

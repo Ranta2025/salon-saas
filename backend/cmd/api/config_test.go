@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // B-02: sin JWT_SECRET el proceso no arranca. El default viejo
@@ -93,4 +94,56 @@ func TestLoadConfig_cors_origins(t *testing.T) {
 // loadEnv arma el getenv a partir de un mapa (el proceso no toca el entorno real).
 func loadEnv(values map[string]string) func(string) string {
 	return func(k string) string { return values[k] }
+}
+
+// T12: configuración del email y del intervalo de recordatorios.
+func TestLoadConfig_SMTP(t *testing.T) {
+	base := map[string]string{"JWT_SECRET": "secreto", "GIN_MODE": "debug"}
+	cfg, err := loadConfig(loadEnv(base))
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	// Sin SMTP_HOST el email está deshabilitado, pero el resto de defaults
+	// existen para que docker-compose y la documentación sean coherentes.
+	if cfg.SMTPHost != "" || cfg.SMTPPort != "25" || cfg.SMTPTLS != "none" ||
+		cfg.SMTPFrom != "turnos@salon.local" || cfg.ReminderInterval != 60*time.Second {
+		t.Fatalf("defaults SMTP: %+v", cfg)
+	}
+
+	full := map[string]string{
+		"JWT_SECRET": "secreto", "GIN_MODE": "debug",
+		"SMTP_HOST": "mailpit", "SMTP_PORT": "1025", "SMTP_USER": "u",
+		"SMTP_PASS": "p", "SMTP_FROM": "turnos@salon.local", "SMTP_TLS": "starttls",
+		"REMINDER_INTERVAL": "2s",
+	}
+	cfg, err = loadConfig(loadEnv(full))
+	if err != nil {
+		t.Fatalf("config SMTP: %v", err)
+	}
+	if cfg.SMTPHost != "mailpit" || cfg.SMTPPort != "1025" || cfg.SMTPUser != "u" ||
+		cfg.SMTPPass != "p" || cfg.SMTPFrom != "turnos@salon.local" || cfg.SMTPTLS != "starttls" ||
+		cfg.ReminderInterval != 2*time.Second {
+		t.Fatalf("config SMTP: %+v", cfg)
+	}
+
+	// Valores inválidos: error de configuración, no default silencioso.
+	for name, values := range map[string]map[string]string{
+		"SMTP_TLS": {
+			"JWT_SECRET": "secreto", "GIN_MODE": "debug", "SMTP_TLS": "ssl",
+		},
+		"REMINDER_INTERVAL": {
+			"JWT_SECRET": "secreto", "GIN_MODE": "debug", "REMINDER_INTERVAL": "cada rato",
+		},
+	} {
+		_, err := loadConfig(loadEnv(values))
+		if err == nil || !strings.Contains(err.Error(), name) {
+			t.Fatalf("%s inválido debe fallar y nombrar la variable, dio %v", name, err)
+		}
+	}
+	// Un intervalo negativo o cero no tiene sentido (ticker imposible).
+	if _, err := loadConfig(loadEnv(map[string]string{
+		"JWT_SECRET": "secreto", "GIN_MODE": "debug", "REMINDER_INTERVAL": "0s",
+	})); err == nil {
+		t.Fatal("REMINDER_INTERVAL=0s debe fallar")
+	}
 }

@@ -23,6 +23,10 @@ type publicEnv struct {
 	viejo    domain.Service
 	events   *fakeEvents
 	notifier *fakeNotifier
+	// T12: email de la reserva pública. nil por defecto = email deshabilitado
+	// (los tests que no lo necesitan no mandan nada).
+	mailer *fakeMailer
+	emails *fakeBookingEmails
 }
 
 func newPublicEnv(t *testing.T) *publicEnv {

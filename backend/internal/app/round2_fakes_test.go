@@ -12,9 +12,15 @@ import (
 
 type fakeSettings struct {
 	bySalon map[string]domain.SalonSettings
+	// err simula una DB caída al leer la configuración (los recordatorios
+	// tienen que salir igual, en UTC).
+	err error
 }
 
 func (f *fakeSettings) Settings(salonID string) (domain.SalonSettings, error) {
+	if f.err != nil {
+		return domain.SalonSettings{}, f.err
+	}
 	if s, ok := f.bySalon[salonID]; ok {
 		return s, nil
 	}

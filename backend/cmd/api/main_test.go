@@ -46,7 +46,13 @@ func TestBuildRouter_rutas_ronda2(t *testing.T) {
 		MediaDir:    t.TempDir(),
 		Port:        "0",
 	}
-	router, deps := buildRouter(cfg, nil)
+	router, deps, reminders := buildRouter(cfg, nil)
+	if reminders.Emails == nil {
+		t.Fatal("la tarea de recordatorios tiene que recibir la cola de emails")
+	}
+	if reminders.Mailer != nil {
+		t.Fatal("sin SMTP_HOST no hay sender: el email está deshabilitado")
+	}
 	if deps.PublicBookingLimit == nil {
 		t.Fatal("la reserva pública debe tener rate limit por IP")
 	}

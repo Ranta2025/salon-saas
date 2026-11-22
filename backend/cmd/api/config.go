@@ -5,8 +5,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	httpapi "salon-saas/internal/adapters/http"
+	"salon-saas/internal/adapters/mail"
 )
 
 // minJWTSecretLen es el mínimo en release: HS256 con menos de 32 caracteres se
@@ -30,6 +32,18 @@ type config struct {
 	S3SecretKey string
 	S3Bucket    string
 	S3UseSSL    bool
+	// Email a clientes (T12): confirmación de la reserva y recordatorios.
+	// SMTP_HOST vacío = email deshabilitado (no-op): el resto de valores igual
+	// existen para que la configuración sea explícita.
+	SMTPHost string
+	SMTPPort string
+	SMTPUser string
+	SMTPPass string
+	SMTPFrom string
+	SMTPTLS  string
+	// ReminderInterval es la cadencia de la tarea de recordatorios, en duración
+	// de Go: 60s en producción, 2s para probar en desarrollo.
+	ReminderInterval time.Duration
 }
 
 // loadConfig lee la configuración desde getenv (os.Getenv en producción; un
@@ -46,12 +60,34 @@ func loadConfig(getenv func(string) string) (config, error) {
 		S3AccessKey: strings.TrimSpace(getenv("S3_ACCESS_KEY")),
 		S3SecretKey: strings.TrimSpace(getenv("S3_SECRET_KEY")),
 		S3Bucket:    envOr(getenv, "S3_BUCKET", "salon-media"),
+		SMTPHost:    strings.TrimSpace(getenv("SMTP_HOST")),
+		SMTPPort:    envOr(getenv, "SMTP_PORT", "25"),
+		SMTPUser:    strings.TrimSpace(getenv("SMTP_USER")),
+		SMTPPass:    getenv("SMTP_PASS"),
+		SMTPFrom:    envOr(getenv, "SMTP_FROM", "turnos@salon.local"),
+		SMTPTLS:     strings.ToLower(envOr(getenv, "SMTP_TLS", mail.TLSNone)),
 	}
 	useSSL, err := envBool(getenv, "S3_USE_SSL", false)
 	if err != nil {
 		return config{}, err
 	}
 	cfg.S3UseSSL = useSSL
+	// El transporte del correo se elige por env: un valor desconocido es error
+	// de configuración, no un default silencioso (mandaría en claro cuando se
+	// pedía TLS).
+	switch cfg.SMTPTLS {
+	case mail.TLSNone, mail.TLSStartTLS, mail.TLSImplicit:
+	default:
+		return config{}, fmt.Errorf("SMTP_TLS debe ser none, starttls o tls (dio %q)", cfg.SMTPTLS)
+	}
+	interval, err := time.ParseDuration(envOr(getenv, "REMINDER_INTERVAL", "60s"))
+	if err != nil {
+		return config{}, fmt.Errorf("REMINDER_INTERVAL debe ser una duración de Go (por ejemplo 60s o 2s): %w", err)
+	}
+	if interval <= 0 {
+		return config{}, fmt.Errorf("REMINDER_INTERVAL debe ser mayor que cero (dio %s)", interval)
+	}
+	cfg.ReminderInterval = interval
 	// Con endpoint S3, el bucket no puede quedar vacío (S3_BUCKET="" explícito).
 	if cfg.S3Endpoint != "" && strings.TrimSpace(cfg.S3Bucket) == "" {
 		return config{}, fmt.Errorf("S3_BUCKET es obligatoria cuando S3_ENDPOINT está definida")

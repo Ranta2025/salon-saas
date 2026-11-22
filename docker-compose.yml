@@ -34,6 +34,18 @@ services:
       S3_USE_SSL: ${S3_USE_SSL:-false}
       PORT: ${PORT:-8080}
       GIN_MODE: ${GIN_MODE:-debug}
+      # Email a clientes (T12). Por defecto apunta al Mailpit del stack: así
+      # `docker compose up` muestra la confirmación y el recordatorio en
+      # http://localhost:8025 sin configurar nada. SMTP_HOST vacío apaga los
+      # correos (la API arranca igual y loguea "email deshabilitado").
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_FROM: ${SMTP_FROM:-turnos@salon.local}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_TLS: ${SMTP_TLS:-none}
+      # Cada cuánto mira la cola de recordatorios (duración de Go).
+      REMINDER_INTERVAL: ${REMINDER_INTERVAL:-60s}
     ports:
       - "${API_PORT:-8080}:${PORT:-8080}"
     volumes:
@@ -43,6 +55,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # La API arranca igual si Mailpit no está: el sender queda deshabilitado.
+      mailpit:
+        condition: service_started
     # Permite que el API llegue a un MinIO que corre suelto en el host
     # (S3_ENDPOINT=http://host.docker.internal:9000); en Linux hay que declararlo.
     extra_hosts:

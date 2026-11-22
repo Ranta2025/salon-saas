@@ -19,6 +19,12 @@ catálogo/POS sigue en [`pos-servicios.md`](./pos-servicios.md) y el de avisos e
 | `S3_USE_SSL` | no | `false` | `true` para hablar con el bucket por HTTPS (también lo activa un `S3_ENDPOINT` con `https://`). Un valor que no sea booleano impide arrancar. |
 | `PORT` | no | `8080` | Puerto HTTP. |
 | `GIN_MODE` | no | `release` | `debug`/`test` para desarrollo (habilitan secretos JWT cortos y logs verbose de Gin). |
+| `SMTP_HOST` | no | vacío | Servidor SMTP de los correos a clientes. **Vacío = email deshabilitado** (no-op: no se manda nada ni se reclaman recordatorios). |
+| `SMTP_PORT` | no | `25` | Puerto SMTP (`1025` con el Mailpit del compose). |
+| `SMTP_USER` / `SMTP_PASS` | no | — | Autenticación SMTP PLAIN (opcional). |
+| `SMTP_FROM` | no | `turnos@salon.local` | Remitente de los correos. |
+| `SMTP_TLS` | no | `none` | `none`, `starttls` o `tls` (implícito). Un valor desconocido impide arrancar. |
+| `REMINDER_INTERVAL` | no | `60s` | Cada cuánto la tarea mira la cola de recordatorios (duración de Go, > 0). |
 
 El proceso aplica las migraciones al arrancar (con lock global, ver abajo),
 escucha en `:$PORT`, y ante `SIGINT`/`SIGTERM` deja de aceptar conexiones, espera
@@ -181,7 +187,8 @@ no es un patch parcial).
 
 ```json
 { "service_id": "svc_...", "professional_id": "u_...", "client_name": "Lía",
-  "client_phone": "555", "starts_at": "2026-12-01T15:00:00Z", "client_op_id": "op-1" }
+  "client_phone": "555", "starts_at": "2026-12-01T15:00:00Z", "client_op_id": "op-1",
+  "client_email": "lia@mail.com" }
 ```
 
 ```json
@@ -205,6 +212,8 @@ no es un patch parcial).
   Slug o profesional que no atiende: `404`.
 - Publica el evento websocket `booking.created` y deja un aviso persistido
   (`kind: "booking"`, título `Nuevo turno`).
+- `client_email` **opcional** (ronda 3, T12): ver «Email a clientes» más abajo.
+  No aparece en el JSON de la reserva.
 
 ### `PATCH /salons/:id/bookings/:bid`
 
@@ -377,6 +386,60 @@ Los roles válidos para `POST` siguen siendo `admin`, `professional` y
 mensaje y en el detalle de «ya es parte del equipo». `owner`/`admin` siguen
 siendo los roles que administran el equipo, y los permisos no cambian.
 
+## Email a clientes (T12)
+
+La reserva pública acepta un email **opcional** y la API manda dos correos SMTP:
+la confirmación del turno (al agendar) y un recordatorio ~24 h antes.
+
+```json
+POST /api/v1/public/salons/:slug/bookings
+{ "service_id": "svc_...", "client_name": "Lía", "starts_at": "2026-12-01T15:00:00Z",
+  "client_email": "Lia@Mail.com" }
+
+201 { "booking": { "id": "b_...", "professional_id": "u_...", "starts_at": "...",
+                    "ends_at": "...", "status": "booked" } }
+```
+
+- `client_email` es opcional y **no** viaja en la respuesta: el JSON del turno no
+  cambia (el email es dato de contacto, no del turno).
+- Se normaliza (minúsculas, sin espacios) y se valida con la misma regla que el
+  email de una ficha/una cuenta. Forma inválida o más de 254 caracteres →
+  `400 {"error":"Email inválido"}` y **la reserva no entra**.
+- Vacío o ausente = reserva anónima: no se manda nada ni se guarda nada.
+- Un reintento con el mismo `client_op_id` devuelve la reserva original y **no**
+  manda una segunda confirmación.
+- La confirmación se envía en segundo plano con un tope de 15 s: un SMTP lento o
+  caído no demora ni hace fallar la respuesta `201` (si falla, queda en el log
+  del servidor sin la dirección).
+- Guardar la dirección para el recordatorio es best-effort: si falla, la reserva
+  entra igual (se pierde el recordatorio, no el turno).
+
+**Recordatorio.** La tarea periódica (`REMINDER_INTERVAL`, 60 s por defecto)
+reclama atómicamente los turnos que cumplen TODO esto:
+
+- estado `booked`, `starts_at` en el futuro y dentro de las próximas 24 h;
+- la reserva se creó con al menos 24 h de anticipación: una reserva hecha para
+  dentro de dos horas ya recibió su confirmación y no lleva recordatorio;
+- recordatorio no enviado, con menos de 3 intentos y sin un reclamo vivo (un
+  reclamo vence a los 5 minutos, así un proceso caído no pierde el turno).
+
+Lo enviado se marca (`reminder_sent_at`) y no se repite. Un fallo de envío no se
+marca: vuelve en un tick posterior, y nunca frena al resto del lote.
+
+**Copia.** Español, asunto `Turno confirmado · <salón>` /
+`Recordatorio de tu turno · <salón>`, nombre del salón, nombre de la persona,
+fecha y hora en la zona del salón con el nombre de la zona
+(`01/12 09:00 (America/Mexico_City)`) y una línea para cambiar o cancelar
+(ofreciendo contactar al salón: la tabla `salons` no tiene datos de contacto,
+así que no se inventan). Sin ids ni tokens. Texto plano + HTML simple
+escapado, sin imágenes remotas. Si la zona del salón no se puede leer, la hora
+sale en UTC con la etiqueta `(UTC)` y el correo sale igual.
+
+**Configuración.** `SMTP_HOST` vacío deshabilita todo (no-op logueado una vez al
+arrancar como `email deshabilitado`). Ver la tabla de variables y
+[`docs/ops/environment.md`](../ops/environment.md). Con Docker Compose los
+defaults apuntan al Mailpit del stack (UI `http://localhost:8025`).
+
 ## Cambios de comportamiento en endpoints existentes
 
 - **`POST /salons/:id/sales`**: el precio unitario **lo pone el catálogo**. El
@@ -437,3 +500,20 @@ Las tres se probaron aplicando todos los `.sql` en orden **dos veces** con
 `psql -v ON_ERROR_STOP=1` sobre una base limpia y sobre una ya migrada, y el
 binario arranca contra esas bases (el runner registra las 13 versiones en
 `schema_migrations`).
+
+Migración de la ronda 3 (T12):
+
+- `014_booking_emails.sql`: tabla `booking_emails(booking_id TEXT PRIMARY KEY
+  REFERENCES bookings(id) ON DELETE CASCADE, salon_id TEXT NOT NULL, email TEXT
+  NOT NULL CHECK (char_length(email) <= 254), reminder_sent_at TIMESTAMPTZ,
+  reminder_attempts INTEGER NOT NULL DEFAULT 0, reminder_claimed_at
+  TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now())` e índice parcial
+  `booking_emails_due_idx` para la consulta de vencimiento. Va en tabla aparte
+  para no tocar las SELECT de reservas ni `scanBooking`: un turno sin email no
+  ocupa una fila y el JSON de un turno no cambia. `booking_id` es `TEXT` porque
+  `bookings.id` es `TEXT`. Idempotente (`CREATE TABLE/INDEX IF NOT EXISTS` +
+  guarda `DO` del `CHECK`).
+
+Las 14 migraciones se probaron aplicándolas dos veces con
+`psql -v ON_ERROR_STOP=1` sobre una base limpia y sobre una ya migrada, y el
+binario arranca contra esas bases.
