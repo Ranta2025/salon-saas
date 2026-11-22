@@ -728,3 +728,117 @@ func TestCoverage_reassign_without_target_keeps_message(t *testing.T) {
 		t.Fatalf("sin destino: %v", err)
 	}
 }
+
+// S-F2d3-6: la reasignación guarda quién tenía el turno y lo conserva en los
+// cambios siguientes; si el turno vuelve a esa persona se limpia. Se comprueba
+// en el turno devuelto y en lo que quedó guardado.
+func TestCoverage_reassign_tracks_who_covered(t *testing.T) {
+	env := newCoverEnv(t)
+	corte := corteID(t, env)
+	seedAbsence(t, env, "off-1", "ana", localAt(t, 10, 0), localAt(t, 13, 0))
+	seedBooking(t, env, "b-10", "ana", localAt(t, 10, 0), 45, corte)
+
+	res, err := env.svc.ReassignAbsence(env.owner, "s1", "off-1", "bea", nil)
+	if err != nil {
+		t.Fatalf("Ana -> Bea: %v", err)
+	}
+	if res.Bookings[0].CoveredFrom != "ana" {
+		t.Fatalf("la respuesta tiene que decir que lo tenía Ana: %q", res.Bookings[0].CoveredFrom)
+	}
+	stored, err := env.bookings.FindByID("s1", "b-10")
+	if err != nil {
+		t.Fatalf("turno guardado: %v", err)
+	}
+	if stored.ProfessionalID != "bea" || stored.CoveredFrom != "ana" {
+		t.Fatalf("lo guardado: %+v", stored)
+	}
+
+	// Bea -> Dueña: sigue diciendo Ana (no la última que lo tuvo).
+	if _, err := env.svc.ReassignBooking(env.owner, "s1", "b-10", "duena"); err != nil {
+		t.Fatalf("Bea -> Dueña: %v", err)
+	}
+	if stored, _ = env.bookings.FindByID("s1", "b-10"); stored.CoveredFrom != "ana" {
+		t.Fatalf("el segundo cambio conserva a Ana: %q", stored.CoveredFrom)
+	}
+
+	// Un turno que vuelve a quien figura en covered_from: se limpia.
+	seedBooking(t, env, "b-vuelta", "bea", localAt(t, 14, 0), 45, corte)
+	if _, err := env.svc.ReassignBooking(env.owner, "s1", "b-vuelta", "duena"); err != nil {
+		t.Fatalf("Bea -> Dueña: %v", err)
+	}
+	if stored, _ = env.bookings.FindByID("s1", "b-vuelta"); stored.CoveredFrom != "bea" {
+		t.Fatalf("covered_from de la vuelta: %q", stored.CoveredFrom)
+	}
+	if _, err := env.svc.ReassignBooking(env.owner, "s1", "b-vuelta", "bea"); err != nil {
+		t.Fatalf("Dueña -> Bea: %v", err)
+	}
+	if stored, _ = env.bookings.FindByID("s1", "b-vuelta"); stored.CoveredFrom != "" {
+		t.Fatalf("el turno volvió a Bea: covered_from se limpia, quedó %q", stored.CoveredFrom)
+	}
+}
+
+// PRESERVE S-F2d3-6: reprogramar y cambiar estado desde el PATCH clásico no
+// tocan covered_from (solo la reasignación lo escribe).
+func TestBooking_patch_leaves_covered_from(t *testing.T) {
+	bookings := &fb{}
+	mems := &fakeMemberships{}
+	svc := BookingService{Bookings: bookings, Memberships: mems}
+	rec := recepcionista(mems)
+	miembro(mems, "prof1", "s1", domain.RoleProfessional)
+
+	start := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Minute)
+	b, err := domain.NewBooking("s1", "prof1", "Lía", "555", start, start.Add(45*time.Minute))
+	if err != nil {
+		t.Fatalf("turno: %v", err)
+	}
+	b.ID = "b-1"
+	b.CoveredFrom = "prof0"
+	if err := bookings.Save(b); err != nil {
+		t.Fatalf("guardar: %v", err)
+	}
+
+	newStart := start.Add(24 * time.Hour)
+	newEnd := newStart.Add(45 * time.Minute)
+	updated, err := svc.Update(rec, "s1", "b-1", BookingPatch{StartsAt: &newStart, EndsAt: &newEnd})
+	if err != nil {
+		t.Fatalf("reprogramar: %v", err)
+	}
+	if updated.CoveredFrom != "prof0" {
+		t.Fatalf("reprogramar no toca covered_from: %q", updated.CoveredFrom)
+	}
+	status := domain.BookingDone
+	updated, err = svc.Update(rec, "s1", "b-1", BookingPatch{Status: &status})
+	if err != nil {
+		t.Fatalf("cambiar estado: %v", err)
+	}
+	if updated.CoveredFrom != "prof0" {
+		t.Fatalf("cambiar estado no toca covered_from: %q", updated.CoveredFrom)
+	}
+	if stored, _ := bookings.FindByID("s1", "b-1"); stored.CoveredFrom != "prof0" {
+		t.Fatalf("lo guardado: %q", stored.CoveredFrom)
+	}
+}
+
+// PRESERVE S-F2d3-6: si el "Reasignar todo" falla, el rollback tampoco deja
+// covered_from escrito en el turno que llegó a moverse.
+func TestCoverage_reassign_all_or_nothing_keeps_covered_from(t *testing.T) {
+	env := newCoverEnv(t)
+	corte := corteID(t, env)
+	seedAbsence(t, env, "off-1", "ana", localAt(t, 10, 0), localAt(t, 13, 0))
+	seedBooking(t, env, "b-10", "ana", localAt(t, 10, 0), 45, corte)
+	seedBooking(t, env, "b-11", "ana", localAt(t, 11, 0), 45, corte)
+	seedBooking(t, env, "b-bea", "bea", localAt(t, 11, 0), 45, corte)
+
+	if _, err := env.svc.ReassignAbsence(env.owner, "s1", "off-1", "bea", nil); err == nil {
+		t.Fatal("el segundo turno no entra: la reasignación tenía que fallar")
+	}
+	for _, id := range []string{"b-10", "b-11"} {
+		stored, err := env.bookings.FindByID("s1", id)
+		if err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		if stored.CoveredFrom != "" {
+			t.Fatalf("%s quedó con covered_from %q después del rollback", id, stored.CoveredFrom)
+		}
+	}
+}

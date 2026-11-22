@@ -57,11 +57,7 @@ func (h BookingHandler) Create(c *gin.Context) {
 		respondErr(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{
-		"id": b.ID, "professional_id": b.ProfessionalID, "client_name": b.ClientName,
-		"starts_at": b.StartsAt.Format(time.RFC3339), "ends_at": b.EndsAt.Format(time.RFC3339),
-		"status": string(b.Status), "service_id": optionalID(b.ServiceID),
-	})
+	c.JSON(http.StatusCreated, bookingJSON(b))
 }
 
 // publicBookingJSON es la forma de la reserva pública: el frontend de la
@@ -78,11 +74,16 @@ func publicBookingJSON(b domain.Booking) gin.H {
 
 // bookingJSON es la reserva completa (calendario del salón y PATCH).
 // `service_id` (F2c) es el servicio reservado y puede ser null: el turno que se
-// agenda a mano desde el calendario no exige servicio.
+// agenda a mano desde el calendario no exige servicio. `covered_from`
+// (S-F2d3-6) es quién TENÍA el turno antes de que lo cubriera otra persona, o
+// null si nadie lo cubre: solo viaja en el JSON del personal ("Mi agenda" lo
+// usa para avisar "lo cubre otra profesional"), nunca en el público ni en el
+// payload del websocket.
 func bookingJSON(b domain.Booking) gin.H {
 	out := publicBookingJSON(b)
 	out["client_name"] = b.ClientName
 	out["service_id"] = optionalID(b.ServiceID)
+	out["covered_from"] = optionalID(b.CoveredFrom)
 	return out
 }
 
@@ -176,11 +177,7 @@ func (h BookingHandler) List(c *gin.Context) {
 	}
 	out := make([]gin.H, 0, len(list))
 	for _, b := range list {
-		out = append(out, gin.H{
-			"id": b.ID, "professional_id": b.ProfessionalID, "client_name": b.ClientName,
-			"starts_at": b.StartsAt.Format(time.RFC3339), "ends_at": b.EndsAt.Format(time.RFC3339),
-			"status": string(b.Status), "service_id": optionalID(b.ServiceID),
-		})
+		out = append(out, bookingJSON(b))
 	}
 	c.JSON(http.StatusOK, gin.H{"bookings": out})
 }

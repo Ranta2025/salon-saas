@@ -267,7 +267,8 @@ no es un patch parcial).
   (`id`, `professional_id`, `client_name`, `starts_at`, `ends_at`, `status`) y
   deja un aviso: `Turno cancelado`, `Cliente no se presentó`, `Turno atendido`
   o `Turno reprogramado` (`kind: "booking"`).
-- `GET /salons/:id/bookings` y `POST /salons/:id/bookings` no cambian.
+- `GET /salons/:id/bookings` y `POST /salons/:id/bookings` no cambian de forma,
+  salvo por el campo `covered_from` de F2d3 (ver «Quién tenía el turno»).
 
 ### Equipo: `GET/POST/DELETE /salons/:id/members`
 
@@ -803,12 +804,36 @@ POST { "cancel": true, "reason": "Se enfermó" }
 - Los correos salen en segundo plano (como la confirmación): un SMTP lento no
   demora la respuesta ni tumba la operación.
 
+### Quién tenía el turno: `covered_from` (S-F2d3-6)
+
+- Migración **019** (idempotente): `bookings.covered_from` es `text` NULL, **sin
+  FK** (la persona puede dejar el equipo y el turno tiene que seguir sabiendo de
+  quién era) y **sin backfill**: ningún turno que ya existía estaba cubierto, así
+  que una base migrada desde la 018 deja los turnos en `null`.
+- Regla: al reasignar, si `covered_from` está vacío se guarda la profesional
+  **anterior**; si ya tenía valor se conserva (Ana -> Cata -> Bea sigue diciendo
+  Ana) y si el turno vuelve a quien figura ahí, se limpia. Reasignar a la misma
+  persona no marca nada.
+- Ningún otro flujo lo toca: reprogramar, cambiar estado (`PATCH`), el alta de
+  staff y la reserva pública lo dejan como está; un turno nuevo nace en `null`.
+  Se persiste en toda escritura del turno (alta y el `UPDATE` de la transacción
+  de cobertura) y se lee en toda consulta de la agenda.
+- Se expone como `covered_from` (`string`, o **`null`** cuando nadie lo cubre)
+  **solo** en el JSON de turnos del personal: `GET /salons/:id/bookings`, el
+  `PATCH /salons/:id/bookings/:bid` y el `POST /salons/:id/bookings`.
+  **No** sale en la reserva pública (`POST /public/salons/:slug/bookings`) ni en
+  el payload del websocket (`booking.created` / `booking.updated`): los
+  calendarios releen la agenda del personal.
+- «Mi agenda» lo usa para el aviso «Tu turno del X lo cubre otra profesional»:
+  el turno trae `covered_from` = mi id, sigue `booked` y todavía no llegó.
+
 ### Disponibilidad, reserva pública y PATCH clásico: sin cambios
 
 - F2d3 **no** toca la disponibilidad pública, la reserva web ni el `PATCH
   /bookings/:bid` de siempre (estado y reprogramación): siguen con las mismas
   reglas de F2a/F2c/F2d1/F2d2. La cobertura es una acción aparte, explícita y
-  auditada en la bandeja de avisos.
+  auditada en la bandeja de avisos. El único agregado es `covered_from` en el
+  JSON del personal (arriba); el `PATCH` no lo escribe.
 
 ## Ronda 3 (T9): ficha desde la reserva, email de la ficha, hora del salón y mensajes
 

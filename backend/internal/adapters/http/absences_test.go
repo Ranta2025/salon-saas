@@ -479,3 +479,138 @@ func TestHTTP_bookings_reassign_and_cancel(t *testing.T) {
 		t.Fatalf("profesional reasigna: %d %s", w.Code, w.Body.String())
 	}
 }
+
+// staffBookingBody es la forma del turno en los endpoints del personal: el
+// calendario necesita saber quién tenía el turno (S-F2d3-6).
+type staffBookingBody struct {
+	ID             string  `json:"id"`
+	ProfessionalID string  `json:"professional_id"`
+	Status         string  `json:"status"`
+	ServiceID      *string `json:"service_id"`
+	CoveredFrom    *string `json:"covered_from"`
+}
+
+// S-F2d3-6: `covered_from` viaja en el JSON de turnos del personal, como texto o
+// null, y el PATCH clásico no lo borra. El alta de staff lo devuelve en null.
+func TestHTTP_staff_bookings_covered_from(t *testing.T) {
+	c := newCoverageEnv(t, "cobertura-campo")
+	start := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Hour)
+	// El turno de Bea lo tenía Ana: lo cubre otra.
+	covered := c.seedCoveredBooking(t, "b-cover-ana", c.beaID, start, c.service)
+	covered.CoveredFrom = c.anaID
+	if err := c.env.bookings.Update(covered); err != nil {
+		t.Fatalf("guardar covered_from: %v", err)
+	}
+	// Otro turno sin cobertura: el campo viaja en null.
+	c.seedCoveredBooking(t, "b-sin-cover", c.beaID, start.Add(2*time.Hour), c.service)
+
+	listURL := "/api/v1/salons/" + c.salonID + "/bookings?from=" + rfc3339(start) +
+		"&to=" + rfc3339(start.Add(4*time.Hour))
+	w := doReq(c.env.r, "GET", listURL, "", c.ownerTok)
+	if w.Code != http.StatusOK {
+		t.Fatalf("listar turnos: %d %s", w.Code, w.Body.String())
+	}
+	var list struct {
+		Bookings []staffBookingBody `json:"bookings"`
+	}
+	mustJSON(t, w.Body.Bytes(), &list)
+	got := map[string]staffBookingBody{}
+	for _, b := range list.Bookings {
+		got[b.ID] = b
+	}
+	if b, ok := got[covered.ID]; !ok || b.CoveredFrom == nil || *b.CoveredFrom != c.anaID {
+		t.Fatalf("covered_from del turno cubierto: %+v (body %s)", got[covered.ID], w.Body.String())
+	}
+	if b, ok := got["b-sin-cover"]; !ok || b.CoveredFrom != nil {
+		t.Fatalf("un turno sin cobertura lleva null: %+v", got["b-sin-cover"])
+	}
+
+	// El PATCH de estado devuelve el turno del personal y conserva el campo.
+	w = doReq(c.env.r, "PATCH", "/api/v1/salons/"+c.salonID+"/bookings/"+covered.ID,
+		`{"status":"done"}`, c.ownerTok)
+	if w.Code != http.StatusOK {
+		t.Fatalf("cambiar estado: %d %s", w.Code, w.Body.String())
+	}
+	var patched struct {
+		Booking staffBookingBody `json:"booking"`
+	}
+	mustJSON(t, w.Body.Bytes(), &patched)
+	if patched.Booking.CoveredFrom == nil || *patched.Booking.CoveredFrom != c.anaID {
+		t.Fatalf("el PATCH no toca covered_from: %s", w.Body.String())
+	}
+
+	// El alta de staff: nace sin cobertura, y lo dice con null.
+	w = doReq(c.env.r, "POST", "/api/v1/salons/"+c.salonID+"/bookings",
+		fmt.Sprintf(`{"professional_id":%q,"client_name":"Lía","starts_at":%q,"ends_at":%q}`,
+			c.beaID, rfc3339(start.Add(5*time.Hour)), rfc3339(start.Add(5*time.Hour+45*time.Minute))),
+		c.ownerTok)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("alta de staff: %d %s", w.Code, w.Body.String())
+	}
+	var created staffBookingBody
+	mustJSON(t, w.Body.Bytes(), &created)
+	if created.CoveredFrom != nil {
+		t.Fatalf("un turno nuevo no tiene cobertura: %s", w.Body.String())
+	}
+	if created.ID == "" || created.Status != "booked" {
+		t.Fatalf("el alta sigue devolviendo el turno: %s", w.Body.String())
+	}
+}
+
+// S-F2d3-6: `covered_from` NO sale en la reserva pública ni en el payload del
+// websocket (el calendario relee la agenda del personal).
+func TestHTTP_public_and_events_have_no_covered_from(t *testing.T) {
+	env := newPOSEnv()
+	ownerTok, _ := env.register(t, "owner@mail.com")
+	salonID := env.salon(t, ownerTok, "sin-campo-publico")
+	salonSettings(env, salonID)
+	svc := env.seedService(t, ownerTok, salonID, "Corte", 150000)
+	_, profID := env.register(t, "profe@mail.com")
+	seedProfessional(env, salonID, profID)
+	_, prof2ID := env.register(t, "profe2@mail.com")
+	seedProfessional(env, salonID, prof2ID)
+	env.profs.assign(salonID, svc, profID, prof2ID)
+
+	w := doReq(env.r, "POST", "/api/v1/public/salons/sin-campo-publico/bookings",
+		`{"service_id":"`+svc+`","client_name":"Lía","client_phone":"555","starts_at":"2026-12-01T15:00:00Z"}`, "")
+	if w.Code != http.StatusCreated {
+		t.Fatalf("reserva pública: %d %s", w.Code, w.Body.String())
+	}
+	var public struct {
+		Booking map[string]any `json:"booking"`
+	}
+	mustJSON(t, w.Body.Bytes(), &public)
+	if _, ok := public.Booking["covered_from"]; ok {
+		t.Fatalf("la reserva pública no expone covered_from: %s", w.Body.String())
+	}
+	if public.Booking["id"] == nil {
+		t.Fatalf("la reserva pública sigue devolviendo el turno: %s", w.Body.String())
+	}
+
+	// Reasignar ese turno: el evento va al websocket y tampoco lleva el campo.
+	bookingID, _ := public.Booking["id"].(string)
+	if w := doReq(env.r, "POST", "/api/v1/salons/"+salonID+"/bookings/"+bookingID+"/reassign",
+		fmt.Sprintf(`{"professional_id":%q}`, profID), ownerTok); w.Code != http.StatusOK {
+		t.Fatalf("reasignar: %d %s", w.Code, w.Body.String())
+	}
+	var updated bool
+	for _, ev := range env.events.all {
+		if ev.Type != "booking.updated" {
+			continue
+		}
+		data, ok := ev.Data.(map[string]any)
+		if !ok {
+			t.Fatalf("el payload del evento no es un mapa: %T", ev.Data)
+		}
+		updated = true
+		if _, ok := data["covered_from"]; ok {
+			t.Fatalf("el payload del websocket no expone covered_from: %+v", data)
+		}
+		if data["id"] != bookingID {
+			t.Fatalf("el payload sigue siendo el del turno: %+v", data)
+		}
+	}
+	if !updated {
+		t.Fatal("falta el booking.updated de la reasignación")
+	}
+}
