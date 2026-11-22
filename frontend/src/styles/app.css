@@ -3416,3 +3416,176 @@
     align-items: start;
   }
 }
+
+/* ---------- F2g1: team invitations and the public /invitacion page ---------- */
+
+.invite-form {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-4);
+}
+
+.invite-link {
+  display: grid;
+  gap: 0.5rem;
+  padding: var(--space-4);
+  border: 1px solid var(--gold);
+  border-radius: var(--radius-md);
+  background: var(--gold-tint);
+}
+
+.invite-link h3 {
+  font-size: 1.1rem;
+}
+
+.invite-link__note {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--wine);
+}
+
+.invite-link__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.invite-link__input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.invite-link .btn {
+  min-height: 44px;
+}
+
+.invite-pending__title {
+  font-size: 1.15rem;
+  margin-top: var(--space-2);
+}
+
+.invite-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.invite-list__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  min-height: 44px;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.875rem;
+}
+
+.invite-list__email {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.invite-list__expiry {
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+
+.invite-list__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.invite-list .btn {
+  min-height: 44px;
+}
+
+/* Public page: one card on the cream background, same tokens as the panel. */
+.invite {
+  display: grid;
+  place-items: start center;
+  align-content: start;
+  min-height: 100vh;
+  padding: clamp(1.25rem, 5vw, 3rem) clamp(1rem, 4vw, 2rem);
+  background: radial-gradient(circle at 12% 0%, var(--rose-tint) 0%, var(--cream) 45%, var(--shell-bg) 100%);
+}
+
+.invite__card {
+  display: grid;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 34rem;
+  padding: clamp(1.25rem, 4vw, 2rem);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.invite__card h1 {
+  font-size: var(--step-3);
+  /* the display serif draws its accents above the line box: give it room */
+  line-height: 1.3;
+  margin-top: 0.15rem;
+}
+
+.invite__card h2 {
+  font-size: var(--step-2);
+  margin-bottom: var(--space-2);
+}
+
+.invite__card p {
+  font-size: 0.9375rem;
+  color: var(--ink-soft);
+}
+
+.invite__card section {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.invite__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius-sm);
+  background: var(--gold-tint);
+  font-size: 0.875rem;
+  color: var(--ink) !important;
+}
+
+.invite__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.invite__form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.invite__form .btn,
+.invite__actions .btn {
+  min-height: 44px;
+  justify-self: start;
+}
+
+.invite__form .btn {
+  width: 100%;
+  justify-self: stretch;
+}
+
+.invite__card .notice {
+  font-size: 0.875rem;
+}

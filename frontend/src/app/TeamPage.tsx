@@ -43,6 +43,7 @@ import { useSalon } from './SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
 import { MemberHoursCard } from './components/MemberHoursCard'
 import { PageHeader } from './components/PageHeader'
+import { TeamInvitations } from './components/TeamInvitations'
 import { TimeOffCard } from './components/TimeOffCard'
 
 /** `/panel/equipo`: team of the salon (owner/admin). */
@@ -429,6 +430,8 @@ export function TeamPage() {
           {saving ? 'Agregando…' : 'Agregar al equipo'}
         </button>
       </form>
+
+      <TeamInvitations salonId={salonId} actorRole={role} members={members} />
 
       <section className="panel-card" aria-labelledby="team-list-title">
         <div className="panel-card__head">

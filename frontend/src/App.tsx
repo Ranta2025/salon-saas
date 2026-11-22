@@ -1,10 +1,11 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { AppShell } from './app/AppShell'
 import { CalendarPage } from './app/CalendarPage'
 import { ClientDetailPage } from './app/ClientDetailPage'
 import { ClientsPage } from './app/ClientsPage'
 import { EquipmentPage } from './app/EquipmentPage'
+import { InvitationPage } from './app/InvitationPage'
 import { LoginPage } from './app/LoginPage'
 import { MyAgendaPage } from './app/MyAgendaPage'
 import { NotificationsPage } from './app/NotificationsPage'
@@ -21,15 +22,21 @@ import { purgeOfflineApiCache } from './lib/pwa'
 /** A 401 anywhere in the app sends the user back to /login. */
 function UnauthorizedRedirect() {
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   useEffect(() => {
     const onUnauthorized = () => {
+      // The invitation page logs in with its own form: a wrong password must not
+      // navigate away and lose the token it keeps only in memory (S-F2g1-6).
+      if (pathname === '/invitacion') {
+        return
+      }
       // Another account must never read cached salon responses of this session.
       purgeOfflineApiCache()
       navigate('/login', { replace: true })
     }
     window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
-  }, [navigate])
+  }, [navigate, pathname])
   return null
 }
 
@@ -59,6 +66,8 @@ export function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/salon/:slug" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
+        {/* Public, no session: the token of the link lives in the fragment. */}
+        <Route path="/invitacion" element={<InvitationPage />} />
 
         <Route
           path="/panel"

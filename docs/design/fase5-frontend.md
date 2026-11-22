@@ -1371,3 +1371,187 @@ campo de cantidad llega al siguiente control con `outline: 3px solid`, y a 390 y
   las diez entradas en dos filas y 44 px, y el foco de 3 px al tabular.
 - Fuera de alcance de esta entrega: equipo en la reserva de staff y el
   mantenimiento programado (el contrato los excluye).
+
+## 20. Fase 6 — F2g1: invitaciones de equipo por email
+
+Contrato `odd/tasks/fase6-roadmap.md`, «Contrato F2g1» (formas de S-F2g1-3 y
+S-F2g1-4, más S-F2g1-6). Sin dependencias nuevas. El backend que implementa el
+contrato en paralelo no se tocó: la UI consume
+`POST/GET /salons/:id/invitations`, `DELETE /salons/:id/invitations/:iid`,
+`POST /public/invitations/lookup {token}`,
+`POST /public/invitations/accept {token,name,password}` y
+`POST /invitations/accept {token}`. Las frases del servidor se muestran verbatim.
+
+### 20.1 El token: fragmento, memoria y cuerpo
+
+El enlace es `/invitacion#<token>`: el fragmento no viaja al servidor ni a los
+logs de nginx. La página (`src/app/InvitationPage.tsx`) cumple, en este orden:
+
+1. `readInvitationHash(location.href)` lee el token **en el primer render** y
+   devuelve la URL sin él; `history.replaceState` la escribe en el mismo tick,
+   **antes de cualquier request**.
+2. El token vive solo en un `useRef` del componente: nunca `localStorage`, nunca
+   `sessionStorage`, nunca la consola, nunca un mensaje de error, nunca el query
+   ni la ruta. Recargar la página lo pierde: el enlace es de un solo uso y no se
+   puede recuperar (S-F2g1-3).
+3. Solo viaja en el **cuerpo** de `lookup` y de `accept` (`{token}`).
+4. Un token inexistente, vencido, usado o revocado produce **la misma pantalla**:
+   el título y el mensaje son `Invitación inválida o vencida` (la única frase del
+   servidor), sin botón «Reintentar» (reintentar no puede ayudar) y con la
+   instrucción de pedirle una invitación nueva al salón. Un fallo de conexión es
+   otro estado y sí se puede reintentar. Nunca se distingue la causa.
+5. Los formularios llevan `method="post"` además de `onSubmit` con
+   `preventDefault()`: ni siquiera un fallo de JavaScript puede mandar la
+   contraseña en la URL. El campo es `type="password"` con
+   `autocomplete="new-password"`; el del login existente,
+   `current-password` como en `/login`.
+
+Reglas puras de `readInvitationHash` (probadas):
+
+| entrada | token | URL resultante |
+| --- | --- | --- |
+| `…/invitacion#<43 chars>` | el token | `…/invitacion` |
+| `…/invitacion?x=1#<token>` | el token | `…/invitacion?x=1` |
+| `…/invitacion` o `#` | `null` | sin cambios / sin fragmento |
+| `#corto`, `#con espacio`, `#abc=` | `null` | fragmento eliminado |
+| `#<token>#paso-2` | el token | `#paso-2` (ancla conservada) |
+| `#paso-2#<token>` | `null` | `#paso-2` (el token se borra, no se usa) |
+
+Un token es base64url de 20 a 128 caracteres (`crypto/rand` de 32 bytes son 43).
+El token se busca en cualquier fragmento para **borrarlo**, pero solo se **usa**
+si está en el primero (la forma del enlace del contrato): una URL rara nunca
+entrega una sesión.
+
+### 20.2 Reglas puras (`src/lib/invitations.ts`)
+
+| helper | regla |
+| --- | --- |
+| `isInvitationToken` / `readInvitationHash` | el token del contrato y la limpieza de la URL (§20.1) |
+| `validateSignup` | nombre recortado y no vacío, hasta 120 caracteres; contraseña de 8 a 72 **bytes** (bcrypt trunca en 72 y una letra acentuada ocupa dos), nunca recortada. Mensajes: «Escribe tu nombre», «El nombre no puede superar los 120 caracteres», «La contraseña debe tener al menos 8 caracteres», «La contraseña no puede superar los 72 caracteres» |
+| `emailHintLabel` | el `email_hint` **tal como llega** (`l***@mail.com`), recortado; vacío → «el correo de la invitación». La UI no enmascara ni reconstruye: el correo real nunca lo tiene |
+| `invitationRoleLabel` | la etiqueta del servidor si viene; si no, la de `roleLabel` en español |
+| `expiryDay` / `expiryLabel` / `expirySentence` | el día del vencimiento en la zona del salón: «Vence el 29 de noviembre» (con el año solo si no es el actual) y «vence el 29 de noviembre» en minúscula; `null` con una fecha inusable, para no inventar un día |
+| `canInviteRole` / `invitableRoles` | espejo de `domain.Role.AddableBy`: la dueña invita administración, profesional y recepción; una cuenta de administración, profesional y recepción; **nunca** dueño ni cliente |
+| `canInvite` | solo dueño/administración |
+| `emailIsMember` | comparación recortada y en minúsculas contra `GET /members` |
+| `applyRevoke` / `rollbackRevoke` | baja optimista sin mutar la lista y vuelta atrás exacta, reinsertando por vencimiento e id y sin duplicar |
+| `linkOnceFrom` / `dismissLinkOnce` | el enlace del 201 mientras se muestra; `null` si el servidor no lo mandó y para siempre al descartarlo |
+| `LINK_ONCE_NOTE` | `Este enlace se muestra una sola vez` |
+| `linkDeliveryNotice` | «Te enviamos el enlace por correo.» / «No pudimos enviar el correo: compartí el enlace por WhatsApp o a mano.» (el envío es best-effort) |
+| `copyInvitationLink` | `navigator.clipboard.writeText`; `false` si el navegador lo niega o no existe (el enlace se selecciona a mano); un enlace vacío no toca el portapapeles |
+| `invitationLandingPath` | profesional → `/panel/mi-agenda`; el resto → `/panel` |
+| `invitationErrorMessage` | la frase del servidor verbatim (sin reescribir el 403) |
+| `normalizePendingInvitations` | lee `{invitations:[…]}`, descarta filas sin id y copia **solo** id, email, rol y vencimiento: un `link` o un `token` filtrado por el servidor jamás llega a la pantalla |
+| `normalizeCreatedInvitation` / `normalizeInvitationLookup` | lectura de las respuestas del contrato; `lookup` sin nombre de salón es `null` |
+
+### 20.3 `/panel/equipo` (S-F2g1-6)
+
+- Bloque **«Invitar a alguien»** debajo del alta por correo existente (que no
+  cambió): correo y rol, con la ayuda de que el enlace vence a los 7 días. Si el
+  correo ya es de alguien del equipo aparece «Esa persona ya es parte del equipo:
+  no hace falta invitarla.» (`role="status"`) sin bloquear el envío: decide el
+  servidor. Con 50 pendientes el botón se deshabilita y se explica
+  «Máximo 50 invitaciones pendientes».
+- Al crear, el aviso confirma la creación y aparece el bloque del enlace:
+  campo de solo lectura con el enlace, **«Copiar enlace»** y la nota
+  **«Este enlace se muestra una sola vez»**. Al copiar se anuncia «Enlace
+  copiado.» en una región `role="status"` (polite); si el navegador lo niega, el
+  campo recibe el foco y el texto queda **seleccionado** con la explicación
+  visible. «Ya lo guardé» descarta el enlace para siempre.
+- **Invitaciones pendientes**: una fila por invitación con correo, píldora del
+  rol, «Vence el 29 de noviembre» y «Revocar» con confirmación en línea
+  («¿Revocar la invitación?» → «Sí, revocar» / «Volver»). La fila desaparece
+  antes de la respuesta (optimista) y vuelve a su lugar si el `DELETE` falla, con
+  la frase del servidor en `role="alert"`. Lista vacía: «No hay invitaciones
+  pendientes.»; si la lista no se pudo leer se muestra el error y **no** se
+  afirma que no hay ninguna.
+- El formulario no manda `attends`: el valor por defecto del rol lo decide el
+  servidor (S-F2a-4). Un `POST` rechazado imprime la frase del contrato tal cual
+  («Esa persona ya es parte del equipo», «No podés invitar con ese rol»,
+  «Email inválido»).
+
+### 20.4 `/invitacion` (pública)
+
+- Ruta nueva fuera de `RequireAuth`. Estados: «Revisando tu invitación»
+  (lookup), «Invitación a <salón>» con **rol**, `email_hint` y vencimiento, la
+  pantalla única de inválida/vencida y el error de conexión con «Reintentar».
+- **Sin cuenta** (`has_account: false`): «Creá tu cuenta» con nombre y contraseña
+  (misma validación que `POST /auth/register`), «Crear cuenta y entrar». Al
+  aceptar se guarda la sesión devuelta por el `POST /public/invitations/accept`,
+  se lee `/me` para fijar salón y rol y se entra al panel: un profesional
+  aterriza en **Mi agenda**.
+- **Con cuenta** (`has_account: true`): «Iniciá sesión para aceptar». Si el
+  navegador ya tiene sesión, un botón llama al `POST /invitations/accept`
+  autenticado (y «Cerrar sesión y entrar con otra cuenta» da salida a una cuenta
+  equivocada); si no, el correo y la contraseña se escriben en la misma página y
+  luego se acepta con la sesión nueva en el mismo paso. Se hace así porque el
+  token solo existe en memoria de este componente: navegar a `/login` lo
+  perdería. Un `403 {"error":"Esta invitación es para otra cuenta"}` se lee
+  verbatim.
+- `UnauthorizedRedirect` (`App.tsx`) **no** navega fuera de `/invitacion` ante un
+  401: una contraseña equivocada en el login de la invitación muestra la frase
+  del servidor y conserva el token.
+
+### 20.5 Accesibilidad y estilos
+
+`app.css` suma el bloque «F2g1»: `.invite-link` (caja dorada con el enlace y sus
+acciones), `.invite-list`/`.invite-list__item` (fila que envuelve a 390 px con
+objetivo de 44 px), `.invite` (fondo crema con degradado) y `.invite__card` (una
+sola tarjeta de 34 rem como máximo, el mismo marco de tokens que el panel),
+`.invite__meta` (rol, correo enmascarado y vencimiento) y `.invite__form`. Todos
+los botones nuevos son de 44 px (los `btn--sm` incluidos) y el foco es el anillo
+de 3 px de `base.css`. Etiquetas `<label for>` reales en todos los campos.
+
+### 20.6 Verificación
+
+- `npx tsc --noEmit` sin errores, `npm test` (332 tests, node --test; 296 eran de
+  la entrega anterior, 36 nuevas) y `npm run build` en verde.
+- TDD en `src/lib` (primero en rojo: `ERR_MODULE_NOT_FOUND` de
+  `src/lib/invitations.ts`): `invitations.test.ts` cubre el token del fragmento
+  (formas válidas, URL sin fragmento, fragmentos malformados, token fuera del
+  primer lugar, longitud y alfabeto), nombre y contraseña con los límites del
+  registro incluidos los bytes de una letra acentuada, el `email_hint` tal como
+  llega, las etiquetas de rol del servidor y locales, el vencimiento en la zona
+  del salón (cruce de medianoche, año distinto, fecha inusable), las once
+  combinaciones de `AddableBy`, la lista de roles invitables, la coincidencia de
+  correos del equipo, la baja optimista con vuelta atrás exacta y sin duplicar,
+  el estado del enlace de una sola vez, los avisos de entrega, la copia con
+  portapapeles disponible/negado/ausente, el destino del panel, la lectura de los
+  tres payloads (incluido que un `link`/`token` ajeno no sobreviva a la
+  normalización) y el cliente de API (rutas, cuerpos con el token solo en el
+  body, `attends` opcional, ausencia de `Authorization` en las rutas públicas y
+  las frases del servidor tal cual en 400/403/404/409).
+- Revisión visual con el bundle de `vite build` servido junto a una API simulada
+  en `/tmp/f2g1-shot` (dos invitaciones pendientes, un `POST` con
+  `email_sent: false`, un `DELETE` 204, lookup de cuenta nueva, de cuenta
+  existente y 404 genérico) y Chromium headless por protocolo DevTools (el flag
+  `--screenshot` se cuelga en este entorno) a **390 y 1280 px**, con 22 capturas
+  revisadas una por una: `/panel/equipo` (formulario de invitación, aviso de
+  correo ya miembro, enlace de una sola vez, fallback visible al negarse el
+  portapapeles, confirmación de revocación y lista después de revocar) y
+  `/invitacion` (cuenta nueva, contraseña corta, cuenta existente, contraseña
+  equivocada sin perder la invitación, token inválido y panel de destino tras
+  aceptar). Comprobado en el navegador:
+  - `scrollWidth === clientWidth` en las dos páginas y en los dos anchos.
+  - Tras cargar `/invitacion#<token>`: `location.hash` vacío, la URL sin el
+    token, el token ausente del DOM y de `performance.getEntriesByType`, cero
+    requests con el token en la URL, y el token presente en los cuerpos del
+    lookup y del accept.
+  - `type="password"` + `autocomplete="new-password"`, etiquetas reales, `Tab`
+    del correo al selector de rol y de ahí a «Crear invitación» con
+    `outline: solid 3px`, y del nombre a la contraseña igual; los controles
+    nuevos miden 44 px (los `input` 44 y los botones 47).
+  - El aceptar con la cuenta nueva deja `salon.token` de la sesión del servidor y
+    aterriza en `/panel/mi-agenda` (rol profesional); la contraseña equivocada
+    en el login existente se queda en `/invitacion` con «credenciales inválidas».
+- **Desviaciones conscientes:**
+  - No existe formulario de registro en el frontend (las cuentas se crean solo
+    por API), así que «las mismas reglas del registro» son las de
+    `POST /auth/register` en el dominio: nombre recortado de 1 a 120 caracteres y
+    contraseña de 8 a 72 **bytes**, espejadas en `validateSignup`.
+  - El camino de «cuenta existente» inicia sesión en la propia página en lugar de
+    navegar a `/login`: el token vive solo en la memoria del componente y una
+    navegación lo destruiría.
+  - A 390 px el enlace completo no entra en el campo (un `input` no envuelve): se
+    puede desplazar, se copia con el botón y, si el portapapeles falla, queda
+    seleccionado para copiarlo a mano.
