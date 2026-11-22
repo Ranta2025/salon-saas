@@ -29,6 +29,10 @@ type TimelineProps = {
   gridWindow?: TimelineWindow
   /** The day comes from the offline cache: an empty grid is not "no bookings". */
   savedData?: boolean
+  /** Column of the signed-in professional: the "Mi agenda" view highlights it. */
+  highlightProfessionalId?: string | null
+  /** Copy of the empty state when the page is filtered ("Mi agenda"). */
+  emptyLabel?: string
 }
 
 type Block = {
@@ -73,6 +77,8 @@ export function Timeline({
   selectedId = null,
   gridWindow = DEFAULT_WINDOW,
   savedData = false,
+  highlightProfessionalId = null,
+  emptyLabel,
 }: TimelineProps) {
   const groups = groupByProfessional(bookings, professionals)
   const hours = Array.from(
@@ -86,7 +92,7 @@ export function Timeline({
       <p className="empty-state">
         {savedData
           ? 'Sin conexión: la copia guardada de este día no tiene citas. Actualiza cuando vuelva la red.'
-          : 'No hay citas agendadas para este día. Las reservas nuevas aparecen aquí.'}
+          : emptyLabel ?? 'No hay citas agendadas para este día. Las reservas nuevas aparecen aquí.'}
       </p>
     )
   }
@@ -109,7 +115,13 @@ export function Timeline({
           {groups.map((group) => {
             const blocks = layoutColumn(group.bookings, timeZone)
             return (
-              <section className="timeline__column" key={group.id}>
+              <section
+                className={`timeline__column${
+                  highlightProfessionalId === group.id ? ' timeline__column--mine' : ''
+                }`}
+                data-mine={highlightProfessionalId === group.id}
+                key={group.id}
+              >
                 <header className="timeline__column-head">
                   <h2>{group.name}</h2>
                   <span>{bookingCountLabel(group.bookings.length)}</span>

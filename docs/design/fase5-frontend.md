@@ -244,11 +244,11 @@ documentados.
 - `SalonRole` reconoce `reception` (antes se degradaba a `professional`), con
   etiqueta «Recepción». `reception` no es manager: no ve Equipo ni Ajustes, pero
   sí administra turnos y crea fichas, como el backend.
-- `panelHomePath(role)` devuelve `/panel/calendario` para `professional` y
-  `null` para el resto. El índice de `/panel` (`PanelHome`) redirige antes de
-  montar `DashboardPage`, así que un professional **nunca** pide `/dashboard` y
-  nunca ve el 403. Mientras `/me` carga se muestra un estado de carga, no el
-  panel.
+- `panelHomePath(role)` devuelve `/panel/mi-agenda` para `professional` (F2b,
+  S-F2b-4) y `null` para el resto. El índice de `/panel` (`PanelHome`) redirige
+  antes de montar `DashboardPage`, así que un professional **nunca** pide
+  `/dashboard` y nunca ve el 403. Mientras `/me` carga se muestra un estado de
+  carga, no el panel.
 - `describeApiError` reemplaza a `friendlyApiMessage` para las páginas: un 403
   devuelve el texto amable con `retryable: false`, y `ErrorNotice` no dibuja
   «Reintentar» cuando reintentar no puede ayudar. El resto de errores conserva
@@ -361,7 +361,8 @@ línea, con lo que el contenido empieza a ~213 px del borde superior en vez de a
 - TDD en `src/lib`: `describeApiError` y respuesta offline del worker
   (`api.test.ts`), causa y motivo del descarte (`offlineQueue.test.ts`),
   `timelineWindowFromHours` (`datetime.test.ts`), `canReschedule` cerrado y
-  `bookingCountLabel` (`bookingActions.test.ts`), `panelHomePath`,
+  `bookingCountLabel` (`bookingActions.test.ts`), `panelHomePath` (ahora
+  `/panel/mi-agenda`),
   `canCreateClient` y `reception` (`permissions.test.ts`, `me.test.ts`),
   `offlineData.test.ts` y `landingPreload.test.ts`.
 - Revisión visual con `vite preview` contra una API simulada en `/tmp` y
@@ -608,3 +609,98 @@ recepción no se dibujan. A 390 y 1280 px no hay scroll horizontal
   `role="switch"` con `aria-checked` y nombre accesible, objetivo de 44 px,
   `Tab` que llega al control, `:focus-visible` con `outline: solid 3px`, `Space`
   que conmuta y el `PATCH` que sale con el flag nuevo.
+
+## 14. Fase 6 — F2b: Mi agenda
+
+Contrato `odd/tasks/fase6-roadmap.md`, «Contrato F2b» (S-F2b-1..6). Solo
+frontend: no hay endpoint nuevo y no se agregaron dependencias. Todo lo que se
+muestra sale de `GET /salons/:id/bookings?from&to` (el mismo del calendario y su
+caché offline), `GET /salons/:id/staff` (la lista que F2a ya filtra a quien
+atiende), `/me` y `/settings`.
+
+### 14.1 Reglas puras (`src/lib/myAgenda.ts`)
+
+| helper | regla |
+| --- | --- |
+| `selectMyBookings(bookings, userId)` | filtra `professional_id === user.id`; un id vacío no selecciona nada |
+| `sortAgendaBookings` | orden por inicio, desempate por fin y luego id; no muta la entrada |
+| `agendaMarkers(bookings, now)` | marca `now` en el turno en curso y `next` en el primero abierto que empieza después; `now = null` (día que no es hoy) no marca nada |
+| `isOpenBooking` | solo `booked` o estado vacío pueden ser «Ahora»/«Siguiente»; atendida, cancelada y no asistió son historia |
+| `weekStartOf`/`weekDates` | lunes a domingo ISO del calendario del salón |
+| `weekOverview` | cantidad por día con la fecha local del salón: un turno a las 23:30 cuenta en su día local aunque en UTC sea el día siguiente; canceladas no cuentan |
+| `todayAgendaCount`/`todayCountLabel` | «Sin turnos hoy», «1 turno hoy», «3 turnos hoy» |
+| `weekRange` | `from` lunes 00:00 local a `to` lunes siguiente 00:00 local, en la zona del salón |
+| `isBookableInStaff` | reservable = aparece en `/staff` (autoridad de F2a) |
+| `canOpenMyAgenda` | usa `/staff`; solo si esa request falló cae a la regla del dominio (`professional` siempre atiende); dueño/administración sin `attends` no |
+| `initialCalendarView`/`visibleCalendarBookings` | quien atiende abre el calendario en «Mi agenda»; el resto sigue en «Todo el salón» |
+
+`formatAgendaDate` imprime «Viernes 21 de noviembre de 2026» y
+`formatAgendaDateLower` la misma fecha en minúscula para la frase «Hoy es …».
+
+### 14.2 `/panel/mi-agenda` (S-F2b-1..3)
+
+- Encabezado «Mi agenda» con la fecha de hoy en la zona del salón (de
+  `/settings`, respaldo `TIME_ZONE`), resumen «N turnos hoy» y «Próximo turno:
+  HH:MM · cliente».
+- Tira de la semana (lunes a domingo) con la cantidad de mis turnos por día; el
+  día de hoy queda marcado aunque no sea el seleccionado (`aria-current="date"`),
+  el seleccionado se pinta lleno (`aria-pressed`) y cada día es un botón de
+  44 px con nombre accesible («Lunes 16: 3 turnos»). Elegir un día cambia la
+  lista sin volver a pedir la semana.
+- Lista del día en orden, con hora, clienta, estado y las marcas «Ahora» /
+  «Siguiente». Cada fila abre el **mismo** `BookingDetail` del calendario:
+  cancelar (con confirmación), no asistió y atendida con `canManageBooking`, y
+  «Reprogramar» solo si el rol puede actuar y el turno está `booked`.
+- Día vacío honesto: «No tenés turnos hoy» / «No tenés turnos este día» solo con
+  una respuesta viva. Con la API caída se muestra el error y **no** el resumen,
+  la tira ni el vacío (misma regla E-10). Con una copia del service worker
+  (`X-Salon-Offline-Cache`) o sin red: «Sin conexión: mostrando datos guardados»
+  y, si la copia no trae turnos, lo dice explícitamente.
+- Quien no atiende y entra directo ve una explicación con enlace al calendario,
+  nunca un 403 ni un vacío falso.
+
+### 14.3 Entrada, menú y calendario (S-F2b-4..6)
+
+- `panelHomePath('professional')` pasa de `/panel/calendario` a
+  `/panel/mi-agenda`: es el destino del índice de `/panel` después del login.
+- `AppShell` pide `/staff` por salón activo y muestra «Mi agenda» solo si la
+  persona está en esa lista (recalculado en cada cambio de salón). Dueño y
+  administración que atienden ven además una tarjeta «Mi agenda» en el resumen.
+- `CalendarPage` suma el alternador «Mi agenda / Todo el salón» para quien
+  atiende: abre en «Mi agenda», dibuja solo su columna y la resalta en ambas
+  vistas (`highlightProfessionalId`). Recepción y administración que no atienden
+  no ven el alternador y siguen con todo el salón.
+- La navegación móvil pasa a cinco columnas para que las nueve entradas del
+  dueño que atiende sigan entrando en dos filas a 375 y 390 px.
+
+### 14.4 Estilos
+
+`app.css` suma `.my-agenda__summary`, `.week-strip` (siete botones de 44 px con
+estados `data-today`/`data-selected`), `.my-agenda__row`/`.my-agenda__marker`
+(«Ahora» en vino, «Siguiente» en ciruela), `.my-agenda-layout` (dos columnas
+desde 900 px, panel de acciones fijo como en el calendario), `.view-toggle` y
+`.timeline__column--mine`, más `.dashboard-agenda`. La barra lateral móvil fija
+`align-content: start` para que una página corta no centre el menú.
+
+### 14.5 Verificación
+
+- `npx tsc --noEmit`, `npm test` (199 tests, node --test) y `npm run build` en
+  verde.
+- TDD en `src/lib`: `myAgenda.test.ts` (selección, orden sin mutar, ahora/
+  siguiente con turnos cerrados y sin reloj, semana lunes–domingo, conteo con un
+  turno de 23:30 que en UTC cae al día siguiente, etiquetas exactas, rango
+  semanal, reservable desde `/staff`, regla de entrada y filtrado del
+  alternador) y `panelHomePath` actualizado en `permissions.test.ts`.
+- Revisión visual con el bundle de `vite build` servido junto a una API simulada
+  en `/tmp/f2b-shot` y Chromium headless (protocolo DevTools; el flag
+  `--screenshot` de esta versión se cuelga en el entorno) a 390 y 1280 px:
+  `/panel/mi-agenda` con turnos, «Ahora»/«Siguiente», tira semanal, día vacío,
+  día elegido con turnos, copia guardada, copia guardada sin turnos, error,
+  panel de acciones de un turno abierto y de uno cerrado, calendario en «Mi
+  agenda» y «Todo el salón», calendario de recepción sin alternador, `/panel`
+  del dueño con la tarjeta y las nueve entradas (375 y 390 px: `scrollWidth ===
+  clientWidth`, dos filas, 44 px) y recepción sin «Mi agenda». Se corrigieron en
+  la revisión: la fecha capitalizada a mitad de frase, el conteo del encabezado
+  del día que incluía canceladas, el resumen y la tira visibles durante un error
+  (se leían como dato real), el alternador estirado a todo el ancho y el menú
+  centrado en páginas cortas.

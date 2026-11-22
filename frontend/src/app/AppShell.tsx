@@ -1,6 +1,10 @@
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { SALON } from '../landing/content'
+import { fetchStaff } from '../lib/api'
+import { canOpenMyAgenda } from '../lib/myAgenda'
 import { activeRole, isManager } from '../lib/permissions'
+import type { StaffMember } from '../lib/staff'
 import { purgeOfflineApiCache } from '../lib/pwa'
 import { clearSalonId, clearToken, clearUserId } from '../lib/session'
 import { NotificationCenter } from './components/NotificationCenter'
@@ -16,10 +20,13 @@ type NavEntry = {
   end: boolean
   /** Only owner/admin see it; the page itself also guards the role. */
   managerOnly?: boolean
+  /** Only whoever attends clients in the active salon sees it (S-F2b-5). */
+  agendaOnly?: boolean
 }
 
 const NAV: readonly NavEntry[] = [
   { to: '/panel', label: 'Panel', end: true },
+  { to: '/panel/mi-agenda', label: 'Mi agenda', end: false, agendaOnly: true },
   { to: '/panel/calendario', label: 'Calendario', end: false },
   { to: '/panel/pos', label: 'Ventas', end: false },
   { to: '/panel/servicios', label: 'Servicios', end: false },
@@ -85,12 +92,52 @@ function SalonSwitcher() {
 
 function ShellChrome() {
   const navigate = useNavigate()
-  const { salonId, salons } = useSalon()
+  const { salonId, salons, user } = useSalon()
   const role = activeRole(salons, salonId)
+  // «Mi agenda» is shown only to whoever appears in /staff (the bookable team of
+  // F2a); the list is re-read on every salon switch, so the entry follows it.
+  const [staff, setStaff] = useState<StaffMember[]>([])
+  const [staffLoaded, setStaffLoaded] = useState(false)
+
+  useEffect(() => {
+    if (!salonId) {
+      setStaff([])
+      setStaffLoaded(false)
+      return
+    }
+    let active = true
+    setStaff([])
+    setStaffLoaded(false)
+    fetchStaff(salonId)
+      .then((list) => {
+        if (active) {
+          setStaff(list)
+          setStaffLoaded(true)
+        }
+      })
+      .catch(() => {
+        // The fallback of canOpenMyAgenda keeps a professional's agenda reachable.
+      })
+    return () => {
+      active = false
+    }
+  }, [salonId])
+
+  const canOpenMine = canOpenMyAgenda({
+    staff,
+    staffLoaded,
+    userId: user?.id ?? null,
+    role,
+  })
   // While `/me` is unknown (loading or failed) the entries stay visible; the page
   // behind them guards the role and explains a 403 instead of crashing.
   const showManagerEntries = isManager(role) || role === null
-  const navItems = NAV.filter((item) => !item.managerOnly || showManagerEntries)
+  const navItems = NAV.filter((item) => {
+    if (item.managerOnly && !showManagerEntries) {
+      return false
+    }
+    return !item.agendaOnly || canOpenMine
+  })
 
   const handleLogout = () => {
     clearToken()

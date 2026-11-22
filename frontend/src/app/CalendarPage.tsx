@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { describeApiError, fetchBookings, fetchStaff, type ApiErrorNotice } from '../lib/api'
 import { subscribeOfflineData } from '../lib/offlineData'
+import {
+  canOpenMyAgenda,
+  initialCalendarView,
+  visibleCalendarBookings,
+  type CalendarView,
+} from '../lib/myAgenda'
 import { activeRole, canManageBooking } from '../lib/permissions'
 import { timeZoneLabel } from '../lib/publicBooking'
 import { fetchSettings } from '../lib/settings'
@@ -37,11 +43,14 @@ export function CalendarPage() {
   /** The list on screen is a cached copy, not a live answer of the API. */
   const [savedData, setSavedData] = useState(false)
   const [staff, setStaff] = useState<StaffMember[]>([])
+  const [staffLoaded, setStaffLoaded] = useState(false)
   const [staffError, setStaffError] = useState<string | null>(null)
   const [timeZone, setTimeZone] = useState<string>(TIME_ZONE)
   const [gridWindow, setGridWindow] = useState<TimelineWindow>(DEFAULT_WINDOW)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  /** null until the person chooses; whoever attends starts on their agenda. */
+  const [view, setView] = useState<CalendarView | null>(null)
   // The service worker flags a cached answer before the fetch resolves, so the
   // load below reads this ref to know whether the data it got is saved data.
   const cachedAnswer = useRef(false)
@@ -75,10 +84,12 @@ export function CalendarPage() {
     }
     let active = true
     setStaffError(null)
+    setStaffLoaded(false)
     fetchStaff(salonId)
       .then((list) => {
         if (active) {
           setStaff(list)
+          setStaffLoaded(true)
         }
       })
       .catch((err: unknown) => {
@@ -131,10 +142,28 @@ export function CalendarPage() {
     return () => controller.abort()
   }, [salonId, dateValue, timeZone, reloadKey])
 
+  // A salon switch recalculates bookability, so the view starts over there.
+  useEffect(() => {
+    setView(null)
+    setSelectedId(null)
+  }, [salonId])
+
   const isToday = dateValue === toDateInputValue(new Date(), timeZone)
   // While another day loads, do not show the appointments of the previous one.
   const agendaReady = loadedDay === dateValue
   const role = activeRole(salons, salonId)
+  const bookable = canOpenMyAgenda({
+    staff,
+    staffLoaded,
+    userId: user?.id ?? null,
+    role,
+  })
+  const calendarView = view ?? initialCalendarView(bookable)
+  const visibleBookings = visibleCalendarBookings(bookings, calendarView, user?.id)
+  // "Mi agenda" draws only my column; "Todo el salón" draws the whole team and
+  // still marks my own column (S-F2b-6).
+  const visibleProfessionals =
+    calendarView === 'mine' ? staff.filter((member) => member.id === user?.id) : staff
   const selected = bookings.find((booking) => booking.id === selectedId) ?? null
   // Saved or failed data is never presented as today's real agenda.
   const showingSavedData = savedData || !online
@@ -199,6 +228,35 @@ export function CalendarPage() {
         ) : null}
       </div>
 
+      {bookable ? (
+        <div className="view-toggle" role="group" aria-label="Vista de la agenda">
+          <button
+            type="button"
+            className="view-toggle__option"
+            aria-pressed={calendarView === 'mine'}
+            data-active={calendarView === 'mine'}
+            onClick={() => {
+              setView('mine')
+              setSelectedId(null)
+            }}
+          >
+            Mi agenda
+          </button>
+          <button
+            type="button"
+            className="view-toggle__option"
+            aria-pressed={calendarView === 'all'}
+            data-active={calendarView === 'all'}
+            onClick={() => {
+              setView('all')
+              setSelectedId(null)
+            }}
+          >
+            Todo el salón
+          </button>
+        </div>
+      ) : null}
+
       {notice ? (
         <p className="notice notice--success" role="status">
           {notice}
@@ -218,11 +276,15 @@ export function CalendarPage() {
         <div className="calendar-layout__grid">
           {agendaReady && !hasError ? (
             <Timeline
-              bookings={bookings}
-              professionals={staff}
+              bookings={visibleBookings}
+              professionals={visibleProfessionals}
               timeZone={timeZone}
               gridWindow={gridWindow}
               savedData={showingSavedData}
+              highlightProfessionalId={bookable ? user?.id ?? null : null}
+              emptyLabel={
+                calendarView === 'mine' ? 'No tenés citas agendadas para este día.' : undefined
+              }
               selectedId={selectedId}
               onSelect={(booking) => {
                 setNotice(null)

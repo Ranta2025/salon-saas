@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { describeApiError, fetchDashboard, type ApiErrorNotice } from '../lib/api'
+import { Link } from 'react-router-dom'
+import { describeApiError, fetchDashboard, fetchStaff, type ApiErrorNotice } from '../lib/api'
 import { formatOccupancy, type DashboardMetrics } from '../lib/metrics'
+import { canOpenMyAgenda } from '../lib/myAgenda'
 import { formatCents } from '../lib/money'
+import { activeRole } from '../lib/permissions'
+import type { StaffMember } from '../lib/staff'
 import { useRealtime } from './RealtimeContext'
 import { useSalon } from './SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
@@ -9,14 +13,42 @@ import { KPICard } from './components/KPICard'
 import { PageHeader } from './components/PageHeader'
 
 export function DashboardPage() {
-  const { salonId } = useSalon()
+  const { salonId, salons, user } = useSalon()
   const { subscribe } = useRealtime()
   const [data, setData] = useState<DashboardMetrics | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<ApiErrorNotice | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [staff, setStaff] = useState<StaffMember[]>([])
+  const [staffLoaded, setStaffLoaded] = useState(false)
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
+
+  // The owner/admin who also attends keeps the dashboard and gets a shortcut to
+  // their own agenda (S-F2b-4); a manager who does not attend sees no card.
+  useEffect(() => {
+    if (!salonId) {
+      setStaff([])
+      setStaffLoaded(false)
+      return
+    }
+    let active = true
+    setStaff([])
+    setStaffLoaded(false)
+    fetchStaff(salonId)
+      .then((list) => {
+        if (active) {
+          setStaff(list)
+          setStaffLoaded(true)
+        }
+      })
+      .catch(() => {
+        // No team: no card, the calendar still works.
+      })
+    return () => {
+      active = false
+    }
+  }, [salonId])
 
   // Live events of the salon keep the numbers current without a manual refresh.
   useEffect(() => {
@@ -68,6 +100,12 @@ export function DashboardPage() {
 
   const servicesSold = data?.top_services.reduce((total, row) => total + row.count, 0) ?? 0
   const maxCount = data?.top_services.reduce((max, row) => Math.max(max, row.count), 0) ?? 0
+  const bookable = canOpenMyAgenda({
+    staff,
+    staffLoaded,
+    userId: user?.id ?? null,
+    role: activeRole(salons, salonId),
+  })
 
   return (
     <>
@@ -81,6 +119,21 @@ export function DashboardPage() {
           </button>
         }
       />
+
+      {bookable ? (
+        <section className="panel-card dashboard-agenda" aria-labelledby="dashboard-agenda-title">
+          <div>
+            <p className="eyebrow">Tu día</p>
+            <h2 id="dashboard-agenda-title">Mi agenda</h2>
+            <p className="muted">
+              Tus turnos de hoy y de la semana, con las mismas acciones del calendario.
+            </p>
+          </div>
+          <Link className="btn btn--wine btn--sm" to="/panel/mi-agenda">
+            Abrir Mi agenda
+          </Link>
+        </section>
+      ) : null}
 
       {loading && !data ? <LoadingState label="Cargando indicadores…" /> : null}
       {loading && data ? <LoadingState label="Actualizando indicadores…" /> : null}

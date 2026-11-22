@@ -5,6 +5,7 @@ import { CalendarPage } from './app/CalendarPage'
 import { ClientDetailPage } from './app/ClientDetailPage'
 import { ClientsPage } from './app/ClientsPage'
 import { LoginPage } from './app/LoginPage'
+import { MyAgendaPage } from './app/MyAgendaPage'
 import { NotificationsPage } from './app/NotificationsPage'
 import { PanelHome } from './app/PanelHome'
 import { PosPage } from './app/PosPage'
@@ -67,6 +68,7 @@ export function App() {
           }
         >
           <Route index element={<PanelHome />} />
+          <Route path="mi-agenda" element={<MyAgendaPage />} />
           <Route path="calendario" element={<CalendarPage />} />
           <Route path="pos" element={<PosPage />} />
           <Route path="servicios" element={<ServicesPage />} />
