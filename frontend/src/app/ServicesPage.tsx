@@ -6,6 +6,14 @@ import {
   updateService,
   type ApiErrorNotice,
 } from '../lib/api'
+import { fetchMembers, type SalonMember } from '../lib/members'
+import {
+  bookableMembers,
+  NOBODY_DOES_SERVICE_NOTICE,
+  nobodyDoesService,
+  professionalCount,
+  professionalsCountLabel,
+} from '../lib/tradeServices'
 import { formatCents, formatMinutes } from '../lib/money'
 import type { Service, ServiceInput, ServiceUpdateInput } from '../types'
 import { useSalon } from './SalonContext'
@@ -24,6 +32,7 @@ export function ServicesPage() {
   const [error, setError] = useState<ApiErrorNotice | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [mode, setMode] = useState<FormMode>({ kind: 'closed' })
+  const [members, setMembers] = useState<SalonMember[] | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
@@ -56,6 +65,30 @@ export function ServicesPage() {
       active = false
     }
   }, [salonId, includeInactive, reloadKey])
+
+  // Count of professionals per service (S-F2c-7) comes from GET /members, which
+  // only owner/admin can read. Without it no count is claimed at all: an empty
+  // list would be a lie about the salon.
+  useEffect(() => {
+    if (!salonId) {
+      return
+    }
+    let active = true
+    fetchMembers(salonId)
+      .then((list) => {
+        if (active) {
+          setMembers(list)
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setMembers(null)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [salonId, reloadKey])
 
   const handleCreate = async (input: ServiceInput | ServiceUpdateInput): Promise<void> => {
     if (!salonId) {
@@ -115,6 +148,7 @@ export function ServicesPage() {
       {mode.kind !== 'closed' ? (
         <ServiceForm
           service={mode.kind === 'edit' ? mode.service : undefined}
+          professionals={bookableMembers(members ?? [])}
           onSubmit={
             mode.kind === 'edit'
               ? (input) => handleUpdate(mode.service.id, input)
@@ -167,6 +201,7 @@ export function ServicesPage() {
                       Comisión
                     </th>
                     <th scope="col">Estado</th>
+                    {members !== null ? <th scope="col">Profesionales</th> : null}
                     <th scope="col">
                       <span className="visually-hidden">Acciones</span>
                     </th>
@@ -193,6 +228,26 @@ export function ServicesPage() {
                           {service.active ? 'Activo' : 'Inactivo'}
                         </span>
                       </td>
+                      {members !== null ? (
+                        <td data-label="Profesionales" className="service-count">
+                          {(() => {
+                            const count = professionalCount(members, service.id)
+                            const nobody = nobodyDoesService(members, service.id)
+                            return (
+                              <>
+                                <span className="service-count__label">
+                                  {professionalsCountLabel(count)}
+                                </span>
+                                {nobody ? (
+                                  <span className="service-count__alert" role="status">
+                                    {NOBODY_DOES_SERVICE_NOTICE}
+                                  </span>
+                                ) : null}
+                              </>
+                            )
+                          })()}
+                        </td>
+                      ) : null}
                       <td className="table__actions" data-label="Acciones">
                         <button
                           type="button"

@@ -1,15 +1,19 @@
 import { useState, type FormEvent } from 'react'
 import { formatCents, parseAmountToCents } from '../../lib/money'
+import { normalizeServiceIds } from '../../lib/tradeServices'
+import type { SalonMember } from '../../lib/members'
 import type { Service, ServiceInput, ServiceUpdateInput } from '../../types'
 
 type ServiceFormProps = {
   /** Absent = create mode. */
   service?: Service
+  /** Bookable members offered to mark in create mode (S-F2c-7). */
+  professionals?: readonly SalonMember[]
   onSubmit: (input: ServiceInput | ServiceUpdateInput) => Promise<void>
   onCancel: () => void
 }
 
-export function ServiceForm({ service, onSubmit, onCancel }: ServiceFormProps) {
+export function ServiceForm({ service, professionals = [], onSubmit, onCancel }: ServiceFormProps) {
   const editing = Boolean(service)
   const [name, setName] = useState(service?.name ?? '')
   const [duration, setDuration] = useState(String(service?.duration_min ?? 45))
@@ -18,6 +22,7 @@ export function ServiceForm({ service, onSubmit, onCancel }: ServiceFormProps) {
   )
   const [commission, setCommission] = useState(String(service?.commission_pct ?? 0))
   const [active, setActive] = useState(service?.active ?? true)
+  const [professionalIds, setProfessionalIds] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
@@ -58,7 +63,8 @@ export function ServiceForm({ service, onSubmit, onCancel }: ServiceFormProps) {
       if (editing) {
         await onSubmit({ ...input, active })
       } else {
-        await onSubmit(input)
+        const ids = normalizeServiceIds(professionalIds)
+        await onSubmit(ids.length > 0 ? { ...input, professional_ids: ids } : input)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No pudimos guardar el servicio.')
@@ -144,6 +150,42 @@ export function ServiceForm({ service, onSubmit, onCancel }: ServiceFormProps) {
             />
             <span>Servicio activo (visible para vender)</span>
           </label>
+        ) : null}
+        {!editing ? (
+          <fieldset className="check-group service-form__wide">
+            <legend>Quiénes lo hacen</legend>
+            <p className="field__hint">
+              Si no marcás a nadie, el servicio queda sin profesionales y no se ofrecerán turnos
+              hasta que lo asignes en Equipo o acá.
+            </p>
+            {professionals.length === 0 ? (
+              <p className="field__hint">
+                Todavía no hay profesionales que atiendan clientes en el salón.
+              </p>
+            ) : (
+              <div className="check-group__list">
+                {professionals.map((person) => (
+                  <label key={person.id} className="check-group__option">
+                    <input
+                      type="checkbox"
+                      checked={professionalIds.includes(person.id)}
+                      onChange={() =>
+                        setProfessionalIds((ids) =>
+                          ids.includes(person.id)
+                            ? ids.filter((id) => id !== person.id)
+                            : [...ids, person.id],
+                        )
+                      }
+                    />
+                    <span>
+                      {person.name}
+                      {person.trade ? <span className="check-group__meta"> · {person.trade}</span> : null}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </fieldset>
         ) : null}
       </div>
 

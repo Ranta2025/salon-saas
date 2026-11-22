@@ -704,3 +704,129 @@ desde 900 px, panel de acciones fijo como en el calendario), `.view-toggle` y
   del día que incluía canceladas, el resumen y la tira visibles durante un error
   (se leían como dato real), el alternador estirado a todo el ancho y el menú
   centrado en páginas cortas.
+
+## 15. Fase 6 — F2c: oficio y servicios por profesional
+
+Contrato `odd/tasks/fase6-roadmap.md`, «Contrato F2c» (mitad frontend de
+S-F2c-3 y S-F2c-6, más S-F2c-7). Sin dependencias nuevas. El backend que
+implementa el contrato en paralelo no se tocó: la UI consume
+`PATCH /salons/:id/members/:uid {trade?, attends?}`,
+`PUT /salons/:id/members/:uid/services {service_ids}`,
+`GET /members` con `trade` y `service_ids`, y `POST /services` con
+`professional_ids` opcional.
+
+### 15.1 Tipo y cliente de API
+
+`SalonMember` (`src/lib/members.ts`) suma:
+
+| campo | lectura |
+| --- | --- |
+| `trade: string` | `normalizeTrade`: recorta, quita saltos de línea y corta en 40; el oficio es un texto visible, no un permiso |
+| `service_ids: string[]` | `normalizeServiceIds`: únicos, recortados, sin vacíos ni no-strings (una lista vacía es válida) |
+
+- `setMemberTrade(salonId, userId, trade)` hace `PATCH` con `{"trade": …}` ya
+  normalizado y devuelve el miembro guardado. Un `400 {"error":"Ese rol no tiene
+  oficio"}` llega tal cual a la pantalla (sin prefijo interno de validación).
+- `setMemberServices(salonId, userId, serviceIds)` hace `PUT` a
+  `/members/:uid/services` con `{"service_ids": […]}` y devuelve lo que el
+  servidor guardó. `400 {"error":"Servicio inválido"}` se muestra verbatim.
+- `createService` (`src/lib/api.ts`) manda `professional_ids` normalizado y
+  **omite la clave cuando la lista queda vacía** (S-F2c-5: sin lista nadie queda
+  asignado, y una API anterior ve el mismo cuerpo de siempre). El tipo
+  `ServiceInput` documenta el campo opcional.
+
+### 15.2 Reglas puras (`src/lib/tradeServices.ts`)
+
+| helper | regla |
+| --- | --- |
+| `normalizeTrade` | `trim`, saltos de línea/tabs a espacio, espacios repetidos a uno, máximo 40 (`TRADE_MAX_LENGTH`) |
+| `normalizeServiceIds` | lista de ids únicos y recortados; cualquier otra cosa se descarta |
+| `canEditTrade` / `canEditServices` | solo dueño/administración y solo sobre quien atiende clientes (F2a: profesional, o dueño/admin con `attends`) |
+| `bookableMembers` | quien atiende, según `memberAttends` (un flag viejo nunca saca a un profesional) |
+| `professionalsForService` / `professionalCount` | reservables de `GET /members` cuyo `service_ids` incluye el servicio; un id vacío cuenta 0 |
+| `nobodyDoesService` | `true` con conteo 0: no se ofrecen turnos para ese servicio |
+| `professionalsCountLabel` | «Ningún profesional lo hace» / «1 profesional lo hace» / «3 profesionales lo hacen» |
+| `applyMemberServices` | actualización optimista: lista nueva con los servicios de una persona; repetirla con los ids anteriores es la vuelta atrás exacta y no toca a nadie más |
+
+Textos exactos: `Nadie hace este servicio: no se ofrecen turnos` y
+`Todavía no hace ningún servicio: no recibirá turnos`.
+
+### 15.3 `/panel/equipo` (S-F2c-6)
+
+- Debajo de «Quiénes tienen acceso» hay una tarjeta por persona que atiende
+  (`bookableMembers`), con su nombre y el `roleLabel` del rol.
+- **Oficio**: `input` con etiqueta «Oficio», `maxLength` 40, ayuda «Se guarda al
+  salir del campo o con Enter. Hasta 40 caracteres.» y `placeholder`
+  «Barbero, estilista, colorista…». Guarda en `onBlur` o con `Enter` (Escape
+  descarta el borrador); si el valor normalizado no cambió no hay request. Éxito:
+  `role="status"` «Oficio guardado.»; error: el mensaje del servidor en
+  `role="alert"` junto al campo, sin prefijo.
+- **Servicios que hace**: `fieldset` con `legend` y una casilla con etiqueta por
+  servicio **activo** (se piden con `fetchServices(salonId, false)`). Se marca un
+  borrador y se guarda con el botón «Guardar servicios» (deshabilitado si no hay
+  cambios): la lista se aplica antes de la respuesta (`applyMemberServices`) y,
+  si el servidor rechaza, vuelve a los ids anteriores y el mensaje se lee en un
+  `role="alert"` dentro de la tarjeta. Éxito: «Servicios guardados.». Al lado del
+  botón se lee «N de M marcados».
+- Quien atiende y no hace ningún servicio ve el aviso
+  «Todavía no hace ningún servicio: no recibirá turnos».
+- Sin servicios activos el control explica que hay que crear uno en Servicios.
+- Nada más cambia: alta por correo, baja con confirmación, interruptor
+  «Atiende clientes» (F2a), etiquetas de rol y mensajes de error.
+
+### 15.4 `/panel/servicios` (S-F2c-7)
+
+- La tabla gana la columna «Profesionales» con el conteo leído de `GET /members`
+  (solo dueño/administración). Cuando el conteo es 0 aparece en la misma celda
+  «Ningún profesional lo hace» y el aviso «Nadie hace este servicio: no se
+  ofrecen turnos» (`role="status"`), también para un servicio inactivo: la regla
+  no distingue estado.
+- Si `/members` falla (por ejemplo, un profesional que no puede leerlo) **no se
+  muestra ningún conteo ni aviso**: un cero inventado sería mentir sobre el
+  salón. La lista de servicios sigue funcionando igual.
+- El formulario de alta suma el `fieldset` «Quiénes lo hacen» con las personas
+  que atienden y su oficio al lado; al crear, los ids marcados viajan como
+  `professional_ids`. En edición no se muestra (el contrato asigna servicios
+  desde Equipo). El texto avisa que sin nadie marcado el servicio queda sin
+  profesionales y no ofrecerá turnos.
+
+### 15.5 Accesibilidad y estilos
+
+`app.css` suma el bloque F2c: `.work-grid`/`.work-card` (una tarjeta por
+persona), `.check-group`/`.check-group__list`/`.check-group__option` (grupo de
+casillas real, `legend`, etiqueta por opción, `min-height: 44px`, foco visible de
+`base.css`, casilla de 1.125 rem con `accent-color: var(--wine)`) y
+`.service-count`/`.service-count__alert` para el conteo y el aviso. A ≥760 px el
+oficio queda en una columna angosta y los servicios al lado; por debajo todo va
+en una columna. Con 12 servicios no hay scroll interno ni desborde horizontal a
+390 px: la lista crece y la página scrollea. En la tabla apilada (≤699 px) la
+celda «Profesionales» se dibuja como fila etiquetada y el aviso envuelve debajo
+del conteo.
+
+### 15.6 Verificación
+
+- `npx tsc --noEmit`, `npm test` (213 tests, node --test) y `npm run build` en
+  verde.
+- TDD en `src/lib` (primero en rojo): `tradeServices.test.ts` (normalización del
+  oficio e ids, quién edita, conteo por servicio ignorando ids obsoletos de quien
+  no atiende, etiquetas y textos exactos, optimista y vuelta atrás) y
+  `members.test.ts` (`trade`/`service_ids` en el listado, omisión con payload
+  viejo, `PATCH` de oficio y `PUT` de servicios con la frase del servidor tal
+  cual, lista vacía); `services.test.ts` (`professional_ids` normalizado y
+  omitido si está vacío).
+- Revisión visual con el bundle de `vite build` servido junto a una API simulada
+  en `/tmp/f2c-shot` (13 servicios, 5 personas, una profesional sin servicios,
+  un servicio que nadie hace y un `PUT` que responde
+  `400 {"error":"Servicio inválido"}`) y Chromium headless por protocolo DevTools
+  (el flag `--screenshot` se cuelga en este entorno) a 390 y 1280 px:
+  `/panel/equipo` (oficios y listas, aviso de cero servicios, oficio guardado al
+  salir del campo y error con vuelta atrás) y `/panel/servicios` (conteos,
+  aviso de nadie y formulario de alta con las casillas). Comprobado en el
+  navegador: `scrollWidth === clientWidth` en ambas páginas y anchos, cero scroll
+  interno en las listas de 12 servicios, `fieldset`+`legend` en los tres grupos,
+  36 opciones con 44 px de alto, `Tab` desde el campo Oficio llega a la primera
+  casilla con `outline` sólido de 3 px y `Space` la conmuta. Se corrigieron en la
+  revisión: la lista de 12 servicios con scroll interno a 390 px (ahora crece) y
+  la etiqueta del rol en la tarjeta (decía «Atiende» donde debía decir el rol).
+- Fuera de alcance de esta entrega: consumir `trade` de `/staff` y
+  `booking.service_id` (no los usa ninguna de las dos pantallas).

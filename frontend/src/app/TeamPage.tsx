@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { describeApiError, friendlyApiMessage, type ApiErrorNotice } from '../lib/api'
+import { describeApiError, fetchServices, friendlyApiMessage, type ApiErrorNotice } from '../lib/api'
 import type { SalonRole } from '../lib/me'
+import type { Service } from '../types'
 import {
   addMember,
   fetchMembers,
   normalizeMemberEmail,
   removeMember,
   setMemberAttends,
+  setMemberServices,
+  setMemberTrade,
   type SalonMember,
 } from '../lib/members'
 import {
@@ -16,6 +19,14 @@ import {
   memberAttends,
   nobodyAttends,
 } from '../lib/attends'
+import {
+  applyMemberServices,
+  bookableMembers,
+  NO_SERVICES_HINT,
+  normalizeTrade,
+  TRADE_MAX_LENGTH,
+  TRADE_PLACEHOLDER,
+} from '../lib/tradeServices'
 import {
   activeRole,
   assignableRoles,
@@ -46,6 +57,8 @@ export function TeamPage() {
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [pendingAttendsId, setPendingAttendsId] = useState<string | null>(null)
   const [attendsError, setAttendsError] = useState<string | null>(null)
+  const [workServices, setWorkServices] = useState<Service[]>([])
+  const [workServicesError, setWorkServicesError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
@@ -82,6 +95,31 @@ export function TeamPage() {
   const options = assignableRoles(role)
   // The column only exists when someone can attend or be marked as attending.
   const showAttends = members.some((member) => attendsControl(role, member.role) !== 'none')
+  // Only who attends clients can have a trade and services (F2c).
+  const bookable = bookableMembers(members)
+
+  // Active services are the choices of the "Servicios que hace" control.
+  useEffect(() => {
+    if (!salonId || !allowed) {
+      return
+    }
+    let active = true
+    setWorkServicesError(null)
+    fetchServices(salonId, false)
+      .then((list) => {
+        if (active) {
+          setWorkServices(list)
+        }
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setWorkServicesError(describeApiError(err, 'No pudimos cargar los servicios.').message)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [salonId, allowed])
 
   useEffect(() => {
     if (options.length > 0 && !options.includes(newRole)) {
@@ -162,6 +200,36 @@ export function TeamPage() {
       setAttendsError(describeApiError(err, 'No pudimos cambiar quién atiende clientes.').message)
     } finally {
       setPendingAttendsId(null)
+    }
+  }
+
+  /**
+   * Trade save (S-F2c-6): PATCH with the trimmed text; the server sentence is
+   * shown verbatim when it rejects («Ese rol no tiene oficio»).
+   */
+  const handleSaveTrade = async (member: SalonMember, trade: string): Promise<SalonMember> => {
+    const saved = await setMemberTrade(salonId, member.id, trade)
+    setMembers((list) => list.map((row) => (row.id === saved.id ? saved : row)))
+    return saved
+  }
+
+  /**
+   * Services save (S-F2c-6): the list flips before the answer and comes back to
+   * the previous ids if the server rejects the change.
+   */
+  const handleSaveServices = async (
+    member: SalonMember,
+    serviceIds: string[],
+  ): Promise<string[]> => {
+    const previous = member.service_ids
+    setMembers((list) => applyMemberServices(list, member.id, serviceIds))
+    try {
+      const saved = await setMemberServices(salonId, member.id, serviceIds)
+      setMembers((list) => applyMemberServices(list, member.id, saved))
+      return saved
+    } catch (err: unknown) {
+      setMembers((list) => applyMemberServices(list, member.id, previous))
+      throw err
     }
   }
 
@@ -355,6 +423,230 @@ export function TeamPage() {
           </div>
         ) : null}
       </section>
+
+      {loaded ? (
+        <section className="panel-card" aria-labelledby="team-work-title">
+          <div className="panel-card__head">
+            <h2 id="team-work-title">Oficio y servicios de quien atiende</h2>
+            <span className="panel-card__meta">{bookable.length} personas</span>
+          </div>
+          <p className="page-head__desc">
+            El oficio es un dato visible del equipo (barbero, estilista…), no un permiso. Una
+            clienta solo recibe turnos con las profesionales que hacen el servicio que pidió.
+          </p>
+          {workServicesError ? (
+            <p className="notice notice--error" role="alert">
+              {workServicesError}
+            </p>
+          ) : null}
+          {bookable.length === 0 ? (
+            <p className="empty-state">
+              Nadie atiende clientes todavía, así que no hay oficios ni servicios que asignar.
+            </p>
+          ) : null}
+          <div className="work-grid">
+            {bookable.map((member) => (
+              <MemberWorkCard
+                key={member.id}
+                member={member}
+                services={workServices}
+                onSaveTrade={(trade) => handleSaveTrade(member, trade)}
+                onSaveServices={(serviceIds) => handleSaveServices(member, serviceIds)}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
     </>
+  )
+}
+
+type MemberWorkCardProps = {
+  member: SalonMember
+  services: readonly Service[]
+  onSaveTrade: (trade: string) => Promise<SalonMember>
+  onSaveServices: (serviceIds: string[]) => Promise<string[]>
+}
+
+/**
+ * "Oficio" and "Servicios que hace" of one bookable member (S-F2c-6). Both save
+ * against the API; the services list uses the optimistic update of the parent.
+ */
+function MemberWorkCard({ member, services, onSaveTrade, onSaveServices }: MemberWorkCardProps) {
+  const [trade, setTrade] = useState(member.trade)
+  const [tradePending, setTradePending] = useState(false)
+  const [tradeError, setTradeError] = useState<string | null>(null)
+  const [tradeSaved, setTradeSaved] = useState(false)
+  const [selected, setSelected] = useState<string[]>(member.service_ids)
+  const [servicesPending, setServicesPending] = useState(false)
+  const [servicesError, setServicesError] = useState<string | null>(null)
+  const [servicesNotice, setServicesNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    setTrade(member.trade)
+  }, [member.trade])
+
+  useEffect(() => {
+    setSelected(member.service_ids)
+  }, [member.service_ids])
+
+  const commitTrade = async (): Promise<void> => {
+    if (tradePending) {
+      return
+    }
+    const normalized = normalizeTrade(trade)
+    setTrade(normalized)
+    setTradeSaved(false)
+    if (normalized === member.trade) {
+      setTradeError(null)
+      return
+    }
+    setTradePending(true)
+    setTradeError(null)
+    try {
+      const saved = await onSaveTrade(normalized)
+      setTrade(saved.trade)
+      setTradeSaved(true)
+    } catch (err: unknown) {
+      setTradeError(describeApiError(err, 'No pudimos guardar el oficio.').message)
+    } finally {
+      setTradePending(false)
+    }
+  }
+
+  const toggleService = (serviceId: string): void => {
+    setServicesNotice(null)
+    setSelected((ids) =>
+      ids.includes(serviceId) ? ids.filter((id) => id !== serviceId) : [...ids, serviceId],
+    )
+  }
+
+  const changed =
+    selected.length !== member.service_ids.length ||
+    selected.some((id) => !member.service_ids.includes(id))
+
+  const saveServices = async (): Promise<void> => {
+    if (servicesPending) {
+      return
+    }
+    setServicesPending(true)
+    setServicesError(null)
+    setServicesNotice(null)
+    try {
+      const saved = await onSaveServices(selected)
+      setSelected(saved)
+      setServicesNotice('Servicios guardados.')
+    } catch (err: unknown) {
+      setServicesError(
+        describeApiError(err, 'No pudimos guardar los servicios de esta persona.').message,
+      )
+    } finally {
+      setServicesPending(false)
+    }
+  }
+
+  const tradeId = `member-trade-${member.id}`
+
+  return (
+    <article className="panel-card work-card" aria-labelledby={`member-work-${member.id}`}>
+      <div className="work-card__head">
+        <h3 id={`member-work-${member.id}`}>{member.name}</h3>
+        <span className="pill pill--on">{roleLabel(member.role)}</span>
+      </div>
+
+      <div className="work-card__fields">
+        <div className="field">
+          <label htmlFor={tradeId}>Oficio</label>
+          <input
+            id={tradeId}
+            className="input"
+            value={trade}
+            maxLength={TRADE_MAX_LENGTH}
+            placeholder={TRADE_PLACEHOLDER}
+            aria-describedby={`${tradeId}-hint`}
+            aria-busy={tradePending}
+            onChange={(event) => {
+              setTrade(event.target.value)
+              setTradeSaved(false)
+            }}
+            onBlur={() => void commitTrade()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                event.currentTarget.blur()
+              }
+              if (event.key === 'Escape') {
+                setTrade(member.trade)
+                setTradeError(null)
+                event.currentTarget.blur()
+              }
+            }}
+          />
+          <p id={`${tradeId}-hint`} className="field__hint">
+            Se guarda al salir del campo o con Enter. Hasta {TRADE_MAX_LENGTH} caracteres.
+          </p>
+          {tradeError ? (
+            <p className="field__error" role="alert">
+              {tradeError}
+            </p>
+          ) : null}
+          {tradeSaved ? (
+            <p className="notice notice--success" role="status">
+              Oficio guardado.
+            </p>
+          ) : null}
+        </div>
+
+        <fieldset className="check-group" aria-busy={servicesPending}>
+          <legend>Servicios que hace</legend>
+          {services.length === 0 ? (
+            <p className="field__hint">
+              El salón todavía no tiene servicios activos. Crea uno en Servicios y vuelve acá.
+            </p>
+          ) : (
+            <div className="check-group__list">
+              {services.map((service) => (
+                <label key={service.id} className="check-group__option">
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(service.id)}
+                    onChange={() => toggleService(service.id)}
+                  />
+                  <span>{service.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          {member.service_ids.length === 0 ? (
+            <p className="notice notice--info" role="status">
+              {NO_SERVICES_HINT}
+            </p>
+          ) : null}
+          {servicesError ? (
+            <p className="notice notice--error" role="alert">
+              {servicesError}
+            </p>
+          ) : null}
+          {servicesNotice ? (
+            <p className="notice notice--success" role="status">
+              {servicesNotice}
+            </p>
+          ) : null}
+          <div className="work-card__actions">
+            <button
+              type="button"
+              className="btn btn--wine btn--sm"
+              disabled={servicesPending || !changed || services.length === 0}
+              onClick={() => void saveServices()}
+            >
+              {servicesPending ? 'Guardando…' : 'Guardar servicios'}
+            </button>
+            <span className="field__hint">
+              {selected.length} de {services.length} marcados
+            </span>
+          </div>
+        </fieldset>
+      </div>
+    </article>
   )
 }

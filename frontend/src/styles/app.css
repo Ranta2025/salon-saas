@@ -2512,3 +2512,150 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ==========================================================================
+   Fase 6 — F2c: trade and services per professional
+   ========================================================================== */
+
+/* One card per bookable member under the access table. The trade is a text
+   field; the services are a real checkbox group (fieldset + legend) so the
+   screen reader announces what is being chosen and the whole list is keyboard
+   operable. */
+.work-grid {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.work-card {
+  min-width: 0;
+}
+
+.work-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem 1rem;
+}
+
+.work-card__head h3 {
+  font-size: 1.25rem;
+}
+
+.work-card__fields {
+  display: grid;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (min-width: 760px) {
+  .work-card__fields {
+    grid-template-columns: minmax(12rem, 17rem) minmax(0, 1fr);
+  }
+}
+
+.work-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+}
+
+/* Shared checkbox group of "Servicios que hace" and "Quiénes lo hacen". */
+.check-group {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.check-group legend {
+  padding: 0;
+  font-size: var(--step--1);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.check-group__list {
+  display: grid;
+  gap: 0.1rem;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  padding: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+/* 44 px target, visible focus from base.css and no clipped label at 390 px. */
+.check-group__option {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 44px;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.check-group__option:hover {
+  background: rgba(232, 217, 181, 0.22);
+}
+
+.check-group__option input {
+  flex: 0 0 auto;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin: 0;
+  accent-color: var(--wine);
+}
+
+.check-group__option span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.check-group__meta {
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+}
+
+/* Service page: count of professionals per service and the notice at zero. */
+.service-count {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.8125rem;
+}
+
+.service-count__label {
+  color: var(--ink-soft);
+}
+
+.service-count__alert {
+  color: #6d1526;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+@media (max-width: 699px) {
+  /* In the stacked table the cell becomes a labelled row: the alert wraps under
+     the count instead of being squeezed to the right edge. */
+  .table--stack td.service-count {
+    display: grid;
+    justify-items: start;
+    gap: 0.25rem;
+  }
+
+  .table--stack td.service-count::before {
+    content: attr(data-label);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+}
