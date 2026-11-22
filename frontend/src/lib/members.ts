@@ -12,6 +12,12 @@ export type SalonMember = {
   name: string
   email: string
   role: SalonRole
+  /**
+   * `memberships.attends` (F2a): whether an owner or admin also attends clients.
+   * A professional always attends, so the flag is read through
+   * `memberAttends()` instead of being trusted on its own.
+   */
+  attends: boolean
 }
 
 const ROLES: readonly SalonRole[] = ['owner', 'admin', 'professional', 'reception']
@@ -28,6 +34,17 @@ function role(value: unknown): SalonRole {
   return ROLES.includes(value as SalonRole) ? (value as SalonRole) : 'professional'
 }
 
+/**
+ * Reads `attends`. A payload that omits it (or sends something else) falls back
+ * to the domain rule: a professional always attends, everyone else does not.
+ */
+function attends(value: unknown, role: SalonRole): boolean {
+  if (typeof value === 'boolean') {
+    return value
+  }
+  return role === 'professional'
+}
+
 function normalizeMember(value: unknown): SalonMember | null {
   if (!isRecord(value)) {
     return null
@@ -36,11 +53,13 @@ function normalizeMember(value: unknown): SalonMember | null {
   if (id === '') {
     return null
   }
+  const memberRole = role(value['role'])
   return {
     id,
     name: text(value['name']) || text(value['email']) || 'Persona sin nombre',
     email: text(value['email']),
-    role: role(value['role']),
+    role: memberRole,
+    attends: attends(value['attends'], memberRole),
   }
 }
 
@@ -85,6 +104,28 @@ export async function addMember(
   const member = normalizeMember(body)
   if (!member) {
     throw new Error('El servidor agregó a la persona pero no devolvió sus datos.')
+  }
+  return member
+}
+
+/**
+ * Marks whether an owner or admin also attends clients
+ * (`PATCH /salons/:id/members/:uid`, contract S-F2a-5). A 400 keeps the server
+ * sentence verbatim: «Las profesionales siempre atienden», «Ese rol no atiende
+ * clientes».
+ */
+export async function setMemberAttends(
+  salonId: string,
+  userId: string,
+  attends: boolean,
+): Promise<SalonMember> {
+  const body = await request<unknown>(`${membersPath(salonId)}/${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    body: { attends },
+  })
+  const member = normalizeMember(body)
+  if (!member) {
+    throw new Error('El servidor guardó el cambio pero no devolvió los datos de la persona.')
   }
   return member
 }
