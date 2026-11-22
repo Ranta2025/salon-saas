@@ -37,6 +37,7 @@ import {
 import { fetchSalonHours, fetchSettings } from '../lib/settings'
 import { TIME_ZONE, addDaysToDateValue, fromDateInputValue, toDateInputValue } from '../lib/datetime'
 import { fetchTimeOff, type TimeOff } from '../lib/timeOff'
+import { fetchCoverAbsences, type CoverAbsence } from '../lib/coverAbsence'
 import type { SalonDay } from '../lib/weeklyHours'
 import { useSalon } from './SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
@@ -74,6 +75,10 @@ export function TeamPage() {
   const [absences, setAbsences] = useState<TimeOff[]>([])
   const [absencesError, setAbsencesError] = useState<string | null>(null)
   const [absencesLoaded, setAbsencesLoaded] = useState(false)
+  // Turns each absence leaves without a professional (F2d3): the "Cubrir" panel
+  // of every card reads them from here, one request for the whole team.
+  const [coverAbsences, setCoverAbsences] = useState<CoverAbsence[]>([])
+  const [coverReady, setCoverReady] = useState(false)
   const [now] = useState(() => new Date())
   const [reloadKey, setReloadKey] = useState(0)
 
@@ -206,6 +211,26 @@ export function TeamPage() {
           setAbsencesError(
             describeApiError(err, 'No pudimos cargar las ausencias del equipo.').message,
           )
+        }
+      })
+    // The turns of those absences are extra information: without them the cards
+    // list the absences and explain that there is nothing to cover, never an
+    // invented turn. This endpoint is management-only, like the page itself.
+    fetchCoverAbsences(
+      salonId,
+      fromDateInputValue(today, timeZone),
+      fromDateInputValue(addDaysToDateValue(today, 91), timeZone),
+    )
+      .then((list) => {
+        if (active) {
+          setCoverAbsences(list)
+          setCoverReady(true)
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setCoverAbsences([])
+          setCoverReady(false)
         }
       })
     return () => {
@@ -558,8 +583,8 @@ export function TeamPage() {
           </div>
           <p className="page-head__desc">
             Vacaciones y días libres puntuales. Una ausencia bloquea la disponibilidad pública de esa
-            persona; los turnos que ya tenía no se cancelan solos: el aviso indica cuáles hay que
-            reasignar o cancelar desde el calendario.
+            persona; los turnos que ya tenía no se cancelan solos: «Cubrir» lista esos turnos para
+            reasignarlos a otra profesional que haga el servicio, o para cancelarlos.
           </p>
           {absencesError ? (
             <p className="notice notice--error" role="alert">
@@ -578,9 +603,15 @@ export function TeamPage() {
                 salonId={salonId}
                 member={member}
                 entries={absences}
+                coverAbsences={coverAbsences}
+                coverReady={coverReady}
                 timeZone={timeZone}
                 now={now}
                 onChanged={reload}
+                onCovered={(message) => {
+                  setNotice(message)
+                  reload()
+                }}
               />
             ))}
           </div>

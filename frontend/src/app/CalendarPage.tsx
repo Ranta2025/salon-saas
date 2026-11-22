@@ -12,6 +12,7 @@ import { activeRole, canManageBooking } from '../lib/permissions'
 import { timeZoneLabel } from '../lib/publicBooking'
 import { fetchSettings } from '../lib/settings'
 import { fetchTimeOff, timeOffBands, type TimeOff } from '../lib/timeOff'
+import { fetchCoverAbsences, type CoverAbsence } from '../lib/coverAbsence'
 import {
   DEFAULT_WINDOW,
   TIME_ZONE,
@@ -43,6 +44,9 @@ export function CalendarPage() {
   )
   const [bookings, setBookings] = useState<Booking[]>([])
   const [absences, setAbsences] = useState<TimeOff[]>([])
+  // Turns each absence leaves without a professional (F2d3): the "Reasignar"
+  // action of a turn of an absent professional reads its candidates from here.
+  const [coverAbsences, setCoverAbsences] = useState<CoverAbsence[]>([])
   const [loadedDay, setLoadedDay] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<ApiErrorNotice | null>(null)
@@ -168,6 +172,19 @@ export function CalendarPage() {
       .catch(() => {
         if (!controller.signal.aborted) {
           setAbsences([])
+        }
+      })
+    // Same for the affected turns of F2d3: without them the panel offers no
+    // reassignment and keeps its other actions (a 403 for reception is silent).
+    fetchCoverAbsences(salonId, dayFrom, dayTo, controller.signal)
+      .then((list) => {
+        if (!controller.signal.aborted) {
+          setCoverAbsences(list)
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setCoverAbsences([])
         }
       })
     return () => controller.abort()
@@ -343,6 +360,8 @@ export function CalendarPage() {
             timeZone={timeZone}
             salonId={salonId}
             canAct={canManageBooking(role, user?.id ?? null, selected.professional_id)}
+            coverAbsences={coverAbsences}
+            absenceList={absences}
             onClose={() => setSelectedId(null)}
             onUpdated={(message) => {
               setNotice(message)

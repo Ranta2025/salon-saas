@@ -105,6 +105,12 @@ export type Booking = {
   starts_at: string
   ends_at: string
   status: string
+  /**
+   * F2d3: id of the professional the turn was moved away from, when the salon
+   * covered her absence by reassigning it. Optional: an API without it leaves
+   * the field undefined and "Mi agenda" simply has no notice to show.
+   */
+  covered_from?: string | null
 }
 
 export type AuthUser = {

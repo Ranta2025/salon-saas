@@ -1092,3 +1092,139 @@ A 390 y 1280 px no hay scroll horizontal (`scrollWidth === clientWidth`).
 - Fuera de alcance de esta entrega: reasignar los turnos en conflicto (F2d3),
   que la profesional pida sus propias ausencias y las ausencias del salón
   completo.
+
+## 18. Fase 6 — F2d3: cubrir una ausencia reasignando sus turnos
+
+Contrato `odd/tasks/fase6-roadmap.md`, «Contrato F2d3» (forma de S-F2d3-2 y
+S-F2d3-5). Sin dependencias nuevas. El backend se implementa en paralelo y no se
+tocó: la UI consume `GET /salons/:id/absences?from&to`,
+`POST /salons/:id/absences/:tid/reassign {"professional_id"}` y
+`POST /salons/:id/bookings/:bid/reassign` con `{"professional_id"}` o
+`{"cancel":true}`. Las frases del servidor se muestran verbatim.
+
+### 18.1 Reglas puras (`src/lib/coverAbsence.ts`)
+
+| helper | regla |
+| --- | --- |
+| `normalizeCoverAbsences` | lee la respuesta real del API, `{absences:[{id,user_id,user_name,starts_at,ends_at,reason,bookings:[{id,client_name,starts_at,ends_at,service_id,service_name,candidates:[{professional_id,name,available,reason}]}]}]}`, y tolera además `id`/`time_off_id` en la ausencia y las banderas viejas `bookable`/`does_service`/`absent`; descarta ausencias sin id, sin persona o con rango inutilizable y turnos sin id o sin horas; `service_id` vacío es `null` («el turno no tiene servicio»); ordena por inicio |
+| `absenceForBooking` / `coverBookingOf` | la ausencia y el turno que la API relaciona con un id de turno; `null` cuando el turno no es de ninguna ausencia |
+| `affectedTurnsLabel` | «Ningún turno afectado» / «1 turno afectado» / «3 turnos afectados» (el plural del conteo) |
+| `coverCandidates` | una fila por candidata, **elegibles primero**. Manda el servidor: si trae `reason` se imprime tal cual (es la frase que respondería el POST) y `available: true` es un visto bueno aunque la lista local de ausencias diga otra cosa. Sin respuesta del servidor, las reglas de S-F2d3-3 en su orden: «Esa persona no atiende clientes» (`bookable === false`), «Esa persona no está de turno ese día` (ausente en ese período, por la bandera del servidor o por la lista de `/time-off`) y «Esa persona no hace ese servicio» (solo si el turno tiene `service_id`) |
+| `coverAllCandidates` | quienes pueden tomar **todos** los turnos de la ausencia, con el motivo del primer turno que esa persona no puede tomar |
+| `candidateOptionLabel` / `ineligibleSummary` / `firstEligible` | «Caro — no disponible: Esa persona no hace ese servicio» y la nota «No puede tomarlo: …» debajo del selector; la primera elegible es el valor por defecto |
+| `beginCover` / `chooseFor` / `chooseForAll` / `chosenFor` / `forgetChoice` / `rollbackCover` | estado optimista de los selectores sobre `beginSave`/`rollbackSave` de `weeklyHours.ts`: la elección se pinta antes de la respuesta; un rechazo devuelve **solo ese turno** a lo que el servidor tiene y «Reasignar todo» fallido vuelve al mapa guardado sin tocar a nadie más |
+| `reassignedNotice` | «1 turno reasignado a Beto.» / «3 turnos reasignados a Beto.» / «No se reasignó ningún turno.» |
+| `coveredNotices` | «Tu turno del 24 de diciembre a las 10:00 lo cubre otra profesional.» (o «de hoy a las …») para los turnos que el servidor marca con `covered_from` = mi id, `booked` y todavía por venir |
+| `COVER_MESSAGES` | las seis frases del contrato (S-F2d3-3) en un solo lugar |
+
+Una bandera que el servidor no manda (`null`) **nunca** se convierte en rechazo:
+se ofrece el nombre y el servidor decide al reasignar. Si el servidor dice
+`available: false` sin frase ni banderas, la UI escribe «No puede tomar el turno»
+(texto solo de la UI; hoy el API siempre manda el motivo). La propia profesional
+ausente no aparece como candidata de su ausencia aunque el payload la incluya.
+
+### 18.2 `/panel/equipo` (S-F2d3-5)
+
+- Cada ausencia de la tarjeta («Hoy · En curso · Motivo») gana un botón
+  **«Cubrir»** (`aria-expanded` + `aria-controls`) que abre el panel de la
+  ausencia; «Borrar» sigue al lado y con la misma confirmación.
+- El panel muestra el conteo (`affectedTurnsLabel`) y, arriba, **«Reasignar
+  todo a»**: un selector con quienes pueden tomar todos los turnos y el botón
+  «Reasignar todo» (`POST …/absences/:tid/reassign`).
+- Debajo, un renglón por turno afectado (horario y clienta) con **el mismo
+  selector** —las que no sirven quedan deshabilitadas y el motivo se lee en
+  texto debajo, porque una opción deshabilitada no recibe foco— y «Reasignar»
+  (`POST …/bookings/:bid/reassign`).
+- Los turnos salen de `GET /absences` con la misma ventana que las ausencias
+  (hoy + 91 días). Si esa request falla o no trae la ausencia, el panel dice
+  «Esta ausencia no tiene turnos agendados»; si la request falla, «No pudimos
+  cargar los turnos de esta ausencia» (un cero inventado mentiría sobre el día).
+- Éxito: aviso arriba de la página con `reassignedNotice` y recarga de ausencias
+  y turnos. Rechazo: la frase del servidor en `role="alert"` dentro del panel y
+  la elección de ese turno vuelve atrás. Sin candidatas elegibles el botón queda
+  deshabilitado (el servidor respondería «No hay a quién reasignar»).
+
+### 18.3 Calendario (S-F2d3-5)
+
+- `CalendarPage` pide `GET /absences` con la ventana del día visible. Si falla
+  (por ejemplo un 403 para recepción, porque el motivo de la ausencia es
+  privado) la agenda queda exactamente como en §11 y no se ofrece reasignar.
+- En el panel de un turno que la API relaciona con una ausencia aparece el bloque
+  **«Reasignar»**: «Ana Ruiz está ausente hoy: elegí quién toma este turno», el
+  mismo selector con los motivos, el botón «Reasignar» y **«Cancelar el turno»**
+  con confirmación en línea que explica que el salón se contacta con la clienta
+  («Se cancela el turno y el salón se contacta con la clienta para avisarle.
+  ¿Cancelar el turno?» → «Sí, cancelar el turno» / «Volver»).
+- Para un turno afectado, ese «Cancelar el turno» **reemplaza** al «Cancelar
+  turno» genérico: una sola acción de cancelación por turno, y es la que avisa a
+  la clienta. Las demás acciones (no asistió, atendida, reprogramar) no cambian.
+- La banda «Ausente» de la columna (F2d2) ya marcaba a la profesional; el bloque
+  aparece al abrir ese turno, con las mismas reglas de permisos de siempre
+  (`canManageBooking`).
+
+### 18.4 Mi agenda (S-F2d3-5)
+
+- Cuando un turno que era mío lo cubre otra profesional, el servidor lo marca
+  con `covered_from` (mi id). «Mi agenda» lista esos turnos arriba:
+  **«Tu turno del 24 de diciembre a las 10:00 lo cubre otra profesional.»**
+  (`role="status"`, solo con la respuesta viva: nunca durante un error o con la
+  copia guardada).
+- **Dependencia de contrato (desviación consciente, pendiente del backend):**
+  `GET /bookings` no publica hoy de quién se movió el turno: el backend solo deja
+  el aviso interno del salón «Turno reasignado · clienta · horario · ahora la
+  atiende X» (`internal/app/coverage.go`), que no dice que el turno era mío y por
+  lo tanto no sirve para este aviso. La UI lee el campo opcional `covered_from`
+  de la reserva (y sus alias `reassigned_from` / `previous_professional_id`); sin
+  alguno de ellos el aviso simplemente no aparece: no se inventa ni se deduce del
+  texto de una notificación. Falta que `bookingJSON` agregue
+  `"covered_from": <id de la profesional anterior>` al reasignar (una columna o
+  el valor del `UPDATE`, que ya lo tiene a mano). El tipo `Booking` documenta el
+  campo como opcional.
+
+### 18.5 Accesibilidad y estilos
+
+`app.css` suma el bloque «F2d3»: `.timeoff-item__buttons` (Cubrir y Borrar con el
+margen automático en el grupo, no en cada botón), `.timeoff-item__cover`,
+`.cover-turns`/`.cover-turns__all`/`.cover-turns__list`, `.cover-turn` (una
+columna en el teléfono, cuatro desde 760 px), `.cover-field` (el `<select>`
+nunca desborda y la nota de motivos envuelve) y `.booking-detail__cover`. Todos
+los controles son `label` reales o botones de 44 px y el foco es el anillo de
+3 px de `base.css`; medido en el navegador: `select` y botones nuevos de 44 px,
+`Tab` desde el control anterior llega a «Cubrir» con `outline: 3px solid`. A 390
+y 1280 px no hay scroll horizontal (`scrollWidth === clientWidth` en las tres
+páginas).
+
+### 18.6 Verificación
+
+- `npx tsc --noEmit` sin errores, `npm test` (282 tests, node --test; 260 eran de
+  la entrega anterior, 22 nuevas) y `npm run build` en verde.
+- TDD en `src/lib` (primero en rojo: `ERR_MODULE_NOT_FOUND` del módulo nuevo):
+  `coverAbsence.test.ts` cubre la lectura del payload (filas inutilizables,
+  aliases, orden, `service_id` vacío, la forma real `professional_id`/
+  `available`/`reason`), la relación turno↔ausencia, los plurales del conteo y
+  del aviso, las tres etiquetas de rechazo en el orden del contrato, el motivo
+  del servidor impreso tal cual y su veredicto por encima de la lista local, la
+  ausencia leída de `/time-off` cuando el servidor no opina, el turno sin
+  servicio (cualquiera puede tomarlo), la bandera desconocida (nunca rechaza),
+  el `available: false` sin frase, la exclusión de la propia ausente,
+  «Reasignar todo» con el motivo del primer turno imposible, las etiquetas de las
+  opciones, el estado optimista con vuelta atrás (una fila y el lote completo),
+  el aviso de Mi agenda (día, hora, «hoy», turnos cancelados o pasados fuera,
+  alias del campo) y el cliente de API (`from`/`to`, los tres cuerpos, `409` con
+  la frase del servidor tal cual).
+- Revisión visual con el bundle de `vite build` servido junto a una API simulada
+  en `/tmp/f2d3-shot` (dueña con cuatro reservables, una profesional ausente hoy
+  con dos turnos —uno con servicio de color y otro de corte—, candidatas con la
+  forma real del API —`professional_id`, `available`, `reason`—: una que no hace
+  el servicio y otra ausente ese día) y
+  Chromium headless por protocolo DevTools (el flag `--screenshot` se cuelga en
+  este entorno) a 390 y 1280 px: `/panel/equipo` (panel «Cubrir» abierto, dos
+  turnos con su selector, «Reasignar todo» y los motivos), `/panel/calendario`
+  (turno de la profesional ausente con «Reasignar», el selector y la
+  confirmación de «Cancelar el turno») y `/panel/mi-agenda` (avisos «Tu turno de
+  hoy a las 15:00 lo cubre otra profesional.»). Comprobado en el navegador:
+  `scrollWidth === clientWidth` en las tres páginas y anchos, controles nuevos de
+  44 px, `Tab` con `outline: 3px solid`, y el calendario sin la request de
+  ausencias (403 de recepción) mostrando la agenda igual que antes.
+- Fuera de alcance de esta entrega: reasignación automática (es una decisión del
+  salón), la lista de espera (F7) y los avisos por WhatsApp (F12).

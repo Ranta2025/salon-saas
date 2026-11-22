@@ -29,6 +29,7 @@ import {
   type TimeOff,
 } from '../lib/timeOff'
 import { activeRole, canManageBooking } from '../lib/permissions'
+import { coveredNotices } from '../lib/coverAbsence'
 import { timeZoneLabel } from '../lib/publicBooking'
 import { fetchSettings } from '../lib/settings'
 import type { StaffMember } from '../lib/staff'
@@ -204,6 +205,9 @@ export function MyAgendaPage() {
   const myId = user?.id ?? ''
   const myAbsences = timeOffForUser(absences, myId)
   const absence = currentAbsence(myAbsences, myId, now)
+  // Turns of mine that somebody else covers now (S-F2d3-5): the server marks
+  // them with `covered_from`, so a covered turn there shows who kept it.
+  const covered = coveredNotices(bookings, myId, { timeZone, now })
   const absentDates = absenceDays(myAbsences, weekDates(weekStart), timeZone)
   const week = weekOverview(mine, weekStart, timeZone, todayValue)
   const todayEntries = agendaMarkers(
@@ -295,6 +299,21 @@ export function MyAgendaPage() {
         <p className="notice notice--info my-agenda__absence" role="status">
           {`Estás ausente ${timeOffSentence(absence, { timeZone, today: todayValue })}.`}
         </p>
+      ) : null}
+
+      {!hasError && loadedWeek !== null && covered.length > 0 ? (
+        <div className="notice notice--info my-agenda__covered" role="status">
+          <p className="my-agenda__covered-title">
+            {covered.length === 1
+              ? 'Un turno tuyo lo cubre otra profesional:'
+              : 'Turnos tuyos que cubre otra profesional:'}
+          </p>
+          <ul className="my-agenda__covered-list">
+            {covered.map((notice) => (
+              <li key={notice.bookingId}>{notice.text}</li>
+            ))}
+          </ul>
+        </div>
       ) : null}
 
       {!hasError && loadedWeek !== null ? (

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { friendlyApiMessage } from '../../lib/api'
 import { formatTimeOfDay, toDateInputValue } from '../../lib/datetime'
+import type { CoverAbsence } from '../../lib/coverAbsence'
 import {
   conflictsNotice,
   createTimeOff,
@@ -15,17 +16,24 @@ import {
   type TimeOffConflict,
 } from '../../lib/timeOff'
 import type { SalonMember } from '../../lib/members'
+import { AbsenceCover } from './AbsenceCover'
 
 type TimeOffCardProps = {
   salonId: string
   member: SalonMember
   /** Every absence of the salon: the card keeps the ones of this person. */
   entries: readonly TimeOff[]
+  /** Absences with their turns (`GET /salons/:id/absences`, S-F2d3-2). */
+  coverAbsences: readonly CoverAbsence[]
+  /** False when that request failed: the panel never reports "no turns". */
+  coverReady: boolean
   /** Zone of the salon: the form converts its local dates with it. */
   timeZone: string
   now: Date
   /** Parent reloads the list of absences after a create or a delete. */
   onChanged: () => void
+  /** Parent shows the message of a reassignment and reloads the turns. */
+  onCovered: (message: string) => void
 }
 
 function conflictTime(conflict: TimeOffConflict, timeZone: string): string {
@@ -41,7 +49,17 @@ function conflictTime(conflict: TimeOffConflict, timeZone: string): string {
  * and an optional reason) and the delete with confirmation. Rules live in
  * `src/lib/timeOff.ts`; the server sentences are shown verbatim.
  */
-export function TimeOffCard({ salonId, member, entries, timeZone, now, onChanged }: TimeOffCardProps) {
+export function TimeOffCard({
+  salonId,
+  member,
+  entries,
+  coverAbsences,
+  coverReady,
+  timeZone,
+  now,
+  onChanged,
+  onCovered,
+}: TimeOffCardProps) {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [fromTime, setFromTime] = useState('')
@@ -54,6 +72,8 @@ export function TimeOffCard({ salonId, member, entries, timeZone, now, onChanged
   const [conflicts, setConflicts] = useState<TimeOffConflict[]>([])
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  // Absence whose "Cubrir" panel is open (S-F2d3-5).
+  const [coveringId, setCoveringId] = useState<string | null>(null)
 
   const titleId = `member-timeoff-${member.id}`
   const mine = timeOffForUser(entries, member.id)
@@ -144,6 +164,18 @@ export function TimeOffCard({ salonId, member, entries, timeZone, now, onChanged
         <ul className="timeoff-list">
           {list.map((entry) => {
             const running = Date.parse(entry.starts_at) <= now.getTime()
+            // The cover payload is the authority on the turns of this absence; an
+            // absence without it has nothing to reassign, never invented turns.
+            const cover: CoverAbsence = coverAbsences.find((row) => row.id === entry.id) ?? {
+              id: entry.id,
+              user_id: member.id,
+              user_name: member.name,
+              starts_at: entry.starts_at,
+              ends_at: entry.ends_at,
+              reason: entry.reason,
+              bookings: [],
+            }
+            const covering = coveringId === entry.id
             return (
               <li className="timeoff-item" key={entry.id} data-running={running}>
                 <span className="timeoff-item__range">
@@ -178,18 +210,41 @@ export function TimeOffCard({ salonId, member, entries, timeZone, now, onChanged
                     </button>
                   </span>
                 ) : (
-                  <button
-                    type="button"
-                    className="btn btn--quiet btn--sm timeoff-item__action"
-                    aria-label={`Borrar la ausencia de ${member.name}: ${formatTimeOffRange(entry, {
-                      timeZone,
-                      today,
-                    })}`}
-                    onClick={() => setConfirmId(entry.id)}
-                  >
-                    Borrar
-                  </button>
+                  <span className="timeoff-item__buttons">
+                    <button
+                      type="button"
+                      className="btn btn--quiet btn--sm timeoff-item__action"
+                      aria-expanded={covering}
+                      aria-controls={`cover-panel-${entry.id}`}
+                      onClick={() => setCoveringId(covering ? null : entry.id)}
+                    >
+                      Cubrir
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--quiet btn--sm timeoff-item__action"
+                      aria-label={`Borrar la ausencia de ${member.name}: ${formatTimeOffRange(entry, {
+                        timeZone,
+                        today,
+                      })}`}
+                      onClick={() => setConfirmId(entry.id)}
+                    >
+                      Borrar
+                    </button>
+                  </span>
                 )}
+                {covering ? (
+                  <div className="timeoff-item__cover" id={`cover-panel-${entry.id}`}>
+                    <AbsenceCover
+                      salonId={salonId}
+                      absence={cover}
+                      absences={entries}
+                      ready={coverReady}
+                      timeZone={timeZone}
+                      onCovered={onCovered}
+                    />
+                  </div>
+                ) : null}
               </li>
             )
           })}

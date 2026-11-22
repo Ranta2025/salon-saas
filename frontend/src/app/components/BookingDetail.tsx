@@ -12,9 +12,26 @@ import {
   type BookingAction,
 } from '../../lib/bookingActions'
 import { formatTimeOfDay, toDateInputValue, toDateTimeIso } from '../../lib/datetime'
+import {
+  absenceForBooking,
+  beginCover,
+  cancelBookingForAbsence,
+  chooseFor,
+  chosenFor,
+  coverBookingOf,
+  coverCandidates,
+  firstEligible,
+  forgetChoice,
+  reassignBooking,
+  reassignedNotice,
+  type CoverAbsence,
+  type CoverDraft,
+} from '../../lib/coverAbsence'
+import { timeOffSentence, type TimeOff } from '../../lib/timeOff'
 import type { StaffMember } from '../../lib/staff'
 import type { Booking } from '../../types'
 import { formatSlotRange } from '../../lib/publicBooking'
+import { CoverSelect } from './CoverSelect'
 
 const ACTION_LABEL: Record<BookingAction, string> = {
   cancel: 'Cancelar turno',
@@ -34,6 +51,10 @@ type BookingDetailProps = {
   onClose: () => void
   /** Called after a successful PATCH so the page reloads the day. */
   onUpdated: (message: string) => void
+  /** Absences with their turns (F2d3): the calendar passes them, "Mi agenda" not. */
+  coverAbsences?: readonly CoverAbsence[]
+  /** Absences of the salon, to reject a destination that is away that day. */
+  absenceList?: readonly TimeOff[]
 }
 
 /**
@@ -50,6 +71,8 @@ export function BookingDetail({
   salonId,
   onClose,
   onUpdated,
+  coverAbsences = [],
+  absenceList = [],
 }: BookingDetailProps) {
   const headingRef = useRef<HTMLHeadingElement>(null)
   const [pending, setPending] = useState(false)
@@ -59,6 +82,11 @@ export function BookingDetail({
   const [timeValue, setTimeValue] = useState(() => formatTimeOfDay(booking.starts_at, timeZone))
   const [professionalId, setProfessionalId] = useState(booking.professional_id)
   const [rescheduleError, setRescheduleError] = useState<string | null>(null)
+  // Covering the absence (F2d3): the absent professional and the turns it leaves.
+  const [coverDraft, setCoverDraft] = useState<CoverDraft>(() => beginCover())
+  const [coverError, setCoverError] = useState<string | null>(null)
+  const [coverPending, setCoverPending] = useState(false)
+  const [confirmingCoverCancel, setConfirmingCoverCancel] = useState(false)
 
   // The panel replaces the focus target: announce it and move focus inside.
   useEffect(() => {
@@ -70,6 +98,9 @@ export function BookingDetail({
     setTimeValue(formatTimeOfDay(booking.starts_at, timeZone))
     setProfessionalId(booking.professional_id)
     setConfirmingCancel(false)
+    setConfirmingCoverCancel(false)
+    setCoverError(null)
+    setCoverDraft(beginCover())
   }, [booking.id, booking.starts_at, booking.professional_id, timeZone])
 
   const runAction = async (action: BookingAction): Promise<void> => {
@@ -120,7 +151,57 @@ export function BookingDetail({
     }
   }
 
-  const actions = availableActions(booking.status)
+  // Only a turn the cover API lists belongs to an absence: any other turn keeps
+  // exactly the actions it had (S-F2d3-5).
+  const coverAbsence = absenceForBooking(coverAbsences, booking.id)
+  const coverTurn = coverAbsence ? coverBookingOf(coverAbsence, booking.id) : null
+  const coverChoices =
+    coverAbsence && coverTurn
+      ? coverCandidates({ booking: coverTurn, absence: coverAbsence, absences: absenceList })
+      : []
+  const coverChoice = chosenFor(coverDraft, booking.id) || firstEligible(coverChoices)?.id || ''
+  const coverName = coverChoices.find((choice) => choice.id === coverChoice)?.name ?? ''
+  // The cancel of the cover panel warns the client, so it replaces the plain
+  // "Cancelar turno" of an affected turn instead of adding a second one.
+  const actions = availableActions(booking.status).filter(
+    (action) => !(action === 'cancel' && coverTurn !== null),
+  )
+
+  const handleReassign = async (): Promise<void> => {
+    if (coverChoice === '' || coverPending) {
+      return
+    }
+    setCoverError(null)
+    setCoverPending(true)
+    setCoverDraft(chooseFor(coverDraft, booking.id, coverChoice))
+    try {
+      const outcome = await reassignBooking(salonId, booking.id, coverChoice)
+      onUpdated(reassignedNotice(outcome.reassigned || 1, coverName))
+    } catch (err: unknown) {
+      // The select goes back to what the server has before the failure.
+      setCoverDraft(forgetChoice(coverDraft, booking.id))
+      setCoverError(err instanceof Error ? err.message : 'No pudimos reasignar el turno.')
+    } finally {
+      setCoverPending(false)
+    }
+  }
+
+  const handleCoverCancel = async (): Promise<void> => {
+    if (coverPending) {
+      return
+    }
+    setCoverError(null)
+    setCoverPending(true)
+    try {
+      await cancelBookingForAbsence(salonId, booking.id)
+      setConfirmingCoverCancel(false)
+      onUpdated('Turno cancelado. El salón se contacta con la clienta para avisarle.')
+    } catch (err: unknown) {
+      setCoverError(err instanceof Error ? err.message : 'No pudimos cancelar el turno.')
+    } finally {
+      setCoverPending(false)
+    }
+  }
 
   return (
     <section className="panel-card booking-detail" aria-labelledby="booking-detail-title">
@@ -203,6 +284,73 @@ export function BookingDetail({
             ),
           )}
         </div>
+      ) : null}
+
+      {canAct && coverAbsence && coverTurn ? (
+        <section className="booking-detail__cover" aria-labelledby="booking-cover-title">
+          <h3 id="booking-cover-title">Reasignar</h3>
+          <p className="booking-detail__hint">
+            {`${coverAbsence.user_name || 'La profesional'} está ausente ${timeOffSentence(
+              coverAbsence,
+              { timeZone },
+            )}: elegí quién toma este turno.`}
+          </p>
+          <CoverSelect
+            id="cover-booking-professional"
+            label="Quién toma el turno"
+            choices={coverChoices}
+            value={coverChoice}
+            disabled={coverPending}
+            onChange={(value) => setCoverDraft(chooseFor(coverDraft, booking.id, value))}
+          />
+          <div className="booking-detail__actions">
+            <button
+              type="button"
+              className="btn btn--wine btn--sm"
+              disabled={coverChoice === '' || coverPending}
+              onClick={() => void handleReassign()}
+            >
+              {coverPending ? 'Guardando…' : 'Reasignar'}
+            </button>
+            {confirmingCoverCancel ? (
+              <div className="booking-detail__confirm" role="group" aria-label="Confirmar cancelación">
+                <p>
+                  Se cancela el turno y el salón se contacta con la clienta para avisarle. ¿Cancelar
+                  el turno?
+                </p>
+                <button
+                  type="button"
+                  className="btn btn--wine btn--sm"
+                  disabled={coverPending}
+                  onClick={() => void handleCoverCancel()}
+                >
+                  Sí, cancelar el turno
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--quiet btn--sm"
+                  onClick={() => setConfirmingCoverCancel(false)}
+                >
+                  Volver
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="btn btn--quiet btn--sm"
+                disabled={coverPending}
+                onClick={() => setConfirmingCoverCancel(true)}
+              >
+                Cancelar el turno
+              </button>
+            )}
+          </div>
+          {coverError ? (
+            <p className="notice notice--error" role="alert">
+              {coverError}
+            </p>
+          ) : null}
+        </section>
       ) : null}
 
       {canAct && canReschedule(booking.status) ? (
