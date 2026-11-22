@@ -519,3 +519,92 @@ start` para que una etiqueta larga (el correo) no estire el campo de al lado.
   con el teléfono y el correo. Se corrigieron en la revisión: el campo de nombre
   que se estiraba a la altura del bloque de correo (1280), el `+1` recortado del
   selector «EE. UU./Canadá» a 390 px y el recorte silencioso de dígitos de más.
+
+## 13. Fase 6 — F2a: quién atiende clientes (equipo)
+
+Contrato `odd/tasks/fase6-roadmap.md`, «Contrato F2a» (S-F2a-5 mitad
+frontend y S-F2a-6). Sin dependencias nuevas y con los tokens de
+`src/styles/theme.css`.
+
+### 13.1 Tipo y cliente de API (`src/lib/members.ts`)
+
+- `SalonMember` suma `attends: boolean` (`memberships.attends`).
+  `normalizeMembers` lo lee con `attends(value, role)`: un booleano se respeta y
+  cualquier otra cosa (campo ausente en una API vieja, texto) cae en la regla del
+  dominio — `professional` atiende siempre, el resto no.
+- `setMemberAttends(salonId, userId, attends)` hace
+  `PATCH /api/v1/salons/:id/members/:uid` con el cuerpo `{"attends": bool}` y
+  devuelve el miembro guardado (se normaliza igual que el listado). Si el
+  servidor responde `400 {"error":"Las profesionales siempre atienden"}` o
+  `400 {"error":"Ese rol no atiende clientes"}`, `ApiError.message` conserva la
+  frase del servidor y la pantalla la imprime tal cual (sin el prefijo interno
+  «validación:», que el API ya limpia).
+- `POST /members` sigue mandando solo `email` y `role`: el `attends` por defecto
+  lo decide el servidor (S-F2a-4), así que la UI no lo duplica.
+
+### 13.2 Reglas puras (`src/lib/attends.ts`)
+
+| helper | regla |
+| --- | --- |
+| `memberAttends(member)` | `professional` siempre atiende, aunque el flag guardado sea `false`; `owner`/`admin` solo con `attends = true`; `reception` (y clientes) nunca |
+| `attendsControl(actorRole, targetRole)` | `'switch'` en `owner`/`admin` (y solo si el actor es dueño/administración), `'fixed'` en `professional`, `'none'` en `reception` |
+| `nobodyAttends(members)` | `true` solo con la lista cargada, no vacía y sin nadie que atienda |
+| `applyAttends(members, userId, attends)` | devuelve una lista nueva con el flag de una persona; llamarla otra vez con el valor anterior es la vuelta atrás exacta |
+| `ATTENDS_NOTICE` | texto único del aviso: `Nadie atiende todavía: activá 'Atiende clientes' en alguien para recibir turnos` |
+
+Que `memberAttends` ignore el flag de un `professional` es deliberado: un
+payload viejo no puede sacar a una profesional de la agenda.
+
+### 13.3 `/panel/equipo` (S-F2a-6)
+
+- La tabla «Quiénes tienen acceso» gana la columna **Atiende** (solo se dibuja
+  si alguien puede atender o ser marcado). En dueño y administración es un
+  interruptor «Atiende clientes»; en profesionales, la etiqueta fija «Atiende»;
+  en recepción, nada (la fila del listado móvil desaparece con
+  `td:empty`).
+- El interruptor es un `input type="checkbox"` con `role="switch"`
+  (operable con `Space`), `aria-checked`, etiqueta visual «Atiende clientes» y
+  `aria-label` con el nombre de la persona («Atiende clientes: Ana») para que la
+  tabla no repita un control anónimo. El `input` cubre toda la etiqueta, así que
+  el objetivo real es 153 × 44 px a 390 px, y el foco se dibuja sobre el riel
+  con `--focus-width`/`--focus-light`.
+- Cambio **optimista**: la fila se invierte antes de la respuesta
+  (`applyAttends`), se bloquea un segundo cambio mientras el `PATCH` está en
+  vuelo (`aria-busy`, sin deshabilitar el control para no perder el foco) y, si
+  el servidor rechaza, la fila vuelve al valor anterior y el mensaje del
+  servidor aparece en un `role="alert"` dentro de la tarjeta del equipo. Éxito:
+  aviso `role="status"` («Ana atiende clientes desde ahora.» / «Ana ya no atiende
+  clientes.»).
+- Aviso de salón sin nadie que atienda, entre el encabezado y la tabla, con
+  `role="status"` y el texto de `ATTENDS_NOTICE`.
+- Nada más cambia: alta por correo, baja con confirmación, etiquetas de rol,
+  `canAssignRole` y los mensajes de error siguen igual.
+
+### 13.4 Estilos
+
+`app.css` suma el bloque «who attends clients»: `.attends` (fila con
+`min-height: 44px`), `.attends__input` (checkbox transparente que cubre la
+etiqueta), `.attends__track`/`.attends__thumb` (riel de 3 × 1.75 rem con pulgar
+de 1.25 rem), el verde `#2b6847` del estado encendido y
+`input:focus-visible + .attends__track` para el anillo de foco. En el listado
+móvil (`≤ 699 px`) la celda «Atiende» permite envolver y las celdas vacías de
+recepción no se dibujan. A 390 y 1280 px no hay scroll horizontal
+(`scrollWidth === clientWidth`).
+
+### 13.5 Verificación
+
+- `npx tsc --noEmit`, `npm test` (184 tests, node --test) y `npm run build` en
+  verde.
+- TDD en `src/lib`: `attends.test.ts` (quién atiende por rol, switch/etiqueta/
+  nada por rol del actor y del objetivo, regla del aviso, texto exacto, cambio
+  optimista con vuelta atrás e inmutabilidad) y `members.test.ts` (`attends` en
+  el listado, respaldo por rol cuando falta, `PATCH` con `{"attends": bool}` y
+  la frase del servidor tal cual).
+- Revisión visual con el bundle de `vite build` servido junto a una API
+  simulada en `/tmp/f2a-shot` y Chromium headless a 390 y 1280 px: interruptor
+  encendido y apagado, etiqueta fija de profesional, recepción sin nada, aviso
+  de «nadie atiende» y error con vuelta atrás (el `400` del servidor se lee
+  entero). Con el protocolo de DevTools se comprobó además, a 390 y 1280 px,
+  `role="switch"` con `aria-checked` y nombre accesible, objetivo de 44 px,
+  `Tab` que llega al control, `:focus-visible` con `outline: solid 3px`, `Space`
+  que conmuta y el `PATCH` que sale con el flag nuevo.
