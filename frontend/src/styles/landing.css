@@ -808,6 +808,9 @@
 .booking__fields {
   display: grid;
   gap: 0.9rem;
+  /* Fields keep their own height: a long label/hint must not stretch the input
+     next to it (the name field grew to the height of the email block). */
+  align-items: start;
 }
 
 .booking__submit {

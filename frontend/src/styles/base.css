@@ -338,6 +338,43 @@ ol {
   font-weight: 600;
 }
 
+/* ---------- phone field (country code + national number) ---------- */
+
+.phone-field__row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.phone-field__country {
+  flex: 0 0 auto;
+  width: auto;
+  /* The widest option ("EE. UU./Canadá +1") must fit closed at 390 px, and the
+     national number keeps the room it needs next to it. */
+  max-width: 10.5rem;
+  min-width: 0;
+  font-size: var(--step--1);
+}
+
+.phone-field__number {
+  flex: 1 1 6rem;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Narrow phones: the selector takes a full row instead of squeezing the number. */
+@media (max-width: 359px) {
+  .phone-field__row {
+    flex-wrap: wrap;
+  }
+
+  .phone-field__country {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+}
+
 input[type='number'] {
   font-family: var(--font-mono);
 }

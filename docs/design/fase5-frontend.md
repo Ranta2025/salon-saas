@@ -373,3 +373,149 @@ línea, con lo que el contenido empieza a ~213 px del borde superior en vez de a
   revisados con el emulador de red de Chromium: el calendario muestra la copia
   guardada y, sin copia del día, dice que es una copia guardada; no aparece
   «No hay citas» como dato real y la consola queda sin errores.
+
+## 12. Ronda 3 — dólares, teléfono con código de país y correo en la reserva (T11, T12)
+
+Pedido de la ronda 3 (`odd/tasks/fase5-hardening.md`, «L-usuario (ronda 3)»).
+Sin dependencias nuevas: todo lo de abajo usa React, CSS con custom properties y
+módulos puros de `src/lib`.
+
+### 12.1 Moneda: dólares (T11)
+
+`src/lib/money.ts` pasa a `CURRENCY = 'USD'` y `CURRENCY_LABEL = 'USD'`. `LOCALE`
+sigue en `es-MX` porque lo que define es la **forma** `$1,234.55` (coma de miles,
+punto decimal) y el formato de fechas, no la moneda.
+
+- Los montos siguen viajando y guardándose como **centavos enteros**:
+  `formatCents` no cambió, así que no hay migración de datos ni riesgo de
+  `float`. `sumCents`, `percentOf` y `parseAmountToCents` no cambian.
+- Toda la copia visible dejó de decir pesos/MXN: barra del panel («Los montos se
+  muestran en dólares estadounidenses (USD)»), «Montos en dólares» del panel,
+  `Precio (USD)` del formulario de servicio, el catálogo («Precios finales en
+  dólares estadounidenses…»), el listado de acceso y la descripción de respaldo
+  de un servicio que llega sin copia de marketing. `grep -rniE "peso|mxn|mexican"
+  frontend/src` queda vacío.
+- `money.test.ts` fija el contrato: `CURRENCY`/`CURRENCY_LABEL` en `USD` y
+  `formatCents(123455) === '$1,234.55'`.
+- Moneda por salón queda fuera de alcance (una sola moneda para el producto).
+
+### 12.2 Teléfono de contacto de la landing (T11)
+
+`CONTACT_PHONE` en `src/landing/content.ts` es la única fuente:
+
+| campo | valor | uso |
+| --- | --- | --- |
+| `e164` | `+5355528595` | valor canónico del número |
+| `display` | `+53 5552 8595` | lo que se imprime |
+| `tel` | `tel:+5355528595` | enlace del header y del pie |
+| `whatsapp` | `5355528595` | dígitos que espera `wa.me` |
+
+`SALON.phone`, `SALON.phoneHref` y `SALON.whatsapp` derivan de esa constante, de
+modo que el header (`≥700 px`), el pie, el bloque de contacto del CTA de reserva
+y el mensaje de WhatsApp imprimen siempre el mismo número.
+
+### 12.3 Campo de teléfono con código de país (T11)
+
+`src/lib/phone.ts` (puro, con tests) + `src/components/PhoneInput.tsx`
+(reutilizable). Se usa en el formulario público de reserva y en el formulario de
+ficha del panel; `displayPhone` alimenta las lecturas (tarjeta de la lista y
+ficha del detalle).
+
+**Catálogo** (`COUNTRIES`, Cuba primero porque es el país del salón):
+
+| país | código | dígitos | ejemplo |
+| --- | --- | --- | --- |
+| Cuba | +53 | 8 | `5xxx xxxx` |
+| México | +52 | 10 | `55 xxxx xxxx` |
+| Estados Unidos/Canadá | +1 | 10 | `555 123 4567` |
+| España | +34 | 9 | `612 345 678` |
+| Argentina | +54 | 10 | `11 xxxx xxxx` |
+| Colombia | +57 | 10 | `300 123 4567` |
+| Venezuela | +58 | 10 | `412 xxx xxxx` |
+| Chile | +56 | 9 | `9 xxxx xxxx` |
+| Perú | +51 | 9 | `912 345 678` |
+| Uruguay | +598 | 8 | `94 123 456` |
+| Panamá | +507 | 7–8 | `6xxx xxxx` |
+| República Dominicana | +1 | 10 | `809 123 4567` |
+
+**Comportamiento**
+
+- El selector es un `<select>` nativo con `aria-label="Código de país"` y el
+  texto «Cuba +53»/«EE. UU./Canadá +1» (etiqueta corta: la más larga tiene que
+  entrar cerrada a 390 px). Es operable con teclado y conserva el anillo de foco
+  de `base.css`.
+- El número nacional es `type="tel"`, `inputMode="tel"` y
+  `autoComplete="tel-national"`; se guardan **solo dígitos** y se muestran
+  agrupados con espacios según el país (`5552 8595`, `55 1234 5678`). El
+  placeholder y la ayuda viva salen del país elegido («Ejemplo: 5xxx xxxx · 8
+  dígitos»).
+- Los dígitos **nunca se recortan en silencio**: si sobran, se ven y la
+  validación lo dice («El teléfono de Cuba tiene 8 dígitos (escribiste 10)»), en
+  lugar de convertirse en otro número válido.
+- Al pegar un número internacional (`+53 5552 8595`, `0053…`, `53…` cuando no
+  cabe en el país del selector) se detecta el prefijo —el código más largo gana,
+  así `+598` no se confunde con `+5…`—, el selector salta a ese país y los dígitos
+  se reparten. Un fragmento corto se inserta donde está el cursor.
+- `validatePhone` es la única fuente de mensajes (mínimo/máximo por país, campo
+  vacío) y el formulario la usa antes de enviar; el error se anuncia con
+  `role="alert"` y `aria-describedby`.
+- **Contrato**: al API se le manda `+<código><dígitos>` (por ejemplo
+  `+5355528595`) como **string**; el backend normaliza a dígitos
+  (`phone_norm`), así que su contrato no cambia. La reserva pública conserva
+  `client_phone` como string, de modo que la cola offline no cambia de forma.
+- Un valor existente se lee al revés: si empieza con `+` se reparte en código +
+  número. Una ficha vieja con teléfono libre (`55 1234 5678`) se muestra **tal
+  como se guardó** cuando sus dígitos no caben en el país por defecto: inventarle
+  un prefijo mentiría sobre el número. En el formulario, un valor sin prefijo
+  abre con Cuba.
+
+### 12.4 Correo opcional en la reserva pública (T12, mitad frontend)
+
+- Paso «Tus datos»: campo **opcional** «Correo electrónico (te enviamos la
+  confirmación y un recordatorio)», `type="email"`, `autoComplete="email"`,
+  `inputMode="email"`, con la ayuda «Opcional. Sin correo la cita se agenda
+  igual, pero no te enviamos recordatorio.».
+- `src/lib/email.ts` replica la regla del servidor
+  (`domain.NormalizeAndValidateEmail`): recorta, pasa a minúsculas, exige `@` y
+  entre 5 y 254 caracteres; vacío es válido. El mensaje es exactamente
+  `Email inválido`, el mismo del API.
+- El cuerpo del POST solo lleva `client_email` cuando hay valor (normalizado a
+  minúsculas); sin correo la reserva es anónima y el JSON es el de siempre.
+- Si el servidor responde `400 {"error":"Email inválido"}`, el mensaje se pinta
+  **junto al campo** (no en el aviso general): `describeBookingError` clasifica
+  el 400 como validación y la pantalla mueve el texto al campo del correo.
+- Confirmación: con correo dice «Te enviamos la confirmación a <correo>» (nunca
+  afirma una entrega: el envío es best-effort en el servidor, así que el texto
+  queda en «te la enviamos» y avisa de revisar el correo no deseado). Sin correo
+  muestra la invitación amable a agregarlo para recibir recordatorios.
+- El formulario de ficha del panel (ya construido en T10) usa la **misma**
+  validación y el mismo mensaje antes de enviar, y su ayuda explica para qué lo
+  pide la reserva pública; no hay lógica duplicada.
+
+### 12.5 Estilos
+
+`base.css` suma `.phone-field__row` (fila flexible selector + número),
+`.phone-field__country` (máximo `10.5rem`, tipografía algo menor para que
+«EE. UU./Canadá +1» entre cerrada a 390 px) y `.phone-field__number`
+(`flex: 1 1 6rem`, `min-width: 0`, cifras tabulares). Por debajo de 360 px el
+selector pasa a ocupar su propia fila. `.booking__fields` usa `align-items:
+start` para que una etiqueta larga (el correo) no estire el campo de al lado.
+
+### 12.6 Verificación de la ronda 3
+
+- `npx tsc --noEmit`, `npm test` (172 tests, node --test) y `npm run build` en
+  verde.
+- TDD en `src/lib`: `phone.test.ts` (catálogo, dígitos, agrupación, `toE164`,
+  detección de prefijo al pegar, mensajes de longitud, lectura de valores
+  viejos), `email.test.ts` (normalización, regla del servidor, mensaje exacto),
+  `money.test.ts` (USD y forma `$1,234.55`) y `publicBooking.test.ts`
+  (`client_email` solo cuando hay valor).
+- Revisión visual con `vite preview` contra una API simulada en `/tmp` y
+  capturas Chromium headless a 390 y 1280 px de: la landing (header, bloque de
+  contacto del CTA y pie con el teléfono nuevo), el formulario de reserva
+  (selector de país + correo), el error local del teléfono, el `Email inválido`
+  del cliente y el que devuelve el servidor junto al campo, la confirmación con
+  correo y sin correo, el panel con montos en dólares y el formulario de ficha
+  con el teléfono y el correo. Se corrigieron en la revisión: el campo de nombre
+  que se estiraba a la altura del bloque de correo (1280), el `+1` recortado del
+  selector «EE. UU./Canadá» a 390 px y el recorte silencioso de dígitos de más.
