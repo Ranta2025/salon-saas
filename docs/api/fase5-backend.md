@@ -591,6 +591,91 @@ GET /api/v1/public/salons/navajas-oro -> 200 {
   horario**: el calendario sigue agendando a mano fuera de horario y solo el
   choque de turnos la frena (como antes).
 
+## Fase 6 — F2d2: vacaciones y días libres puntuales por profesional
+
+Una **ausencia** es un período `[starts_at, ends_at)` en UTC de **una** persona
+reservable (rol `professional`, o dueño/administración con `attends = true`:
+F2a). La UI convierte desde la zona del salón; un **día completo** es de `00:00`
+a `00:00` del día siguiente en esa zona. El período es semiabierto igual que los
+turnos: una ausencia que termina a las 12:00 **no** bloquea el turno que arranca
+a las 12:00, y una que empieza a las 12:00 no bloquea el que termina a esa hora.
+
+### `GET /salons/:id/time-off?from&to`
+
+```json
+GET /api/v1/salons/s_.../time-off?from=2026-12-01T00:00:00Z&to=2026-12-08T00:00:00Z -> 200 {
+  "time_off": [ { "id": "t_...", "user_id": "u_...",
+                  "starts_at": "2026-12-02T05:00:00Z", "ends_at": "2026-12-03T05:00:00Z",
+                  "reason": "Vacaciones" } ]
+}
+```
+
+- **Cualquier miembro** lee: la agenda necesita saber quién falta. Las fechas
+  viajan en RFC3339 y el rango es obligatorio, con tope de **92 días**
+  (`400 {"error":"El rango no puede superar los 92 días"}`).
+- Se devuelven las ausencias que **pisan** el rango (una que empezó antes y sigue
+  en curso aparece; el período es semiabierto en los dos lados).
+- **Privacidad del motivo**: `reason` viene **vacío** para quien no es
+  dueño/administración, salvo en sus **propias** ausencias. Una profesional ve
+  que su compañera está ausente pero no por qué; recepción no ve ningún motivo.
+  Dueño y administración ven todos los motivos.
+- Sin token `401`; un ajeno al salón `403` (el `salon_id` de la ruta no es la
+  credencial, la membresía sí).
+
+### `POST /salons/:id/members/:uid/time-off`
+
+```json
+POST { "starts_at": "2026-12-02T05:00:00Z", "ends_at": "2026-12-03T05:00:00Z",
+       "reason": "Vacaciones" }        // reason es opcional
+
+201 { "time_off": { "id": "t_...", "user_id": "u_...",
+                    "starts_at": "2026-12-02T05:00:00Z", "ends_at": "2026-12-03T05:00:00Z",
+                    "reason": "Vacaciones" },
+      "conflicts": [ { "id": "b_...", "client_name": "Lía",
+                       "starts_at": "2026-12-02T15:00:00Z",
+                       "ends_at": "2026-12-02T15:45:00Z" } ] }
+```
+
+- Solo `owner`/`admin` (`403`); el miembro tiene que ser de **ese** salón
+  (`404` si es de otro) y tiene que **atender**:
+  `400 {"error":"Ese rol no tiene ausencias"}` para recepción, cliente o un
+  dueño/administración sin `attends`.
+- **Crear una ausencia NO cancela turnos** (S-F2d2-4). `conflicts` lista los
+  turnos `booked` de **esa** persona que se pisan con la ausencia, ordenados por
+  inicio: los cancelados no cuentan y los de otra persona tampoco. El salón los
+  reasigna (F2d3) o los cancela desde el calendario. `conflicts` es siempre un
+  array (vacío si no hay nada).
+- Validación (400, textos exactos):
+  `El fin debe ser posterior al inicio`, `Una ausencia no puede durar más de 90
+  días`, `No se puede cargar una ausencia que ya terminó` (una ausencia **en
+  curso** sí se puede cargar), `Ya hay una ausencia en ese período` (dos
+  ausencias de la misma persona no se pisan; la misma ventana para **otra**
+  persona es válida) y, del motivo, `El motivo no puede tener saltos de línea` /
+  `El motivo no puede superar los 120 caracteres` (se recorta).
+- Fechas en RFC3339; vacías → `400 {"error":"Indicá el inicio y el fin de la
+  ausencia"}`; ilegibles → `400 {"error":"Fecha inválida: usá RFC3339"}`.
+
+### `DELETE /salons/:id/time-off/:tid` -> `204`
+
+- Solo `owner`/`admin` (`403`). Una id de **otro salón** es `404` (no un borrado
+  silencioso) y volver a borrar la misma es `404`.
+
+### Disponibilidad y reserva pública: la ausencia manda
+
+- `GET /public/salons/:slug/availability`: una profesional ausente **no se
+  ofrece** ese día ni en los huecos que pisan su ausencia. El resto del equipo
+  sigue igual; si nadie queda, `200 {"slots":[]}` (nunca un error).
+- `POST /public/salons/:slug/bookings`: la asignación automática saltea a quien
+  está ausente. Con todo el equipo ausente → `409 {"error":"... no hay
+  profesional libre en ese horario"}`; con un `professional_id` ausente elegido a
+  mano → `409 {"error":"... el horario ya no está disponible"}`. Nunca `500`.
+- La **reserva de staff** desde el calendario (`POST /salons/:id/bookings`) **no
+  se restringe por ausencias**: igual que con el horario (F2d1), solo la frena el
+  choque de turnos. El salón reasigna o cancela a mano (F2d3).
+- Un turno de 90 minutos que arranca a las 09:00 y una ausencia de 10:00 a 12:00
+  **se pisan**: ese hueco no se ofrece (el turno tiene que entrar entero fuera de
+  la ausencia).
+
 ## Ronda 3 (T9): ficha desde la reserva, email de la ficha, hora del salón y mensajes
 
 Hallazgos E-03, E-04 y E-07 de la auditoría en navegador real. Los códigos HTTP
@@ -861,7 +946,26 @@ Migración de la fase 6 (F2d1):
     única y la persona sigue al salón), así que una base migrada se comporta
     igual hasta que alguien configure horarios.
 
-Las 17 migraciones se probaron aplicándolas dos veces con
+Migración de la fase 6 (F2d2):
+
+- `018_time_off.sql`:
+  - `time_off(id TEXT PRIMARY KEY, salon_id TEXT NOT NULL REFERENCES salons(id)
+    ON DELETE CASCADE, user_id TEXT NOT NULL, starts_at TIMESTAMPTZ NOT NULL,
+    ends_at TIMESTAMPTZ NOT NULL, reason TEXT NOT NULL DEFAULT '', created_by
+    TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())`, FK `(user_id,
+    salon_id)` a `memberships` **`ON DELETE CASCADE`** (si la persona sale del
+    equipo, sus ausencias se van con ella), `CHECK (starts_at < ends_at)`, tope
+    del motivo `CHECK (char_length(reason) <= 120)` (nombre `time_off_reason_len`)
+    e índice `(salon_id, user_id, starts_at)`.
+  - **Sin backfill**: una base migrada no tiene ausencias hasta que alguien carga
+    una, así que el comportamiento de hoy no cambia.
+  - "Dos ausencias de la misma persona no se pisan" **no** es un constraint: el
+    mensaje tiene que ser el del contrato (`Ya hay una ausencia en ese período`) y
+    lo verifica el caso de uso contra las filas existentes, antes de escribir.
+  - Guardas miradas en `current_schema()` y `CREATE INDEX IF NOT EXISTS`: una
+    segunda ejecución no falla ni duplica nada.
+
+Las 18 migraciones se probaron aplicándolas dos veces con
 `psql -v ON_ERROR_STOP=1` sobre una base limpia y sobre una ya migrada, y el
 binario arranca contra esas bases. El backfill de la 016 se probó además sobre
 una base migrada **solo hasta la 015**, con dueño/administración/profesional/

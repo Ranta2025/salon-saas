@@ -163,7 +163,9 @@ type posEnv struct {
 	emails *mbookingEmails
 	// F2d1: horario semanal del salón y de cada persona.
 	weekly *mweekly
-	d      Deps
+	// F2d2: ausencias (vacaciones y días libres puntuales).
+	timeOff *mtimeoff
+	d       Deps
 }
 
 // deps devuelve lo mismo que monta newPOSEnv, para armar routers alternativos
@@ -188,6 +190,7 @@ func newPOSEnv() *posEnv {
 		mailer:   &mmailer{},
 		emails:   &mbookingEmails{},
 		weekly:   &mweekly{},
+		timeOff:  &mtimeoff{},
 	}
 	env.members = &mmembers{mems: env.mems, users: env.users}
 	env.profs = &mprof{mems: env.mems}
@@ -211,6 +214,7 @@ func newPOSEnv() *posEnv {
 	settingsSvc := app.SettingsService{Settings: env.settings, Memberships: env.mems}
 	salonHoursSvc := app.SalonHoursService{Hours: env.weekly, Settings: env.settings, Memberships: env.mems}
 	professionalHoursSvc := app.ProfessionalHoursService{Hours: env.weekly, Memberships: env.mems}
+	timeOffSvc := app.TimeOffService{TimeOff: env.timeOff, Bookings: env.bookings, Memberships: env.mems}
 	memberSvc := app.MemberService{
 		Members: env.members, Memberships: env.mems, Users: env.users,
 		Professionals: env.profs, Services: env.services,
@@ -218,11 +222,13 @@ func newPOSEnv() *posEnv {
 	availabilitySvc := app.AvailabilityService{
 		Salons: env.salons, Services: env.services, Settings: env.settings,
 		Staff: env.mems, Bookings: env.bookings, Professionals: env.profs, Hours: env.weekly,
+		TimeOff: env.timeOff,
 	}
 	publicBookingSvc := app.PublicBookingService{
 		Salons: env.salons, Services: env.services, Settings: env.settings,
 		Staff: env.mems, Bookings: env.bookings, Professionals: env.profs, Hours: env.weekly,
-		Events: env.events, Notifier: notifSvc, Mailer: env.mailer, Emails: env.emails,
+		TimeOff: env.timeOff,
+		Events:  env.events, Notifier: notifSvc, Mailer: env.mailer, Emails: env.emails,
 	}
 	env.signer = security.NewPhotoSigner("test-secret")
 	hub := realtime.NewHub(tokens, env.mems, realtime.HubOrigins("http://localhost:5173"))
@@ -246,6 +252,7 @@ func newPOSEnv() *posEnv {
 		Hours: HoursHandler{
 			Salon: salonHoursSvc, Professional: professionalHoursSvc, Memberships: env.mems,
 		},
+		TimeOff:     TimeOffHandler{TimeOff: timeOffSvc, Memberships: env.mems},
 		WS:          hub.ServeWS,
 		TokenIssuer: tokens,
 	}

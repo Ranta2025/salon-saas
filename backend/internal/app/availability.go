@@ -41,6 +41,9 @@ type AvailabilityService struct {
 	// Hours es el horario semanal del salón y de cada profesional (F2d1). nil o
 	// sin filas = la ventana única de /settings para todo el equipo (hoy).
 	Hours ports.WeeklyHoursRepository
+	// TimeOff son las ausencias de las profesionales (F2d2): quien está de
+	// vacaciones no se ofrece ese día.
+	TimeOff ports.TimeOffRepository
 }
 
 // Day calcula los huecos libres de una fecha local del salón, para un servicio
@@ -99,6 +102,13 @@ func (s AvailabilityService) Day(slug, date, serviceID, professionalID string) (
 	if err != nil {
 		return DayAvailability{}, err
 	}
+	// Ausencias (F2d2): quien está de vacaciones o de día libre no se ofrece ese
+	// día. Una sola query para todo el equipo, con la misma ventana ancha que los
+	// turnos: una ausencia que empezó ayer también cubre la mañana de hoy.
+	absences, err := timeOffRange(s.TimeOff, salon.ID, open.UTC().Add(-24*time.Hour), closeAt.UTC().Add(24*time.Hour))
+	if err != nil {
+		return DayAvailability{}, err
+	}
 	now := time.Now().UTC()
 	durationMin := service.DurationMin
 	stepMin := settings.SlotStepMin
@@ -122,6 +132,12 @@ func (s AvailabilityService) Day(slug, date, serviceID, professionalID string) (
 				}
 				end := start.Add(time.Duration(durationMin) * time.Minute)
 				if overlapsAny(booked, p.ID, start, end) {
+					continue
+				}
+				// La ausencia manda aunque el hueco esté libre: no está para
+				// atender. El período es semiabierto, así que un turno que
+				// arranca justo cuando termina la ausencia SÍ se ofrece.
+				if awayAny(absences, p.ID, start, end) {
 					continue
 				}
 				slots = append(slots, Slot{ProfessionalID: p.ID, StartsAt: start.UTC(), EndsAt: end.UTC()})

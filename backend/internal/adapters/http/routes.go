@@ -23,6 +23,8 @@ type Deps struct {
 	Members       MemberHandler
 	// Hours es el horario semanal del salón y de cada profesional (F2d1).
 	Hours HoursHandler
+	// TimeOff son las ausencias de las profesionales (F2d2).
+	TimeOff TimeOffHandler
 	// PublicBookingLimit limita por IP el POST público de reservas (nil = sin
 	// límite, como en los tests unitarios del router).
 	PublicBookingLimit gin.HandlerFunc
@@ -81,6 +83,12 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.PUT("/salons/:id/hours", d.Hours.UpdateSalon)
 	authed.GET("/salons/:id/members/:uid/hours", d.Hours.GetMember)
 	authed.PUT("/salons/:id/members/:uid/hours", d.Hours.UpdateMember)
+
+	// F2d2: ausencias (vacaciones y días libres puntuales) de cada profesional.
+	// Cualquier miembro las lee; solo dueño/administración las carga y borra.
+	authed.GET("/salons/:id/time-off", d.TimeOff.List)
+	authed.POST("/salons/:id/members/:uid/time-off", d.TimeOff.Create)
+	authed.DELETE("/salons/:id/time-off/:tid", d.TimeOff.Delete)
 
 	// Equipo del salón (select de profesional de la agenda)
 	authed.GET("/salons/:id/staff", d.Staff.List)

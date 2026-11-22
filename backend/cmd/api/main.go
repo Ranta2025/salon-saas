@@ -175,6 +175,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F2d1: horario semanal del salón y de cada profesional (sin filas =
 	// comportamiento de siempre).
 	weeklyHours := pgstore.WeeklyHours{Pool: pool}
+	// F2d2: ausencias (vacaciones y días libres puntuales) de cada profesional.
+	timeOffRepo := pgstore.TimeOff{Pool: pool}
 
 	// Realtime: el hub es el EventPublisher de los casos de uso (no saben que
 	// hay websockets). Autentica el JWT del query param, valida el Origin con la
@@ -218,6 +220,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	settingsSvc := app.SettingsService{Settings: salons, Memberships: mems}
 	salonHoursSvc := app.SalonHoursService{Hours: weeklyHours, Settings: salons, Memberships: mems}
 	professionalHoursSvc := app.ProfessionalHoursService{Hours: weeklyHours, Memberships: mems}
+	// F2d2: las ausencias se cargan desde Equipo y las consultan la agenda (con
+	// los turnos en conflicto) y la disponibilidad pública.
+	timeOffSvc := app.TimeOffService{TimeOff: timeOffRepo, Bookings: bookings, Memberships: mems}
 	memberSvc := app.MemberService{
 		Members: mems, Memberships: mems, Users: users,
 		Professionals: professionals, Services: servicesRepo,
@@ -225,6 +230,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	availabilitySvc := app.AvailabilityService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems,
 		Bookings: bookings, Professionals: professionals, Hours: weeklyHours,
+		TimeOff: timeOffRepo,
 	}
 	// Email a clientes (T12): adaptador SMTP del puerto MailSender. Sin
 	// SMTP_HOST el sender queda deshabilitado y los casos de uso lo ven como
@@ -245,7 +251,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	reminders := app.ReminderService{Emails: bookingEmails, Mailer: mailer, Settings: salons}
 	publicBookingSvc := app.PublicBookingService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems, Bookings: bookings,
-		Professionals: professionals, Hours: weeklyHours,
+		Professionals: professionals, Hours: weeklyHours, TimeOff: timeOffRepo,
 		Clients: clientsRepo, // cada reserva pública deja la ficha de la clienta (E-03)
 		Events:  hub, Notifier: notifSvc,
 		Mailer: mailer, Emails: bookingEmails,
@@ -290,6 +296,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Hours: httpapi.HoursHandler{
 			Salon: salonHoursSvc, Professional: professionalHoursSvc, Memberships: mems,
 		},
+		TimeOff: httpapi.TimeOffHandler{TimeOff: timeOffSvc, Memberships: mems},
 		// La reserva pública es la única escritura sin auth: rate limit por IP
 		// como en /auth (el GET de disponibilidad no pasa por acá).
 		PublicBookingLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/salons/"),
