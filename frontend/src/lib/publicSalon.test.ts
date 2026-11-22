@@ -64,3 +64,30 @@ test('toLandingServices falls back to the static catalogue when the API sends no
   const fallback: readonly LandingService[] = SERVICES
   assert.equal(toLandingServices([], fallback), fallback)
 })
+
+test('normalizePublicSalon reads the public hours of the week', () => {
+  const salon = normalizePublicSalon({
+    ...payload,
+    hours: [
+      { weekday: 1, open: '09:00', close: '19:00' },
+      { weekday: 6, open: '09:00', close: '14:00' },
+      { weekday: 9, open: '09:00', close: '19:00' },
+    ],
+  })
+  assert.ok(salon)
+  assert.deepEqual(salon.hours, [
+    { weekday: 1, open: '09:00', close: '19:00' },
+    { weekday: 6, open: '09:00', close: '14:00' },
+  ])
+})
+
+test('normalizePublicSalon leaves hours null when the field is missing or unusable', () => {
+  assert.equal(normalizePublicSalon(payload)?.hours, null)
+  assert.equal(normalizePublicSalon({ ...payload, hours: [] })?.hours, null)
+  assert.equal(normalizePublicSalon({ ...payload, hours: 'nope' })?.hours, null)
+  assert.equal(
+    normalizePublicSalon({ ...payload, hours: [{ weekday: 9, open: '09:00', close: '19:00' }] })
+      ?.hours,
+    null,
+  )
+})

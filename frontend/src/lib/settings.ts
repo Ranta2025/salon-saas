@@ -5,6 +5,7 @@
  */
 
 import { request } from './api.ts'
+import { normalizeSalonHours, type SalonDay, type SalonHours } from './weeklyHours.ts'
 
 export type SalonSettings = {
   timezone: string
@@ -195,4 +196,37 @@ export async function saveSettings(
     body: toSettingsPayload(draft),
   })
   return normalizeSettings(body)
+}
+
+// --- weekly hours of the salon (F2d1) ---
+
+function hoursPath(salonId: string): string {
+  return `/api/v1/salons/${encodeURIComponent(salonId)}/hours`
+}
+
+/**
+ * `GET /salons/:id/hours` (contract S-F2d1-4): the open days and whether they
+ * are custom. `custom = false` means the single opening window of `/settings`
+ * expanded to the seven days.
+ */
+export async function fetchSalonHours(salonId: string): Promise<SalonHours> {
+  return normalizeSalonHours(await request<unknown>(hoursPath(salonId)))
+}
+
+/**
+ * `PUT /salons/:id/hours`: atomic replacement. An empty list goes back to the
+ * single opening window of the settings page. The server sentences of a `400`
+ * («Máximo 4 tramos por día», «Día inválido»…) reach the screen verbatim.
+ */
+export async function saveSalonHours(
+  salonId: string,
+  days: readonly SalonDay[],
+): Promise<SalonHours> {
+  const body = await request<unknown>(hoursPath(salonId), {
+    method: 'PUT',
+    body: {
+      days: days.map((day) => ({ weekday: day.weekday, open: day.open, close: day.close })),
+    },
+  })
+  return normalizeSalonHours(body)
 }

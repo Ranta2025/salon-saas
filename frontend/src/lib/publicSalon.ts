@@ -5,6 +5,7 @@
  */
 
 import type { LandingService } from '../landing/content.ts'
+import { normalizeDays, type SalonDay } from './weeklyHours.ts'
 
 export type PublicService = {
   id: string
@@ -16,6 +17,12 @@ export type PublicService = {
 export type PublicSalon = {
   salon: { id: string; slug: string; name: string }
   services: PublicService[]
+  /**
+   * `hours` of the public salon (F2d1): the open days only, already expanded by
+   * the server. `null` means the API did not send a usable field, so the landing
+   * asks to confirm by WhatsApp instead of inventing hours.
+   */
+  hours: SalonDay[] | null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -61,6 +68,8 @@ export function normalizePublicSalon(raw: unknown): PublicSalon | null {
     return null
   }
   const salon = isRecord(raw['salon']) ? raw['salon'] : {}
+  const hoursRaw = raw['hours']
+  const hours = Array.isArray(hoursRaw) ? normalizeDays(hoursRaw) : []
   return {
     salon: {
       id: text(salon['id']),
@@ -68,6 +77,7 @@ export function normalizePublicSalon(raw: unknown): PublicSalon | null {
       name: text(salon['name']),
     },
     services,
+    hours: hours.length > 0 ? hours : null,
   }
 }
 

@@ -4,10 +4,12 @@ import { API_BASE, ApiError } from './api.ts'
 import { clearToken, setToken } from './session.ts'
 import {
   addMember,
+  fetchMemberHours,
   fetchMembers,
   normalizeMemberEmail,
   normalizeMembers,
   removeMember,
+  saveMemberHours,
   setMemberAttends,
   setMemberServices,
   setMemberTrade,
@@ -365,6 +367,71 @@ test('setMemberServices accepts the empty list and surfaces the server message v
         assert.ok(err instanceof ApiError)
         assert.equal(err.status, 400)
         assert.equal(err.message, 'Servicio inválido')
+        return true
+      },
+    )
+  } finally {
+    stub.restore()
+    clearToken()
+  }
+})
+
+test('fetchMemberHours reads the segments of one member and its custom flag', async () => {
+  const stub = stubFetch(() =>
+    json({
+      segments: [
+        { weekday: 1, start: '09:00', end: '13:00' },
+        { weekday: 1, start: '14:00', end: '19:00' },
+      ],
+      custom: true,
+    }),
+  )
+  try {
+    setToken('jwt-member-hours')
+    const hours = await fetchMemberHours('s1', 'u2')
+    assert.equal(stub.calls[0]?.url, `${API_BASE}/api/v1/salons/s1/members/u2/hours`)
+    assert.equal(stub.calls[0]?.headers.Authorization, 'Bearer jwt-member-hours')
+    assert.deepEqual(hours, {
+      segments: [
+        { weekday: 1, start: '09:00', end: '13:00' },
+        { weekday: 1, start: '14:00', end: '19:00' },
+      ],
+      custom: true,
+    })
+  } finally {
+    stub.restore()
+    clearToken()
+  }
+})
+
+test('saveMemberHours PUTs the segments and the empty list means "same as the salon"', async () => {
+  const stub = stubFetch(() => json({ segments: [], custom: false }))
+  try {
+    setToken('jwt-member-hours')
+    await saveMemberHours('s1', 'u2', [{ weekday: 3, start: '10:00', end: '16:00' }])
+    assert.equal(stub.calls[0]?.url, `${API_BASE}/api/v1/salons/s1/members/u2/hours`)
+    assert.equal(stub.calls[0]?.method, 'PUT')
+    assert.deepEqual(JSON.parse(stub.calls[0]?.body ?? '{}'), {
+      segments: [{ weekday: 3, start: '10:00', end: '16:00' }],
+    })
+    assert.deepEqual(await saveMemberHours('s1', 'u2', []), { segments: [], custom: false })
+    assert.deepEqual(JSON.parse(stub.calls[1]?.body ?? '{}'), { segments: [] })
+  } finally {
+    stub.restore()
+    clearToken()
+  }
+})
+
+test('saveMemberHours keeps the server sentence verbatim and never rewrites it', async () => {
+  const stub = stubFetch(() => json({ error: 'Máximo 4 tramos por día' }, 400))
+  try {
+    setToken('jwt-member-hours')
+    await assert.rejects(
+      () => saveMemberHours('s1', 'u2', [{ weekday: 1, start: '09:00', end: '13:00' }]),
+      (err: unknown) => {
+        assert.ok(err instanceof ApiError)
+        assert.equal(err.status, 400)
+        assert.equal(err.message, 'Máximo 4 tramos por día')
         return true
       },
     )

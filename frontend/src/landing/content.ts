@@ -1,22 +1,11 @@
 /** Copy and content of the public landing page. UI copy is Spanish, identifiers English. */
 
 /**
- * Opening window printed by the landing.
- *
- * The public API (`GET /public/salons/:slug` and `/availability`) exposes free
- * slots, not the salon window, so the landing cannot know the real hours without
- * an authenticated `GET /salons/:id/settings`. One constant feeds every place
- * that prints the hours, and each of them labels it "horario indicativo" — see
- * docs/design/fase5-frontend.md (§11) for the limitation.
+ * Text shown while the public API does not send the `hours` of the salon
+ * (F2d1, S-F2d1-6). The landing never invents opening hours: it invites to
+ * confirm them on WhatsApp instead.
  */
-export const PUBLIC_OPENING_HOURS = {
-  opensAt: '9:00',
-  closesAt: '20:00',
-  saturdayOpensAt: '9:00',
-  saturdayClosesAt: '18:00',
-} as const
-
-export const PUBLIC_HOURS_NOTE = 'horario indicativo'
+export const PUBLIC_HOURS_FALLBACK = 'Consultá el horario por WhatsApp'
 
 /**
  * Contact phone of the salon: ONE constant for the header, the footer and the
@@ -41,17 +30,6 @@ export const SALON = {
   email: 'hola@aurelia.mx',
   instagram: '@aurelia.estudio',
   instagramUrl: 'https://instagram.com/',
-  hours: [
-    {
-      days: 'Lunes a viernes',
-      time: `${PUBLIC_OPENING_HOURS.opensAt} – ${PUBLIC_OPENING_HOURS.closesAt}`,
-    },
-    {
-      days: 'Sábado',
-      time: `${PUBLIC_OPENING_HOURS.saturdayOpensAt} – ${PUBLIC_OPENING_HOURS.saturdayClosesAt}`,
-    },
-    { days: 'Domingo', time: 'Cerrado' },
-  ],
 } as const
 
 export type NavLink = { href: string; label: string }

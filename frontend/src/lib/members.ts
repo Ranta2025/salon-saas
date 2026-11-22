@@ -7,6 +7,7 @@
 import { request } from './api.ts'
 import type { SalonRole } from './me.ts'
 import { normalizeServiceIds, normalizeTrade } from './tradeServices.ts'
+import { normalizeMemberHours, type DaySegment, type MemberHours } from './weeklyHours.ts'
 
 export type SalonMember = {
   id: string
@@ -179,6 +180,48 @@ export async function setMemberServices(
     throw new Error('El servidor guardó los servicios pero no devolvió la lista.')
   }
   return normalizeServiceIds(body['service_ids'])
+}
+
+// --- weekly hours of one professional (F2d1) ---
+
+function memberHoursPath(salonId: string, userId: string): string {
+  return `${membersPath(salonId)}/${encodeURIComponent(userId)}/hours`
+}
+
+/**
+ * `GET /salons/:id/members/:uid/hours` (contract S-F2d1-4). No rows means the
+ * professional follows the salon schedule.
+ */
+export async function fetchMemberHours(
+  salonId: string,
+  userId: string,
+): Promise<MemberHours> {
+  return normalizeMemberHours(
+    await request<unknown>(memberHoursPath(salonId, userId)),
+  )
+}
+
+/**
+ * `PUT /salons/:id/members/:uid/hours`, atomic replacement. The empty list
+ * means "same as the salon" (S-F2d1-2) and a `400` keeps the server sentence
+ * verbatim («Los tramos de un mismo día no pueden solaparse»).
+ */
+export async function saveMemberHours(
+  salonId: string,
+  userId: string,
+  segments: readonly DaySegment[],
+): Promise<MemberHours> {
+  const body = await request<unknown>(memberHoursPath(salonId, userId), {
+    method: 'PUT',
+    body: {
+      segments: segments.map((segment) => ({
+        weekday: segment.weekday,
+        start: segment.start,
+        end: segment.end,
+      })),
+    },
+  })
+  return normalizeMemberHours(body)
 }
 
 export async function removeMember(salonId: string, userId: string): Promise<void> {

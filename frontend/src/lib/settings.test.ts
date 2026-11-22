@@ -6,8 +6,10 @@ import {
   DEFAULT_SETTINGS,
   SLOT_STEPS,
   TIME_ZONES,
+  fetchSalonHours,
   fetchSettings,
   normalizeSettings,
+  saveSalonHours,
   saveSettings,
   toSettingsPayload,
   validateSettings,
@@ -178,6 +180,73 @@ test('saveSettings surfaces the server message when the API rejects the change',
         assert.ok(err instanceof ApiError)
         assert.equal(err.status, 403)
         assert.match(err.message, /owner o admin/)
+        return true
+      },
+    )
+  } finally {
+    stub.restore()
+    clearToken()
+  }
+})
+
+test('fetchSalonHours reads the weekly hours and the custom flag', async () => {
+  const stub = stubFetch(() =>
+    json({
+      days: [
+        { weekday: 1, open: '09:00', close: '19:00' },
+        { weekday: 6, open: '09:00', close: '14:00' },
+      ],
+      custom: true,
+    }),
+  )
+  try {
+    setToken('jwt-hours')
+    const hours = await fetchSalonHours('s1')
+    assert.equal(stub.calls[0]?.url, `${API_BASE}/api/v1/salons/s1/hours`)
+    assert.equal(stub.calls[0]?.headers.Authorization, 'Bearer jwt-hours')
+    assert.deepEqual(hours, {
+      days: [
+        { weekday: 1, open: '09:00', close: '19:00' },
+        { weekday: 6, open: '09:00', close: '14:00' },
+      ],
+      custom: true,
+    })
+  } finally {
+    stub.restore()
+    clearToken()
+  }
+})
+
+test('saveSalonHours PUTs the open days and an empty list resets the single window', async () => {
+  const stub = stubFetch(() => json({ days: [], custom: false }))
+  try {
+    setToken('jwt-hours')
+    await saveSalonHours('s1', [{ weekday: 1, open: '09:00', close: '19:00' }])
+    assert.equal(stub.calls[0]?.url, `${API_BASE}/api/v1/salons/s1/hours`)
+    assert.equal(stub.calls[0]?.method, 'PUT')
+    assert.deepEqual(JSON.parse(stub.calls[0]?.body ?? '{}'), {
+      days: [{ weekday: 1, open: '09:00', close: '19:00' }],
+    })
+    assert.deepEqual(await saveSalonHours('s1', []), { days: [], custom: false })
+    assert.deepEqual(JSON.parse(stub.calls[1]?.body ?? '{}'), { days: [] })
+  } finally {
+    stub.restore()
+    clearToken()
+  }
+})
+
+test('saveSalonHours surfaces the server sentence verbatim', async () => {
+  const stub = stubFetch(() =>
+    json({ error: 'Los tramos de un mismo día no pueden solaparse' }, 400),
+  )
+  try {
+    setToken('jwt-hours')
+    await assert.rejects(
+      () => saveSalonHours('s1', [{ weekday: 1, open: '09:00', close: '19:00' }]),
+      (err: unknown) => {
+        assert.ok(err instanceof ApiError)
+        assert.equal(err.status, 400)
+        assert.equal(err.message, 'Los tramos de un mismo día no pueden solaparse')
         return true
       },
     )
