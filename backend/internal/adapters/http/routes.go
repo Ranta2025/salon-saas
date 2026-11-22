@@ -90,10 +90,12 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.GET("/salons/:id/notifications", d.Notifications.List)
 	authed.POST("/notifications/:nid/read", d.Notifications.MarkRead)
 
-	// Clientes y adjuntos
+	// Clientes y adjuntos. La subida de fotos se registra sobre el ENGINE con su
+	// ruta completa (routePhotoUpload) y el mismo AuthMiddleware: es el string
+	// que usa MaxJSONBody para saber que la ruta tiene tope de body propio.
 	authed.GET("/salons/:id/clients", d.Clients.List)
 	authed.POST("/salons/:id/clients", d.Clients.Create)
-	authed.POST("/salons/:id/clients/:cid/photos", d.Clients.AddPhoto)
+	r.POST(routePhotoUpload, AuthMiddleware(d.TokenIssuer), d.Clients.AddPhoto)
 	authed.GET("/salons/:id/clients/:cid/photos", d.Clients.ListPhotos)
 	authed.DELETE("/salons/:id/clients/:cid/photos/:pid", d.Clients.DeletePhoto)
 

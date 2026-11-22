@@ -5,33 +5,41 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-// MaxJSONBody acota el body de los pedidos JSON (B-11): 1 MB es holgadísimo
-// para cualquier payload de esta API y evita que un body de gigabytes se parsee
-// entero en memoria. El multipart (fotos de hasta 8 MB) tiene su propio tope en
-// readUpload, así que este middleware no lo toca.
+// routePhotoUpload identifica la ÚNICA ruta con tope de body propio (más
+// grande que el JSON): la subida de fotos, que valida readUpload.
+// MaxJSONBody la salta por RUTA, no por Content-Type.
+const routePhotoUpload = "/api/v1/salons/:id/clients/:cid/photos"
+
+// MaxJSONBody acota el body a `limit` por RUTA (H1). El Content-Type lo elige el
+// cliente, así que decidir por él era un bypass trivial: un body de gigabytes
+// con "multipart/form-data" o "image/png" apagaba el tope en cualquier endpoint
+// JSON. Con Content-Length declarado se rechaza antes de leer nada; sin él, el
+// MaxBytesReader corta la lectura igual (el binding falla y la ruta responde
+// 400). La subida de fotos queda exenta porque tiene su propio tope (8 MB) en
+// readUpload, que además rechaza lo que no es imagen.
 func MaxJSONBody(limit int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ct := strings.ToLower(c.GetHeader("Content-Type"))
-		switch {
-		case strings.HasPrefix(ct, "multipart/form-data"):
-			// El tope de las fotos (8 MB + overhead) lo aplica readUpload.
+		if hasOwnBodyLimit(c.FullPath()) {
 			c.Next()
 			return
-		case strings.HasPrefix(ct, "image/"):
-			// Subida cruda de una imagen (curl/Postman): también la acota
-			// readUpload, no este middleware.
-			c.Next()
+		}
+		if c.Request.ContentLength > limit {
+			c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{"error": "body demasiado grande"})
 			return
 		}
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 		c.Next()
 	}
+}
+
+// hasOwnBodyLimit dice si la ruta aplica su propio tope (subida de fotos).
+func hasOwnBodyLimit(fullPath string) bool {
+	return fullPath == routePhotoUpload
 }
 
 // RequestLogger es el log de acceso, con el token del websocket redactado

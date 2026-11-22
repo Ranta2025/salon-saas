@@ -18,7 +18,14 @@ type IPRateLimiter struct {
 	window time.Duration
 	mx     sync.Mutex
 	hits   map[string]*bucket
+	// calls cuenta llamadas desde el último barrido: cada purgeEvery se
+	// desalojan los cubos vencidos (H2). Sin esto el mapa crecía con cada IP
+	// nueva y no bajaba nunca: la memoria la elegía el cliente.
+	calls int
 }
+
+// purgeEvery: cada cuántas llamadas se barren los cubos vencidos.
+const purgeEvery = 512
 
 type bucket struct {
 	count int
@@ -31,12 +38,18 @@ func NewIPRateLimiter(limit int, window time.Duration) *IPRateLimiter {
 }
 
 // Allow consume un intento de la IP y dice si pasa. Los buckets vencidos se
-// reciclan en el mismo paso: no hace falta un goroutine de limpieza para el
-// volumen de esta API.
+// reciclan en el mismo paso y cada purgeEvery llamadas se barren los que ya no
+// se usan: el trabajo es amortizado (O(cubos) cada purgeEvery llamadas) y no
+// hace falta ningún goroutine que pudiera quedar colgado.
 func (rl *IPRateLimiter) Allow(ip string) bool {
 	now := time.Now()
 	rl.mx.Lock()
 	defer rl.mx.Unlock()
+	rl.calls++
+	if rl.calls >= purgeEvery {
+		rl.calls = 0
+		rl.purgeLocked(now)
+	}
 	b, ok := rl.hits[ip]
 	if !ok || now.After(b.reset) {
 		rl.hits[ip] = &bucket{count: 1, reset: now.Add(rl.window)}
@@ -47,6 +60,15 @@ func (rl *IPRateLimiter) Allow(ip string) bool {
 	}
 	b.count++
 	return true
+}
+
+// purgeLocked borra los cubos vencidos. Se llama con el mutex tomado.
+func (rl *IPRateLimiter) purgeLocked(now time.Time) {
+	for ip, b := range rl.hits {
+		if now.After(b.reset) {
+			delete(rl.hits, ip)
+		}
+	}
 }
 
 // Middleware aplica el límite solo a las rutas que empiezan con alguno de los

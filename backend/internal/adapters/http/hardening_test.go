@@ -162,7 +162,9 @@ func TestRequestLogger_redacta_token(t *testing.T) {
 	}
 }
 
-// B-11: un JSON de 2 MB se rechaza antes de parsearlo.
+// B-11/H1: un JSON de 2 MB se rechaza antes de parsearlo. El tope es por
+// RUTA, así que da igual el Content-Type que mande el cliente (el bypass por
+// "multipart/form-data" está cubierto en body_limit_test.go).
 func TestMaxJSONBody(t *testing.T) {
 	r := gin.New()
 	r.Use(MaxJSONBody(1 << 20))
@@ -179,8 +181,8 @@ func TestMaxJSONBody(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("body de 2 MB debe dar 400, dio %d", w.Code)
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("body de 2 MB debe dar 413, dio %d", w.Code)
 	}
 
 	// Un JSON chico sigue entrando.
@@ -192,13 +194,13 @@ func TestMaxJSONBody(t *testing.T) {
 		t.Fatalf("body chico debe pasar, dio %d %s", w.Code, w.Body.String())
 	}
 
-	// El multipart (fotos de hasta 8 MB) NO pasa por este tope: tiene el suyo.
+	// El multipart NO es una exención: mismo tope, misma respuesta.
 	req = httptest.NewRequest("POST", "/x", strings.NewReader(big))
 	req.Header.Set("Content-Type", "multipart/form-data; boundary=xyz")
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
-	if w.Code == http.StatusRequestEntityTooLarge {
-		t.Fatal("el tope de 1 MB no debe aplicarse al multipart")
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("el tope de 1 MB se aplica por ruta, también al multipart: dio %d", w.Code)
 	}
 }
 

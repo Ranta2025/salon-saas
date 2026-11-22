@@ -79,6 +79,13 @@ func main() {
 	log.Printf("media: %s", cfg.MediaDir)
 	log.Printf("storage: s3 endpoint=%q bucket=%q ssl=%v", cfg.S3Endpoint, cfg.S3Bucket, cfg.S3UseSSL)
 	log.Printf("cors: %v", cfg.CORSOrigins)
+	// Una línea para saber en qué modo quedó la IP del cliente (rate limit y
+	// logs): sin proxies confiables se ignora X-Forwarded-For.
+	if len(cfg.TrustedProxies) == 0 {
+		log.Print("trusted proxies: ninguno (la IP del cliente es el peer directo; X-Forwarded-For se ignora)")
+	} else {
+		log.Printf("trusted proxies: %v", cfg.TrustedProxies)
+	}
 	// Una sola línea al arrancar: con SMTP_HOST vacío no hay correo y la tarea
 	// de recordatorios no reclama nada (los deja para un entorno con email).
 	if cfg.SMTPHost == "" {
@@ -237,11 +244,11 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	router.Use(httpapi.MaxJSONBody(maxJSONBody))
 	// Rate limit por IP solo en auth (B-07).
 	router.Use(httpapi.RateLimit(authRateLimit, time.Minute, "/api/v1/auth/"))
-	// Los proxies confiables son las redes privadas del compose: el rate limit
-	// usa la IP real del cliente y no la del nginx. Sin esto, X-Forwarded-For
-	// sería una cabecera que cualquiera puede inventar.
-	if err := router.SetTrustedProxies([]string{"127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}); err != nil {
-		log.Printf("trusted proxies: %v", err)
+	// Proxies confiables (H3): la lista sale de TRUSTED_PROXIES (validada al
+	// leer la configuración). Vacía = la IP del cliente es el peer directo y
+	// X-Forwarded-For se ignora; detrás de un reverse proxy hay que setearla.
+	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		log.Fatalf("trusted proxies: %v", err)
 	}
 
 	router.GET("/health", func(c *gin.Context) {

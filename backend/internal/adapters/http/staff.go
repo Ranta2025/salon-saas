@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -16,14 +17,24 @@ type StaffHandler struct {
 	Memberships ports.MembershipRepository
 }
 
+// loadActor: la membresía de quien pide. "No es miembro" es 403; cualquier
+// otra falla (DB caída) es 500 con el detalle en el log (H4). Antes TODO error
+// de Find se veía como 403: la persona creía que no tenía permiso cuando el
+// problema era del servidor, y nadie miraba el log.
 func (h StaffHandler) loadActor(c *gin.Context, salonID string) (domain.Membership, bool) {
 	uid, _ := c.Get("userID")
 	m, err := h.Memberships.Find(uid.(string), salonID)
-	if err != nil {
+	if err == nil {
+		return m, true
+	}
+	if errors.Is(err, domain.ErrNotFound) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "sin acceso al salón"})
 		return domain.Membership{}, false
 	}
-	return m, true
+	// respondErr deja el detalle en el log del servidor y responde genérico: no
+	// agrega el id de la persona ni su email a la línea.
+	respondErr(c, err)
+	return domain.Membership{}, false
 }
 
 // List: GET /api/v1/salons/:id/staff -> {"staff":[{"id","name","role"}]}

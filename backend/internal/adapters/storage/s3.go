@@ -106,16 +106,35 @@ func (s S3) Get(path string) ([]byte, error) {
 		return nil, fmt.Errorf("storage s3: abrir %s: %w", clean, err)
 	}
 	defer obj.Close()
-	// GetObject es perezoso: el NoSuchKey aparece recién al leer/stat.
+	// GetObject es perezoso: el NoSuchKey y el tamaño aparecen recién al
+	// leer/stat, que es lo que hace readPhotoObject.
+	return readPhotoObject(obj, clean)
+}
+
+// objectReader es el objeto abierto de minio (GetObject es perezoso).
+type objectReader interface {
+	io.Reader
+	Close() error
+	Stat() (minio.ObjectInfo, error)
+}
+
+// readPhotoObject hace el trabajo de Get sobre un objeto ya abierto: valida
+// que exista (Stat) y lee con tope (H5). El tope es el mismo que acepta la
+// subida: un objeto más grande es un dato roto (key corrupta o bucket tocado
+// fuera de la API), no una foto, y no se carga entero en memoria.
+func readPhotoObject(obj objectReader, key string) ([]byte, error) {
 	if _, err := obj.Stat(); err != nil {
 		if isNoSuchKey(err) {
 			return nil, domain.ErrNotFound
 		}
-		return nil, fmt.Errorf("storage s3: leer %s: %w", clean, err)
+		return nil, fmt.Errorf("storage s3: leer %s: %w", key, err)
 	}
-	data, err := io.ReadAll(obj)
+	data, err := io.ReadAll(io.LimitReader(obj, domain.MaxPhotoBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("storage s3: leer %s: %w", clean, err)
+		return nil, fmt.Errorf("storage s3: leer %s: %w", key, err)
+	}
+	if int64(len(data)) > domain.MaxPhotoBytes {
+		return nil, fmt.Errorf("storage s3: el objeto %s supera el tope de %d bytes", key, domain.MaxPhotoBytes)
 	}
 	return data, nil
 }
