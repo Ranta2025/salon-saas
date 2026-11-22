@@ -37,6 +37,16 @@ Salieron de la revisión por tramos (S3 aprobado; S1 y S6 escalados sin texto de
 - [ ] H5 `storage/s3.go` hace `io.ReadAll` del objeto sin tope: agregar `LimitReader` (hoy lo acota el tope de 8 MB de subida).
 - [ ] H6 `backend/api` (binario compilado) aparece como archivo sin seguimiento: revisar que `.gitignore` lo cubra y borrarlo.
 
+## Contrato F2a (solo atiende quien debe)
+Regla: una persona es RESERVABLE (aparece en agenda, disponibilidad y selectores) si su rol es `professional` O tiene `attends = true`. Recepción y cliente nunca atienden. Un solo rol por persona (L3).
+- S-F2a-1 Migración 015 idempotente: `memberships.attends boolean not null default false`; backfill `true` para las filas existentes con rol owner, admin o professional (no cambia lo que hay hoy). Válida en base fresca y migrada.
+- S-F2a-2 Dominio: `Membership.Attends` y `Membership.Bookable()` (professional siempre; owner/admin si attends). `Role.IsStaff()` deja de decidir quién atiende: los 4 usos (public_bookings.go x2, professional.go, availability.go) pasan a la regla nueva. `StaffMember` lleva `Attends`.
+- S-F2a-3 Postgres: `ListStaff` devuelve `role='professional' OR attends`; `Find` de membership lee `attends`. Consultas siempre scopeadas por salon_id.
+- S-F2a-4 Alta: al crear un salón el owner nace con `attends=true` (salón de una persona); un profesional agregado queda con `attends=true`; admin/recepción con `false`.
+- S-F2a-5 API: `GET /salons/:id/members` agrega `attends` (bool) a cada miembro. Nuevo `PATCH /salons/:id/members/:uid` body `{"attends": true|false}` -> 200 con el miembro. Solo owner/admin. Rol `professional` no se puede poner en false -> 400 {"error":"Las profesionales siempre atienden"}; rol reception/client -> 400 {"error":"Ese rol no atiende clientes"}; miembro de otro salón -> 404; sin permiso -> 403. `POST /members` acepta `attends` opcional (default según S-F2a-4).
+- S-F2a-6 UI Equipo (`/panel/equipo`): interruptor "Atiende clientes" en dueño y administración (llama al PATCH, estado optimista con vuelta atrás ante error), etiqueta fija "Atiende" en profesionales, nada en recepción; aviso visible si NADIE atiende ("Nadie atiende todavía: activá 'Atiende clientes' en alguien para recibir turnos"). Textos en español, accesible por teclado, objetivos de 44 px.
+- Fuera de alcance de F2a: oficios, servicios por profesional, horarios, puestos (F2b..F2e).
+
 ## Riesgos conocidos
 - F11 toca dinero (riesgo alto): el estado del pago lo fija solo el servidor, el callback va firmado y es idempotente, nunca se confía en el navegador.
 - F10 y F11 piden revisión nativa RDD propia, cada una en su commit.
