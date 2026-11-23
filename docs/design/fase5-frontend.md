@@ -2198,3 +2198,116 @@ cargar la lista. Sin desborde horizontal: `scrollWidth === clientWidth` a 390 y
     salón.
   - No se agrega `<meta name="robots" content="noindex">`: ninguna página pública
     existente lo hace y `index.html` está fuera de esta entrega.
+
+## 26. Fase 6 — F4: exportar ventas, cierres de caja y clientes en CSV (frontend)
+
+Contrato: `odd/tasks/fase6-roadmap.md`, sección «Contrato F4 (exportar CSV de
+ventas, cierres de caja y clientes)». Esta entrega es **solo el frontend**: el
+backend de las tres rutas corre en paralelo, así que la API todavía puede no
+existir y todo se probó con `fetch` simulado sobre las formas congeladas.
+
+### 26.1 Ruta, menú y permisos
+
+- `App.tsx` suma `exportar` dentro de `/panel`; ninguna otra ruta cambia.
+  `AppShell.tsx` suma UNA entrada `managerOnly`, «Exportar» (14 entradas en el
+  menú; las cinco columnas de 375/390 px siguen entrando sin desborde, medida en
+  el navegador).
+- La página se guarda con `canExportCsv` (dueño y administración, D1) y muestra
+  `ManagerOnlyNotice` al resto, igual que Nómina, Gastos y Ganancias. Recepción y
+  profesional no ven la entrada del menú ni un solo botón de descarga. El
+  servidor sigue siendo la autoridad: su 403 se muestra **verbatim**.
+
+### 26.2 Lógica pura (`src/lib/exports.ts`)
+
+- Sin código de descarga nuevo: `fetchExportCsv` hace el `fetch` con `Bearer` y
+  `Accept: text/csv` (mismo patrón que `fetchPayrollRunCsv`, que no se toca),
+  limpia el token y avisa al shell en un 401 (igual que la nómina), y el nombre
+  del archivo sale de `Content-Disposition` con `csvDownloadFilename` (el helper
+  de la nómina, importado). `downloadExportCsv` delega en `savePayrollRunCsv`, que
+  crea el object URL, hace clic en el ancla y lo revoca.
+- **El CSV no se parsea nunca**: `ExportCsvFile` solo lleva `{kind, blob,
+  filename}`; el cuerpo viaja como Blob hasta la descarga y ninguna fila se
+  convierte en estado, tabla ni texto de la pantalla.
+- Las tres URLs son las del contrato y se arman en un solo lugar:
+  `/api/v1/salons/:id/export/sales.csv?from=&to=`,
+  `/export/cash-closes.csv?from=&to=` y `/export/clients.csv` **sin query**.
+- `checkExportRange` reutiliza la regla y la frase del rango de gastos (mismo
+  contrato, `Rango inválido: indicá desde y hasta (AAAA-MM-DD), hasta 366 días`);
+  un rango inválido se rechaza ANTES de cualquier pedido, y el botón queda
+  deshabilitado con la frase bajo las fechas. `defaultExportRange` son los
+  últimos 30 días terminando hoy; `loadExportContext` lee `GET
+  /salons/:id/settings` y calcula ese «hoy» en la zona del SALÓN (`America/Bogota`
+  en el mock, no la constante `America/Mexico_City`), con la zona conocida como
+  respaldo si la lectura falla.
+- `createExportGate` / `runExport`: la guarda de un solo archivo a la vez es
+  SÍNCRONA (el estado de React solo pinta el botón deshabilitado), así que un
+  doble clic en el mismo tick manda **una** request; el resultado de cada pulsación
+  es `done` (nombre guardado), `failed` (frase del servidor verbatim) o `busy`, y
+  la guarda se libera siempre, también después de un 400 o un 403.
+
+### 26.3 Pantalla `/panel/exportar`
+
+Cabecera «Exportar datos del salón», una tarjeta de rango (Desde/Hasta, atajo
+«Últimos 30 días», la pista con la zona del salón o la frase de error) y TRES
+tarjetas de descarga: «Ventas», «Cierres de caja» y «Clientes». Las dos primeras
+usan el rango y comparten sus botones; la de clientes no lleva rango y muestra el
+aviso del contrato: «Incluye teléfonos, emails y notas de tus clientas, que
+pueden contener datos de salud. Guardá el archivo con cuidado.». Cada botón dice
+«Descargando…» mientras corre, y al terminar la pantalla avisa «Guardado como
+<nombre del archivo>» con el nombre saneado que vino en `Content-Disposition`.
+Un 400 o un 403 se muestran en un `notice--error` **verbatim** y los botones
+vuelven a estar disponibles.
+
+### 26.4 Accesibilidad y estilos
+
+No hay cambios de hoja de estilo: se reutilizan `panel-card`, `filters`, `field`,
+`field__hint`, `field__error`, `input`, `btn`, `notice`, `empty-state` y
+`page-head`. Los botones miden 47 px y los campos 46 px (≥ 44) y
+`scrollWidth === clientWidth` a 390 y 1280 px. Todo es `button`/`input` nativo, así
+que el recorrido con `Tab` llega a «Exportar» y a los tres botones.
+
+### 26.5 Verificación
+
+- `npx tsc --noEmit` sin errores; `npm test` (**505 tests**, `node --test`; 482
+  eran de la entrega anterior y 23 son nuevos de `exports.test.ts`);
+  `npm run build` en verde.
+- TDD en `src/lib`: primero en rojo (`ERR_MODULE_NOT_FOUND` de `exports.ts`),
+  después en verde los 23 tests: las tres URLs exactas con y sin query, `Bearer` +
+  `Accept: text/csv` (y sin `Authorization` sin sesión), nombre desde
+  `Content-Disposition` saneado (`../../etc/passwd` → `etc-passwd.csv`), los
+  respaldos `ventas.csv`/`cierres.csv`/`clientes.csv`, el Blob intacto (BOM
+  incluido) y solo `{kind, blob, filename}`, el object URL creado y revocado, 401
+  que limpia el token, 400/403 verbatim, un doble clic = una request, los botones
+  usables después de un 400 y de un 403, el rango inválido sin ningún pedido, el
+  rango por defecto de 30 días y el «hoy» en la zona leída de `/settings` (dos
+  zonas al mismo instante), la frase del rango, el aviso de privacidad exacto y la
+  matriz de roles.
+- Revisión visual con el bundle de `vite build` y una API simulada en `/tmp/f4f`
+  (dueño con `timezone: America/Bogota`, ventas/cierres/clientes con
+  `Content-Disposition`, un 400 de tope de filas, un 403 y una sesión de
+  recepción) y Chromium headless por protocolo DevTools a **390 y 1280 px**, 11
+  capturas revisadas una por una: estado por defecto, rango inválido, ventas y
+  clientes descargados, 400 del servidor (1280 y 390), 403 verbatim y recepción
+  (aviso de administración y menú sin «Exportar»). Comprobado en el navegador:
+  - Los dos archivos llegaron a la carpeta de descargas con el nombre del
+    servidor (`ventas-2026-10-25_2026-11-23.csv`, `clientes-2026-11-10.csv`), BOM
+    y CRLF intactos, y **ninguna** fila del CSV aparece en la pantalla.
+  - Rango por defecto `2026-10-25 … 2026-11-23` con «hoy en el salón es
+    2026-11-23» en la zona del mock (Bogotá), no en la fija.
+  - Rango inválido: la frase del contrato bajo las fechas y los dos botones de
+    rango deshabilitados; el de clientes sigue activo (no depende del rango).
+  - 400 y 403 verbatim, y después del error los tres botones vuelven a estar
+    habilitados.
+  - `Tab` recorre el menú (incluida «Exportar») y los tres botones.
+- **Desviaciones conscientes:**
+  - El runner es `node --test src/**/*.test.ts` y no hay entorno DOM, así que no
+    se agregan tests de componente: las reglas de la página (guarda de un pedido,
+    rango validado antes de pedir, frases verbatim, nombre guardado) viven en
+    funciones puras de `exports.ts` con tests propios, y lo que es DOM (44 px,
+    desborde, descarga real) se verificó en el navegador.
+  - El contrato pide «tres tarjetas» y esta pantalla tiene cuatro bloques: la
+    tarjeta de rango es compartida por ventas y cierres (los dos exports llevan
+    las mismas dos fechas), y así no se duplican los campos ni sus ids.
+  - `ManagerOnlyNotice` conserva su texto actual («no puede ver la nómina ni las
+    comisiones del equipo») también en Exportar: es el hallazgo H20(g) del
+    roadmap y el componente queda fuera de las superficies de esta entrega.

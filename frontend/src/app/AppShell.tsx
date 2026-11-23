@@ -46,6 +46,8 @@ const NAV: readonly NavEntry[] = [
   // F3b: expenses and net profit are money, so only owner/admin see them.
   { to: '/panel/gastos', label: 'Gastos', end: false, managerOnly: true },
   { to: '/panel/ganancias', label: 'Ganancias', end: false, managerOnly: true },
+  // F4: the CSV exports include money and personal data, so only owner/admin.
+  { to: '/panel/exportar', label: 'Exportar', end: false, managerOnly: true },
   // Short label on purpose: the entries keep five columns without overflow at
   // 375/390 px (S-F2e-5, S-F3.2-5 and S-F3b). The page is titled «Mis comisiones».
   { to: '/panel/mis-comisiones', label: 'Comisiones', end: false, commissionsOnly: true },

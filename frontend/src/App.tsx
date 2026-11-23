@@ -7,6 +7,7 @@ import { ClientDetailPage } from './app/ClientDetailPage'
 import { ClientsPage } from './app/ClientsPage'
 import { EquipmentPage } from './app/EquipmentPage'
 import { ExpensesPage } from './app/ExpensesPage'
+import { ExportsPage } from './app/ExportsPage'
 import { InvitationPage } from './app/InvitationPage'
 import { LoginPage } from './app/LoginPage'
 import { MyAgendaPage } from './app/MyAgendaPage'
@@ -98,6 +99,7 @@ export function App() {
           <Route path="nomina" element={<PayrollPage />} />
           <Route path="gastos" element={<ExpensesPage />} />
           <Route path="ganancias" element={<ProfitPage />} />
+          <Route path="exportar" element={<ExportsPage />} />
           <Route path="nomina/liquidaciones/:rid" element={<PayrollRunDetailPage />} />
           <Route path="mis-comisiones" element={<MyCommissionsPage />} />
           <Route path="ajustes" element={<SettingsPage />} />
