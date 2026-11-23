@@ -10,7 +10,16 @@ import {
 import type { SalonMember } from './members.ts'
 
 function member(over: Partial<SalonMember> & Pick<SalonMember, 'id' | 'role'>): SalonMember {
-  return { name: over.id, email: '', attends: false, trade: '', service_ids: [], ...over }
+  return {
+    name: over.id,
+    email: '',
+    attends: false,
+    trade: '',
+    service_ids: [],
+    active: true,
+    ended_at: null,
+    ...over,
+  }
 }
 
 test('a professional always attends clients, even with the flag stored as false', () => {
@@ -97,4 +106,21 @@ test('applyAttends changes one member, never mutates and rolls back to the previ
 test('applyAttends leaves the list untouched when the person is not in it', () => {
   const before = [member({ id: 'u1', role: 'owner', attends: false })]
   assert.deepEqual(applyAttends(before, 'u9', true), before)
+})
+
+test('the "nobody attends" warning ignores the people who left the team', () => {
+  assert.equal(
+    nobodyAttends([
+      member({ id: 'u2', role: 'professional', active: false, ended_at: '2026-11-29T18:00:00.000Z' }),
+      member({ id: 'u3', role: 'reception' }),
+    ]),
+    true,
+  )
+  assert.equal(
+    nobodyAttends([
+      member({ id: 'u2', role: 'professional', active: false, ended_at: '2026-11-29T18:00:00.000Z' }),
+      member({ id: 'u1', role: 'owner', attends: true }),
+    ]),
+    false,
+  )
 })

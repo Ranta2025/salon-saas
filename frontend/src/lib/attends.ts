@@ -7,19 +7,20 @@
 
 import type { SalonMember } from './members.ts'
 import { isManager, type Role } from './permissions.ts'
+import { isActiveMember } from './teamStatus.ts'
 
 /** Copy of the notice shown when nobody of the team attends clients. */
 export const ATTENDS_NOTICE =
   "Nadie atiende todavía: activá 'Atiende clientes' en alguien para recibir turnos"
 
-export type AttendsMember = Pick<SalonMember, 'role' | 'attends'>
+export type AttendsMember = Pick<SalonMember, 'role' | 'attends' | 'active' | 'ended_at'>
 
 /**
  * Whether a member shows up in the agenda and the availability. A professional
  * always does — the flag is only meaningful for owner and admin — so a stale
  * payload can never take a professional out of the calendar.
  */
-export function memberAttends(member: AttendsMember): boolean {
+export function memberAttends(member: Pick<AttendsMember, 'role' | 'attends'>): boolean {
   if (member.role === 'professional') {
     return true
   }
@@ -51,11 +52,13 @@ export function attendsControl(
 }
 
 /**
- * True when the team is loaded, has at least one person and nobody attends
- * clients: the salon cannot receive bookings until someone does.
+ * True when the team has at least one ACTIVE person and nobody of them attends
+ * clients: the salon cannot receive bookings until someone does. Somebody who
+ * already left («dar de baja», F2g2) never silences the warning.
  */
 export function nobodyAttends(members: readonly AttendsMember[]): boolean {
-  return members.length > 0 && !members.some(memberAttends)
+  const team = members.filter(isActiveMember)
+  return team.length > 0 && !team.some(memberAttends)
 }
 
 /**

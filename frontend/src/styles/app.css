@@ -3589,3 +3589,123 @@
 .invite__card .notice {
   font-size: 0.875rem;
 }
+
+/* ---------- F2g2: dar de baja en vez de borrar (equipo) ---------- */
+
+.team-confirm {
+  display: grid;
+  justify-items: start;
+  gap: 0.3rem;
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+}
+
+.team-confirm__question {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.team-confirm__note {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+.team-confirm__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.team-confirm__buttons .btn,
+.ex-team__reactivate {
+  min-height: 44px;
+}
+
+.team-confirm__error {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--wine);
+  overflow-wrap: anywhere;
+}
+
+.ex-team__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  padding: 0 0.25rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ex-team__toggle:hover {
+  color: var(--wine);
+}
+
+.ex-team__chevron {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+.ex-team__list {
+  display: grid;
+  gap: 0.5rem;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ex-team__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--cream);
+}
+
+.ex-team__person {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.ex-team__name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ex-team__mail {
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.ex-team__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+}
+
+.ex-team__date {
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+}
+
+.ex-team__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+}

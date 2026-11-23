@@ -1555,3 +1555,118 @@ de 3 px de `base.css`. Etiquetas `<label for>` reales en todos los campos.
   - A 390 px el enlace completo no entra en el campo (un `input` no envuelve): se
     puede desplazar, se copia con el botón y, si el portapapeles falla, queda
     seleccionado para copiarlo a mano.
+
+## 21. Fase 6 — F2g2: dar de baja en vez de borrar (equipo)
+
+Contrato `odd/tasks/fase6-roadmap.md`, «Contrato F2g2» (formas de S-F2g2-4 y
+S-F2g2-5). Sin dependencias nuevas. El backend que implementa el contrato en
+paralelo no se tocó: la UI consume `GET /salons/:id/members` (cada item con
+`active` y `ended_at`, activos Y dados de baja),
+`DELETE /salons/:id/members/:uid` (204, ahora da de baja) y
+`POST /salons/:id/members/:uid/reactivate` (200 con el miembro). Las frases del
+servidor se muestran verbatim.
+
+### 21.1 Tipo y lectura (`src/lib/members.ts`)
+
+| campo | lectura |
+| --- | --- |
+| `SalonMember.active` | `memberships.ended_at IS NULL`; un payload **sin** el flag cuenta como activo, así un servidor anterior sigue funcionando |
+| `SalonMember.ended_at` | la fecha ISO de la baja, o `null`; un texto que no es fecha se descarta (no se imprime un día inventado) |
+| `deactivateMember(salonId, uid)` | `DELETE`, 204; el `409` de turnos pendientes y el `400` del último dueño se leen tal cual |
+| `reactivateMember(salonId, uid)` | `POST …/reactivate` → miembro normalizado; el `409` «Esa persona ya está en el equipo» se lee tal cual |
+
+Regla de consistencia: una fecha de baja siempre gana sobre un `active`
+contradictorio, así un payload a medio escribir no devuelve a nadie a la agenda.
+`GET /members` sigue devolviendo a los dados de baja: el filtro es del cliente.
+
+### 21.2 Reglas puras (`src/lib/teamStatus.ts`)
+
+| helper | regla |
+| --- | --- |
+| `isActiveMember` | `active !== false` **y** `ended_at === null`; la fecha manda sobre el flag |
+| `activeMembers` / `formerMembers` | el equipo en el orden del servidor, y el ex equipo con la baja más reciente primero (una baja sin fecha va última) |
+| `formerTeamLabel` | «Ex equipo (3)» con el conteo, nunca negativo |
+| `endedOnLabel` | «Dio de baja el 29 de noviembre» en la zona del salón (con el año solo si no es el actual; reutiliza `expiryDay` de F2g1); `null` con una fecha inusable, para omitir el día en vez de inventarlo |
+| `deactivateConfirmQuestion` / `DEACTIVATE_CONFIRM_NOTE` | «¿Dar de baja a Ana?» + «Conserva su historial y puede volver a entrar cuando quieras» |
+| `reactivateConfirmQuestion` / `REACTIVATE_CONFIRM_NOTE` | «¿Reactivar a Ana?» + «Vuelve a tener acceso al salón con el mismo rol.» |
+| `DEACTIVATE_SUCCESS` | «La persona ya no tiene acceso al salón. Su historial se conserva.» (texto del contrato) |
+| `reactivatedSuccess` | «Ana vuelve al equipo.» |
+| `applyMemberEndedAt` | cambio optimista sobre una copia: `null` reactiva; la lista recibida no se muta |
+| `restoreMember` | vuelta atrás **exacta**: repone la fila que el llamador guardó antes (mismo `active`, `ended_at`, oficio y servicios) |
+
+Filtro de todos los selectores: `bookableMembers` (`src/lib/tradeServices.ts`)
+ahora exige `isActiveMember`, `professionalsForService` se apoya en él (y con eso
+el conteo por servicio y los avisos de F2c), y `nobodyAttends`
+(`src/lib/attends.ts`) ignora a quien ya salió, para que el aviso «Nadie atiende
+todavía» no quede tapado por una baja. `ServicesPage` (selector de profesionales
+del alta de servicios), las tarjetas de oficio, ausencias y horario, y
+`TeamInvitations` (para el aviso de correo ya miembro) reciben solo activos.
+
+### 21.3 `/panel/equipo` (S-F2g2-5)
+
+- «Quitar» pasa a **«Dar de baja»** (`aria-label` «Dar de baja a <nombre>») con
+  confirmación en línea: la pregunta con el nombre, la nota de lo que se
+  conserva, «Sí, dar de baja» y «Volver». La fila sale de la tabla antes de la
+  respuesta (optimista) y vuelve **idéntica** si el servidor rechaza; el `409`
+  se imprime en la propia fila dentro de `role="alert"`
+  («Tiene 2 turnos pendientes: reasignalos o cancelalos antes de darla de baja»).
+  El aviso de éxito es el del contrato.
+- Las reglas de quién puede dar de baja a quién (el dueño a cualquiera, la
+  administración solo a profesional, recepción y cliente; el último dueño activo
+  no se da de baja) son **del servidor**: no se agregó ninguna guarda nueva en el cliente y su frase se
+  muestra tal cual.
+- La tabla principal («Quiénes tienen acceso», con su conteo) lista **solo
+  activos**.
+- Bloque plegable **«Ex equipo (N)»** debajo de la tabla, con
+  `aria-expanded`/`aria-controls` y sufijo «Ver a quiénes salieron»/«Ocultar»:
+  una fila por baja con nombre, correo, píldora del rol, «Dio de baja el 29 de
+  noviembre» y «Reactivar» (confirmación en línea «¿Reactivar a Ana?», que al
+  aceptar devuelve la persona al equipo con el mismo rol). Si la reactivación
+  falla, la fila no se mueve y la frase del servidor aparece en la fila. El
+  bloque no se dibuja cuando no hay nadie dado de baja.
+- El ex equipo no aparece en oficios, servicios, ausencias ni horarios: esas
+  tarjetas se arman con `bookableMembers`, que ya excluye a los dados de baja.
+
+### 21.4 Accesibilidad y estilos
+
+`app.css` suma el bloque «F2g2»: `.team-confirm` (columna con la pregunta, la
+nota, los botones y el error), `.team-confirm__buttons` y `.ex-team__*`
+(`__toggle` de 44 px con chevrón `aria-hidden`, `__list`, `__item` que envuelve a
+390 px, `__meta`, `__date`, `__actions`). Todos los botones nuevos son de 44 px y
+el foco es el anillo de 3 px de `base.css`; etiquetas reales y `role="group"` con
+nombre en cada confirmación. Medido en el navegador: `scrollWidth ===
+clientWidth` a 390 y 1280 px en todas las capturas, sin desborde del correo ni de
+las frases largas del servidor (`overflow-wrap`).
+
+### 21.5 Verificación
+
+- `npx tsc --noEmit` sin errores, `npm test` (**351 tests**, `node --test`; 332
+  eran de la entrega anterior, 19 nuevas) y `npm run build` en verde.
+- TDD en `src/lib` (primero en rojo: `ERR_MODULE_NOT_FOUND` de
+  `src/lib/teamStatus.ts`, `members.ts` sin exportar `deactivateMember`/
+  `reactivateMember`, y `bookableMembers`/`nobodyAttends` sin filtrar bajas —
+  5 tests en rojo): `teamStatus.test.ts` cubre quién está activo (incluida la
+  fecha que contradice al flag), el corte activos/ex equipo con su orden, la
+  etiqueta del bloque con el conteo, «Dio de baja el 29 de noviembre» (cruce de
+  medianoche en la zona, año distinto, fecha inusable), las copias de la
+  confirmación y del aviso de éxito, el cambio optimista de baja y de
+  reactivación sin mutar la lista, y la vuelta atrás exacta. `members.test.ts`
+  cubre la lectura de `active`/`ended_at` (sin flag, flag basura, fecha de baja
+  sin flag, fecha inusable, los dados de baja siguen en la lista), el `DELETE`
+  204 con el `409` verbatim de turnos pendientes y el `400` del último dueño, y el
+  `reactivate` (ruta, método, miembro devuelto y «Esa persona ya está en el
+  equipo»). `tradeServices.test.ts` y `attends.test.ts` cubren que los
+  selectores y el aviso de «nadie atiende» ignoren a los dados de baja.
+- Revisión visual con el bundle de `vite build` servido junto a una API simulada
+  en `/tmp/f2g2-shot` (tres activos y dos dados de baja, un `DELETE` que
+  responde `409` con la frase del contrato, otro `204`, y un `reactivate` 200) y
+  Chromium headless por protocolo DevTools (el flag `--screenshot` se cuelga en
+  este entorno) a **390 y 1280 px**, con 12 capturas revisadas una por una:
+  `/panel/equipo` (lista activa con «Dar de baja», confirmación de baja,
+  `409` de turnos pendientes en la fila, «Ex equipo (2)» plegado, desplegado con
+  las dos fechas, confirmación de reactivación y el aviso de baja exitosa).
+  Comprobado en el navegador: ningún `scrollWidth > clientWidth`, los botones
+  nuevos de 44 px y el foco del anillo de 3 px al tabular.
+- Fuera de alcance de esta entrega: borrar definitivamente, reasignación masiva
+  de turnos al dar de baja y columnas del calendario para los dados de baja
+  (el contrato los excluye).

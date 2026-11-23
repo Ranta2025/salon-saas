@@ -7,6 +7,7 @@ import {
   canEditTrade,
   NOBODY_DOES_SERVICE_NOTICE,
   NO_SERVICES_HINT,
+  bookableMembers,
   nobodyDoesService,
   normalizeServiceIds,
   normalizeTrade,
@@ -23,6 +24,8 @@ function member(overrides: Partial<SalonMember> & Pick<SalonMember, 'id' | 'role
     attends: false,
     trade: '',
     service_ids: [],
+    active: true,
+    ended_at: null,
     ...overrides,
   }
 }
@@ -117,4 +120,28 @@ test('applyMemberServices is optimistic and comes back to the saved list', () =>
   )
   const cleared = applyMemberServices(before, 'p1', [])
   assert.deepEqual(cleared[0]?.service_ids, [])
+})
+
+test('the pickers of professionals never offer somebody who left the team', () => {
+  const members = [
+    member({ id: 'p1', role: 'professional', service_ids: ['s1'] }),
+    member({
+      id: 'p2',
+      role: 'professional',
+      service_ids: ['s1'],
+      active: false,
+      ended_at: '2026-11-29T18:00:00.000Z',
+    }),
+    member({ id: 'o1', role: 'owner', attends: true, service_ids: ['s1'] }),
+  ]
+
+  assert.deepEqual(
+    bookableMembers(members).map((row) => row.id),
+    ['p1', 'o1'],
+  )
+  assert.deepEqual(
+    professionalsForService(members, 's1').map((row) => row.id),
+    ['p1', 'o1'],
+  )
+  assert.equal(professionalCount(members, 's1'), 2)
 })

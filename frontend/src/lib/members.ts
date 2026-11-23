@@ -27,6 +27,14 @@ export type SalonMember = {
   trade: string
   /** Services of `professional_services` that this person does (empty is valid). */
   service_ids: string[]
+  /**
+   * `active` (F2g2): false once the person was given de baja (`ended_at` set). A
+   * payload without the flag counts as active, so an older server keeps working;
+   * every picker filters with `isActiveMember`.
+   */
+  active: boolean
+  /** `memberships.ended_at` (F2g2): ISO date of the leave, or `null`. */
+  ended_at: string | null
 }
 
 const ROLES: readonly SalonRole[] = ['owner', 'admin', 'professional', 'reception']
@@ -54,6 +62,29 @@ function attends(value: unknown, role: SalonRole): boolean {
   return role === 'professional'
 }
 
+/**
+ * Reads `ended_at`: the ISO date of the leave, or `null`. A value that is not a
+ * date is dropped instead of printed as a day nobody can trust (F2g2).
+ */
+function endedAt(value: unknown): string | null {
+  const iso = text(value)
+  if (iso === '' || Number.isNaN(new Date(iso).getTime())) {
+    return null
+  }
+  return iso
+}
+
+/**
+ * Reads `active`. A date of leave always means the person left; without one, a
+ * missing or malformed flag counts as active (an older server does not send it).
+ */
+function active(value: unknown, left: string | null): boolean {
+  if (left !== null) {
+    return false
+  }
+  return typeof value === 'boolean' ? value : true
+}
+
 function normalizeMember(value: unknown): SalonMember | null {
   if (!isRecord(value)) {
     return null
@@ -63,6 +94,7 @@ function normalizeMember(value: unknown): SalonMember | null {
     return null
   }
   const memberRole = role(value['role'])
+  const left = endedAt(value['ended_at'])
   return {
     id,
     name: text(value['name']) || text(value['email']) || 'Persona sin nombre',
@@ -71,6 +103,8 @@ function normalizeMember(value: unknown): SalonMember | null {
     attends: attends(value['attends'], memberRole),
     trade: normalizeTrade(text(value['trade'])),
     service_ids: normalizeServiceIds(value['service_ids']),
+    active: active(value['active'], left),
+    ended_at: left,
   }
 }
 
@@ -224,8 +258,34 @@ export async function saveMemberHours(
   return normalizeMemberHours(body)
 }
 
-export async function removeMember(salonId: string, userId: string): Promise<void> {
+/**
+ * Gives a member de baja (`DELETE /salons/:id/members/:uid`, contract S-F2g2-4).
+ * The route still answers 204 and now keeps the row with `ended_at`, so the
+ * history survives. A 409 keeps the Spanish sentence verbatim: «Tiene 2 turnos
+ * pendientes: reasignalos o cancelalos antes de darla de baja».
+ */
+export async function deactivateMember(salonId: string, userId: string): Promise<void> {
   await request<unknown>(`${membersPath(salonId)}/${encodeURIComponent(userId)}`, {
     method: 'DELETE',
   })
+}
+
+/**
+ * Brings a member back (`POST /salons/:id/members/:uid/reactivate`, S-F2g2-4):
+ * the role, `attends` and `trade` of before are kept. A 409 keeps the sentence
+ * verbatim: «Esa persona ya está en el equipo».
+ */
+export async function reactivateMember(
+  salonId: string,
+  userId: string,
+): Promise<SalonMember> {
+  const body = await request<unknown>(
+    `${membersPath(salonId)}/${encodeURIComponent(userId)}/reactivate`,
+    { method: 'POST' },
+  )
+  const member = normalizeMember(body)
+  if (!member) {
+    throw new Error('El servidor reactivó a la persona pero no devolvió sus datos.')
+  }
+  return member
 }

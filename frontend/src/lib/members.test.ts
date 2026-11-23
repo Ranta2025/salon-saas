@@ -4,11 +4,12 @@ import { API_BASE, ApiError } from './api.ts'
 import { clearToken, setToken } from './session.ts'
 import {
   addMember,
+  deactivateMember,
   fetchMemberHours,
   fetchMembers,
   normalizeMemberEmail,
   normalizeMembers,
-  removeMember,
+  reactivateMember,
   saveMemberHours,
   setMemberAttends,
   setMemberServices,
@@ -62,6 +63,8 @@ test('normalizeMembers reads the team with id, name, email, role and attends', (
       attends: true,
       trade: '',
       service_ids: [],
+      active: true,
+      ended_at: null,
     },
     {
       id: 'u2',
@@ -71,6 +74,8 @@ test('normalizeMembers reads the team with id, name, email, role and attends', (
       attends: true,
       trade: '',
       service_ids: [],
+      active: true,
+      ended_at: null,
     },
     {
       id: 'u3',
@@ -80,6 +85,8 @@ test('normalizeMembers reads the team with id, name, email, role and attends', (
       attends: false,
       trade: '',
       service_ids: [],
+      active: true,
+      ended_at: null,
     },
   ])
 })
@@ -167,6 +174,8 @@ test('addMember POSTs a normalised email and the chosen role, and returns the ne
       attends: true,
       trade: '',
       service_ids: [],
+      active: true,
+      ended_at: null,
     })
   } finally {
     stub.restore()
@@ -195,13 +204,83 @@ test('addMember surfaces the server explanation when the person has no account y
   }
 })
 
-test('removeMember DELETEs the membership and accepts the empty 204 response', async () => {
+test('deactivateMember DELETEs the membership and accepts the empty 204 response', async () => {
   const stub = stubFetch(() => new Response(null, { status: 204 }))
   try {
     setToken('jwt-members')
-    await removeMember('s1', 'u2')
+    await deactivateMember('s1', 'u2')
     assert.equal(stub.calls[0]?.url, `${API_BASE}/api/v1/salons/s1/members/u2`)
     assert.equal(stub.calls[0]?.method, 'DELETE')
+  } finally {
+    stub.restore()
+    clearToken()
+  }
+})
+
+test('deactivateMember keeps the sentence of the pending bookings verbatim', async () => {
+  const stub = stubFetch(() =>
+    json({ error: 'Tiene 2 turnos pendientes: reasignalos o cancelalos antes de darla de baja' }, 409),
+  )
+  try {
+    setToken('jwt-members')
+    await assert.rejects(
+      () => deactivateMember('s1', 'u2'),
+      (err: unknown) => {
+        assert.ok(err instanceof ApiError)
+        assert.equal(err.status, 409)
+        assert.equal(
+          err.message,
+          'Tiene 2 turnos pendientes: reasignalos o cancelalos antes de darla de baja',
+        )
+        return true
+      },
+    )
+  } finally {
+    stub.restore()
+    clearToken()
+  }
+})
+
+test('reactivateMember POSTs to the reactivate route and returns the member', async () => {
+  const stub = stubFetch(() =>
+    json({
+      id: 'u2',
+      name: 'Beto',
+      email: 'beto@salon.mx',
+      role: 'professional',
+      trade: 'Barbero',
+      service_ids: ['s1'],
+      active: true,
+      ended_at: null,
+    }),
+  )
+  try {
+    setToken('jwt-members')
+    const member = await reactivateMember('s1', 'u2')
+    assert.equal(stub.calls[0]?.url, `${API_BASE}/api/v1/salons/s1/members/u2/reactivate`)
+    assert.equal(stub.calls[0]?.method, 'POST')
+    assert.equal(member.active, true)
+    assert.equal(member.ended_at, null)
+    assert.equal(member.trade, 'Barbero')
+  } finally {
+    stub.restore()
+    clearToken()
+  }
+})
+
+test('reactivateMember keeps the sentence of an already active person verbatim', async () => {
+  const stub = stubFetch(() => json({ error: 'Esa persona ya está en el equipo' }, 409))
+  try {
+    setToken('jwt-members')
+    await assert.rejects(
+      () => reactivateMember('s1', 'u2'),
+      (err: unknown) => {
+        assert.ok(err instanceof ApiError)
+        assert.equal(err.status, 409)
+        assert.equal(err.message, 'Esa persona ya está en el equipo')
+        return true
+      },
+    )
   } finally {
     stub.restore()
     clearToken()
@@ -226,6 +305,8 @@ test('setMemberAttends PATCHes only the attends flag and returns the saved membe
       attends: true,
       trade: '',
       service_ids: [],
+      active: true,
+      ended_at: null,
     })
   } finally {
     stub.restore()
@@ -252,14 +333,14 @@ test('setMemberAttends shows the server rule verbatim when the role always atten
   }
 })
 
-test('removeMember surfaces the rule about the last owner', async () => {
+test('deactivateMember surfaces the rule about the last owner', async () => {
   const stub = stubFetch(() =>
     json({ error: 'No se puede quitar al último owner del salón' }, 409),
   )
   try {
     setToken('jwt-members')
     await assert.rejects(
-      () => removeMember('s1', 'u1'),
+      () => deactivateMember('s1', 'u1'),
       (err: unknown) => {
         assert.ok(err instanceof ApiError)
         assert.equal(err.status, 409)
@@ -271,6 +352,57 @@ test('removeMember surfaces the rule about the last owner', async () => {
     stub.restore()
     clearToken()
   }
+})
+
+test('normalizeMembers reads the leave of the ex-team and keeps them in the list', () => {
+  const members = normalizeMembers({
+    members: [
+      { id: 'u1', name: 'Ana', role: 'owner', active: true, ended_at: null },
+      {
+        id: 'u2',
+        name: 'Beto',
+        role: 'professional',
+        active: false,
+        ended_at: '2026-11-29T18:00:00Z',
+      },
+    ],
+  })
+  assert.deepEqual(
+    members.map((row) => ({ id: row.id, active: row.active, ended_at: row.ended_at })),
+    [
+      { id: 'u1', active: true, ended_at: null },
+      { id: 'u2', active: false, ended_at: '2026-11-29T18:00:00Z' },
+    ],
+  )
+})
+
+test('a payload without the flag or with garbage still means an active person', () => {
+  const members = normalizeMembers({
+    members: [
+      // An older server never sends the fields: nobody disappears from the team.
+      { id: 'u1', name: 'Ana', role: 'owner' },
+      { id: 'u2', name: 'Beto', role: 'professional', active: 'sí' },
+      { id: 'u3', name: 'Rita', role: 'reception', active: false, ended_at: 'ayer' },
+      { id: 'u4', name: 'Sara', role: 'admin', ended_at: '' },
+    ],
+  })
+  assert.deepEqual(
+    members.map((row) => ({ id: row.id, active: row.active, ended_at: row.ended_at })),
+    [
+      { id: 'u1', active: true, ended_at: null },
+      { id: 'u2', active: true, ended_at: null },
+      { id: 'u3', active: false, ended_at: null },
+      { id: 'u4', active: true, ended_at: null },
+    ],
+  )
+})
+
+test('a date of leave without a flag still means the person left', () => {
+  const members = normalizeMembers({
+    members: [{ id: 'u2', name: 'Beto', role: 'professional', ended_at: '2026-11-29T18:00:00Z' }],
+  })
+  assert.equal(members[0]?.active, false)
+  assert.equal(members[0]?.ended_at, '2026-11-29T18:00:00Z')
 })
 
 test('normalizeMembers reads the trade and the services each person does', () => {

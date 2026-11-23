@@ -9,6 +9,7 @@
 import { memberAttends } from './attends.ts'
 import type { SalonMember } from './members.ts'
 import { isManager, type Role } from './permissions.ts'
+import { isActiveMember } from './teamStatus.ts'
 
 /** Domain limit of `memberships.trade` (contract S-F2c-2). */
 export const TRADE_MAX_LENGTH = 40
@@ -56,7 +57,7 @@ export function normalizeServiceIds(value: unknown): string[] {
   return ids
 }
 
-type WorkMember = Pick<SalonMember, 'role' | 'attends'>
+type WorkMember = Pick<SalonMember, 'role' | 'attends' | 'active' | 'ended_at'>
 
 /**
  * Who can edit the trade of a person: only owner/admin, and only for someone who
@@ -73,10 +74,11 @@ export function canEditServices(actorRole: Role | null | undefined, member: Work
 
 /**
  * Bookable members of the list: a professional always, an owner/admin only with
- * `attends`. Reception and stale flags never count (F2a).
+ * `attends`. Reception, stale flags and everybody who left the team never count
+ * (F2a, F2g2), so every picker of professionals is built on this filter.
  */
 export function bookableMembers(members: readonly SalonMember[]): SalonMember[] {
-  return members.filter(memberAttends)
+  return members.filter((member) => isActiveMember(member) && memberAttends(member))
 }
 
 /**
@@ -91,7 +93,7 @@ export function professionalsForService(
   if (id === '') {
     return []
   }
-  return members.filter((member) => memberAttends(member) && member.service_ids.includes(id))
+  return bookableMembers(members).filter((member) => member.service_ids.includes(id))
 }
 
 /** Count of professionals that do a service, read from `GET /members`. */

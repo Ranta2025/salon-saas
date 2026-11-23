@@ -4,14 +4,29 @@ import type { SalonRole } from '../lib/me'
 import type { Service } from '../types'
 import {
   addMember,
+  deactivateMember,
   fetchMembers,
   normalizeMemberEmail,
-  removeMember,
+  reactivateMember,
   setMemberAttends,
   setMemberServices,
   setMemberTrade,
   type SalonMember,
 } from '../lib/members'
+import {
+  DEACTIVATE_CONFIRM_NOTE,
+  DEACTIVATE_SUCCESS,
+  REACTIVATE_CONFIRM_NOTE,
+  activeMembers,
+  applyMemberEndedAt,
+  deactivateConfirmQuestion,
+  endedOnLabel,
+  formerMembers,
+  formerTeamLabel,
+  reactivateConfirmQuestion,
+  reactivatedSuccess,
+  restoreMember,
+} from '../lib/teamStatus'
 import {
   applyAttends,
   ATTENDS_NOTICE,
@@ -63,6 +78,12 @@ export function TeamPage() {
   const [saving, setSaving] = useState(false)
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null)
   const [removingId, setRemovingId] = useState<string | null>(null)
+  // Verbatim sentence of a refused leave (the 409 of pending turns) or of a
+  // refused reactivation, shown next to the row that asked for it (F2g2).
+  const [leaveError, setLeaveError] = useState<{ id: string; message: string } | null>(null)
+  const [confirmReactivateId, setConfirmReactivateId] = useState<string | null>(null)
+  const [reactivatingId, setReactivatingId] = useState<string | null>(null)
+  const [exTeamOpen, setExTeamOpen] = useState(false)
   const [pendingAttendsId, setPendingAttendsId] = useState<string | null>(null)
   const [attendsError, setAttendsError] = useState<string | null>(null)
   const [workServices, setWorkServices] = useState<Service[]>([])
@@ -115,8 +136,12 @@ export function TeamPage() {
   }, [salonId, allowed, reloadKey])
 
   const options = assignableRoles(role)
+  // Who is still in the team and who left (F2g2). The list keeps both: only the
+  // active ones are offered in the pickers and in the table of the page.
+  const team = activeMembers(members)
+  const exTeam = formerMembers(members)
   // The column only exists when someone can attend or be marked as attending.
-  const showAttends = members.some((member) => attendsControl(role, member.role) !== 'none')
+  const showAttends = team.some((member) => attendsControl(role, member.role) !== 'none')
   // Only who attends clients can have a trade and services (F2c).
   const bookable = bookableMembers(members)
 
@@ -351,19 +376,55 @@ export function TeamPage() {
     }
   }
 
-  const handleRemove = async (memberId: string): Promise<void> => {
-    setError(null)
+  /**
+   * Give somebody de baja (S-F2g2-5): the row leaves the table before the answer
+   * and comes back untouched if the server refuses (the 409 of pending turns is
+   * shown verbatim). The notice repeats what is kept, as the contract says.
+   */
+  const handleDeactivate = async (member: SalonMember): Promise<void> => {
     setNotice(null)
-    setRemovingId(memberId)
+    setLeaveError(null)
+    setRemovingId(member.id)
+    setMembers((list) => applyMemberEndedAt(list, member.id, new Date().toISOString()))
     try {
-      await removeMember(salonId, memberId)
-      setNotice('La persona ya no tiene acceso al salón.')
+      await deactivateMember(salonId, member.id)
+      setNotice(DEACTIVATE_SUCCESS)
       setConfirmRemoveId(null)
       reload()
     } catch (err: unknown) {
-      setError(describeApiError(err, 'No pudimos quitar a esa persona del equipo.'))
+      setMembers((list) => restoreMember(list, member))
+      setLeaveError({
+        id: member.id,
+        message: describeApiError(err, 'No pudimos dar de baja a esa persona.').message,
+      })
     } finally {
       setRemovingId(null)
+    }
+  }
+
+  /**
+   * Bring somebody back (S-F2g2-5): the person returns with the same role on the
+   * server; the row is restored exactly when the answer is an error.
+   */
+  const handleReactivate = async (member: SalonMember): Promise<void> => {
+    setNotice(null)
+    setLeaveError(null)
+    setReactivatingId(member.id)
+    setMembers((list) => applyMemberEndedAt(list, member.id, null))
+    try {
+      const saved = await reactivateMember(salonId, member.id)
+      setMembers((list) => restoreMember(list, saved))
+      setNotice(reactivatedSuccess(saved.name))
+      setConfirmReactivateId(null)
+      reload()
+    } catch (err: unknown) {
+      setMembers((list) => restoreMember(list, member))
+      setLeaveError({
+        id: member.id,
+        message: describeApiError(err, 'No pudimos reactivar a esa persona.').message,
+      })
+    } finally {
+      setReactivatingId(null)
     }
   }
 
@@ -374,7 +435,6 @@ export function TeamPage() {
         title="Equipo del salón"
         description="Quien tenga cuenta puede entrar al panel con el rol que le asignes. Solo la dueña o el dueño puede nombrar administración. Con el interruptor «Atiende clientes» decidís quién aparece en la agenda para recibir turnos."
       />
-
       {notice ? (
         <p className="notice notice--success" role="status">
           {notice}
@@ -431,12 +491,12 @@ export function TeamPage() {
         </button>
       </form>
 
-      <TeamInvitations salonId={salonId} actorRole={role} members={members} />
+      <TeamInvitations salonId={salonId} actorRole={role} members={team} />
 
       <section className="panel-card" aria-labelledby="team-list-title">
         <div className="panel-card__head">
           <h2 id="team-list-title">Quiénes tienen acceso</h2>
-          <span className="panel-card__meta">{members.length} personas</span>
+          <span className="panel-card__meta">{team.length} personas</span>
         </div>
         {loading && !loaded ? <LoadingState label="Cargando equipo…" /> : null}
         {loaded && nobodyAttends(members) ? (
@@ -449,10 +509,10 @@ export function TeamPage() {
             {attendsError}
           </p>
         ) : null}
-        {loaded && members.length === 0 ? (
+        {loaded && team.length === 0 ? (
           <p className="empty-state">Todavía no hay nadie más en el equipo.</p>
         ) : null}
-        {members.length > 0 ? (
+        {team.length > 0 ? (
           <div className="table-wrap">
             <table className="table table--stack">
               <thead>
@@ -467,7 +527,7 @@ export function TeamPage() {
                 </tr>
               </thead>
               <tbody>
-                {members.map((member) => {
+                {team.map((member) => {
                   const control = attendsControl(role, member.role)
                   const pending = pendingAttendsId === member.id
                   return (
@@ -506,32 +566,54 @@ export function TeamPage() {
                       ) : null}
                       <td data-label="Acciones" className="table__actions">
                         {confirmRemoveId === member.id ? (
-                          <span className="photo-confirm" role="group" aria-label="Confirmar baja">
-                            <span>¿Quitar el acceso?</span>
-                            <button
-                              type="button"
-                              className="btn btn--wine btn--sm"
-                              disabled={removingId === member.id}
-                              onClick={() => void handleRemove(member.id)}
-                            >
-                              Sí, quitar
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn--quiet btn--sm"
-                              onClick={() => setConfirmRemoveId(null)}
-                            >
-                              Volver
-                            </button>
+                          <span
+                            className="team-confirm"
+                            role="group"
+                            aria-label={`Confirmar baja de ${member.name}`}
+                          >
+                            <span className="team-confirm__question">
+                              {deactivateConfirmQuestion(member.name)}
+                            </span>
+                            <span className="team-confirm__note">
+                              {DEACTIVATE_CONFIRM_NOTE}
+                            </span>
+                            <span className="team-confirm__buttons">
+                              <button
+                                type="button"
+                                className="btn btn--wine btn--sm"
+                                disabled={removingId === member.id}
+                                onClick={() => void handleDeactivate(member)}
+                              >
+                                {removingId === member.id ? 'Dando de baja…' : 'Sí, dar de baja'}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn--quiet btn--sm"
+                                onClick={() => {
+                                  setConfirmRemoveId(null)
+                                  setLeaveError(null)
+                                }}
+                              >
+                                Volver
+                              </button>
+                            </span>
+                            {leaveError?.id === member.id ? (
+                              <span className="team-confirm__error" role="alert">
+                                {leaveError.message}
+                              </span>
+                            ) : null}
                           </span>
                         ) : (
                           <button
                             type="button"
                             className="btn btn--quiet btn--sm"
-                            onClick={() => setConfirmRemoveId(member.id)}
-                            aria-label={`Quitar el acceso de ${member.name}`}
+                            onClick={() => {
+                              setConfirmRemoveId(member.id)
+                              setLeaveError(null)
+                            }}
+                            aria-label={`Dar de baja a ${member.name}`}
                           >
-                            Quitar
+                            Dar de baja
                           </button>
                         )}
                       </td>
@@ -543,6 +625,110 @@ export function TeamPage() {
           </div>
         ) : null}
       </section>
+
+      {loaded && exTeam.length > 0 ? (
+        <section className="panel-card ex-team" aria-labelledby="ex-team-title">
+          <div className="panel-card__head">
+            <h2 id="ex-team-title">
+              <button
+                type="button"
+                className="ex-team__toggle"
+                aria-expanded={exTeamOpen}
+                aria-controls="ex-team-list"
+                onClick={() => setExTeamOpen((open) => !open)}
+              >
+                <span className="ex-team__chevron" aria-hidden="true">
+                  {exTeamOpen ? '▾' : '▸'}
+                </span>
+                {formerTeamLabel(exTeam.length)}
+              </button>
+            </h2>
+            <span className="panel-card__meta">
+              {exTeamOpen ? 'Ocultar' : 'Ver a quiénes salieron'}
+            </span>
+          </div>
+          {exTeamOpen ? (
+            <>
+              <p className="page-head__desc">
+                Ya no tienen acceso al salón, pero su historial de turnos y ventas se conserva.
+                Reactivar a alguien le devuelve el acceso con el mismo rol.
+              </p>
+              <ul id="ex-team-list" className="ex-team__list">
+              {exTeam.map((member) => {
+                const left = endedOnLabel(member.ended_at, { timeZone })
+                const pending = reactivatingId === member.id
+                return (
+                  <li key={member.id} className="ex-team__item">
+                    <div className="ex-team__person">
+                      <span className="ex-team__name">
+                        {member.name}
+                        {member.id === user?.id ? <span className="table__id">tú</span> : null}
+                      </span>
+                      <span className="ex-team__mail">{member.email || '—'}</span>
+                      <span className="ex-team__meta">
+                        <span className="pill pill--off">{roleLabel(member.role)}</span>
+                        <span className="ex-team__date">{left ?? 'Sin fecha de baja'}</span>
+                      </span>
+                    </div>
+                    <div className="ex-team__actions">
+                      {confirmReactivateId === member.id ? (
+                        <span
+                          className="team-confirm"
+                          role="group"
+                          aria-label={`Confirmar reactivación de ${member.name}`}
+                        >
+                          <span className="team-confirm__question">
+                            {reactivateConfirmQuestion(member.name)}
+                          </span>
+                          <span className="team-confirm__note">{REACTIVATE_CONFIRM_NOTE}</span>
+                          <span className="team-confirm__buttons">
+                            <button
+                              type="button"
+                              className="btn btn--wine btn--sm"
+                              disabled={pending}
+                              onClick={() => void handleReactivate(member)}
+                            >
+                              {pending ? 'Reactivando…' : 'Sí, reactivar'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn--quiet btn--sm"
+                              onClick={() => {
+                                setConfirmReactivateId(null)
+                                setLeaveError(null)
+                              }}
+                            >
+                              Volver
+                            </button>
+                          </span>
+                          {leaveError?.id === member.id ? (
+                            <span className="team-confirm__error" role="alert">
+                              {leaveError.message}
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn--quiet btn--sm ex-team__reactivate"
+                          onClick={() => {
+                            setConfirmReactivateId(member.id)
+                            setLeaveError(null)
+                          }}
+                          aria-label={`Reactivar a ${member.name}`}
+                        >
+                          Reactivar
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                )
+                })}
+              </ul>
+            </>
+          ) : null}
+        </section>
+      ) : null}
 
       {loaded ? (
         <section className="panel-card" aria-labelledby="team-work-title">
