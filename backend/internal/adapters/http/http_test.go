@@ -72,12 +72,14 @@ func (f *mm) Save(m domain.Membership) error {
 	if f.byKey == nil {
 		f.byKey = map[string]domain.Membership{}
 	}
+	// Upsert como pgstore: volver a guardar una membresía la deja ACTIVA.
+	m.EndedAt = nil
 	f.byKey[m.UserID+"|"+m.SalonID] = m
 	return nil
 }
 func (f *mm) Find(u, s string) (domain.Membership, error) {
 	m, ok := f.byKey[u+"|"+s]
-	if !ok {
+	if !ok || !m.Active() {
 		return domain.Membership{}, domain.ErrNotFound
 	}
 	return m, nil
@@ -87,7 +89,7 @@ func (f *mm) Find(u, s string) (domain.Membership, error) {
 func (f *mm) CountProfessionals(salonID string) (int, error) {
 	n := 0
 	for _, m := range f.byKey {
-		if m.SalonID == salonID && m.Role == domain.RoleProfessional {
+		if m.SalonID == salonID && m.Role == domain.RoleProfessional && m.Active() {
 			n++
 		}
 	}
@@ -98,7 +100,7 @@ func (f *mm) CountProfessionals(salonID string) (int, error) {
 func (f *mm) ListByUser(userID string) ([]domain.Membership, error) {
 	var out []domain.Membership
 	for _, m := range f.byKey {
-		if m.UserID == userID {
+		if m.UserID == userID && m.Active() {
 			out = append(out, m)
 		}
 	}

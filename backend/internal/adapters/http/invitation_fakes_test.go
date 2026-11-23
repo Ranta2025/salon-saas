@@ -168,11 +168,14 @@ func (f *minvitations) Revoke(salonID, id string, now time.Time) error {
 
 func (f *minvitations) SaveUser(u domain.User) error { return f.users.Save(u) }
 
+// MembershipExists dice si la persona ya es parte del salón. Una membresía dada
+// de baja NO lo es (S-F2g2-4): aceptar la invitación la reactiva con el rol de la
+// invitación, igual que el alta por email.
 func (f *minvitations) MembershipExists(salonID, userID string) (bool, error) {
 	unlock := f.lock()
 	defer unlock()
-	_, ok := f.mems.byKey[userID+"|"+salonID]
-	return ok, nil
+	m, ok := f.mems.byKey[userID+"|"+salonID]
+	return ok && m.Active(), nil
 }
 
 func (f *minvitations) SaveMembership(m domain.Membership) error {

@@ -5,8 +5,10 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
@@ -20,6 +22,11 @@ type MemberService struct {
 	// id asignado sea un servicio de ESTE salón (F2c).
 	Professionals ports.ProfessionalServiceRepository
 	Services      ports.ServiceRepository
+	// Tx es la transacción de la baja: desactivar y revocar las invitaciones
+	// pendientes que emitió commitean juntos o no pasan (S-F2g2-4).
+	Tx ports.MemberTxRunner
+	// Now es el reloj de la baja; nil = time.Now.
+	Now func() time.Time
 }
 
 // MemberPatch es el cuerpo del PATCH del equipo: los dos campos son opcionales
@@ -132,6 +139,7 @@ func (s MemberService) Add(actor domain.Membership, salonID, email string, role 
 	// servicios vacía (un profesional nuevo no hace nada hasta que se le asigne).
 	return s.withServices(salonID, domain.Member{
 		ID: user.ID, Name: user.Name, Email: user.Email, Role: role, Attends: membership.Attends,
+		Active: true,
 	})
 }
 
@@ -184,7 +192,7 @@ func (s MemberService) Update(actor domain.Membership, salonID, userID string, p
 	}
 	member := domain.Member{
 		ID: user.ID, Name: user.Name, Email: user.Email, Role: target.Role,
-		Attends: updated.Attends, Trade: updated.Trade,
+		Attends: updated.Attends, Trade: updated.Trade, Active: true,
 	}
 	return s.withServices(salonID, member)
 }
@@ -235,17 +243,28 @@ func (s MemberService) validServiceIDs(salonID string, serviceIDs []string) ([]s
 	return ids, nil
 }
 
-// Remove saca a alguien del salón. El último owner no se va: sin dueño nadie
-// puede volver a administrar el negocio.
+// Remove da de baja a alguien del salón (S-F2g2-4): la fila NO se borra, se
+// marca ended_at, así el historial y horarios/ausencias/servicios se conservan y
+// la persona se puede reactivar. El último owner ACTIVO no se va: sin dueño
+// nadie puede volver a administrar el negocio (400, el mensaje de siempre), y esa
+// comprobación va ANTES de la de rol. Después, la regla de rol es la de
+// Role.RemovableBy: el dueño baja a cualquiera (incluido otro dueño y a sí
+// mismo) y la administración solo a profesional, recepción o cliente.
+//
+// Con turnos futuros no cancelados responde 409 y NO se hace nada. La baja y la
+// revocación de las invitaciones pendientes que emitió corren en la MISMA
+// transacción.
 func (s MemberService) Remove(actor domain.Membership, salonID, userID string) error {
-	if _, err := s.manager(actor, salonID); err != nil {
+	m, err := s.manager(actor, salonID)
+	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(userID) == "" {
 		return domain.ErrNotFound
 	}
-	target, err := s.Memberships.Find(userID, salonID)
-	if err != nil {
+	target, err := s.Members.FindMember(userID, salonID)
+	if err != nil || !target.Active() {
+		// Incluido el que ya está dado de baja: para esta ruta no está.
 		return domain.ErrNotFound
 	}
 	if target.Role == domain.RoleOwner {
@@ -257,7 +276,93 @@ func (s MemberService) Remove(actor domain.Membership, salonID, userID string) e
 			return domain.NewMessage(domain.ErrValidation, "No se puede quitar al último dueño")
 		}
 	}
-	return s.Members.DeleteMember(userID, salonID)
+	if !target.Role.RemovableBy(m.Role) {
+		return domain.ErrForbidden
+	}
+	now := s.now()
+	return s.Tx.InMemberTx(func(tx ports.MemberTx) error {
+		// El UPDATE condicional toma el row lock: dos bajas simultáneas dejan
+		// una sola fila consistente (la segunda no afecta filas -> ErrNotFound).
+		if err := tx.DeactivateMember(userID, salonID, now); err != nil {
+			return err
+		}
+		// El conteo va DESPUÉS del UPDATE y dentro de la transacción: si hay
+		// turnos futuros, el error revierte la baja y nada cambia.
+		n, err := tx.CountFutureBookings(salonID, userID, now)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return domain.NewMessage(domain.ErrAlreadyExists, pendingBookingsText(n))
+		}
+		// Hallazgo de F2g1: las invitaciones pendientes que emitió dejan de
+		// servir en el mismo commit que la baja.
+		return tx.RevokeInvitationsBy(salonID, userID, now)
+	})
+}
+
+// pendingBookingsText es la oración exacta del 409 (singular y plural).
+func pendingBookingsText(n int) string {
+	if n == 1 {
+		return "Tiene 1 turno pendiente: reasignalo o cancelalo antes de darla de baja"
+	}
+	return fmt.Sprintf("Tiene %d turnos pendientes: reasignalos o cancelalos antes de darla de baja", n)
+}
+
+// Reactivate vuelve a activar a alguien dado de baja (S-F2g2-4): conserva el
+// rol, attends y oficio anteriores. Misma regla que la baja (Role.RemovableBy:
+// el dueño reactiva a cualquiera, la administración solo a profesional, recepción
+// o cliente); si ya está activo es 409 y otro salón o inexistente es 404.
+func (s MemberService) Reactivate(actor domain.Membership, salonID, userID string) (domain.Member, error) {
+	m, err := s.manager(actor, salonID)
+	if err != nil {
+		return domain.Member{}, err
+	}
+	if strings.TrimSpace(userID) == "" {
+		return domain.Member{}, domain.ErrNotFound
+	}
+	target, err := s.Members.FindMember(userID, salonID)
+	if err != nil {
+		return domain.Member{}, domain.ErrNotFound
+	}
+	if !target.Role.RemovableBy(m.Role) {
+		return domain.Member{}, domain.ErrForbidden
+	}
+	if target.Active() {
+		return domain.Member{}, domain.NewMessage(domain.ErrAlreadyExists, "Esa persona ya está en el equipo")
+	}
+	if err := s.Members.ReactivateMember(userID, salonID); err != nil {
+		if !errors.Is(err, domain.ErrNotFound) {
+			return domain.Member{}, err
+		}
+		// Carrera: otra baja/reactivación ganó. Se relee para responder el
+		// estado real (409 si quedó activa, 404 si ya no existe).
+		again, ferr := s.Members.FindMember(userID, salonID)
+		if ferr != nil {
+			return domain.Member{}, domain.ErrNotFound
+		}
+		if again.Active() {
+			return domain.Member{}, domain.NewMessage(domain.ErrAlreadyExists, "Esa persona ya está en el equipo")
+		}
+		return domain.Member{}, domain.ErrNotFound
+	}
+	user, err := s.Users.FindByID(userID)
+	if err != nil {
+		return domain.Member{}, err
+	}
+	member := domain.Member{
+		ID: user.ID, Name: user.Name, Email: user.Email, Role: target.Role,
+		Attends: target.Attends, Trade: target.Trade, Active: true,
+	}
+	return s.withServices(salonID, member)
+}
+
+// now es el reloj de la baja (los tests lo fijan).
+func (s MemberService) now() time.Time {
+	if s.Now != nil {
+		return s.Now().UTC()
+	}
+	return time.Now().UTC()
 }
 
 // manager exige membership real y permiso de gestión (owner/admin).

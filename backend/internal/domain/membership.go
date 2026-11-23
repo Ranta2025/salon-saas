@@ -3,6 +3,7 @@ package domain
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -35,6 +36,34 @@ type Membership struct {
 	// Trade es el oficio visible de quien atiende ("Barbero", "Colorista"): un
 	// dato de la persona, no un permiso (S-F2c-1). Vacío es válido.
 	Trade string
+	// EndedAt es la baja del equipo (S-F2g2-1): nil = activa. La fila no se
+	// borra, así el historial y lo que F3 necesita para liquidar comisiones
+	// quedan intactos y la persona se puede reactivar.
+	EndedAt *time.Time
+}
+
+// Active dice si la membresía sigue vigente. Es la única pregunta que hacen
+// las reglas: una baja no cuenta como profesional, dueño ni admin.
+func (m Membership) Active() bool { return m.EndedAt == nil }
+
+// RemovableBy dice si `actor` puede dar de baja (o reactivar) a alguien con el
+// rol del receptor. NO es la regla del alta: dar de baja cubre más que sumar.
+//
+// El dueño da de baja a CUALQUIER rol, incluido otro dueño y a sí mismo (el
+// guard del último owner ACTIVO va aparte y corre ANTES de esta regla, en
+// app.MemberService.Remove); la administración solo a profesional, recepción o
+// cliente —el mismo criterio de su invitación de F2g1: un admin no reparte
+// privilegios, así que no toca a otro admin ni al dueño—. Recepción, profesional
+// y cliente no dan de baja a nadie: manageActor ya los rechaza antes.
+func (r Role) RemovableBy(actor Role) bool {
+	switch actor {
+	case RoleOwner:
+		return r.Valid()
+	case RoleAdmin:
+		return r == RoleProfessional || r == RoleReception || r == RoleClient
+	default:
+		return false
+	}
 }
 
 // NewMembership valida la unión usuario-salón-rol.
@@ -58,7 +87,7 @@ func NewMembership(userID, salonID string, role Role) (Membership, error) {
 // admin con la marca encendida. Recepción y cliente no atienden nunca. Es la
 // única fuente de verdad: la agenda, la disponibilidad y la validación del
 // professional_id de un turno la consultan acá.
-func (m Membership) Bookable() bool { return bookable(m.Role, m.Attends) }
+func (m Membership) Bookable() bool { return m.Active() && bookable(m.Role, m.Attends) }
 
 // SetAttends devuelve la membresía con la marca cambiada, o el error de
 // validación (400) con el texto que ve la persona. Un profesional no puede
@@ -143,6 +172,8 @@ func (r Role) Label() string {
 }
 
 // CanManage cataloga quién puede configurar el salón (precios, horarios, personal).
+// Una membresía dada de baja no administra: el acceso por token deja de servir
+// en su próximo pedido (S-F2g2-3).
 func (m Membership) CanManage() bool {
-	return m.Role == RoleOwner || m.Role == RoleAdmin
+	return m.Active() && (m.Role == RoleOwner || m.Role == RoleAdmin)
 }

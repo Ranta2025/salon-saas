@@ -69,6 +69,8 @@ func TestBuildRouter_rutas_ronda2(t *testing.T) {
 		"GET /api/v1/salons/:id/members",
 		"POST /api/v1/salons/:id/members",
 		"DELETE /api/v1/salons/:id/members/:uid",
+		// F2g2: deshacer la baja conservando rol, marca, oficio y servicios.
+		"POST /api/v1/salons/:id/members/:uid/reactivate",
 		// Las de la ronda 1 siguen montadas.
 		"GET /api/v1/public/salons/:slug",
 		"POST /api/v1/salons/:id/bookings",

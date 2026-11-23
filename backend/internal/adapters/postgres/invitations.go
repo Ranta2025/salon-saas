@@ -180,11 +180,14 @@ func (t invitationTx) Revoke(salonID, id string, now time.Time) error {
 // Users.Save: un solo lugar decide cómo nace una cuenta).
 func (t invitationTx) SaveUser(u domain.User) error { return saveUser(t.tx, u) }
 
-// MembershipExists dice si la persona ya es parte del salón.
+// MembershipExists dice si la persona ya es parte ACTIVA del salón. Una baja no
+// cuenta: canjear una invitación a quien estaba dado de baja lo REACTIVA con el
+// rol de la invitación (el upsert de SaveMembership limpia ended_at), que es lo
+// que pide S-F2g2-4.
 func (t invitationTx) MembershipExists(salonID, userID string) (bool, error) {
 	var exists bool
 	err := t.tx.QueryRow(context.Background(),
-		`SELECT EXISTS (SELECT 1 FROM memberships WHERE user_id=$1 AND salon_id=$2)`,
+		`SELECT EXISTS (SELECT 1 FROM memberships WHERE user_id=$1 AND salon_id=$2 AND ended_at IS NULL)`,
 		userID, salonID).Scan(&exists)
 	if err != nil {
 		return false, err

@@ -66,15 +66,16 @@ func (r ProfessionalServices) SetServices(salonID, userID string, serviceIDs []s
 }
 
 // ListProfessionalsFor trae quien ATIENDE (la regla del dominio traducida a SQL:
-// profesional siempre, owner/admin con attends) y HACE ese servicio. Es la
-// lista de elegibles de la disponibilidad y de la reserva pública.
+// profesional siempre, owner/admin con attends, y nunca quien está dado de baja)
+// y HACE ese servicio. Es la lista de elegibles de la disponibilidad y de la
+// reserva pública: una baja no se ofrece (S-F2g2-3).
 func (r ProfessionalServices) ListProfessionalsFor(salonID, serviceID string) ([]domain.StaffMember, error) {
 	rows, err := r.Pool.Query(context.Background(),
 		`SELECT u.id, u.name, m.role, m.attends, m.trade
 		 FROM professional_services ps
 		 JOIN memberships m ON m.user_id = ps.user_id AND m.salon_id = ps.salon_id
 		 JOIN users u ON u.id = m.user_id
-		 WHERE ps.salon_id=$1 AND ps.service_id=$2
+		 WHERE ps.salon_id=$1 AND ps.service_id=$2 AND m.ended_at IS NULL
 		   AND (m.role='professional' OR (m.attends AND m.role IN ('owner','admin')))
 		 ORDER BY u.name, u.id`, salonID, serviceID)
 	if err != nil {

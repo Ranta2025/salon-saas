@@ -177,10 +177,11 @@ func (f *fakeInvitations) SaveUser(u domain.User) error { return f.users.Save(u)
 func (f *fakeInvitations) MembershipExists(salonID, userID string) (bool, error) {
 	unlock := f.lock()
 	defer unlock()
-	if _, ok := f.mems.byKey[userID+"|"+salonID]; ok {
-		return true, nil
+	m, ok := f.mems.byKey[userID+"|"+salonID]
+	if !ok || !m.Active() {
+		return false, nil
 	}
-	return false, nil
+	return true, nil
 }
 
 func (f *fakeInvitations) SaveMembership(m domain.Membership) error {
@@ -677,6 +678,49 @@ func TestInvitationAccept_cuenta_existente_otro_email_da_403(t *testing.T) {
 	}
 	if _, _, err := env.pub.AcceptExisting("u-lucia", token); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("segundo canje autenticado: %v", err)
+	}
+}
+
+// S-F2g2-4: aceptar una invitación con una cuenta EXISTENTE que fue dada de baja
+// la REACTIVA con el rol de la invitación (el canje no cambia de rol a un activo,
+// pero sí vuelve a entrar a quien ya no está).
+func TestInvitationAccept_cuenta_existente_reactiva_una_baja(t *testing.T) {
+	env := newInviteEnv(t)
+	if err := env.users.Save(domain.User{ID: "u-lucia", Name: "Lucía", Email: "lucia@mail.com", PasswordHash: "x"}); err != nil {
+		t.Fatalf("usuario: %v", err)
+	}
+	salon := env.now
+	env.mems.byKey["u-lucia|s1"] = domain.Membership{
+		UserID: "u-lucia", SalonID: "s1", Role: domain.RoleProfessional,
+		Attends: true, Trade: "Barbero", EndedAt: &salon,
+	}
+	created, token := env.invite(t, "lucia@mail.com", domain.RoleReception)
+	if _, _, err := env.pub.AcceptExisting("u-lucia", token); err != nil {
+		t.Fatalf("aceptar estando de baja: %v", err)
+	}
+	m, err := env.mems.Find("u-lucia", "s1")
+	if err != nil {
+		t.Fatalf("la cuenta tiene que volver a estar activa: %v", err)
+	}
+	if m.Role != domain.RoleReception || m.Attends {
+		t.Fatalf("el rol y la marca son los de la invitación: %+v", m)
+	}
+	if row := env.inv.rows[created.Invitation.ID]; row.AcceptedAt == nil {
+		t.Fatal("la invitación tiene que quedar aceptada")
+	}
+
+	// Y a alguien que YA está activo no se le cambia el rol: 409 (comportamiento
+	// de siempre).
+	env.mems.byKey["u-lucia|s1"] = domain.Membership{
+		UserID: "u-lucia", SalonID: "s1", Role: domain.RoleReception,
+	}
+	_, token2 := env.invite(t, "otra@mail.com", domain.RoleProfessional)
+	if err := env.users.Save(domain.User{ID: "u-otra", Name: "Otra", Email: "otra@mail.com", PasswordHash: "x"}); err != nil {
+		t.Fatalf("usuario: %v", err)
+	}
+	env.mems.byKey["u-otra|s1"] = domain.Membership{UserID: "u-otra", SalonID: "s1", Role: domain.RoleProfessional, Attends: true}
+	if _, _, err := env.pub.AcceptExisting("u-otra", token2); !errors.Is(err, domain.ErrAlreadyExists) {
+		t.Fatalf("activo aceptando otra invitación: %v", err)
 	}
 }
 

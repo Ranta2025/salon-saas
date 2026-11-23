@@ -472,10 +472,11 @@ func TestHTTP_members(t *testing.T) {
 	}
 	var list struct {
 		Members []struct {
-			ID    string `json:"id"`
-			Name  string `json:"name"`
-			Email string `json:"email"`
-			Role  string `json:"role"`
+			ID     string `json:"id"`
+			Name   string `json:"name"`
+			Email  string `json:"email"`
+			Role   string `json:"role"`
+			Active bool   `json:"active"`
 		} `json:"members"`
 	}
 	mustJSON(t, w.Body.Bytes(), &list)
@@ -538,18 +539,27 @@ func TestHTTP_members(t *testing.T) {
 		t.Fatalf("miembro de otro salón debe dar 404, dio %d %s", w.Code, w.Body.String())
 	}
 
-	// Quitar a un miembro: 204, y deja de estar.
+	// Dar de baja a un miembro: 204. Desde F2g2 la fila NO se borra: sigue en el
+	// listado con `active:false` y su rol (S-F2g2-4).
 	if w := doReq(env.r, "DELETE", base+"/"+nuevoID, "", ownerTok); w.Code != http.StatusNoContent {
 		t.Fatalf("quitar miembro: %d %s", w.Code, w.Body.String())
 	}
 	w = doReq(env.r, "GET", base, "", ownerTok)
 	mustJSON(t, w.Body.Bytes(), &list)
+	baja, foundBaja := false, false
 	for _, m := range list.Members {
 		if m.ID == nuevoID {
-			t.Fatal("el miembro quitado sigue en la lista")
+			foundBaja, baja = true, !m.Active
 		}
 	}
-	// Quitar al último owner: 400. Quitar a alguien que no está: 404.
+	if !foundBaja {
+		t.Fatal("la persona dada de baja sigue en el listado del equipo")
+	}
+	if !baja {
+		t.Fatalf("el miembro dado de baja tiene que venir con active:false: %s", w.Body.String())
+	}
+	// Dar de baja al último owner: 400 (el mensaje no cambia). Dar de baja a
+	// alguien que ya está dado de baja: 404.
 	if w := doReq(env.r, "DELETE", base+"/"+ownerID, "", ownerTok); w.Code != http.StatusBadRequest {
 		t.Fatalf("último owner debe dar 400, dio %d %s", w.Code, w.Body.String())
 	}

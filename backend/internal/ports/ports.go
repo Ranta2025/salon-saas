@@ -56,6 +56,22 @@ type MemberAdminRepository interface {
 	ListMembers(salonID string) ([]domain.Member, error)
 	DeleteMember(userID, salonID string) error
 	CountRole(salonID string, role domain.Role) (int, error)
+	// FindMember resuelve la membresía de la pantalla de equipo INCLUYENDO a
+	// quien fue dado de baja: es la única lectura que necesita ver el estado
+	// anterior (reactivar y la autorización por rol). `MembershipRepository.Find`
+	// sigue devolviendo solo activas (S-F2g2-3).
+	FindMember(userID, salonID string) (domain.Membership, error)
+	// DeactivateMember da de baja una membresía ACTIVA (UPDATE condicional por
+	// ended_at). Si ya estaba dada de baja (o es de otro salón) no afecta filas:
+	// ErrNotFound. Dos bajas simultáneas dejan una sola fila consistente.
+	DeactivateMember(userID, salonID string, endedAt time.Time) error
+	// ReactivateMember vuelve a activar una membresía dada de baja (UPDATE
+	// condicional ended_at IS NOT NULL). Sin filas: ErrNotFound (ya activa o de
+	// otro salón). No cambia rol, attends ni trade.
+	ReactivateMember(userID, salonID string) error
+	// CountFutureBookings cuenta los turnos FUTUROS no cancelados de la persona:
+	// con al menos uno no se la puede dar de baja (409 del contrato).
+	CountFutureBookings(salonID, userID string, now time.Time) (int, error)
 	// SetAttends cambia la marca de "atiende clientes" de un miembro. El UPDATE
 	// es la autorización y el scope: si la persona no pertenece a ESE salón no
 	// se afectan filas (ErrNotFound, nunca un upsert).
@@ -63,6 +79,23 @@ type MemberAdminRepository interface {
 	// SetTrade guarda el oficio visible ("Barbero"). Mismo scope que SetAttends:
 	// un miembro de otro salón no se toca (ErrNotFound).
 	SetTrade(userID, salonID, trade string) error
+}
+
+// MemberTx es la vista TRANSACCIONAL de la baja: desactivar la membresía y
+// revocar las invitaciones pendientes que esa persona emitió commitean juntos o
+// no pasan (S-F2g2-4). El conteo de turnos futuros corre DENTRO de la misma
+// transacción, después del UPDATE condicional, así un turno no puede colarse
+// entre el chequeo y la baja.
+type MemberTx interface {
+	DeactivateMember(userID, salonID string, endedAt time.Time) error
+	CountFutureBookings(salonID, userID string, now time.Time) (int, error)
+	RevokeInvitationsBy(salonID, createdBy string, now time.Time) error
+}
+
+// MemberTxRunner abre la transacción de la baja. Sin lock por salón: la
+// serialización la da el row lock del UPDATE condicional por ended_at.
+type MemberTxRunner interface {
+	InMemberTx(fn func(tx MemberTx) error) error
 }
 
 // InvitationRepository: LECTURA de las invitaciones de equipo (F2g1).

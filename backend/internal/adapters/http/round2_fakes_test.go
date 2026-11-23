@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"sort"
+	"time"
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
@@ -32,10 +33,16 @@ func (f *msettings) SaveSettings(s domain.SalonSettings) error {
 var _ ports.SalonSettingsRepository = (*msettings)(nil)
 
 type mmembers struct {
-	mems  *mm
-	users *mu
+	mems *mm
+	// bookings cuenta los turnos futuros de la baja y inv revoca las
+	// invitaciones pendientes que emitió quien se va (S-F2g2-4).
+	bookings *mb
+	inv      *minvitations
+	users    *mu
 }
 
+// ListMembers incluye a quien fue dado de baja con su estado (S-F2g2-4): la
+// pantalla de equipo decide cómo mostrarlo.
 func (f *mmembers) ListMembers(salonID string) ([]domain.Member, error) {
 	out := []domain.Member{}
 	for _, m := range f.mems.byKey {
@@ -49,10 +56,67 @@ func (f *mmembers) ListMembers(salonID string) ([]domain.Member, error) {
 		out = append(out, domain.Member{
 			ID: u.ID, Name: u.Name, Email: u.Email, Role: m.Role,
 			Attends: m.Attends, Trade: m.Trade,
+			Active: m.Active(), EndedAt: m.EndedAt,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
+}
+
+// FindMember resuelve la membresía INCLUYENDO a quien fue dado de baja, como la
+// query de pgstore: es la única lectura que ve el estado anterior.
+func (f *mmembers) FindMember(userID, salonID string) (domain.Membership, error) {
+	m, ok := f.mems.byKey[userID+"|"+salonID]
+	if !ok {
+		return domain.Membership{}, domain.ErrNotFound
+	}
+	return m, nil
+}
+
+// DeactivateMember es el UPDATE condicional por ended_at: una membresía ya dada
+// de baja (o de otro salón) no afecta filas.
+func (f *mmembers) DeactivateMember(userID, salonID string, endedAt time.Time) error {
+	key := userID + "|" + salonID
+	m, ok := f.mems.byKey[key]
+	if !ok || !m.Active() {
+		return domain.ErrNotFound
+	}
+	at := endedAt
+	m.EndedAt = &at
+	f.mems.byKey[key] = m
+	return nil
+}
+
+// ReactivateMember es el UPDATE condicional al revés: sin filas (ya activa o de
+// otro salón) es ErrNotFound.
+func (f *mmembers) ReactivateMember(userID, salonID string) error {
+	key := userID + "|" + salonID
+	m, ok := f.mems.byKey[key]
+	if !ok || m.Active() {
+		return domain.ErrNotFound
+	}
+	m.EndedAt = nil
+	f.mems.byKey[key] = m
+	return nil
+}
+
+// CountFutureBookings cuenta los turnos `booked` que empiezan después de now de
+// esa persona (la misma consulta que pgstore).
+func (f *mmembers) CountFutureBookings(salonID, userID string, now time.Time) (int, error) {
+	if f.bookings == nil {
+		return 0, nil
+	}
+	n := 0
+	for _, b := range f.bookings.all {
+		if b.SalonID != salonID || b.ProfessionalID != userID {
+			continue
+		}
+		if b.Status != domain.BookingBooked || !b.StartsAt.After(now) {
+			continue
+		}
+		n++
+	}
+	return n, nil
 }
 
 func (f *mmembers) DeleteMember(userID, salonID string) error {
@@ -88,17 +152,79 @@ func (f *mmembers) SetTrade(userID, salonID, trade string) error {
 	return nil
 }
 
+// CountRole cuenta solo ACTIVOS, como pgstore: una baja no protege al último
+// owner (si contara las filas dadas de baja, el dueño que queda solo nunca
+// podría irse).
 func (f *mmembers) CountRole(salonID string, role domain.Role) (int, error) {
 	n := 0
 	for _, m := range f.mems.byKey {
-		if m.SalonID == salonID && m.Role == role {
+		if m.SalonID == salonID && m.Role == role && m.Active() {
 			n++
 		}
 	}
 	return n, nil
 }
 
-var _ ports.MemberAdminRepository = (*mmembers)(nil)
+// InMemberTx: snapshot + rollback, como la transacción real. Si la baja falla
+// (turnos pendientes) no queda la membresía dada de baja ni una invitación
+// revocada.
+func (f *mmembers) InMemberTx(fn func(tx ports.MemberTx) error) error {
+	mems := map[string]domain.Membership{}
+	for k, v := range f.mems.byKey {
+		mems[k] = v
+	}
+	var invs map[string]domain.Invitation
+	if f.inv != nil {
+		invs = map[string]domain.Invitation{}
+		for k, v := range f.inv.rows {
+			invs[k] = v
+		}
+	}
+	err := fn(mmemberTx{f})
+	if err != nil {
+		f.mems.byKey = mems
+		if f.inv != nil {
+			f.inv.rows = invs
+		}
+	}
+	return err
+}
+
+type mmemberTx struct{ f *mmembers }
+
+func (t mmemberTx) DeactivateMember(userID, salonID string, endedAt time.Time) error {
+	return t.f.DeactivateMember(userID, salonID, endedAt)
+}
+
+func (t mmemberTx) CountFutureBookings(salonID, userID string, now time.Time) (int, error) {
+	return t.f.CountFutureBookings(salonID, userID, now)
+}
+
+// RevokeInvitationsBy: las pendientes que emitió esa persona dejan de servir en
+// el MISMO commit que la baja (hallazgo de F2g1).
+func (t mmemberTx) RevokeInvitationsBy(salonID, createdBy string, now time.Time) error {
+	if t.f.inv == nil {
+		return nil
+	}
+	for id, row := range t.f.inv.rows {
+		if row.SalonID != salonID || row.CreatedBy != createdBy {
+			continue
+		}
+		if row.AcceptedAt != nil || row.RevokedAt != nil {
+			continue
+		}
+		at := now
+		row.RevokedAt = &at
+		t.f.inv.rows[id] = row
+	}
+	return nil
+}
+
+var (
+	_ ports.MemberAdminRepository = (*mmembers)(nil)
+	_ ports.MemberTxRunner        = (*mmembers)(nil)
+	_ ports.MemberTx              = mmemberTx{}
+)
 
 // failUnread simula la query del badge caída (R4-003): listar no puede fallar
 // por el contador.

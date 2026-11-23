@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"salon-saas/internal/app"
@@ -9,9 +10,9 @@ import (
 	"salon-saas/internal/ports"
 )
 
-// MemberHandler: pantalla de equipo del salón (GET/POST/DELETE
-// /salons/:id/members). Solo owner/admin; la regla de qué rol puede sumar cada
-// uno vive en app/domain.
+// MemberHandler: pantalla de equipo del salón (GET/POST/PATCH/DELETE
+// /salons/:id/members y la reactivación de quien fue dado de baja, F2g2). Solo
+// owner/admin; la regla de qué rol puede sumar cada uno vive en app/domain.
 type MemberHandler struct {
 	Members     app.MemberService
 	Memberships ports.MembershipRepository
@@ -39,13 +40,22 @@ func loadActor(memberships ports.MembershipRepository, c *gin.Context, salonID s
 // `attends` (F2a) dice si esa persona atiende clientes, `trade` es su oficio y
 // `service_ids` los servicios que hace (F2c). Las dos listas salen siempre como
 // array: el frontend no tiene que distinguir null de [].
+//
+// `active` y `ended_at` (F2g2) son la baja del equipo: el listado devuelve
+// activos Y dados de baja y el frontend decide cómo mostrarlos. Un miembro
+// activo sale con `ended_at: null` (la clave está siempre).
 func memberJSON(m domain.Member) gin.H {
 	ids := make([]string, 0, len(m.ServiceIDs))
 	ids = append(ids, m.ServiceIDs...)
+	var endedAt any
+	if m.EndedAt != nil {
+		endedAt = m.EndedAt.UTC().Format(time.RFC3339)
+	}
 	return gin.H{
 		"id": m.ID, "name": m.Name, "email": m.Email,
 		"role": string(m.Role), "attends": m.Attends,
 		"trade": m.Trade, "service_ids": ids,
+		"active": m.Active, "ended_at": endedAt,
 	}
 }
 
@@ -147,6 +157,13 @@ func (h MemberHandler) SetServices(c *gin.Context) {
 }
 
 // Remove: DELETE /api/v1/salons/:id/members/:uid -> 204.
+//
+// Desde F2g2 NO borra: da de baja (ended_at), así el historial de turnos y
+// ventas, los horarios, las ausencias y los servicios se conservan. Con turnos
+// futuros sin cancelar el caso de uso responde 409 con la oración del contrato y
+// no cambia nada. Autorización: el dueño puede dar de baja a cualquiera (otro
+// dueño incluido) y la administración solo a profesional, recepción y cliente;
+// el último dueño activo no se puede dar de baja (400).
 func (h MemberHandler) Remove(c *gin.Context) {
 	salonID := c.Param("id")
 	actor, ok := h.loadActor(c, salonID)
@@ -158,4 +175,23 @@ func (h MemberHandler) Remove(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// Reactivate: POST /api/v1/salons/:id/members/:uid/reactivate -> 200 el miembro.
+//
+// Deshace una baja conservando el rol, `attends`, el oficio y los servicios: la
+// fila nunca se borró. Si ya estaba activo es 409 ("Esa persona ya está en el
+// equipo") y un miembro de otro salón o inexistente es 404.
+func (h MemberHandler) Reactivate(c *gin.Context) {
+	salonID := c.Param("id")
+	actor, ok := h.loadActor(c, salonID)
+	if !ok {
+		return
+	}
+	m, err := h.Members.Reactivate(actor, salonID, c.Param("uid"))
+	if err != nil {
+		respondErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, memberJSON(m))
 }

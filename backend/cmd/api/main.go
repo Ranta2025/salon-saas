@@ -248,6 +248,10 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	memberSvc := app.MemberService{
 		Members: mems, Memberships: mems, Users: users,
 		Professionals: professionals, Services: servicesRepo,
+		// F2g2: la baja corre en la transacción de `mems`: desactivar la membresía
+		// y revocar las invitaciones pendientes que emitió commitean juntos o no
+		// pasan (mismo patrón que las invitaciones de F2g1).
+		Tx: mems,
 	}
 	availabilitySvc := app.AvailabilityService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems,

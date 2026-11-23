@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"salon-saas/internal/domain"
 )
@@ -28,7 +29,7 @@ func memberFixture(t *testing.T) (*MemberService, *fakeMemberships, *fakeMembers
 	}
 	mems := &fakeMemberships{}
 	admin := &fakeMembers{mems: mems, users: users}
-	svc := &MemberService{Members: admin, Memberships: mems, Users: users}
+	svc := &MemberService{Members: admin, Memberships: mems, Users: users, Tx: admin, Now: func() time.Time { return f2g2Now }}
 	miembro(mems, "u-owner", "s1", domain.RoleOwner)
 	miembro(mems, "u-admin", "s1", domain.RoleAdmin)
 	miembro(mems, "u-owner", "s2", domain.RoleOwner)
@@ -130,7 +131,8 @@ func TestMemberService_remove(t *testing.T) {
 	owner, _ := mems.Find("u-owner", "s1")
 	admin, _ := mems.Find("u-admin", "s1")
 
-	// Quitar al último owner: 400, el salón nunca queda sin dueño.
+	// Dar de baja al último owner: 400, el salón nunca queda sin dueño (igual
+	// que antes de F2g2).
 	if err := svc.Remove(owner, "s1", "u-owner"); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("último owner: %v", err)
 	}
@@ -140,12 +142,16 @@ func TestMemberService_remove(t *testing.T) {
 	if _, err := mems.Find("u-owner", "s1"); err != nil {
 		t.Fatalf("el owner debe seguir: %v", err)
 	}
-	// Quitar a un miembro común: ok y desaparece.
+	// Dar de baja a un miembro común: deja de tener acceso (Find no lo ve) pero
+	// la fila queda con ended_at (F2g2).
 	if err := svc.Remove(owner, "s1", "u-admin"); err != nil {
 		t.Fatalf("quitar admin: %v", err)
 	}
 	if _, err := mems.Find("u-admin", "s1"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("el admin debe estar fuera: %v", err)
+	}
+	if raw := mems.byKey["u-admin|s1"]; raw.Active() {
+		t.Fatalf("la fila se conserva dada de baja: %+v", raw)
 	}
 	// Quitar a alguien que no está: 404.
 	if err := svc.Remove(owner, "s1", "u-admin"); !errors.Is(err, domain.ErrNotFound) {
@@ -155,10 +161,18 @@ func TestMemberService_remove(t *testing.T) {
 	if err := svc.Remove(owner, "s1", "u-owner2"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("miembro de otro salón: %v", err)
 	}
-	// Con otro owner en el salón, el primero sí se puede ir.
+	// Con otro owner en el salón, el primero sí se puede ir: el dueño da de baja
+	// a cualquier rol, incluido otro dueño (la regla es el ÚLTIMO owner activo).
 	_ = mems.Save(domain.Membership{UserID: "u-owner2", SalonID: "s1", Role: domain.RoleOwner})
 	if err := svc.Remove(owner, "s1", "u-owner"); err != nil {
 		t.Fatalf("con otro owner: %v", err)
+	}
+	// La baja no borra la fila: pierde el acceso y queda con ended_at (F2g2).
+	if _, err := mems.Find("u-owner", "s1"); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("el owner dado de baja ya no tiene acceso: %v", err)
+	}
+	if raw := mems.byKey["u-owner|s1"]; raw.Active() || raw.EndedAt == nil {
+		t.Fatalf("la fila del owner se conserva dada de baja: %+v", raw)
 	}
 	// Profesional no administra: 403.
 	prof := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
@@ -219,7 +233,7 @@ func TestMemberService_mensajes_para_la_persona(t *testing.T) {
 	}
 	sinPrefijo(err, "Rol desconocido: usá dueño, administración, profesional, recepción o cliente")
 
-	// Quitar al último owner.
+	// Dar de baja al último owner: sigue siendo Validation (400).
 	err = svc.Remove(owner, "s1", "u-owner")
 	if !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("último owner debe seguir siendo Validation (400), dio %v", err)

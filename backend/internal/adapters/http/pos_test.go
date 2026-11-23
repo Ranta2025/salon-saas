@@ -199,7 +199,9 @@ func newPOSEnv() *posEnv {
 	}
 	env.resources.bookings = env.bookings
 	env.inv = &minvitations{rows: map[string]domain.Invitation{}, users: env.users, mems: env.mems}
-	env.members = &mmembers{mems: env.mems, users: env.users}
+	env.members = &mmembers{
+		mems: env.mems, users: env.users, bookings: env.bookings, inv: env.inv,
+	}
 	env.profs = &mprof{mems: env.mems}
 	hasher := security.BcryptHasher{}
 	tokens := security.JWTIssuer{Secret: "test-secret"}
@@ -233,6 +235,9 @@ func newPOSEnv() *posEnv {
 	memberSvc := app.MemberService{
 		Members: env.members, Memberships: env.mems, Users: env.users,
 		Professionals: env.profs, Services: env.services,
+		// F2g2: la baja corre en la transacción (desactivar + revocar las
+		// invitaciones pendientes que emitió esa persona).
+		Tx: env.members,
 	}
 	// F2g1: invitaciones de equipo. El reloj sale del fake para poder vencer una
 	// invitación sin esperar los 7 días.

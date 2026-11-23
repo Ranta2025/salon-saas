@@ -303,8 +303,12 @@ DELETE /salons/:id/members/:uid -> 204 (sin body)
   El rol `owner` no se reparte por la API (`403`).
 - La persona **ya debe tener cuenta**: email sin cuenta → `400` con mensaje que
   lo explica. Email ya miembro → `409`. Rol desconocido → `400`.
-- `DELETE`: no se puede quitar al **último owner** del salón (`400`); quitar a
-  alguien que no es miembro de ese salón → `404`.
+- `DELETE`: desde F2g2 **da de baja** (marca `ended_at`), no borra la fila: ver
+  «Fase 6 — F2g2: dar de baja en vez de borrar». No se puede dar de baja al
+  **último owner** del salón (`409`); a alguien que ya está dado de baja o que
+  no es miembro de ese salón → `404`. La respuesta sigue siendo `204`.
+- `GET` agrega `active` y `ended_at` por miembro (F2g2) y devuelve también a
+  quien fue dado de baja.
 - Aislamiento: el id del salón manda; un miembro de otro salón no se lista ni se
   borra desde acá.
 
@@ -1115,6 +1119,124 @@ nombre del salón. Sale por el mismo `MailSender` del T12.
 - El token y el enlace **nunca** se loguean: el log solo nombra el id de la
   invitación y el salón.
 
+## Fase 6 — F2g2: dar de baja en vez de borrar
+
+Hasta acá `DELETE /salons/:id/members/:uid` hacía un `DELETE` físico de la
+membresía. Los turnos y las ventas sobrevivían (referencian a `users`), pero se
+perdían en cascada `professional_hours`, `time_off` y `professional_services`, y
+el historial ya no podía decir cómo se llamaba la persona. Ahora la baja
+**conserva la fila** con `ended_at`: el historial queda intacto, F3 puede
+liquidar comisiones de alguien que ya no está, y la persona se puede reactivar
+con su rol, su marca y su oficio de antes.
+
+### `DELETE /salons/:id/members/:uid` → `204`: ahora da de baja
+
+```json
+DELETE /salons/:id/members/u_...            -> 204 (sin body)
+DELETE de alguien con turnos futuros        -> 409
+  {"error":"Tiene 3 turnos pendientes: reasignalos o cancelalos antes de darla de baja"}
+DELETE de alguien con 1 turno futuro        -> 409
+  {"error":"Tiene 1 turno pendiente: reasignalo o cancelalo antes de darla de baja"}
+```
+
+- **Mismo verbo y mismo `204`**: el frontend actual no cambia de forma. Lo que
+  cambia es el efecto: la membresía queda con `ended_at` (no se borra) y sus
+  horarios, ausencias y servicios **se conservan** para cuando vuelva.
+- **Con turnos futuros no cancelados no se hace nada**: `409` con la oración
+  exacta (singular para 1, plural para N) y la persona sigue activa. Cuentan solo
+  los turnos `booked` que **empiezan después de ahora**; los pasados y los
+  cancelados no frenan la baja.
+- **Quién da de baja** (`manageActor`): solo `owner`/`admin` del salón, igual
+  que siempre (`403` para recepción, profesional, cliente y para quien no es del
+  salón). La regla de rol de la baja **no** es la del alta: el **`owner` da de
+  baja a cualquier rol**, incluido otro `owner` y a sí mismo (con otro owner
+  activo), mientras que la **administración solo da de baja a profesional,
+  recepción o cliente** —no a otro `admin` ni al `owner`: `403
+  {"error":"sin permiso"}`—, el mismo criterio de su invitación (F2g1). El
+  **último `owner` activo** no se puede dar de baja
+  (`400 {"error":"No se puede quitar al último dueño"}`, igual que antes de
+  F2g2) y esa comprobación va **antes** que la del rol: con un solo owner activo
+  el `400` gana y el salón nunca queda sin dueño. La reactivación usa la misma
+  regla.
+- **En la misma transacción** se revocan las invitaciones pendientes que esa
+  persona emitió (`invitations.created_by`, hallazgo de F2g1): el token viejo
+  pasa a responder el 404 genérico y no sobrevive a quien lo emitió.
+- Alguien que **ya está dado de baja** (o es de otro salón) → `404`
+  `{"error":"no encontrado"}`: para esta ruta no está.
+- Los `403`/`404` del resto de la pantalla de equipo no cambian; el aislamiento
+  es el de siempre (el `salon_id` de la ruta manda).
+
+### `POST /salons/:id/members/:uid/reactivate` → `200`: deshacer la baja
+
+```json
+POST /salons/:id/members/u_.../reactivate -> 200
+{ "id": "u_...", "name": "Beto", "email": "beto@mail.com", "role": "professional",
+  "attends": true, "trade": "Barbero", "service_ids": ["svc_..."],
+  "active": true, "ended_at": null }
+```
+
+- Devuelve el miembro completo, igual que el `PATCH`. **Conserva** el rol, la
+  marca `attends`, el oficio y los servicios que hacía: la fila nunca se borró.
+- Misma regla que la baja, también al revés (`Role.RemovableBy`): el `owner`
+  reactiva a cualquiera, incluido otro `owner`; la administración solo a
+  profesional, recepción o cliente (un `admin` no reactiva al `owner` ni a otro
+  `admin`: `403`). Recepción, profesional y cliente no reactivan a nadie.
+- Si ya estaba activo → `409 {"error":"Esa persona ya está en el equipo"}`. Un
+  miembro de otro salón o inexistente → `404`.
+- Dos bajas o baja+reactivación simultáneas dejan un estado consistente: la
+  escritura es un `UPDATE` condicional por `ended_at` (nunca dos filas).
+
+### Reactivación por las otras dos puertas
+
+- **`POST /salons/:id/members`** con el email de alguien dado de baja lo
+  **reactiva** con el rol pedido (`attends` según el rol, o el del body):
+  `201` y el miembro, **igual que un alta**. Ya no responde «ya es parte del
+  equipo» para quien está de baja: esa persona para el alta no está en el equipo.
+- **Aceptar una invitación** (`POST /invitations/accept`, la ruta autenticada de
+  una cuenta que ya existe) también lo reactiva con el rol de la invitación. Se
+  le puede invitar: una baja no bloquea la invitación.
+
+### Campos nuevos en `GET /salons/:id/members`
+
+```json
+GET /salons/:id/members -> { "members": [
+  { "id": "u_...", "name": "Beto", "email": "beto@mail.com", "role": "professional",
+    "attends": true, "trade": "Barbero", "service_ids": [],
+    "active": true,  "ended_at": null },
+  { "id": "u_...", "name": "Carla", "email": "carla@mail.com", "role": "reception",
+    "attends": false, "trade": "", "service_ids": [],
+    "active": false, "ended_at": "2026-05-01T18:30:00Z" } ] }
+```
+
+- `active` (bool) y `ended_at` (RFC3339 en UTC, o `null`): las dos claves están
+  **siempre**. El listado devuelve **activos Y dados de baja** y el frontend
+  decide cómo mostrarlos (la lista principal muestra solo activos y el bloque
+  «Ex equipo» usa `ended_at`).
+- `POST`, `PATCH` y la reactivación devuelven la misma forma: un alta y una
+  reactivación salen con `active: true` y `ended_at: null`.
+
+### Quien fue dado de baja pierde el acceso ya
+
+- `memberships.Find` y `ListByUser` devuelven **solo membresías activas**: la
+  persona recibe `403` en cualquier ruta del salón en su **próximo pedido** (sin
+  esperar a que venza el JWT de 24 h) y su `GET /me` deja de listar ese salón.
+  Su cuenta (`users`) no se toca: sigue entrando a la app y, si es miembro de
+  otro salón, conserva ese acceso.
+- Tampoco aparece en ningún selector ni en la agenda: `GET /salons/:id/staff`,
+  la disponibilidad pública, la auto-asignación, «Mi agenda», los equipos de la
+  agenda y los candidatos de cobertura usan solo activos, así que una baja deja
+  de atender sin tocar turnos ni ventas pasadas.
+
+| Caso | HTTP | `error` |
+|---|---|---|
+| Baja de alguien con turnos futuros (1 / N) | `409` | `Tiene 1 turno pendiente: reasignalo o cancelalo antes de darla de baja` / `Tiene N turnos pendientes: reasignalos o cancelalos antes de darla de baja` |
+| Baja del último `owner` activo | `400` | `No se puede quitar al último dueño` |
+| Baja de un rol que la administración no maneja (admin→owner, admin→admin) | `403` | `sin permiso` |
+| Baja de quien ya está de baja / de otro salón | `404` | `no encontrado` |
+| Reactivar a alguien que ya está activo | `409` | `Esa persona ya está en el equipo` |
+| Reactivar un inexistente o de otro salón | `404` | `no encontrado` |
+| Reactivar sin permiso (profesional, recepción, otro salón, admin→owner/admin) | `403` | `sin permiso` / `sin acceso al salón` |
+
 ## Ronda 3 (T9): ficha desde la reserva, email de la ficha, hora del salón y mensajes
 
 Hallazgos E-03, E-04 y E-07 de la auditoría en navegador real. Los códigos HTTP
@@ -1250,6 +1372,14 @@ defaults apuntan al Mailpit del stack (UI `http://localhost:8025`).
 
 ## Cambios de comportamiento en endpoints existentes
 
+- **`DELETE /salons/:id/members/:uid`** (F2g2): ya no borra la membresía, la
+  **da de baja** (`ended_at`) conservando historial, horarios, ausencias y
+  servicios; responde `204` igual que antes y `409` si la persona tiene turnos
+  futuros sin cancelar. Los `403`/`404` del resto de la pantalla no cambian: la
+  autorización sigue siendo solo `owner`/`admin` del salón, y la regla de rol es
+  la de la baja (el dueño baja a cualquiera; la administración solo a
+  profesional, recepción o cliente; el último owner activo es `400`). Ver «Fase
+  6 — F2g2: dar de baja en vez de borrar».
 - **`POST /salons/:id/sales`**: el precio unitario **lo pone el catálogo**. El
   `unit_price_cents` del body se usa solo para validar el pedido (fuera de rango →
   `400`); el que se cobra y se persiste es el `price_cents` del servicio. Un

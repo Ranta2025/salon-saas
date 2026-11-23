@@ -6,6 +6,7 @@ package pgstore
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -129,7 +130,13 @@ func (r Salons) SaveSettings(s domain.SalonSettings) error {
 	return nil
 }
 
-type Memberships struct{ Pool *pgxpool.Pool }
+type Memberships struct {
+	Pool *pgxpool.Pool
+	// TxTimeout acota la transacción de la baja (H7): sin tope, una transacción
+	// trabada retiene una conexión del pool y el row lock de la membresía para
+	// siempre.
+	TxTimeout time.Duration
+}
 
 func (r Memberships) Save(m domain.Membership) error { return saveMembership(r.Pool, m) }
 
@@ -140,18 +147,23 @@ func saveMembership(q querier, m domain.Membership) error {
 	// attends viaja en el upsert: la membresía es una sola fila (un rol por
 	// persona y salón) y cambiar el rol recalcula la marca por defecto
 	// (professional atiende, el resto no) en vez de arrastrar la vieja.
+	// ended_at se limpia: volver a sumar por email o aceptar una invitación
+	// REACTIVA a quien estaba dado de baja (S-F2g2-4).
 	_, err := q.Exec(context.Background(),
 		`INSERT INTO memberships(user_id,salon_id,role,attends,trade) VALUES($1,$2,$3,$4,$5)
-		 ON CONFLICT (user_id,salon_id) DO UPDATE SET role=EXCLUDED.role, attends=EXCLUDED.attends, trade=EXCLUDED.trade`,
+		 ON CONFLICT (user_id,salon_id) DO UPDATE SET role=EXCLUDED.role, attends=EXCLUDED.attends, trade=EXCLUDED.trade, ended_at=NULL`,
 		m.UserID, m.SalonID, string(m.Role), m.Attends, m.Trade)
 	return pgError(err)
 }
 
+// Find devuelve la membresía ACTIVA: es la autorización de cada pedido, así que
+// quien fue dado de baja pierde el acceso en su próximo request (403) sin
+// esperar a que venza el JWT, y su cuenta (users) no se toca (S-F2g2-3).
 func (r Memberships) Find(userID, salonID string) (domain.Membership, error) {
 	var role, trade string
 	var attends bool
 	err := r.Pool.QueryRow(context.Background(),
-		`SELECT role, attends, trade FROM memberships WHERE user_id=$1 AND salon_id=$2`, userID, salonID,
+		`SELECT role, attends, trade FROM memberships WHERE user_id=$1 AND salon_id=$2 AND ended_at IS NULL`, userID, salonID,
 	).Scan(&role, &attends, &trade)
 	if err != nil {
 		return domain.Membership{}, notFound(err)
@@ -165,11 +177,12 @@ func (r Memberships) Find(userID, salonID string) (domain.Membership, error) {
 	return m, nil
 }
 
-// ListByUser trae los salones de un usuario con su rol. Lo usan las features
-// que solo tienen el JWT: rooms del websocket y "marcar notificación leída".
+// ListByUser trae los salones ACTIVOS de un usuario con su rol (el /me y lo que
+// solo tiene el JWT). Un salón donde fue dado de baja deja de listarse
+// (S-F2g2-3).
 func (r Memberships) ListByUser(userID string) ([]domain.Membership, error) {
 	rows, err := r.Pool.Query(context.Background(),
-		`SELECT salon_id, role, attends, trade FROM memberships WHERE user_id=$1 ORDER BY salon_id`, userID)
+		`SELECT salon_id, role, attends, trade FROM memberships WHERE user_id=$1 AND ended_at IS NULL ORDER BY salon_id`, userID)
 	if err != nil {
 		return nil, err
 	}

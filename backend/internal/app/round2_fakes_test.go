@@ -2,6 +2,7 @@ package app
 
 import (
 	"sort"
+	"time"
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
@@ -38,10 +39,15 @@ func (f *fakeSettings) SaveSettings(s domain.SalonSettings) error {
 var _ ports.SalonSettingsRepository = (*fakeSettings)(nil)
 
 // fakeMembers es la vista de administración del equipo sobre las memberships:
-// lista con nombre/email (join con users), borra y cuenta por rol.
+// lista con nombre/email (join con users), da de baja, reactiva y cuenta por rol.
 type fakeMembers struct {
 	mems  *fakeMemberships
 	users *fakeUsers
+	// future son los turnos futuros no cancelados por persona ("salon|user").
+	future map[string]int
+	// invitations son las pendientes de la base falsa: la baja revoca las que
+	// emitió la persona, en la misma transacción.
+	invitations []domain.Invitation
 }
 
 func (f *fakeMembers) ListMembers(salonID string) ([]domain.Member, error) {
@@ -57,6 +63,7 @@ func (f *fakeMembers) ListMembers(salonID string) ([]domain.Member, error) {
 		out = append(out, domain.Member{
 			ID: u.ID, Name: u.Name, Email: u.Email, Role: m.Role,
 			Attends: m.Attends, Trade: m.Trade,
+			Active: m.Active(), EndedAt: m.EndedAt,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -99,11 +106,93 @@ func (f *fakeMembers) SetTrade(userID, salonID, trade string) error {
 func (f *fakeMembers) CountRole(salonID string, role domain.Role) (int, error) {
 	n := 0
 	for _, m := range f.mems.byKey {
-		if m.SalonID == salonID && m.Role == role {
+		if m.SalonID == salonID && m.Role == role && m.Active() {
 			n++
 		}
 	}
 	return n, nil
 }
 
-var _ ports.MemberAdminRepository = (*fakeMembers)(nil)
+// FindMember incluye a quien fue dado de baja (la pantalla de equipo lo
+// necesita para reactivar y para autorizar por rol).
+func (f *fakeMembers) FindMember(userID, salonID string) (domain.Membership, error) {
+	m, ok := f.mems.byKey[userID+"|"+salonID]
+	if !ok {
+		return domain.Membership{}, domain.ErrNotFound
+	}
+	return m, nil
+}
+
+// DeactivateMember: UPDATE condicional por ended_at, como pgstore.
+func (f *fakeMembers) DeactivateMember(userID, salonID string, endedAt time.Time) error {
+	key := userID + "|" + salonID
+	m, ok := f.mems.byKey[key]
+	if !ok || !m.Active() {
+		return domain.ErrNotFound
+	}
+	at := endedAt
+	m.EndedAt = &at
+	f.mems.byKey[key] = m
+	return nil
+}
+
+// ReactivateMember: UPDATE condicional ended_at IS NOT NULL.
+func (f *fakeMembers) ReactivateMember(userID, salonID string) error {
+	key := userID + "|" + salonID
+	m, ok := f.mems.byKey[key]
+	if !ok || m.Active() {
+		return domain.ErrNotFound
+	}
+	m.EndedAt = nil
+	f.mems.byKey[key] = m
+	return nil
+}
+
+func (f *fakeMembers) CountFutureBookings(salonID, userID string, _ time.Time) (int, error) {
+	return f.future[salonID+"|"+userID], nil
+}
+
+// InMemberTx: snapshot + rollback, como la transacción real.
+func (f *fakeMembers) InMemberTx(fn func(tx ports.MemberTx) error) error {
+	mems := map[string]domain.Membership{}
+	for k, v := range f.mems.byKey {
+		mems[k] = v
+	}
+	invs := append([]domain.Invitation{}, f.invitations...)
+	err := fn(fakeMemberTx{f})
+	if err != nil {
+		f.mems.byKey = mems
+		f.invitations = invs
+	}
+	return err
+}
+
+type fakeMemberTx struct{ f *fakeMembers }
+
+func (t fakeMemberTx) DeactivateMember(userID, salonID string, endedAt time.Time) error {
+	return t.f.DeactivateMember(userID, salonID, endedAt)
+}
+
+func (t fakeMemberTx) CountFutureBookings(salonID, userID string, now time.Time) (int, error) {
+	return t.f.CountFutureBookings(salonID, userID, now)
+}
+
+func (t fakeMemberTx) RevokeInvitationsBy(salonID, createdBy string, now time.Time) error {
+	for i, inv := range t.f.invitations {
+		if inv.SalonID != salonID || inv.CreatedBy != createdBy {
+			continue
+		}
+		if inv.AcceptedAt != nil || inv.RevokedAt != nil {
+			continue
+		}
+		at := now
+		inv.RevokedAt = &at
+		t.f.invitations[i] = inv
+	}
+	return nil
+}
+
+var (
+	_ ports.MemberAdminRepository = (*fakeMembers)(nil)
+	_ ports.MemberTxRunner        = (*fakeMembers)(nil)
+)

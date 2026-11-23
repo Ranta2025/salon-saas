@@ -70,12 +70,15 @@ func (f *fakeMemberships) Save(m domain.Membership) error {
 	if f.byKey == nil {
 		f.byKey = map[string]domain.Membership{}
 	}
+	// Misma semántica que el upsert de pgstore (saveMembership): la fila que
+	// vuelve a entrar al equipo queda ACTIVA (ended_at NULL).
+	m.EndedAt = nil
 	f.byKey[m.UserID+"|"+m.SalonID] = m
 	return nil
 }
 func (f *fakeMemberships) Find(userID, salonID string) (domain.Membership, error) {
 	m, ok := f.byKey[userID+"|"+salonID]
-	if !ok {
+	if !ok || !m.Active() {
 		return domain.Membership{}, domain.ErrNotFound
 	}
 	return m, nil
@@ -85,7 +88,7 @@ func (f *fakeMemberships) Find(userID, salonID string) (domain.Membership, error
 func (f *fakeMemberships) ListByUser(userID string) ([]domain.Membership, error) {
 	var out []domain.Membership
 	for _, m := range f.byKey {
-		if m.UserID == userID {
+		if m.UserID == userID && m.Active() {
 			out = append(out, m)
 		}
 	}

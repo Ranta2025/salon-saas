@@ -96,6 +96,9 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.GET("/salons/:id/members", d.Members.List)
 	authed.POST("/salons/:id/members", d.Members.Add)
 	authed.DELETE("/salons/:id/members/:uid", d.Members.Remove)
+	// F2g2: `DELETE` da de baja (ended_at, no borra la fila) y esta ruta deshace
+	// la baja conservando rol, marca, oficio y servicios.
+	authed.POST("/salons/:id/members/:uid/reactivate", d.Members.Reactivate)
 	// F2a/F2c: "atiende clientes" y oficio del miembro (el dueño-barbero), y
 	// qué servicios hace (PUT, lista completa).
 	authed.PATCH("/salons/:id/members/:uid", d.Members.Update)
