@@ -46,7 +46,7 @@ func invitationMail(salonName string, inv domain.Invitation, link, expires strin
 		`<html lang="es"><body style="font-family:Arial,Helvetica,sans-serif;line-height:1.5;color:#222">` + "\n" +
 		"<p>Hola:</p>\n" +
 		"<p><strong>" + salonHTML + "</strong> te invitó a sumarte a su equipo como " + roleHTML + ".</p>\n" +
-		`<p><a href="` + linkHTML + `">Creá tu cuenta y entrá</a></p>\n` +
+		`<p><a href="` + linkHTML + `">Creá tu cuenta y entrá</a></p>` + "\n" +
 		"<p>El enlace vence el " + html.EscapeString(expires) + " y sirve una sola vez.</p>\n" +
 		"<p>Si no esperabas esta invitación, podés ignorar este correo.</p>\n" +
 		"</body></html>\n"

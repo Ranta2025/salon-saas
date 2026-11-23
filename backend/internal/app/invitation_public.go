@@ -115,7 +115,17 @@ func (s InvitationPublicService) AcceptNew(token, name, password string) (string
 	// El canje: reclamar la invitación + crear la cuenta + crear la membresía, en
 	// una sola transacción. Si la membresía falla, la cuenta no queda.
 	if _, err := s.claimByID(inv.ID, user.ID, func(tx ports.InvitationTx) error {
-		return tx.SaveUser(user)
+		if err := tx.SaveUser(user); err != nil {
+			// El UNIQUE de users decide la carrera: otra persona (u otro canje de
+			// otro salón) creó la cuenta con este email entre el chequeo de arriba
+			// y este INSERT. Mismo mensaje que cuando la cuenta ya existía de antes.
+			if errors.Is(err, domain.ErrAlreadyExists) {
+				return domain.NewMessage(domain.ErrAlreadyExists,
+					"Ya tenés cuenta: iniciá sesión para aceptar la invitación")
+			}
+			return err
+		}
+		return nil
 	}); err != nil {
 		return "", err
 	}

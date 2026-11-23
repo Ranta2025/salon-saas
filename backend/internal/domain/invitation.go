@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -223,6 +224,25 @@ func ValidateEmail(email string) error {
 	}
 	if len(email) > MaxTextEmail {
 		return fmt.Errorf("%w: el email no puede superar los %d caracteres", ErrValidation, MaxTextEmail)
+	}
+	// Forma mínima de una dirección: UN solo "@", algo a cada lado y nada que
+	// permita colar una segunda dirección o un encabezado (espacios, saltos de
+	// línea, controles, comas, punto y coma, comillas, paréntesis, corchetes).
+	// Antes solo se pedía un "@": se guardaban "a b@x.com" o "x@y.com,evil@z" y
+	// lo único que las frenaba era el mailer (hallazgo de F2g1).
+	if strings.Count(email, "@") != 1 {
+		return fmt.Errorf("%w: email inválido", ErrValidation)
+	}
+	for _, r := range email {
+		if unicode.IsSpace(r) || unicode.IsControl(r) || strings.ContainsRune(`,;<>()[]"\`, r) {
+			return fmt.Errorf("%w: email inválido", ErrValidation)
+		}
+	}
+	at := strings.IndexByte(email, '@')
+	local, host := email[:at], email[at+1:]
+	if local == "" || host == "" ||
+		strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") || strings.Contains(host, "..") {
+		return fmt.Errorf("%w: email inválido", ErrValidation)
 	}
 	return nil
 }
