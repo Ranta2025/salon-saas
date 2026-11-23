@@ -53,7 +53,19 @@ type AvailabilityService struct {
 // Day calcula los huecos libres de una fecha local del salón, para un servicio
 // y opcionalmente para un profesional. Solo devuelve arranques en el futuro
 // (no se agenda hacia atrás) que entren completos dentro del horario.
+//
+// Delega en DayExcluding con un id vacío: el comportamiento es EXACTAMENTE el de
+// siempre (ningún turno tiene id ""), así que el enlace de F1 puede reusar el
+// mismo cálculo sin tocar el contrato público.
 func (s AvailabilityService) Day(slug, date, serviceID, professionalID string) (DayAvailability, error) {
+	return s.DayExcluding(slug, date, serviceID, professionalID, "")
+}
+
+// DayExcluding es Day pero ignorando el turno `excludeBookingID` en los
+// conflictos (F1, D5): el turno que se reprograma no se pisa a sí mismo, así que
+// su propio horario vuelve a ofrecerse y la persona puede elegir cualquier hueco
+// libre del día. Con excludeBookingID vacío el resultado es el de siempre.
+func (s AvailabilityService) DayExcluding(slug, date, serviceID, professionalID, excludeBookingID string) (DayAvailability, error) {
 	salon, err := s.Salons.FindBySlug(strings.TrimSpace(slug))
 	if err != nil {
 		return DayAvailability{}, err
@@ -135,7 +147,7 @@ func (s AvailabilityService) Day(slug, date, serviceID, professionalID string) (
 					continue // ya pasó (o es ahora): no es un hueco reservable
 				}
 				end := start.Add(time.Duration(durationMin) * time.Minute)
-				if overlapsAny(booked, p.ID, start, end) {
+				if overlapsAny(booked, p.ID, start, end, excludeBookingID) {
 					continue
 				}
 				// La ausencia manda aunque el hueco esté libre: no está para
@@ -160,7 +172,7 @@ func (s AvailabilityService) Day(slug, date, serviceID, professionalID string) (
 	// profesionales con 3 puestos no ofrecen 5 turnos a la misma hora: el tope
 	// lo pone el equipamiento (la EXCLUDE por unidad lo garantiza al reservar).
 	if service.ResourceTypeID != "" {
-		slots, err = s.capByEquipment(salon.ID, service.ResourceTypeID, slots, open, closeAt)
+		slots, err = s.capByEquipment(salon.ID, service.ResourceTypeID, slots, open, closeAt, excludeBookingID)
 		if err != nil {
 			return DayAvailability{}, err
 		}
@@ -171,7 +183,7 @@ func (s AvailabilityService) Day(slug, date, serviceID, professionalID string) (
 // capByEquipment limita la oferta de cada horario a las unidades activas libres
 // del tipo. Sin unidades activas no se ofrece nada ({"slots":[]}), nunca un
 // error: el salón configuró un servicio que hoy no puede atender.
-func (s AvailabilityService) capByEquipment(salonID, typeID string, slots []Slot, from, to time.Time) ([]Slot, error) {
+func (s AvailabilityService) capByEquipment(salonID, typeID string, slots []Slot, from, to time.Time, excludeBookingID string) ([]Slot, error) {
 	out := make([]Slot, 0, len(slots))
 	if len(slots) == 0 || s.Resources == nil {
 		return out, nil
@@ -180,7 +192,7 @@ func (s AvailabilityService) capByEquipment(salonID, typeID string, slots []Slot
 	if err != nil {
 		return nil, err
 	}
-	busy, err := s.Resources.OccupiedUnits(salonID, from.UTC().Add(-24*time.Hour), to.UTC().Add(24*time.Hour), "")
+	busy, err := s.Resources.OccupiedUnits(salonID, from.UTC().Add(-24*time.Hour), to.UTC().Add(24*time.Hour), excludeBookingID)
 	if err != nil {
 		return nil, err
 	}
@@ -247,9 +259,14 @@ func (s AvailabilityService) professionals(salonID, serviceID, professionalID st
 }
 
 // overlapsAny dice si el profesional ya tiene un turno activo en [start,end).
-func overlapsAny(bookings []domain.Booking, professionalID string, start, end time.Time) bool {
+// excludeBookingID saca del cálculo al turno que se está reprogramando (F1): sin
+// eso su propio intervalo lo dejaría fuera de su horario actual.
+func overlapsAny(bookings []domain.Booking, professionalID string, start, end time.Time, excludeBookingID string) bool {
 	for _, b := range bookings {
 		if b.ProfessionalID != professionalID || b.Status != domain.BookingBooked {
+			continue
+		}
+		if excludeBookingID != "" && b.ID == excludeBookingID {
 			continue
 		}
 		if b.StartsAt.Before(end) && start.Before(b.EndsAt) {

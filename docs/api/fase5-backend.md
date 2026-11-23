@@ -1852,6 +1852,114 @@ Un salón sin movimientos devuelve ceros (no `500`).
 `{"error":"sin acceso al salón"}` cuando no hay membresía activa en el salón de la
 ruta. Sin sesión, `401`.
 
+## Fase 6 — F1: enlace firmado de un solo uso para cancelar o reprogramar
+
+El email de la reserva (confirmación y recordatorio) lleva un enlace con el que la
+persona **cancela o mueve su turno sin cuenta ni sesión**. El enlace es una
+capability: quien lo tiene puede tocar ESE turno y nada más.
+
+Reglas (D1..D9 del contrato de la fase 6):
+
+- **D1 — un token por email.** Se emite un token NUEVO cada vez que se manda un
+  correo con enlace (confirmación, recordatorio y el aviso de una
+  reprogramación). Solo existe para un turno **con email**: un turno sin email no
+  tiene enlace. El token son 32 bytes de `crypto/rand` en base64url sin relleno
+  (43 caracteres), el mismo generador de las invitaciones de equipo; de él se
+  guarda **solo su SHA-256** (`booking_links.token_hash`, 64 hex, `UNIQUE`).
+  Nunca se loguea ni se devuelve: solo viaja en el fragmento del enlace del email
+  (`<APP_URL>/turno#<token>`).
+- **D2 — un solo uso exitoso.** El primer cancelar o reprogramar que sale bien
+  consume el token (`used_at`); el que falla por horario ocupado, por menos de 2
+  horas o por cualquier validación **no** lo consume (el reclamo se hace dentro
+  de la misma transacción del cambio y el error la deshace). Reprogramar emite un
+  token nuevo y el viejo muere. Los otros tokens vivos del mismo turno siguen
+  valiendo hasta que se usen o el turno deje de estar vigente.
+- **D3 — vigencia en vivo, sin `expires_at`.** El token sirve solo si su turno
+  sigue `booked` y faltan **2 horas o más** (`domain.LinkMinNoticeHours`). Si el
+  personal lo cancela, el enlace muere; si lo mueve, el enlace vale contra el
+  horario nuevo. Con menos de 2 horas el turno se muestra (`can_change: false`)
+  pero no se puede tocar.
+- **D4 — una transacción con un solo lock.** Reclamar el token, validar y cambiar
+  el turno ocurren en UNA transacción con `pg_advisory_xact_lock('booking-write:' ||
+  salón)`: el mismo lock de la reserva pública y del PATCH de la agenda, sin
+  ningún otro lock ni una segunda conexión del pool. Dos pedidos simultáneos con
+  el mismo token: exactamente uno sale bien y el otro recibe `404`.
+  El EXCLUDE de solape de `bookings` sigue siendo la última barrera.
+- **D5 — reprogramar = una reserva nueva.** El horario nuevo tiene que entrar en
+  la ventana del salón y del profesional, no pisar una ausencia, dejar libre una
+  unidad de equipamiento (`resource_unit_id`, puede cambiar de unidad) y no
+  solaparse con otro turno, con el turno que se mueve excluido de los conflictos.
+  Se apoya en la variante nueva `AvailabilityService.DayExcluding`; `Day` no
+  cambia (delega con un id vacío).
+- **D6 — respuestas sin filtrar datos.** Un token inexistente, ya usado, mal
+  formado o de un turno que ya no está vigente da SIEMPRE el mismo
+  `404 {"error":"Enlace inválido o vencido"}`. Con un token vigente la respuesta
+  no lleva teléfono, ni email, ni ids internos del cliente. Las cuatro rutas son
+  `POST` con el token en el **cuerpo** (nunca en la ruta ni en el query).
+- **D7 — límite propio.** Las cuatro rutas van bajo un cubo por IP propio
+  (`PublicBookingLinkLimit`, 20/min, el valor de `/auth`) que **no comparte** el
+  cubo de la reserva pública ni el de las invitaciones. Al pasarse:
+  `429 {"error":"demasiados intentos, esperá un minuto y volvé a probar"}`.
+- **D8 — eventos y correos.** Cancelar o reprogramar publica el MISMO
+  `booking.updated` y el MISMO aviso interno que `BookingService.Update`, y manda
+  al cliente un correo del cambio (cancelado, o el horario nuevo con el enlace
+  nuevo) en segundo plano: un SMTP caído se loguea y **nunca** cambia la
+  respuesta. Las plantillas de confirmación y recordatorio reemplazan «escribile
+  al salón» por el enlace y conservan una línea de contacto.
+- **D9 — lo existente no cambia.** `Book`, el PATCH de la agenda, la cobertura, la
+  disponibilidad `Day`, el POS y los permisos del personal quedan igual.
+
+### `POST /api/v1/public/booking-links/lookup {token}` → `200`
+
+```json
+{"booking":{"salon_name":"Navajas de Oro","service_name":"Corte",
+  "professional_name":"Ana","starts_at":"2026-12-01T15:00:00Z",
+  "ends_at":"2026-12-01T15:45:00Z","timezone":"America/Mexico_City",
+  "can_change":true,"min_notice_hours":2}}
+```
+
+`starts_at`/`ends_at` en RFC3339 UTC; la hora se muestra en `timezone`.
+`can_change` es `false` cuando faltan menos de 2 horas.
+
+### `POST /api/v1/public/booking-links/slots {token, date}` → `200`
+
+Misma forma que la disponibilidad pública
+(`{"date":"YYYY-MM-DD","slots":[{"professional_id","starts_at","ends_at"}]}`), para
+el MISMO servicio y el MISMO profesional del turno, con el propio turno excluido
+de los conflictos. `date` es un día local del salón.
+
+| Caso | Respuesta |
+| --- | --- |
+| ok | `200` con los huecos |
+| fecha mal formada | `400 {"error":"Fecha inválida: usá AAAA-MM-DD"}` |
+| menos de 2 horas | `409 {"error":"Faltan menos de 2 horas para el turno: comunicate con el salón para cambiarlo"}` |
+| token que no sirve | `404 {"error":"Enlace inválido o vencido"}` |
+
+### `POST /api/v1/public/booking-links/cancel {token}` → `200`
+
+`{"status":"cancelled"}`. El hueco queda libre de inmediato para una reserva
+pública nueva. Menos de 2 horas: `409` con el texto de arriba. Un token usado, de
+un turno cerrado o pasado: `404`.
+
+### `POST /api/v1/public/booking-links/reschedule {token, starts_at}` → `200`
+
+`{"booking":{...misma forma que lookup...},"new_link_sent":bool}`.
+`new_link_sent` es `true` si el correo con el enlace nuevo salió o quedó encolado
+en segundo plano; **el token nuevo nunca viaja en la respuesta**. `starts_at` en
+RFC3339.
+
+| Caso | Respuesta |
+| --- | --- |
+| ok | `200` con el turno movido |
+| el mismo instante | `400 {"error":"Elegí un horario distinto al actual"}` |
+| horario ocupado, fuera de horario, ausencia o sin equipo | `409 {"error":"Ese horario ya no está disponible: elegí otro"}` (el token sigue vivo) |
+| menos de 2 horas | `409` con el texto de la ventana mínima |
+| token que no sirve | `404 {"error":"Enlace inválido o vencido"}` |
+
+Errores comunes a las cuatro: `400 {"error":"body inválido"}` (JSON roto, tipo
+equivocado —incluido un token que no es una cadena— o `starts_at`/`date`
+ausentes) y `429` por velocidad. Nunca un `500` por entrada del cliente.
+
 ## Cambios de comportamiento en endpoints existentes
 
 - **`DELETE /salons/:id/members/:uid`** (F2g2): ya no borra la membresía, la
@@ -1862,6 +1970,12 @@ ruta. Sin sesión, `401`.
   la de la baja (el dueño baja a cualquiera; la administración solo a
   profesional, recepción o cliente; el último owner activo es `400`). Ver «Fase
   6 — F2g2: dar de baja en vez de borrar».
+- **Correos a clientes (F1)**: la confirmación de la reserva pública y el
+  recordatorio de 24 h ya no dicen «escribile al salón» como única salida: llevan
+  un enlace de un solo uso (`<APP_URL>/turno#<token>`) para cancelar o
+  reprogramar y **conservan una línea de contacto**. Un turno sin email sigue sin
+  correo y sin enlace. Si el token no se puede emitir (crypto/DB caídos), el
+  correo sale igual con la línea de contacto: el aviso no se pierde.
 - **`POST /salons/:id/sales`**: el precio unitario **lo pone el catálogo**. El
   `unit_price_cents` del body se usa solo para validar el pedido (fuera de rango →
   `400`); el que se cobra y se persiste es el `price_cents` del servicio. Un
@@ -2137,3 +2251,29 @@ directas, el scope por salón en las cuatro operaciones de gastos y los bordes d
 día local (23:59/00:00 en Nueva York y Auckland, día de 23 h del 8/3/2026 y de
 25 h del 1/11/2026), la liquidación abierta que no suma y la pagada que sí, el
 salón vacío en ceros y las lecturas concurrentes con altas y borrados.
+
+Migración de la fase 6 (F1):
+
+- `027_booking_links.sql`: tabla `booking_links(id TEXT PRIMARY KEY, salon_id TEXT
+  NOT NULL REFERENCES salons(id) ON DELETE CASCADE, booking_id TEXT NOT NULL
+  REFERENCES bookings(id) ON DELETE CASCADE, token_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(), used_at TIMESTAMPTZ, CONSTRAINT
+  booking_links_token_hash_len CHECK (char_length(token_hash) = 64))` con índice
+  único `booking_links_token_hash_key (token_hash)` —es la única lectura del
+  sistema, junto con la de invitaciones, que no va scopeada por salón: el hash es
+  la capability— e índice `booking_links_booking_id_idx (booking_id)` para el
+  borrado en cascada del turno. **Sin `expires_at`**: la vigencia la decide el
+  turno (D3). **Sin backfill**: las reservas existentes no tienen enlace hasta su
+  próximo email. Guardas de `pg_indexes` miradas en `current_schema()` (igual que
+  015–026).
+
+La 027 se probó aplicándola **dos veces** con `psql -v ON_ERROR_STOP=1` sobre una
+base limpia (todas las migraciones en orden, dos pasadas: `pg_dump` idéntico
+salvo la marca aleatoria de `pg_dump`) y sobre una base migrada **solo hasta la
+026** con un salón, un usuario, una membresía, un servicio, un turno y su fila de
+email: las filas existentes quedan idénticas. Los tests de integración
+(`SALON_IT=1`, base fresca) cubren además el flujo completo, 16 pedidos
+simultáneos con el mismo token (al cancelar y al reprogramar) con exactamente un
+`200`, un horario ocupado que no consume el token, dos reprogramaciones distintas
+al mismo hueco con un solo ganador y sin solape, el turno de otro salón, el enlace
+del recordatorio y el `CHECK` del hash.

@@ -30,6 +30,12 @@ type ReminderService struct {
 	Emails   ports.BookingEmailRepository
 	Mailer   ports.MailSender
 	Settings ports.SalonSettingsRepository
+	// Links emite el enlace de un solo uso del recordatorio (F1/D1): un token
+	// NUEVO por cada intento de envío, guardado solo como SHA-256. nil = el
+	// recordatorio sale sin enlace (con la línea de contacto).
+	Links ports.BookingLinkRepository
+	// AppURL es la base del enlace (APP_URL).
+	AppURL string
 }
 
 func (s ReminderService) RunOnce(ctx context.Context, now time.Time) (sent, failed int) {
@@ -58,7 +64,19 @@ func (s ReminderService) RunOnce(ctx context.Context, now time.Time) (sent, fail
 			log.Printf("recordatorios: settings del salón %s: %v", d.SalonID, err)
 			settings = domain.SalonSettings{SalonID: d.SalonID, Timezone: "UTC"}
 		}
-		msg := bookingMail(bookingMailReminder, d.SalonName, d.ClientName, d.StartsAt, settings)
+		// El enlace del recordatorio es SUYO (token nuevo): los otros tokens vivos
+		// del turno siguen valiendo hasta que se usen (D2). Si no se puede emitir,
+		// el recordatorio sale igual, con la línea de contacto.
+		link := ""
+		if s.Links != nil {
+			if _, token, err := mintBookingLink(s.Links, d.SalonID, d.BookingID, now); err != nil {
+				// Sin el token en el log: el id del turno y el salón alcanzan.
+				log.Printf("recordatorios: emitir el enlace del turno %s del salón %s: %v", d.BookingID, d.SalonID, err)
+			} else {
+				link = bookingLinkURL(s.AppURL, token)
+			}
+		}
+		msg := bookingMailWithLink(bookingMailReminder, d.SalonName, d.ClientName, d.StartsAt, settings, link)
 		msg.To = d.Email
 
 		sendCtx, cancel := context.WithTimeout(ctx, reminderSendTimeout)

@@ -318,7 +318,13 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F2d3 avisa a la clienta del cambio de turno por el mismo email.
 	coverageSvc.Mailer = mailer
 	coverageSvc.Emails = bookingEmails
-	reminders := app.ReminderService{Emails: bookingEmails, Mailer: mailer, Settings: salons}
+	// F1: el enlace de un solo uso que viaja en la confirmación, el recordatorio y
+	// el aviso de cambio. Guarda solo el SHA-256 del token (migración 027).
+	bookingLinks := pgstore.BookingLinks{Pool: pool}
+	reminders := app.ReminderService{
+		Emails: bookingEmails, Mailer: mailer, Settings: salons,
+		Links: bookingLinks, AppURL: cfg.AppURL,
+	}
 	publicBookingSvc := app.PublicBookingService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems, Bookings: bookings,
 		Professionals: professionals, Hours: weeklyHours, TimeOff: timeOffRepo,
@@ -326,6 +332,19 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Clients:   clientsRepo,  // cada reserva pública deja la ficha de la clienta (E-03)
 		Events:    hub, Notifier: notifSvc,
 		Mailer: mailer, Emails: bookingEmails,
+		// F1: un token nuevo por cada email enviado; solo para turnos con email.
+		Links: bookingLinks, AppURL: cfg.AppURL,
+	}
+	// F1: las cuatro rutas públicas del enlace (lookup, horarios, cancelar y
+	// reprogramar). Toma el MISMO lock `booking-write:<salón>` de Book y Update en
+	// UNA transacción: dos pedidos con el mismo token no pueden ganar los dos.
+	bookingLinkSvc := app.BookingLinkService{
+		Links: bookingLinks, Tx: bookingLinks,
+		Bookings: bookings, Salons: salons, Services: servicesRepo, Staff: mems,
+		Settings: salons, Professionals: professionals, Hours: weeklyHours,
+		TimeOff: timeOffRepo, Resources: resourceRepo, Availability: availabilitySvc,
+		Events: hub, Notifier: notifSvc, Mailer: mailer, Emails: bookingEmails,
+		AppURL: cfg.AppURL,
 	}
 
 	router := gin.New()
@@ -362,6 +381,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Me:            httpapi.MeHandler{Me: meSvc},
 		Staff:         httpapi.StaffHandler{Staff: staffSvc, Memberships: mems},
 		Public:        httpapi.PublicHandler{Public: publicSvc, Avail: availabilitySvc, Bookings: publicBookingSvc},
+		BookingLinks:  httpapi.BookingLinkHandler{Links: bookingLinkSvc},
 		Settings:      httpapi.SettingsHandler{Settings: settingsSvc, Memberships: mems},
 		Members:       httpapi.MemberHandler{Members: memberSvc, Memberships: mems},
 		Hours: httpapi.HoursHandler{
@@ -385,8 +405,12 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		// F2g1: el lookup y el canje de una invitación son las otras escrituras
 		// sin sesión; van bajo el mismo límite por IP que /auth.
 		PublicInvitationLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/invitations/"),
-		WS:                    hub.ServeWS,
-		TokenIssuer:           tokens,
+		// F1/D7: el enlace del turno tiene su PROPIO cubo (20/min por IP): una
+		// inundación de enlaces no puede gastar el cupo de la reserva pública ni el
+		// de las invitaciones, ni al revés.
+		PublicBookingLinkLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/booking-links/"),
+		WS:                     hub.ServeWS,
+		TokenIssuer:            tokens,
 	}
 	httpapi.RegisterRoutes(router, deps)
 	return router, deps, reminders

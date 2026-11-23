@@ -60,6 +60,12 @@ type PublicBookingService struct {
 	// no deja recordatorio; Emails sin Mailer solo guarda la dirección.
 	Mailer ports.MailSender
 	Emails ports.BookingEmailRepository
+	// Links emite el enlace de un solo uso que viaja en la confirmación (F1).
+	// nil = este entorno no emite enlaces y el correo sale con la línea de
+	// contacto. Solo se emite para un turno CON email (D1).
+	Links ports.BookingLinkRepository
+	// AppURL es la base del enlace (APP_URL).
+	AppURL string
 }
 
 // Book agenda un turno público. Errores: 404 (slug/profesional inexistente),
@@ -287,8 +293,21 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 	})
 	notify(s.Notifier, salon.ID, "", "Nuevo turno",
 		b.ClientName+" · "+FormatSalonTime(settings, b.StartsAt)+" (reserva web)", domain.KindBooking)
+	// El enlace de un solo uso para cambiar o cancelar (F1/D1): un token NUEVO por
+	// cada email enviado y solo para un turno con email. Si no se puede emitir, la
+	// confirmación sale igual con la línea de contacto: el turno ya está agendado
+	// y un enlace que falta no puede dejar a la persona sin su correo.
+	link := ""
+	if clientEmail != "" && s.Links != nil {
+		if _, token, err := mintBookingLink(s.Links, salon.ID, b.ID, time.Now().UTC()); err != nil {
+			// Sin el token en el log: el id del turno y el salón alcanzan.
+			log.Printf("reserva pública: emitir el enlace del turno %s en el salón %s: %v", b.ID, salon.ID, err)
+		} else {
+			link = bookingLinkURL(s.AppURL, token)
+		}
+	}
 	// La confirmación sale en segundo plano: la respuesta 201 no espera al SMTP.
-	s.sendBookingConfirmation(salon.Name, b, clientEmail, settings)
+	s.sendBookingConfirmation(salon.Name, b, clientEmail, settings, link)
 	return b, nil
 }
 

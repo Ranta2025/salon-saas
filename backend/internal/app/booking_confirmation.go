@@ -19,13 +19,17 @@ const confirmationTimeout = 15 * time.Second
 // sendBookingConfirmation dispara la confirmación si hay con qué: sin mailer
 // configurado (SMTP_HOST vacío) o sin email de la persona, no hace nada.
 //
+// `link` es el enlace de un solo uso de ese envío (F1/D1). Vacío = el correo sale
+// con la línea de contacto en lugar del enlace (token no emitido o entorno sin
+// enlaces).
+//
 // La reserva ya está guardada cuando esto se llama: ningún error de acá puede
 // volver al navegador.
-func (s PublicBookingService) sendBookingConfirmation(salonName string, b domain.Booking, email string, settings domain.SalonSettings) {
+func (s PublicBookingService) sendBookingConfirmation(salonName string, b domain.Booking, email string, settings domain.SalonSettings, link string) {
 	if s.Mailer == nil || strings.TrimSpace(email) == "" {
 		return
 	}
-	msg := bookingMail(bookingMailConfirmation, salonName, b.ClientName, b.StartsAt, settings)
+	msg := bookingMailWithLink(bookingMailConfirmation, salonName, b.ClientName, b.StartsAt, settings, link)
 	msg.To = email
 	go func() {
 		// Un panic del adaptador no puede tumbar el proceso desde una goroutine

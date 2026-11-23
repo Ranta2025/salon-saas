@@ -43,6 +43,14 @@ type Deps struct {
 	// Profit es el reporte de ganancia neta de F3b (ingresos - gastos - nómina
 	// pagada). Solo owner/admin: lo aplica el caso de uso.
 	Profit ProfitHandler
+	// BookingLinks son las cuatro rutas públicas del enlace firmado de un turno
+	// (F1): lookup, horarios, cancelar y reprogramar. Sin sesión y con el token
+	// en el cuerpo.
+	BookingLinks BookingLinkHandler
+	// PublicBookingLinkLimit limita por IP el prefijo de los enlaces (D7): tiene
+	// SU PROPIO cubo, con el mismo valor que /auth, para que una inundación de
+	// enlaces no gaste el cupo de la reserva pública ni de las invitaciones.
+	PublicBookingLinkLimit gin.HandlerFunc
 	// PublicInvitationLimit limita por IP el lookup y el canje públicos (nil =
 	// sin límite, como en los tests unitarios del router). Van bajo el mismo
 	// cubo que la reserva pública: son las escrituras sin sesión.
@@ -88,6 +96,20 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	}
 	v1.POST("/public/invitations/lookup", publicInvitation(d.Invitations.Lookup)...)
 	v1.POST("/public/invitations/accept", publicInvitation(d.Invitations.Accept)...)
+
+	// F1: el enlace firmado de un solo uso del turno. Las cuatro son POST con el
+	// token en el CUERPO (nunca en la ruta ni en el query) y van bajo un límite
+	// por IP propio (D7).
+	publicLink := func(h gin.HandlerFunc) []gin.HandlerFunc {
+		if d.PublicBookingLinkLimit == nil {
+			return []gin.HandlerFunc{h}
+		}
+		return []gin.HandlerFunc{d.PublicBookingLinkLimit, h}
+	}
+	v1.POST("/public/booking-links/lookup", publicLink(d.BookingLinks.Lookup)...)
+	v1.POST("/public/booking-links/slots", publicLink(d.BookingLinks.Slots)...)
+	v1.POST("/public/booking-links/cancel", publicLink(d.BookingLinks.Cancel)...)
+	v1.POST("/public/booking-links/reschedule", publicLink(d.BookingLinks.Reschedule)...)
 
 	authed := v1.Group("", AuthMiddleware(d.TokenIssuer))
 	// Quién soy y en qué salones estoy (el frontend elige el salón activo).
