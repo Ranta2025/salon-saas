@@ -109,8 +109,15 @@ func (r Memberships) DeleteMember(userID, salonID string) error {
 // CountRole cuenta miembros ACTIVOS con un rol dentro del salón (protección del
 // último owner). Una baja no cuenta: el salón no puede quedarse sin dueño activo.
 func (r Memberships) CountRole(salonID string, role domain.Role) (int, error) {
+	return countRole(r.Pool, salonID, role)
+}
+
+// countRole es la ÚNICA query del conteo por rol: la comparten la lectura del
+// adaptador y la transacción de la baja, donde corre DESPUÉS del UPDATE y bajo
+// el lock del salón (último owner activo).
+func countRole(q querier, salonID string, role domain.Role) (int, error) {
 	var n int
-	err := r.Pool.QueryRow(context.Background(),
+	err := q.QueryRow(context.Background(),
 		`SELECT COUNT(*)::int FROM memberships WHERE salon_id=$1 AND role=$2 AND ended_at IS NULL`,
 		salonID, string(role)).Scan(&n)
 	if err != nil {
@@ -207,9 +214,10 @@ func countFutureBookings(q querier, salonID, userID string, now time.Time) (int,
 // futuros (el 409 revierte la baja) y revocar las invitaciones pendientes que
 // emitió la persona commitean juntos o no pasan (S-F2g2-4).
 //
-// No toma lock por salón: la serialización la da el row lock del UPDATE
-// condicional por ended_at, que es más fino. TxTimeout acota cuánto puede
-// retener una conexión del pool una transacción trabada.
+// El lock por salón lo toma DeactivateMember (ver memberTx): dos bajas de
+// personas DISTINTAS no se tocan en las filas, así que el row lock solo no las
+// serializa. TxTimeout acota cuánto puede retener una conexión del pool una
+// transacción trabada.
 func (r Memberships) InMemberTx(fn func(tx ports.MemberTx) error) error {
 	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
 	defer cancel()
@@ -228,12 +236,30 @@ func (r Memberships) InMemberTx(fn func(tx ports.MemberTx) error) error {
 // transacción abierta, nunca sobre el pool (si no, no serían atómicas).
 type memberTx struct{ tx pgx.Tx }
 
+// memberWriteLockKey es la clave del lock por salón de las bajas. El prefijo no
+// puede chocar con los otros locks por salón del sistema ("booking-write:" y
+// "booking-cover:"): salones distintos no se esperan entre sí.
+func memberWriteLockKey(salonID string) string { return "member-write:" + salonID }
+
+// DeactivateMember da de baja la membresía con un lock por salón ANTES del
+// UPDATE condicional. El lock es necesario porque el row lock del UPDATE solo
+// serializa dos bajas de la MISMA persona: dos owners que se dan de baja
+// mutuamente bloquean filas distintas, contaban «queda otro owner» los dos y el
+// salón quedaba sin dueño. Con el xact lock (se libera solo al commit o
+// rollback) la segunda baja espera, y su conteo ve la baja ya commiteada.
 func (t memberTx) DeactivateMember(userID, salonID string, endedAt time.Time) error {
+	if _, err := t.tx.Exec(context.Background(), `SELECT pg_advisory_xact_lock(hashtext($1))`, memberWriteLockKey(salonID)); err != nil {
+		return err
+	}
 	return deactivateMembership(t.tx, userID, salonID, endedAt)
 }
 
 func (t memberTx) CountFutureBookings(salonID, userID string, now time.Time) (int, error) {
 	return countFutureBookings(t.tx, salonID, userID, now)
+}
+
+func (t memberTx) CountRole(salonID string, role domain.Role) (int, error) {
+	return countRole(t.tx, salonID, role)
 }
 
 // RevokeInvitationsBy revoca las invitaciones PENDIENTES que emitió esa persona

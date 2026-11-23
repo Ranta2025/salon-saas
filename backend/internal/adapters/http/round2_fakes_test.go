@@ -200,6 +200,12 @@ func (t mmemberTx) CountFutureBookings(salonID, userID string, now time.Time) (i
 	return t.f.CountFutureBookings(salonID, userID, now)
 }
 
+// CountRole: solo activos, leído después del UPDATE de la baja (como la query
+// dentro de la transacción real).
+func (t mmemberTx) CountRole(salonID string, role domain.Role) (int, error) {
+	return t.f.CountRole(salonID, role)
+}
+
 // RevokeInvitationsBy: las pendientes que emitió esa persona dejan de servir en
 // el MISMO commit que la baja (hallazgo de F2g1).
 func (t mmemberTx) RevokeInvitationsBy(salonID, createdBy string, now time.Time) error {

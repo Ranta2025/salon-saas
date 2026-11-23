@@ -37,8 +37,11 @@ type InvitationService struct {
 	Invitations ports.InvitationRepository
 	// Tx es la transacción: emitir (contar, revocar y guardar), revocar y
 	// canjear nunca quedan a medias.
-	Tx          ports.InvitationTxRunner
-	Memberships ports.MembershipRepository
+	Tx ports.InvitationTxRunner
+	// Memberships es el directorio del equipo: la lectura activa compartida y la
+	// que también ve a quien fue dado de baja (FindMember). La invitación la
+	// necesita para no confundir una baja con alguien nuevo (F2g2).
+	Memberships ports.MemberDirectory
 	Users       ports.UserRepository
 	Salons      ports.SalonRepository
 	// Settings da la zona del salón para escribir la fecha de vencimiento del
@@ -92,7 +95,9 @@ func (s InvitationService) Invite(actor domain.Membership, salonID string, in In
 	}
 	// Quien ya es parte del equipo no se invita: se le cambia el rol desde
 	// Equipo. (El canje también lo rechaza, por si la membresía apareció después.)
-	if err := s.ensureNotMember(salonID, email); err != nil {
+	// Una persona DADA DE BAJA sí se puede invitar si el actor podría reactivarla:
+	// el canje la reactiva con el rol de la invitación.
+	if err := s.ensureNotMember(m, salonID, email); err != nil {
 		return CreatedInvitation{}, err
 	}
 	attends := defaultAttends(in.Role)
@@ -168,8 +173,16 @@ func (s InvitationService) Revoke(actor domain.Membership, salonID, invitationID
 	})
 }
 
-// ensureNotMember rechaza invitar a alguien que ya está en el equipo.
-func (s InvitationService) ensureNotMember(salonID, email string) error {
+// ensureNotMember rechaza invitar a quien ya está en el equipo.
+//
+// La lectura es FindMember, no Find: desde F2g2 `Memberships.Find` devuelve solo
+// activas, así que una baja parecía alguien nuevo y el canje le cambiaba el rol
+// al que eligiera el actor. Si la fila existe y está dada de baja, la
+// autorización es la de la baja/reactivación sobre el ROL GUARDADO
+// (Role.RemovableBy): la administración no emite una invitación que le cambiaría
+// el rol a un admin o a un dueño (403); el dueño sí, y ahí manda el rol de la
+// invitación.
+func (s InvitationService) ensureNotMember(actor domain.Membership, salonID, email string) error {
 	user, err := s.Users.FindByEmail(email)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
@@ -177,10 +190,15 @@ func (s InvitationService) ensureNotMember(salonID, email string) error {
 		}
 		return err
 	}
-	_, err = s.Memberships.Find(user.ID, salonID)
+	existing, err := s.Memberships.FindMember(user.ID, salonID)
 	switch {
-	case err == nil:
+	case err == nil && existing.Active():
 		return domain.NewMessage(domain.ErrAlreadyExists, "Esa persona ya es parte del equipo")
+	case err == nil:
+		if !existing.Role.RemovableBy(actor.Role) {
+			return domain.ErrForbidden
+		}
+		return nil
 	case errors.Is(err, domain.ErrNotFound):
 		return nil
 	default:

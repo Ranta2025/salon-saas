@@ -305,8 +305,13 @@ DELETE /salons/:id/members/:uid -> 204 (sin body)
   lo explica. Email ya miembro → `409`. Rol desconocido → `400`.
 - `DELETE`: desde F2g2 **da de baja** (marca `ended_at`), no borra la fila: ver
   «Fase 6 — F2g2: dar de baja en vez de borrar». No se puede dar de baja al
-  **último owner** del salón (`409`); a alguien que ya está dado de baja o que
-  no es miembro de ese salón → `404`. La respuesta sigue siendo `204`.
+  **último owner** del salón (`400 {"error":"No se puede quitar al último
+  dueño"}`); a alguien que ya está dado de baja o que no es miembro de ese salón
+  → `404`. La respuesta sigue siendo `204`.
+- `POST` con el email de una persona **dada de baja** la reactiva con el rol
+  pedido, pero solo si el actor podría darla de baja (misma regla de rol); la
+  administración no reactiva así a un `admin` ni a un `owner` → `403
+  {"error":"sin permiso"}`. Ver «Fase 6 — F2g2».
 - `GET` agrega `active` y `ended_at` por miembro (F2g2) y devuelve también a
   quien fue dado de baja.
 - Aislamiento: el id del salón manda; un miembro de otro salón no se lista ni se
@@ -1158,6 +1163,13 @@ DELETE de alguien con 1 turno futuro        -> 409
   F2g2) y esa comprobación va **antes** que la del rol: con un solo owner activo
   el `400` gana y el salón nunca queda sin dueño. La reactivación usa la misma
   regla.
+- **La carrera del último owner está cerrada**: el conteo se repite DENTRO de la
+  transacción, después del `UPDATE`, y las bajas del mismo salón se serializan
+  con un lock corto por salón (`pg_advisory_xact_lock` sobre
+  `member-write:<salón>`). Sin eso, dos owners que se daban de baja **mutuamente**
+  bloqueaban filas distintas, los dos veían «queda otro owner» y el salón quedaba
+  sin dueño. Ahora una baja entra (`204`) y la otra responde `400` (o `404` si su
+  fila ya no estaba): nunca cero owners y nunca un `500`.
 - **En la misma transacción** se revocan las invitaciones pendientes que esa
   persona emitió (`invitations.created_by`, hallazgo de F2g1): el token viejo
   pasa a responder el 404 genérico y no sobrevive a quien lo emitió.
@@ -1188,10 +1200,23 @@ POST /salons/:id/members/u_.../reactivate -> 200
 
 ### Reactivación por las otras dos puertas
 
+Las dos puertas resuelven a la persona con la lectura que **también ve la baja**
+(`FindMember`): con la lectura de siempre una baja parecía alguien nuevo y el
+`upsert` del alta le cambiaba el rol al que eligiera el actor.
+
 - **`POST /salons/:id/members`** con el email de alguien dado de baja lo
   **reactiva** con el rol pedido (`attends` según el rol, o el del body):
   `201` y el miembro, **igual que un alta**. Ya no responde «ya es parte del
   equipo» para quien está de baja: esa persona para el alta no está en el equipo.
+  La autorización es la de la baja/reactivación sobre el **rol guardado**
+  (`Role.RemovableBy`): el `owner` reactiva a cualquiera con el rol que pida; la
+  administración solo a profesional, recepción o cliente y por lo tanto **no
+  reactiva a un `admin` ni a un `owner` dados de baja**, ni para bajarles el rol:
+  `403 {"error":"sin permiso"}` y nada cambia.
+- **Crear una invitación** para alguien dado de baja sigue la misma regla: el
+  `owner` puede (y el canje lo reactiva con el rol de la invitación), la
+  administración no puede invitar a un `admin` ni a un `owner` dados de baja
+  (`403 {"error":"sin permiso"}`), porque el canje les cambiaría el rol.
 - **Aceptar una invitación** (`POST /invitations/accept`, la ruta autenticada de
   una cuenta que ya existe) también lo reactiva con el rol de la invitación. Se
   le puede invitar: una baja no bloquea la invitación.
@@ -1236,6 +1261,7 @@ GET /salons/:id/members -> { "members": [
 | Reactivar a alguien que ya está activo | `409` | `Esa persona ya está en el equipo` |
 | Reactivar un inexistente o de otro salón | `404` | `no encontrado` |
 | Reactivar sin permiso (profesional, recepción, otro salón, admin→owner/admin) | `403` | `sin permiso` / `sin acceso al salón` |
+| Reactivar por `POST /members` o invitación a un `admin`/`owner` dado de baja, siendo `admin` | `403` | `sin permiso` |
 
 ## Ronda 3 (T9): ficha desde la reserva, email de la ficha, hora del salón y mensajes
 
@@ -1310,6 +1336,7 @@ nombres de rol en inglés:
 | Rol desconocido | `400` | `Rol desconocido: usá dueño, administración, profesional, recepción o cliente` |
 | Email vacío | `400` | `El email es obligatorio` |
 | Quitar al último dueño | `400` | `No se puede quitar al último dueño` |
+| Reactivar (por alta o invitación) a un admin/owner dado de baja, siendo admin | `403` | `sin permiso` |
 
 Los roles válidos para `POST` siguen siendo `admin`, `professional` y
 `reception` (valores de la API); lo que cambia es cómo se **nombran** en un

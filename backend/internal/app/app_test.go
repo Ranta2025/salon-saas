@@ -84,6 +84,16 @@ func (f *fakeMemberships) Find(userID, salonID string) (domain.Membership, error
 	return m, nil
 }
 
+// FindMember: la lectura que ve también la baja, como la query de pgstore. La
+// usan el alta por email y la invitación (F2g2).
+func (f *fakeMemberships) FindMember(userID, salonID string) (domain.Membership, error) {
+	m, ok := f.byKey[userID+"|"+salonID]
+	if !ok {
+		return domain.Membership{}, domain.ErrNotFound
+	}
+	return m, nil
+}
+
 // ListByUser: puerto MembershipLister (rooms del websocket y marcar leídas).
 func (f *fakeMemberships) ListByUser(userID string) ([]domain.Membership, error) {
 	var out []domain.Membership

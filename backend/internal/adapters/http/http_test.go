@@ -85,6 +85,16 @@ func (f *mm) Find(u, s string) (domain.Membership, error) {
 	return m, nil
 }
 
+// FindMember: la lectura que ve también la baja (F2g2), como la query de
+// pgstore: la usan el alta por email y la invitación.
+func (f *mm) FindMember(u, s string) (domain.Membership, error) {
+	m, ok := f.byKey[u+"|"+s]
+	if !ok {
+		return domain.Membership{}, domain.ErrNotFound
+	}
+	return m, nil
+}
+
 // CountProfessionals: capacidad instalada del salón (StaffCounter del dashboard).
 func (f *mm) CountProfessionals(salonID string) (int, error) {
 	n := 0

@@ -32,6 +32,22 @@ type MembershipRepository interface {
 	Find(userID, salonID string) (domain.Membership, error)
 }
 
+// MemberLookup resuelve una membresía INCLUYENDO a quien fue dado de baja. Es
+// la lectura que necesitan el alta por email y la invitación (F2g2): con
+// MembershipRepository.Find una baja parece alguien nuevo y el upsert del alta
+// la reactivaba con el rol que eligiera el actor, sin mirar su rol guardado.
+type MemberLookup interface {
+	FindMember(userID, salonID string) (domain.Membership, error)
+}
+
+// MemberDirectory es el directorio del equipo: la lectura activa compartida
+// (autorización de cada pedido) más la que ve la baja (autorización por rol
+// guardado). Va junto porque una operación de alta/invitación necesita las dos.
+type MemberDirectory interface {
+	MembershipRepository
+	MemberLookup
+}
+
 // MembershipLister: los salones a los que pertenece un usuario. Es el puerto
 // de las features que solo reciben el JWT y no un :salon_id en la ruta: el hub
 // de websockets (rooms por salón), "marcar notificación leída" y GET /me.
@@ -86,14 +102,25 @@ type MemberAdminRepository interface {
 // no pasan (S-F2g2-4). El conteo de turnos futuros corre DENTRO de la misma
 // transacción, después del UPDATE condicional, así un turno no puede colarse
 // entre el chequeo y la baja.
+//
+// CountRole corre también dentro de la transacción (después del UPDATE) porque
+// el chequeo del último owner fuera de ella no alcanza: dos owners que se dan de
+// baja MUTUAMENTE bloquean filas distintas, así que el row lock no los
+// serializa y los dos podían ver «queda otro owner» a la vez. El adaptador toma
+// además un lock por salón al desactivar, así el conteo de adentro ve el
+// resultado de la baja que ya commiteó.
 type MemberTx interface {
 	DeactivateMember(userID, salonID string, endedAt time.Time) error
 	CountFutureBookings(salonID, userID string, now time.Time) (int, error)
+	// CountRole cuenta los miembros ACTIVOS con ese rol en el salón: la misma
+	// semántica que MemberAdminRepository.CountRole (una baja no cuenta).
+	CountRole(salonID string, role domain.Role) (int, error)
 	RevokeInvitationsBy(salonID, createdBy string, now time.Time) error
 }
 
-// MemberTxRunner abre la transacción de la baja. Sin lock por salón: la
-// serialización la da el row lock del UPDATE condicional por ended_at.
+// MemberTxRunner abre la transacción de la baja. El adaptador serializa las
+// bajas del mismo salón con un lock corto por salón: el row lock del UPDATE
+// condicional solo alcanza cuando las dos bajas apuntan a la MISMA persona.
 type MemberTxRunner interface {
 	InMemberTx(fn func(tx MemberTx) error) error
 }

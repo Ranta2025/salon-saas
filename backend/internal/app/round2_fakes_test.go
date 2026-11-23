@@ -48,6 +48,9 @@ type fakeMembers struct {
 	// invitations son las pendientes de la base falsa: la baja revoca las que
 	// emitió la persona, en la misma transacción.
 	invitations []domain.Invitation
+	// concurrentBaja es la clave "user|salon" de quien YA fue dado de baja por
+	// la otra transacción mientras esta corría (la carrera de dos owners, F1).
+	concurrentBaja string
 }
 
 func (f *fakeMembers) ListMembers(salonID string) ([]domain.Member, error) {
@@ -170,11 +173,28 @@ func (f *fakeMembers) InMemberTx(fn func(tx ports.MemberTx) error) error {
 type fakeMemberTx struct{ f *fakeMembers }
 
 func (t fakeMemberTx) DeactivateMember(userID, salonID string, endedAt time.Time) error {
-	return t.f.DeactivateMember(userID, salonID, endedAt)
+	if err := t.f.DeactivateMember(userID, salonID, endedAt); err != nil {
+		return err
+	}
+	// La baja paralela ya commiteó: su owner dejó de estar activo antes del
+	// conteo de adentro (así se ve la carrera sin goroutines en el test).
+	if key := t.f.concurrentBaja; key != "" {
+		other := t.f.mems.byKey[key]
+		at := endedAt
+		other.EndedAt = &at
+		t.f.mems.byKey[key] = other
+	}
+	return nil
 }
 
 func (t fakeMemberTx) CountFutureBookings(salonID, userID string, now time.Time) (int, error) {
 	return t.f.CountFutureBookings(salonID, userID, now)
+}
+
+// CountRole: el mismo conteo que la lectura del adaptador (solo activos), pero
+// leído DESPUÉS del UPDATE de la baja, como la query dentro de la transacción.
+func (t fakeMemberTx) CountRole(salonID string, role domain.Role) (int, error) {
+	return t.f.CountRole(salonID, role)
 }
 
 func (t fakeMemberTx) RevokeInvitationsBy(salonID, createdBy string, now time.Time) error {

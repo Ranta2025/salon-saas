@@ -83,6 +83,11 @@ func (s MemberService) withServices(salonID string, m domain.Member) (domain.Mem
 // Add suma a una persona que YA tiene cuenta. No crea usuarios: el salón no
 // inventa cuentas ni claves por terceros.
 //
+// Si la persona tiene una membresía DADA DE BAJA la fila existe aunque
+// `Memberships.Find` no la vea (F2g2), así que se resuelve con FindMember: se la
+// reactiva con el rol pedido si el actor puede darle de baja (Role.RemovableBy)
+// y si no, 403; nunca se le cambia el rol a quien el actor no maneja.
+//
 // `attends` es opcional (nil = el default del rol según S-F2a-4): un
 // profesional atiende siempre y la administración solo si el alta lo pide (el
 // dueño-barbero que además administra).
@@ -122,13 +127,22 @@ func (s MemberService) Add(actor domain.Membership, salonID, email string, role 
 			return domain.Member{}, err
 		}
 	}
-	existing, err := s.Memberships.Find(user.ID, salonID)
+	existing, err := s.Members.FindMember(user.ID, salonID)
 	switch {
-	case err == nil && existing.Role == role:
+	case err == nil && existing.Active() && existing.Role == role:
 		return domain.Member{}, domain.NewMessage(domain.ErrAlreadyExists, "Ya tiene ese rol")
-	case err == nil:
+	case err == nil && existing.Active():
 		return domain.Member{}, domain.NewMessage(domain.ErrAlreadyExists,
 			"Ya es parte del equipo como "+existing.Role.Label())
+	case err == nil:
+		// Dado de baja: la fila existe aunque `Memberships.Find` no la vea. Solo
+		// la reactiva quien podría darle de baja (Role.RemovableBy: el dueño a
+		// cualquiera, la administración solo a profesional, recepción o cliente),
+		// así un admin no puede reactivar con un rol nuevo a un admin ni a un
+		// dueño dados de baja. Para el actor permitido manda el rol pedido.
+		if !existing.Role.RemovableBy(m.Role) {
+			return domain.Member{}, domain.ErrForbidden
+		}
 	case !errors.Is(err, domain.ErrNotFound):
 		return domain.Member{}, err
 	}
@@ -251,6 +265,10 @@ func (s MemberService) validServiceIDs(salonID string, serviceIDs []string) ([]s
 // Role.RemovableBy: el dueño baja a cualquiera (incluido otro dueño y a sí
 // mismo) y la administración solo a profesional, recepción o cliente.
 //
+// El último owner se chequea DOS veces: el pre-chequeo de acá afuera es el
+// rechazo rápido y claro del caso normal, y el de dentro de la transacción cierra
+// la carrera de dos owners que se dan de baja mutuamente (ver abajo).
+//
 // Con turnos futuros no cancelados responde 409 y NO se hace nada. La baja y la
 // revocación de las invitaciones pendientes que emitió corren en la MISMA
 // transacción.
@@ -281,10 +299,25 @@ func (s MemberService) Remove(actor domain.Membership, salonID, userID string) e
 	}
 	now := s.now()
 	return s.Tx.InMemberTx(func(tx ports.MemberTx) error {
-		// El UPDATE condicional toma el row lock: dos bajas simultáneas dejan
-		// una sola fila consistente (la segunda no afecta filas -> ErrNotFound).
+		// El UPDATE condicional toma el row lock: dos bajas simultáneas de la
+		// MISMA persona dejan una sola fila consistente (la segunda no afecta
+		// filas -> ErrNotFound).
 		if err := tx.DeactivateMember(userID, salonID, now); err != nil {
 			return err
+		}
+		// El último owner se vuelve a contar DESPUÉS del UPDATE y dentro de la
+		// transacción: dos owners que se dan de baja mutuamente bloquean filas
+		// distintas, así que el pre-chequeo de arriba los veía a los dos activos
+		// y los dos seguían adelante. El adaptador serializa las bajas del salón
+		// con un lock corto, así que este conteo ya ve la baja que commiteó.
+		if target.Role == domain.RoleOwner {
+			owners, err := tx.CountRole(salonID, domain.RoleOwner)
+			if err != nil {
+				return err
+			}
+			if owners == 0 {
+				return domain.NewMessage(domain.ErrValidation, "No se puede quitar al último dueño")
+			}
 		}
 		// El conteo va DESPUÉS del UPDATE y dentro de la transacción: si hay
 		// turnos futuros, el error revierte la baja y nada cambia.
