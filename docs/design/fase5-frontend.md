@@ -1814,3 +1814,136 @@ secciones.
     de foco de 3 px al tabular.
 - Fuera de alcance de esta entrega: las liquidaciones (F3.3), los ajustes por
   línea y la exportación CSV (D6/D8).
+
+## 23. Fase 6 — F3.3: liquidaciones, ajustes y exportación
+
+Contrato `odd/tasks/fase6-roadmap.md`, «Contrato F3» (D6, D8, D9) y «Formas de
+F3.3», que están congeladas. Sin dependencias nuevas y sin tocar `backend/**`: la
+UI consume las rutas de ese bloque con sus formas exactas y muestra las frases del
+servidor (400/409) verbatim. Entrega de S-F3.3-5; S-F3.3-1..4 son el backend que
+se implementa en paralelo.
+
+### 23.1 Lectura defensiva (`src/lib/payrollRuns.ts`)
+
+| payload | regla |
+| --- | --- |
+| `GET /payroll/runs/:rid` | se descarta la corrida sin `id`, con `kind` fuera de `week`/`fortnight`/`month` o con `from`/`to` que no son días reales (`2026-02-30` rebota por el round-trip de `Date.UTC`); un `status` ausente o desconocido se lee como `paid` (lado seguro: solo lectura); las líneas sin `user_id` se descartan; el nombre vacío cae al id; `active` ausente es `true`; conteos y centavos negativos, fraccionarios o que no son números bajan a `0`; el ajuste conserva su signo; el `total_cents` de una línea o los `totals` inutilizables se recalculan en enteros desde los conceptos (nunca se muestra un total inventado) |
+| `GET /payroll/runs` | lee `{runs:[…]}` o una lista suelta, descarta filas sin `id`/`kind`/fechas y ordena por `from` desc (desempate por `created_at`) para que la más nueva quede arriba aunque el orden llegue mal; una fila sin totales confiables muestra ceros, nunca un número adivinado |
+| mutaciones | `POST /payroll/runs`, `PATCH …/lines/:uid`, `POST …/pay`: si la respuesta no se puede leer como corrida se lanza un error explícito en vez de un guardado mudo |
+
+### 23.2 Reglas puras (`src/lib/payrollRuns.ts`)
+
+| helper | regla |
+| --- | --- |
+| `canManagePayrollRuns` | dueño/administración; profesional y recepción no (D7). La lista y el detalle comparten la explicación de rol con Nómina |
+| `canEditRunLines` / `canDeleteRun` / `canPayRun` | solo `status === 'open'`; una pagada es inmutable (D6) y la pantalla no ofrece ni edición ni borrado |
+| `liquidateBlockReason` | `null` solo con un período terminado (`period.closed`); el período en curso devuelve «El período todavía no terminó: liquidá cuando haya pasado» y sin período «Elegí un período para liquidar» |
+| `runStatusLabel` / `runKindLabel` / `runLabel` | «Abierta»/«Pagada», «Semana»/«Quincena»/«Mes» y el rótulo del período en español («Semana del 3 al 9 de noviembre»), reutilizando `payPeriodLabel` para las fechas |
+| `lineTotalCents` / `runTotalsFromLines` | total de la línea = comisión + fijo + ajuste con signo; sumas por concepto en centavos enteros, sin coma flotante y sin mutar la entrada |
+| `applyRunLineAdjustment` / `restorePayrollRun` | pinta el ajuste y recalcula el total de la línea y los totales de la corrida para la vista optimista, sin mutar la corrida recibida; la vuelta atrás devuelve **exactamente** el objeto guardado por quien llama |
+| `parseSignedAmountToCents` / `signedAmountInputFromCents` | ajuste con signo (`-500`, `+12.5`, `$1,234.55`), delegando la parte numérica en `parseAmountToCents`; lo ilegible es `null` y no viaja; el valor del campo se arma con aritmética entera (nunca `cents / 100`) |
+| `csvDownloadFilename` / `runCsvFilename` | nombre desde `Content-Disposition` (`filename*` RFC 5987 primero), lista blanca `[A-Za-z0-9._-]`, sin rutas, con `.csv`, tope de 120 caracteres y vuelta al nombre de la corrida (`nomina-<kind>-<from>-<to>.csv`) o a `nomina.csv` |
+
+### 23.3 Bloque «Liquidaciones» en `/panel/nomina` (S-F3.3-5)
+
+- Debajo de la vista previa. Botón «Liquidar este período» habilitado **solo** con
+  `period.closed`; con el período en curso queda deshabilitado y el motivo se lee
+  al lado (también `aria-describedby`). La creación envía `{kind, date}` del
+  período previsualizado y navega al detalle; un 400/409 se muestra verbatim y
+  recarga la lista (la corrida rechazada suele dejar la lista vieja).
+- Lista de corridas nuevas primero: rótulo del período en español, píldora
+  «Abierta» (dorada) o «Pagada» (verde), cantidad de líneas, comisión, fijo,
+  ajuste con signo, total y «Ver detalle». Vacío honesto («Todavía no hay
+  liquidaciones…»), carga, error con «Reintentar».
+
+### 23.4 Detalle `/panel/nomina/liquidaciones/:rid`
+
+- Misma guarda de rol que el resto de Nómina: recepción y profesionales ven «Esta
+  sección es de la administración» y no se pide ninguna corrida.
+- Cabecera con estado, líneas y total; botones «Exportar CSV», «Marcar como
+  pagada» y «Borrar liquidación» solo con la corrida abierta.
+- Tabla con las columnas congeladas (profesional, ventas, vendido, comisión, fijo,
+  ajuste, nota, total), las píldoras «estimado» y «Dado de baja», y un pie de
+  totales. Cada fila abierta ofrece «Editar ajuste», que despliega un formulario
+  con monto con signo y nota; el monto ilegible se rechaza en el cliente con su
+  propio mensaje y no viaja. Al guardar se pinta el cambio (línea y totales)
+  antes de la respuesta; si el servidor rechaza, la corrida vuelve **idéntica**,
+  el formulario conserva lo escrito y la frase del servidor (p. ej. «El ajuste
+  dejaría el total en negativo») se lee en `role="alert"`. La respuesta del
+  servidor reemplaza la vista optimista.
+- «Marcar como pagada» y «Borrar liquidación» usan el bloque de confirmación
+  inline de Equipo (`team-confirm`, 44 px): la de pago dice que la liquidación
+  queda congelada y que no se podrá editar ni borrar; la de borrado avisa que se
+  liberan los días y no se puede deshacer. Pagar deja la corrida en solo lectura
+  con el aviso «Esta liquidación está pagada: no se puede editar ni borrar.»;
+  borrar vuelve a `/panel/nomina`. El 409 de una pagada se lee verbatim.
+- `Content-Disposition` con nombre inseguro o ausente no escribe archivos fuera de
+  descargas: el nombre pasa por la lista blanca.
+
+### 23.5 Exportación CSV autenticada (D8)
+
+`Exportar CSV` **no** es un enlace: `fetchPayrollRunCsv` hace
+`GET /salons/:id/payroll/runs/:rid/export.csv` con `Authorization: Bearer <token>`
+(401 limpia la sesión como el resto de la API), recibe un `Blob`, toma el nombre
+de `Content-Disposition` con la lista blanca y `savePayrollRunCsv` lo entrega con
+un `<a download>` sobre `URL.createObjectURL`, revocando la URL en el `finally`.
+Un fallo de red se lee con el mensaje cortés «No pudimos descargar el CSV. Revisa
+tu conexión e intenta de nuevo.»; un error del servidor conserva su frase.
+
+### 23.6 Rutas y navegación
+
+- `App.tsx` suma `nomina/liquidaciones/:rid`; la entrada «Nómina» del menú ya usa
+  `end: false`, así que sigue marcada en el detalle. No hay entradas nuevas: el
+  detalle se alcanza desde la lista y desde la creación, y el menú móvil conserva
+  sus doce entradas de 44 px para el dueño.
+
+### 23.7 Accesibilidad y estilos
+
+`app.css` suma el bloque «F3.3»: `.runs`/`.run-list`/`.run-card` (tarjetas de
+corrida), `.run-head*` (estado y acciones), `.run-table*` (persona que envuelve,
+nota que envuelve, pie con filete), `.run-line-form` (formulario del ajuste de dos
+campos y botones) y la fila del editor como bloque en el teléfono (sin el rótulo
+heredado de `.table--stack`). Los totales móviles no repiten «Totales» y los
+botones de acción no parten el texto. Etiquetas `<label for>` reales, `role="alert"`
+para los errores, `aria-describedby` del botón deshabilitado a su motivo, 44 px o
+más en todos los controles nuevos y el anillo de foco de 3 px de `base.css`.
+
+### 23.8 Verificación
+
+- `npx tsc --noEmit` sin errores; `npm test` (**396 tests**, `node --test`; 374
+  eran de la entrega anterior y 22 son nuevos de `payrollRuns.test.ts`); `npm run
+  build` en verde.
+- TDD en `src/lib`: primero en rojo (`ERR_MODULE_NOT_FOUND` de
+  `src/lib/payrollRuns.ts`), después en verde los 22 tests: lectura del detalle y
+  de la lista (campos ausentes, tipos equivocados, negativos, fraccionarios,
+  `kind`/fechas inválidas, estado desconocido, totales recalculados, orden nuevo
+  primero), ajuste con signo y valor del campo en enteros, total de línea y sumas,
+  guardado optimista con vuelta atrás exacta y persona desconocida que no toca
+  nada, compuertas abierta/pagada, motivo del botón de liquidar, matriz de roles
+  (cuatro roles y `null`), rótulos en español, nombre seguro del CSV (RFC 5987,
+  ruta `../../etc/passwd`, encabezado vacío, `=` inicial, fallback), y el cliente
+  de la API (verbos, rutas, cuerpo exacto del `PATCH`, 409 verbatim, descarga con
+  `Authorization: Bearer`, nombre del archivo desde `Content-Disposition`, fallback
+  y errores de red/servidor).
+- Revisión visual con el bundle de `vite build` servido con una API simulada en
+  `/tmp/f33-shot` (dueña, lista vacía y profesional) y Chromium headless por
+  protocolo DevTools (el flag `--screenshot` se cuelga en este entorno), cada
+  invocación bajo `timeout 60`, a **390 y 1280 px**, con **20 capturas revisadas
+  una por una**:
+  - `/panel/nomina` con las dos corridas («Abierta» y «Pagada»), el botón de
+    liquidar deshabilitado con su motivo y la lista vacía (390/1280).
+  - Detalle abierto (390/1280), ajuste `-500.00` guardado con su nota, total de la
+    línea y de la corrida actualizados (390/1280), y el `400` del servidor con la
+    fila devuelta a `-$500.00` y el mensaje bajo el formulario (390/1280).
+  - Confirmaciones de «Marcar como pagada» y «Borrar liquidación» (390/1280).
+  - Corrida pagada en solo lectura, sin edición ni borrado, con el aviso y el
+    export (390/1280).
+  - Profesional en `/panel/nomina` y en el detalle: la explicación de rol, sin
+    datos y sin «Nómina» en el menú (390/1280).
+  - Comprobado en el navegador: `scrollWidth === clientWidth` en las 20 capturas;
+    la exportación produce un Blob `text/csv` con el nombre
+    `nomina-week-2026-11-03-2026-11-09.csv` y revoca la URL de objeto una vez; y
+    «Sí, marcar como pagada» deja la píldora «Pagada», el aviso de congelada y
+    desaparecen los botones de editar y borrar.
+- Fuera de alcance de esta entrega: el backend de las corridas (S-F3.3-1..4) y la
+  exportación de ventas, cierres y clientes (F4).

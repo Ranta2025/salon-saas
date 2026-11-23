@@ -12,6 +12,7 @@ import { MyCommissionsPage } from './app/MyCommissionsPage'
 import { NotificationsPage } from './app/NotificationsPage'
 import { PanelHome } from './app/PanelHome'
 import { PayrollPage } from './app/PayrollPage'
+import { PayrollRunDetailPage } from './app/PayrollRunDetailPage'
 import { PosPage } from './app/PosPage'
 import { RequireAuth } from './app/RequireAuth'
 import { ServicesPage } from './app/ServicesPage'
@@ -90,6 +91,7 @@ export function App() {
           <Route path="equipo" element={<TeamPage />} />
           <Route path="equipamiento" element={<EquipmentPage />} />
           <Route path="nomina" element={<PayrollPage />} />
+          <Route path="nomina/liquidaciones/:rid" element={<PayrollRunDetailPage />} />
           <Route path="mis-comisiones" element={<MyCommissionsPage />} />
           <Route path="ajustes" element={<SettingsPage />} />
         </Route>

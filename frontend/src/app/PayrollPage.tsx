@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { describeApiError, type ApiErrorNotice } from '../lib/api'
 import { formatCents } from '../lib/money'
 import { subscribeOfflineData } from '../lib/offlineData'
-import { activeRole, roleLabel } from '../lib/permissions'
+import { activeRole } from '../lib/permissions'
 import {
   checkPayrollInput,
   ESTIMATED_BADGE,
@@ -22,7 +22,9 @@ import {
 import { toDateInputValue } from '../lib/datetime'
 import { useSalon } from './SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
+import { ManagerOnlyNotice } from './components/ManagerOnlyNotice'
 import { PageHeader } from './components/PageHeader'
+import { PayrollRunsSection } from './components/PayrollRunsSection'
 
 /**
  * `/panel/nomina` (S-F3.2-5): preview of the payroll of a period for owner and
@@ -115,13 +117,7 @@ export function PayrollPage() {
     return (
       <>
         <PageHeader eyebrow="Nómina" title="Nómina del salón" />
-        <div className="empty-state">
-          <h2>Esta sección es de la administración</h2>
-          <p>
-            Tu rol ({roleLabel(role)}) no puede ver la nómina ni las comisiones del equipo. Si
-            necesitas acceso, pídeselo a la dueña o a la administración.
-          </p>
-        </div>
+        <ManagerOnlyNotice role={role} />
       </>
     )
   }
@@ -268,6 +264,8 @@ export function PayrollPage() {
           </div>
         </section>
       ) : null}
+
+      <PayrollRunsSection period={period} />
     </>
   )
 }
