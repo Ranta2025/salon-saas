@@ -594,3 +594,46 @@ type PayrollSalesRepository interface {
 	// Sin ventas devuelve el total en cero, no ErrNotFound.
 	CommissionTotalFor(salonID, userID string, from, to time.Time) (domain.PayrollSalesTotal, error)
 }
+
+// --- Liquidaciones de nómina (F3.3, D6 del contrato F3) ---
+
+// PayrollRunRepository: las liquidaciones del salón. La cabecera congela el
+// período y las líneas congelan los montos de cada persona; toda consulta va
+// scopeada por salon_id (una liquidación de otro tenant no existe acá).
+type PayrollRunRepository interface {
+	// ListRuns trae las liquidaciones del salón, la más nueva primero (por
+	// from_date desc), con la cantidad de líneas y los totales.
+	ListRuns(salonID string) ([]domain.PayrollRunSummary, error)
+	// FindRun trae una liquidación con sus líneas. Inexistente o de otro salón
+	// es ErrNotFound (404), sin distinguir cuál de las dos cosas pasó.
+	FindRun(salonID, runID string) (domain.PayrollRun, error)
+}
+
+// PayrollRunTx es la vista TRANSACCIONAL de las liquidaciones. Cada escritura
+// lleva la condición de que la corrida siga ABIERTA: la inmutabilidad de una
+// pagada la sostiene la DB y no solo la API.
+type PayrollRunTx interface {
+	// SaveRun inserta la cabecera y TODAS sus líneas. La EXCLUDE por salón es la
+	// que rechaza días ya cubiertos: ErrAlreadyExists (409), nunca un 500.
+	SaveRun(run domain.PayrollRun) error
+	// FindRun lee la corrida recién escrita (o la que se está por pagar) dentro
+	// de la misma transacción.
+	FindRun(salonID, runID string) (domain.PayrollRun, error)
+	// AdjustLine cambia el ajuste y la nota de una línea SOLO si la corrida está
+	// abierta y la línea existe. Pagada -> ErrAlreadyExists; sin línea o sin
+	// corrida -> ErrNotFound.
+	AdjustLine(salonID, runID, userID string, adjustmentCents int, note string) error
+	// PayRun marca la corrida como pagada SOLO si está abierta. Pagada (o un
+	// segundo pago simultáneo) -> ErrAlreadyExists; inexistente -> ErrNotFound.
+	PayRun(salonID, runID, paidBy string) error
+	// DeleteRun borra la corrida (y sus líneas en cascada) SOLO si está abierta,
+	// liberando los días. Pagada -> ErrAlreadyExists.
+	DeleteRun(salonID, runID string) error
+}
+
+// PayrollTxRunner ejecuta una escritura de liquidaciones en UNA transacción que
+// primero toma un advisory lock por salón (prefijo "payroll-write:"). El lock
+// serializa las creaciones del mismo salón; la EXCLUDE es la red de seguridad.
+type PayrollTxRunner interface {
+	InPayrollTx(salonID string, fn func(tx PayrollRunTx) error) error
+}

@@ -35,6 +35,9 @@ type Deps struct {
 	// Payroll es la nómina de F3.2: modelo de pago por miembro, vista previa del
 	// período y «Mis comisiones». Los permisos de D7 los aplica el caso de uso.
 	Payroll PayrollHandler
+	// PayrollRuns son las liquidaciones de F3.3 (crear, listar, detalle, ajuste,
+	// pago, borrado y CSV). Solo owner/admin: lo aplica el caso de uso.
+	PayrollRuns PayrollRunHandler
 	// PublicInvitationLimit limita por IP el lookup y el canje públicos (nil =
 	// sin límite, como en los tests unitarios del router). Van bajo el mismo
 	// cubo que la reserva pública: son las escrituras sin sesión.
@@ -167,6 +170,16 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.PUT("/salons/:id/members/:uid/pay-model", d.Payroll.UpdatePayModel)
 	authed.POST("/salons/:id/payroll/preview", d.Payroll.Preview)
 	authed.GET("/salons/:id/payroll/me", d.Payroll.Me)
+
+	// F3.3: liquidaciones de nómina. Todas owner/admin (la autorización vive en
+	// el caso de uso); el CSV baja con fetch autenticado, no con un enlace.
+	authed.POST("/salons/:id/payroll/runs", d.PayrollRuns.Create)
+	authed.GET("/salons/:id/payroll/runs", d.PayrollRuns.List)
+	authed.GET("/salons/:id/payroll/runs/:rid", d.PayrollRuns.Get)
+	authed.PATCH("/salons/:id/payroll/runs/:rid/lines/:uid", d.PayrollRuns.AdjustLine)
+	authed.POST("/salons/:id/payroll/runs/:rid/pay", d.PayrollRuns.Pay)
+	authed.DELETE("/salons/:id/payroll/runs/:rid", d.PayrollRuns.Delete)
+	authed.GET("/salons/:id/payroll/runs/:rid/export.csv", d.PayrollRuns.ExportCSV)
 
 	// Bandeja de avisos. Listar va por salón; marcar leída no (el aviso ya sabe
 	// de qué salón es y el alcance sale de las memberships del usuario).

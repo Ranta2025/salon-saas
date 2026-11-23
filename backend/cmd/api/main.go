@@ -187,6 +187,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// agregados de comisión por profesional de una ventana.
 	payModelsRepo := pgstore.PayModels{Pool: pool}
 	payrollSalesRepo := pgstore.PayrollSales{Pool: pool}
+	// F3.3: liquidaciones (migración 025), con la transacción y el advisory lock
+	// del salón en el mismo adaptador.
+	payrollRunsRepo := pgstore.PayrollRuns{Pool: pool}
 
 	// Realtime: el hub es el EventPublisher de los casos de uso (no saben que
 	// hay websockets). Autentica el JWT del query param, valida el Origin con la
@@ -263,6 +266,12 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	payModelSvc := app.PayModelService{Pay: payModelsRepo, Memberships: mems}
 	payrollSvc := app.PayrollService{
 		Pay: payModelsRepo, Sales: payrollSalesRepo, Memberships: mems, Settings: salons,
+	}
+	// F3.3: crear congela la vista previa; ajustar, pagar y borrar solo con la
+	// corrida abierta (la DB repite la condición status='open').
+	payrollRunSvc := app.PayrollRunService{
+		Runs: payrollRunsRepo, Tx: payrollRunsRepo,
+		PayModels: payModelsRepo, Sales: payrollSalesRepo, Memberships: mems, Settings: salons,
 	}
 	availabilitySvc := app.AvailabilityService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems,
@@ -356,6 +365,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 			Invitations: invitationSvc, Public: invitationPublicSvc, Memberships: mems,
 		},
 		Payroll: httpapi.PayrollHandler{PayModels: payModelSvc, Payroll: payrollSvc, Memberships: mems},
+		PayrollRuns: httpapi.PayrollRunHandler{
+			Runs: payrollRunSvc, Memberships: mems,
+		},
 		// La reserva pública es la única escritura sin auth: rate limit por IP
 		// como en /auth (el GET de disponibilidad no pasa por acá).
 		PublicBookingLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/salons/"),

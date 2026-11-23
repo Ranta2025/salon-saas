@@ -1549,6 +1549,151 @@ tenant, persona dada de baja). Sin sesión, `401`. Toda consulta lleva `salon_id
 el modelo de pago, las ventas y las personas de otro salón no se leen ni se
 escriben (un `uid` de otro tenant en el `PUT` es `404`).
 
+## Fase 6 — F3.3: liquidaciones de nómina
+
+Una **liquidación** congela un período ya terminado: los montos de cada línea
+(comisión + fijo, con la foto del nombre y de las ventas) y el ajuste manual
+quedan escritos en la tabla. Desde que se crea, editar el catálogo, cargar ventas
+del período o cambiar el modelo de pago **no mueve lo guardado**. Desde que se
+**paga**, no admite ningún cambio.
+
+La creación reutiliza el **mismo motor** de la vista previa de F3.2 (`kind` +
+`date`, período derivado en la zona del salón): no hay una segunda fórmula. La
+migración **025** agrega `payroll_runs` y `payroll_lines`, con una `EXCLUDE` por
+salón sobre `daterange(from_date, to_date + 1, '[)')`: dos liquidaciones (de
+cualquier tipo, abiertas o pagadas) no pueden pisar los mismos días, así ninguna
+venta se paga dos veces. La creación corre en **una transacción** que primero
+toma un advisory lock por salón (`payroll-write:<salon_id>`) y después inserta
+cabecera + líneas; la `EXCLUDE` es la red de seguridad y su `23P01` responde
+**409**, nunca 500.
+
+### Objeto `run` (detalle)
+
+```json
+{ "id": "run_...", "kind": "month", "from": "2026-02-01", "to": "2026-02-28",
+  "status": "open", "created_at": "2026-03-02T12:00:00Z", "paid_at": null,
+  "totals": { "commission_cents": 250, "fixed_cents": 0, "adjustment_cents": 0,
+              "total_cents": 250 },
+  "lines": [
+    { "user_id": "u_...", "name": "Ana", "active": true, "sales_count": 2,
+      "sales_total_cents": 2500, "commission_cents": 250, "fixed_cents": 0,
+      "adjustment_cents": 0, "adjustment_note": "", "total_cents": 250,
+      "estimated": true } ] }
+```
+
+- `from` y `to` son fechas **locales inclusivas** del salón (`YYYY-MM-DD`).
+- `total_cents` de la línea = comisión + fijo + ajuste, y **nunca** es negativo.
+- `paid_at` es `null` en una abierta y RFC3339 en una pagada (la clave está
+  siempre). `name`, `sales_count`, `sales_total_cents`, `commission_cents`,
+  `fixed_cents` y `estimated` son la **foto** del momento de crear; `active` sale
+  de la membresía actual (una baja posterior se informa como tal).
+- Totales: `adjustment_cents` es la suma de los ajustes de las líneas.
+
+### `POST /salons/:id/payroll/runs {kind,date}` → `201 run`
+
+- Calcula con la vista previa y congela. `kind` ∈ `week` | `fortnight` |
+  `month`; `date` es cualquier día del período (`YYYY-MM-DD`).
+- Exige el período **terminado**: `to` anterior a hoy en la zona del salón, si no
+  → `400 {"error":"El período todavía no terminó: liquidá cuando haya pasado"}`.
+- Sin líneas para pagar → `400 {"error":"No hay nada para liquidar en ese período"}`.
+- Días ya cubiertos por otra liquidación (abierta o pagada, de cualquier tipo)
+  → `409 {"error":"Ya hay una liquidación que cubre esos días"}`. Dos creaciones
+  simultáneas del mismo período: una `201` y la otra `409`, nunca dos corridas.
+- `kind`/`date` inválidos → `400 {"error":"Período inválido"}` (el mensaje lo pone
+  el dominio). La corrida nace `open`, con `created_by` = quien la creó.
+
+### `GET /salons/:id/payroll/runs` → `200`
+
+```json
+{ "runs": [ { "id": "run_...", "kind": "month", "from": "2026-02-01",
+  "to": "2026-02-28", "status": "open", "created_at": "2026-03-02T12:00:00Z",
+  "paid_at": null, "lines_count": 1,
+  "totals": { "commission_cents": 250, "fixed_cents": 0,
+              "adjustment_cents": 0, "total_cents": 250 } } ] }
+```
+
+Las del salón, la más nueva primero (por `from` descendente). Sin liquidaciones
+devuelve `{"runs":[]}` (nunca `null`).
+
+### `GET /salons/:id/payroll/runs/:rid` → `200 run` o `404`
+
+Inexistente **o de otro salón**: `404 {"error":"no encontrado"}` (el id de otro
+tenant no se lee ni se escribe: toda consulta lleva `salon_id`).
+
+### `PATCH /salons/:id/payroll/runs/:rid/lines/:uid` → `200 run`
+
+```json
+PATCH {"adjustment_cents": -1250, "adjustment_note": "Venta duplicada"}
+```
+
+- `adjustment_cents` es **OBLIGATORIO**: campo ausente o `null` →
+  `400 {"error":"Faltan datos del ajuste: indicá el monto del ajuste"}` (nunca un
+  valor por defecto en silencio). `adjustment_note` es opcional.
+- Solo si la corrida está `open`. Pagada → `409 {"error":"La liquidación ya está
+  pagada: no se puede modificar"}`.
+- Nota **obligatoria** si el ajuste no es 0 → `400 {"error":"Explicá el ajuste en
+  una nota"}`; hasta 200 caracteres y sin saltos de línea ni caracteres de
+  control → `400 {"error":"La nota del ajuste no puede superar los 200
+  caracteres"}` / `{"error":"La nota del ajuste no puede tener saltos de línea ni
+  caracteres de control"}`.
+- Ajuste entero con signo dentro de ±2.000.000.000 centavos (`domain.MaxPayCents`).
+- El total de la línea nunca queda negativo → `400 {"error":"El ajuste dejaría el
+  total en negativo"}`.
+- `:uid` que no está en la corrida → `404 {"error":"no encontrado"}`. Corrida
+  inexistente o de otro salón → `404`.
+- La escritura repite `status='open'` en el SQL: una pagada es inmutable también
+  para cualquier camino que no sea la API.
+
+### `POST /salons/:id/payroll/runs/:rid/pay` → `200 run`
+
+- Marca la corrida `paid`, `paid_at = now()` y `paid_by` en una transacción con
+  `UPDATE ... WHERE status='open'`. Pagar otra vez, o dos pagos simultáneos
+  (uno gana y el otro vuelve) → `409 {"error":"La liquidación ya está pagada: no
+  se puede modificar"}`. Corrida inexistente o ajena → `404`.
+- Desde ahí la liquidación es **inmutable**: ajustar, borrar y volver a pagar
+  responden `409` con esa misma frase, y las queries de escritura no la tocan.
+
+### `DELETE /salons/:id/payroll/runs/:rid` → `204`
+
+Solo si está `open`: borra la corrida y sus líneas (cascada) y **libera los
+días** para poder liquidarlos de nuevo. Pagada → `409` con la frase de arriba.
+Inexistente o de otro salón → `404`.
+
+### `GET /salons/:id/payroll/runs/:rid/export.csv` → `200`
+
+`Content-Type: text/csv; charset=utf-8` y
+`Content-Disposition: attachment; filename="nomina-<kind>-<from>-<to>.csv"`
+(nombre armado **solo** con el tipo y las dos fechas: sin nombres ni datos del
+salón). Se baja con `fetch` autenticado + blob, no con un enlace directo.
+
+- UTF-8 **con BOM** (Excel abre bien los acentos) y encabezado exacto:
+  `Profesional,Estado,Ventas,Total vendido,Comisión,Fijo,Ajuste,Nota del ajuste,Total`.
+- `Estado` es `Activo` o `Dado de baja`. Montos como decimales con punto y **dos**
+  decimales calculados desde los centavos **enteros** (sin float): `0.00`, `0.05`,
+  `0.99`, `1.00`, `1234567.89`, `-12.50`.
+- Comillas RFC 4180 (comillas dobles, comas y saltos de línea) y filas con CRLF.
+- **Neutralización de fórmulas (D8)**: toda celda de TEXTO (nombre y nota) que
+  empiece con `=`, `+`, `-`, `@`, tab o CR se prefija con una comilla simple
+  (`=SUM(A1)` sale `'=SUM(A1)`), así abrir el archivo no ejecuta nada.
+- Se puede exportar una liquidación abierta o pagada: los montos son la foto,
+  nunca un recálculo.
+
+### Permisos de las liquidaciones (D7)
+
+| Ruta | owner | admin | professional | reception | dado de baja | otro salón |
+| --- | --- | --- | --- | --- | --- | --- |
+| `POST /salons/:id/payroll/runs` | 201 | 201 | 403 | 403 | 403 | 403 |
+| `GET /salons/:id/payroll/runs` | 200 | 200 | 403 | 403 | 403 | 403 |
+| `GET /salons/:id/payroll/runs/:rid` | 200 | 200 | 403 | 403 | 403 | 403/404 |
+| `PATCH .../runs/:rid/lines/:uid` | 200 | 200 | 403 | 403 | 403 | 403/404 |
+| `POST .../runs/:rid/pay` | 200 | 200 | 403 | 403 | 403 | 403/404 |
+| `DELETE .../runs/:rid` | 204 | 204 | 403 | 403 | 403 | 403/404 |
+| `GET .../runs/:rid/export.csv` | 200 | 200 | 403 | 403 | 403 | 403/404 |
+
+`403` es `{"error":"sin permiso"}` cuando el rol no alcanza y `{"error":"sin
+acceso al salón"}` cuando no hay membresía activa en el salón de la ruta. Sin
+sesión, `401`. Un `:rid` de otro salón es `404` (no existe para este tenant).
+
 ## Cambios de comportamiento en endpoints existentes
 
 - **`DELETE /salons/:id/members/:uid`** (F2g2): ya no borra la membresía, la
