@@ -38,6 +38,11 @@ type Deps struct {
 	// PayrollRuns son las liquidaciones de F3.3 (crear, listar, detalle, ajuste,
 	// pago, borrado y CSV). Solo owner/admin: lo aplica el caso de uso.
 	PayrollRuns PayrollRunHandler
+	// Expenses son los gastos operativos de F3b (F3b del contrato Fase 6).
+	Expenses ExpenseHandler
+	// Profit es el reporte de ganancia neta de F3b (ingresos - gastos - nómina
+	// pagada). Solo owner/admin: lo aplica el caso de uso.
+	Profit ProfitHandler
 	// PublicInvitationLimit limita por IP el lookup y el canje públicos (nil =
 	// sin límite, como en los tests unitarios del router). Van bajo el mismo
 	// cubo que la reserva pública: son las escrituras sin sesión.
@@ -180,6 +185,15 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.POST("/salons/:id/payroll/runs/:rid/pay", d.PayrollRuns.Pay)
 	authed.DELETE("/salons/:id/payroll/runs/:rid", d.PayrollRuns.Delete)
 	authed.GET("/salons/:id/payroll/runs/:rid/export.csv", d.PayrollRuns.ExportCSV)
+
+	// F3b: gastos y ganancia neta. Solo owner/administración en TODAS las rutas
+	// (la autorización vive en el caso de uso); toda consulta lleva salon_id, así
+	// que el gasto de otro salón es 404.
+	authed.POST("/salons/:id/expenses", d.Expenses.Create)
+	authed.GET("/salons/:id/expenses", d.Expenses.List)
+	authed.PUT("/salons/:id/expenses/:eid", d.Expenses.Update)
+	authed.DELETE("/salons/:id/expenses/:eid", d.Expenses.Delete)
+	authed.GET("/salons/:id/profit", d.Profit.Get)
 
 	// Bandeja de avisos. Listar va por salón; marcar leída no (el aviso ya sabe
 	// de qué salón es y el alcance sale de las memberships del usuario).

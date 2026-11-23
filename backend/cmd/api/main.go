@@ -190,6 +190,10 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F3.3: liquidaciones (migración 025), con la transacción y el advisory lock
 	// del salón en el mismo adaptador.
 	payrollRunsRepo := pgstore.PayrollRuns{Pool: pool}
+	// F3b: gastos (migración 026) y el reporte de ganancia neta, que lee ingresos,
+	// gastos y nómina PAGADA en UNA sola transacción REPEATABLE READ de lectura.
+	expenseRepo := pgstore.Expenses{Pool: pool}
+	profitRepo := pgstore.Profit{Pool: pool}
 
 	// Realtime: el hub es el EventPublisher de los casos de uso (no saben que
 	// hay websockets). Autentica el JWT del query param, valida el Origin con la
@@ -273,6 +277,11 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Runs: payrollRunsRepo, Tx: payrollRunsRepo,
 		PayModels: payModelsRepo, Sales: payrollSalesRepo, Memberships: mems, Settings: salons,
 	}
+	// F3b: gastos operativos (solo owner/administración) y ganancia neta del
+	// período en la zona del salón. Las fechas de los gastos se miden contra el
+	// día LOCAL del salón, no UTC.
+	expenseSvc := app.ExpenseService{Expenses: expenseRepo, Memberships: mems, Settings: salons}
+	profitSvc := app.ProfitService{Profit: profitRepo, Memberships: mems, Settings: salons}
 	availabilitySvc := app.AvailabilityService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems,
 		Bookings: bookings, Professionals: professionals, Hours: weeklyHours,
@@ -368,6 +377,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		PayrollRuns: httpapi.PayrollRunHandler{
 			Runs: payrollRunSvc, Memberships: mems,
 		},
+		Expenses: httpapi.ExpenseHandler{Expenses: expenseSvc, Memberships: mems},
+		Profit:   httpapi.ProfitHandler{Profit: profitSvc, Memberships: mems},
 		// La reserva pública es la única escritura sin auth: rate limit por IP
 		// como en /auth (el GET de disponibilidad no pasa por acá).
 		PublicBookingLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/salons/"),

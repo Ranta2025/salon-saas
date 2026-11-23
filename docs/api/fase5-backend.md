@@ -1726,6 +1726,129 @@ salón). Se baja con `fetch` autenticado + blob, no con un enlace directo.
 acceso al salón"}` cuando no hay membresía activa en el salón de la ruta. Sin
 sesión, `401`. Un `:rid` de otro salón es `404` (no existe para este tenant).
 
+## Fase 6 — F3b: gastos y ganancia neta
+
+Gastos operativos (alquiler, insumos, servicios, otros) con fecha y categoría, y
+el panel de **ganancia neta** = ingresos − gastos − nómina pagada por
+día/semana/mes. Las decisiones del contrato son D1–D7:
+
+- **D1 Base de caja**: la nómina entra a la ganancia SOLO cuando la liquidación
+  está **pagada**, en el día local (zona del salón) de `paid_at`, por la suma de
+  `payroll_lines.total_cents` congelados. Las liquidaciones abiertas y las
+  comisiones sin liquidar **no cuentan**.
+- **D2 Día local**: ingresos, gastos y nómina se agrupan por día local en
+  `salons.timezone` (no UTC: no hereda H14). La ventana de cada día es
+  `[00:00 local, 00:00 local del día siguiente)` con `time.Date`, correcta en los
+  cambios de horario de verano (días de 23 y 25 horas). Los gastos guardan un
+  día local (`spent_on DATE`): no dependen de la zona.
+- **D3 Gasto**: `expenses(id, salon_id, category, amount_cents, spent_on,
+  description, created_by, created_at)`. Categorías fijas `rent` (Alquiler),
+  `supplies` (Insumos), `utilities` (Servicios) y `other` (Otros). Monto entero
+  en centavos `1..2000000000` (CHECK en la base). `spent_on` entre `2000-01-01` y
+  hoy local (no futuro). `description` recortada, hasta 200 **caracteres**, puede
+  ser vacía.
+- **D4 Edición**: crear, editar (PUT que **reemplaza**: exige las cuatro claves)
+  y borrar (DELETE físico: es dinero operativo). Sin idempotencia por
+  `client_op_id`.
+- **D5 Permisos**: solo `owner` y `admin` en TODAS las rutas de gastos y
+  ganancia; recepción, profesional y cliente reciben `403`; sin token, `401`;
+  otro salón `403/404`. Toda consulta lleva `salon_id`: un gasto de otro salón es
+  `404` `{"error":"Gasto no encontrado"}`.
+- **D6 Lectura consistente**: el reporte lee ingresos, gastos y nómina en UNA
+  sola transacción **REPEATABLE READ READ ONLY** (la misma técnica de `FindRun`):
+  los tres componentes salen de la misma foto.
+- **D7 No tocar lo existente**: no cambian `NewPayPeriod`, la nómina, el
+  dashboard, `GET /sales` ni el cierre de caja. El período del reporte usa una
+  función propia: `day` es nuevo; `week` (lunes–domingo) y `month` (calendario)
+  reutilizan la derivación de la nómina sin cambiarla.
+
+Objeto `expense` (forma congelada):
+
+```json
+{"id":"…","category":"rent|supplies|utilities|other","amount_cents":150000,
+ "spent_on":"2026-03-19","description":"Alquiler","created_at":"2026-03-20T15:04:05Z",
+ "created_by":"<user_id>"}
+```
+
+`spent_on` es una fecha local `YYYY-MM-DD`; `created_at` es RFC3339.
+
+### `POST /salons/:id/expenses` → `201 expense`
+
+Body `{category, amount_cents, spent_on, description?}`. La descripción es
+opcional al crear y por defecto es `""`. Si falta `category`, `amount_cents` o
+`spent_on`: `400 {"error":"Faltan datos del gasto: categoría, monto y fecha"}`.
+Un `400` no escribe nada y un JSON de tipo equivocado (monto como texto o con
+fracciones) es `400`, nunca `500`.
+
+### `GET /salons/:id/expenses?from=&to=` → `200`
+
+```json
+{"expenses":[expense…],"truncated":false}
+```
+
+Ordenado por `spent_on` descendente y después `created_at` descendente, máximo
+**500** filas (`truncated:true` si había más). `from` y `to` son obligatorios e
+**inclusivos**; `to >= from`; rango máximo 366 días. Si no:
+`400 {"error":"Rango inválido: indicá desde y hasta (AAAA-MM-DD), hasta 366 días"}`.
+
+### `PUT /salons/:id/expenses/:eid` → `200 expense`
+
+Body `{category, amount_cents, spent_on, description}`: las **cuatro** claves son
+obligatorias (`description` puede ser `""`). Si falta una:
+`400 {"error":"Faltan datos del gasto: categoría, monto, fecha y descripción"}` y
+**no se escribe nada**. Inexistente o de otro salón:
+`404 {"error":"Gasto no encontrado"}`.
+
+### `DELETE /salons/:id/expenses/:eid` → `204`
+
+`404 {"error":"Gasto no encontrado"}` si no existe o es de otro salón.
+
+### Validaciones del gasto (400, textos exactos)
+
+| Caso | Mensaje |
+|---|---|
+| categoría fuera del catálogo | `Categoría inválida: usá alquiler, insumos, servicios u otros` |
+| monto `<= 0` | `El monto debe ser mayor a cero` |
+| monto `> 2000000000` | `El monto no puede superar los 2000000000 centavos` |
+| fecha mal formada | `Fecha inválida: usá AAAA-MM-DD` |
+| fecha futura (día local del salón) | `La fecha del gasto no puede ser futura` |
+| fecha anterior a `2000-01-01` | `La fecha del gasto es demasiado antigua` |
+| descripción de más de 200 caracteres | `La descripción no puede superar los 200 caracteres` |
+
+### `GET /salons/:id/profit?kind=day|week|month&date=YYYY-MM-DD` → `200`
+
+```json
+{"period":{"kind":"week","from":"2026-03-02","to":"2026-03-08"},
+ "totals":{"revenue_cents":75000,"expenses_cents":410000,"payroll_cents":30000,
+           "net_cents":-365000},
+ "days":[{"date":"2026-03-02","revenue_cents":50000,"expenses_cents":10000,
+          "payroll_cents":0,"net_cents":40000}],
+ "expenses_by_category":[{"category":"supplies","total_cents":10000}]}
+```
+
+`date` es opcional: sin él, el período es **hoy** en la zona del salón. El
+servidor deriva el período (día = ese día; semana lunes–domingo; mes calendario)
+y `from`/`to` son inclusivos. `days` trae **todos** los días locales del período,
+ascendentes y con ceros. `net_cents = revenue_cents - expenses_cents -
+payroll_cents` (puede ser negativo) y cada total es la suma **exacta** de `days`.
+`expenses_by_category` solo trae categorías con total `> 0`, ordenadas por
+código. Un `kind` o un `date` inválidos son `400 {"error":"Período inválido"}`.
+Un salón sin movimientos devuelve ceros (no `500`).
+
+### Permisos de gastos y ganancia (D5)
+
+| Ruta | owner | admin | reception | professional | client | otro salón |
+| --- | --- | --- | --- | --- | --- | --- |
+| `POST /salons/:id/expenses` | 201 | 201 | 403 | 403 | 403 | 403 |
+| `GET /salons/:id/expenses` | 200 | 200 | 403 | 403 | 403 | 403 |
+| `PUT /salons/:id/expenses/:eid` | 200 | 200 | 403 | 403 | 403 | 403/404 |
+| `DELETE /salons/:id/expenses/:eid` | 204 | 204 | 403 | 403 | 403 | 403/404 |
+| `GET /salons/:id/profit` | 200 | 200 | 403 | 403 | 403 | 403 |
+
+`403` es `{"error":"sin permiso"}` cuando el rol no alcanza y
+`{"error":"sin acceso al salón"}` cuando no hay membresía activa en el salón de la
+ruta. Sin sesión, `401`.
+
 ## Cambios de comportamiento en endpoints existentes
 
 - **`DELETE /salons/:id/members/:uid`** (F2g2): ya no borra la membresía, la
@@ -1987,3 +2110,27 @@ se probó además sobre una base migrada **solo hasta la 023** con un salón, do
 miembros, un servicio y una venta con dos líneas (una con foto y otra `NULL`):
 las dos pasadas no cambian ninguna fila, y el modelo de pago de un miembro se
 guarda y se lee mientras la FK compuesta rechaza a quien no es del salón.
+
+Migración de la fase 6 (F3b):
+
+- `026_expenses.sql`: tabla `expenses(id TEXT PRIMARY KEY, salon_id TEXT NOT NULL
+  REFERENCES salons(id) ON DELETE CASCADE, category TEXT NOT NULL, amount_cents
+  INTEGER NOT NULL, spent_on DATE NOT NULL, description TEXT NOT NULL DEFAULT '',
+  created_by TEXT REFERENCES users(id), created_at TIMESTAMPTZ NOT NULL DEFAULT
+  now())` con los CHECK del contrato (`category IN ('rent','supplies','utilities',
+  'other')`, `amount_cents BETWEEN 1 AND 2000000000`, `spent_on >= DATE
+  '2000-01-01'`, `char_length(description) <= 200`) e índice `expenses_salon_spent_idx
+  (salon_id, spent_on DESC, created_at DESC)` para el listado. Guardas de
+  `information_schema` / `pg_indexes` miradas en `current_schema()` (igual que
+  015–025) y **sin backfill**: una segunda pasada no hace nada y sobre una base
+  con datos no cambia ninguna fila.
+
+La 026 se probó aplicándola **dos veces** con `psql -v ON_ERROR_STOP=1` sobre una
+base limpia y sobre una migrada **solo hasta la 025** con un salón, dos miembros,
+un servicio, una venta con su línea y una liquidación pagada: las dos pasadas no
+cambian las filas existentes (md5 igual) y la base queda igual. Los tests de
+integración (`SALON_IT=1`, base fresca) cubren además los CHECK/FK con inserciones
+directas, el scope por salón en las cuatro operaciones de gastos y los bordes de
+día local (23:59/00:00 en Nueva York y Auckland, día de 23 h del 8/3/2026 y de
+25 h del 1/11/2026), la liquidación abierta que no suma y la pagada que sí, el
+salón vacío en ceros y las lecturas concurrentes con altas y borrados.
