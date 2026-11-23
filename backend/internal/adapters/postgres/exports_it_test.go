@@ -309,3 +309,44 @@ func TestExportsIT_bordes_de_dia_local(t *testing.T) {
 		}
 	}
 }
+
+// Hallazgo del verificador independiente: las lecturas masivas usaban
+// context.Background() sin tope. Con la tabla bloqueada (o un plan malo después
+// de una carga masiva) la consulta quedaba viva en Postgres reteniendo una de las
+// conexiones del pool aunque el cliente ya se hubiera ido. Ahora cada lectura
+// tiene su propio tope y termina con error.
+func TestExportsIT_la_consulta_tiene_tope_de_tiempo(t *testing.T) {
+	pool := itPool(t)
+	defer pool.Close()
+	ctx := context.Background()
+
+	// Otra transacción tiene la tabla bloqueada: cualquier SELECT queda esperando.
+	blocker, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("abrir la transacción bloqueante: %v", err)
+	}
+	defer func() { _ = blocker.Rollback(ctx) }()
+	if _, err := blocker.Exec(ctx, `LOCK TABLE sales IN ACCESS EXCLUSIVE MODE`); err != nil {
+		t.Fatalf("bloquear sales: %v", err)
+	}
+
+	repo := Exports{Pool: pool, Timeout: 300 * time.Millisecond}
+	from := time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC)
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() {
+		_, err := repo.ListExportSales("s-f4-timeout", from, from.Add(24*time.Hour), 10)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("con la tabla bloqueada la lectura tenía que fallar por el tope de tiempo")
+		}
+		if elapsed := time.Since(start); elapsed > 5*time.Second {
+			t.Fatalf("tardó %v: el tope de 300 ms no se aplicó", elapsed)
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("la lectura sigue esperando el lock: no tiene tope de tiempo")
+	}
+}

@@ -12,8 +12,27 @@ import (
 	"salon-saas/internal/domain"
 )
 
+// exportQueryTimeout es el tope de cada lectura masiva: 25 s, por debajo de los
+// 30 s de escritura del servidor HTTP. Sin tope, una consulta lenta (tabla
+// bloqueada, estadísticas viejas tras una carga masiva) seguía viva en Postgres
+// reteniendo una conexión del pool aunque el cliente ya se hubiera ido.
+const exportQueryTimeout = 25 * time.Second
+
 // Exports implementa ports.ExportRepository.
-type Exports struct{ Pool *pgxpool.Pool }
+type Exports struct {
+	Pool *pgxpool.Pool
+	// Timeout acota cada lectura (0 = exportQueryTimeout).
+	Timeout time.Duration
+}
+
+// ctx devuelve el contexto con tope de una lectura; quien llama hace cancel.
+func (r Exports) ctx() (context.Context, context.CancelFunc) {
+	timeout := r.Timeout
+	if timeout <= 0 {
+		timeout = exportQueryTimeout
+	}
+	return context.WithTimeout(context.Background(), timeout)
+}
 
 // exportLimit normaliza el LIMIT: el caso de uso siempre pide tope + 1, pero un
 // 0 o negativo no puede convertirse en «sin filas» por accidente.
@@ -28,7 +47,9 @@ func exportLimit(limit int) int {
 // nombre de la cuenta profesional (vacío si no hay fila en users: LEFT JOIN) y
 // la suma de cantidades de sus ítems, más reciente primero.
 func (r Exports) ListExportSales(salonID string, from, to time.Time, limit int) ([]domain.ExportSaleRow, error) {
-	rows, err := r.Pool.Query(context.Background(),
+	ctx, cancel := r.ctx()
+	defer cancel()
+	rows, err := r.Pool.Query(ctx,
 		`SELECT s.created_at, s.id, COALESCE(u.name, ''), s.client_name, s.method,
 		        COALESCE((SELECT SUM(si.qty) FROM sale_items si WHERE si.sale_id = s.id), 0)::bigint,
 		        s.total_cents
@@ -64,7 +85,9 @@ func (r Exports) ListExportSales(salonID string, from, to time.Time, limit int) 
 // ListExportCashCloses implementa ports.ExportRepository: cierres con closed_at
 // en la ventana, más reciente primero.
 func (r Exports) ListExportCashCloses(salonID string, from, to time.Time, limit int) ([]domain.ExportCashCloseRow, error) {
-	rows, err := r.Pool.Query(context.Background(),
+	ctx, cancel := r.ctx()
+	defer cancel()
+	rows, err := r.Pool.Query(ctx,
 		`SELECT opened_at, closed_at, system_cash_cents, counted_cents, difference_cents, note
 		 FROM cash_closes
 		 WHERE salon_id = $1 AND closed_at >= $2 AND closed_at < $3
@@ -92,7 +115,9 @@ func (r Exports) ListExportCashCloses(salonID string, from, to time.Time, limit 
 // ListExportClients implementa ports.ExportRepository: las fichas del salón
 // ordenadas por nombre (el id desempata para que el archivo sea estable).
 func (r Exports) ListExportClients(salonID string, limit int) ([]domain.ExportClientRow, error) {
-	rows, err := r.Pool.Query(context.Background(),
+	ctx, cancel := r.ctx()
+	defer cancel()
+	rows, err := r.Pool.Query(ctx,
 		`SELECT name, phone, email, notes, created_at
 		 FROM clients
 		 WHERE salon_id = $1

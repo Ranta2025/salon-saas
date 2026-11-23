@@ -2039,6 +2039,8 @@ es el día local de `created_at`. Archivo `clientes-<hoy local>.csv`.
 Nunca un `500` por entrada de la persona. Un `400` no devuelve archivo ni anuncia
 `Content-Disposition`.
 
+Tope de tiempo: cada lectura masiva se cancela a los 25 s (por debajo de los 30 s de escritura del servidor); si lo supera la respuesta es un `500` genérico y la consulta NO queda viva en Postgres reteniendo una conexión del pool.
+
 ## Cambios de comportamiento en endpoints existentes
 
 - **`DELETE /salons/:id/members/:uid`** (F2g2): ya no borra la membresía, la
