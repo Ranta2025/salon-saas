@@ -305,3 +305,27 @@ export function overlapLayout<T extends { id: string; start: number; end: number
   flush()
   return result
 }
+
+/**
+ * Today's local date (`YYYY-MM-DD`) in an IANA zone (contract F3b). The expense
+ * form and the profit report default to the day of the SALON, so the zone comes
+ * from the settings of the active salon and never from a fixed one. An empty or
+ * unusable zone falls back to `TIME_ZONE` instead of throwing inside a render.
+ */
+export function todayInTimeZone(timeZone: string, now: Date = new Date()): string {
+  return toDateInputValue(now, usableTimeZone(timeZone) ?? TIME_ZONE)
+}
+
+/** The zone when `Intl` accepts it, or `null` (empty, misspelled, not installed). */
+function usableTimeZone(timeZone: string): string | null {
+  const candidate = typeof timeZone === 'string' ? timeZone.trim() : ''
+  if (candidate === '') {
+    return null
+  }
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: candidate })
+    return candidate
+  } catch {
+    return null
+  }
+}

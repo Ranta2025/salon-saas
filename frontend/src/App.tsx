@@ -5,6 +5,7 @@ import { CalendarPage } from './app/CalendarPage'
 import { ClientDetailPage } from './app/ClientDetailPage'
 import { ClientsPage } from './app/ClientsPage'
 import { EquipmentPage } from './app/EquipmentPage'
+import { ExpensesPage } from './app/ExpensesPage'
 import { InvitationPage } from './app/InvitationPage'
 import { LoginPage } from './app/LoginPage'
 import { MyAgendaPage } from './app/MyAgendaPage'
@@ -14,6 +15,7 @@ import { PanelHome } from './app/PanelHome'
 import { PayrollPage } from './app/PayrollPage'
 import { PayrollRunDetailPage } from './app/PayrollRunDetailPage'
 import { PosPage } from './app/PosPage'
+import { ProfitPage } from './app/ProfitPage'
 import { RequireAuth } from './app/RequireAuth'
 import { ServicesPage } from './app/ServicesPage'
 import { SettingsPage } from './app/SettingsPage'
@@ -91,6 +93,8 @@ export function App() {
           <Route path="equipo" element={<TeamPage />} />
           <Route path="equipamiento" element={<EquipmentPage />} />
           <Route path="nomina" element={<PayrollPage />} />
+          <Route path="gastos" element={<ExpensesPage />} />
+          <Route path="ganancias" element={<ProfitPage />} />
           <Route path="nomina/liquidaciones/:rid" element={<PayrollRunDetailPage />} />
           <Route path="mis-comisiones" element={<MyCommissionsPage />} />
           <Route path="ajustes" element={<SettingsPage />} />

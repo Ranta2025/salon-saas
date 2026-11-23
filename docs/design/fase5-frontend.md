@@ -1947,3 +1947,110 @@ más en todos los controles nuevos y el anillo de foco de 3 px de `base.css`.
     desaparecen los botones de editar y borrar.
 - Fuera de alcance de esta entrega: el backend de las corridas (S-F3.3-1..4) y la
   exportación de ventas, cierres y clientes (F4).
+
+## 24. Fase 6 — F3b: gastos y ganancia neta (frontend)
+
+Contrato: `odd/tasks/fase6-roadmap.md`, sección «Contrato F3b (gastos y ganancia
+neta)». Esta entrega es **solo el frontend**: el backend de las cinco rutas corre
+en paralelo, así que la API todavía puede no existir y todo se probó con `fetch`
+simulado sobre las formas congeladas.
+
+### 24.1 Rutas, menú y permisos
+
+- `App.tsx` suma `gastos` y `ganancias` dentro de `/panel`; ninguna otra ruta
+  cambia. `AppShell.tsx` suma dos entradas `managerOnly`: «Gastos» y «Ganancias»
+  (13 entradas en el menú; las cinco columnas de 375/390 px siguen entrando sin
+  desborde, medido en el navegador).
+- Las dos páginas se guardan con `canManageExpenses` / `canViewProfit` (dueño y
+  administración, D5) y muestran `ManagerOnlyNotice` al resto, igual que Nómina.
+  El servidor sigue siendo la autoridad: un 403 suyo se explica con el mismo
+  mensaje cortés de siempre.
+
+### 24.2 Lógica pura
+
+- `src/lib/expenses.ts`: `parseExpenseAmountToCents` convierte el texto escrito a
+  centavos con aritmética entera (acepta `12`, `12,5`, `12.50`, `$1250`; rechaza
+  vacío, negativo, `abc`, `1,2,3`, más de dos decimales y separador de miles en
+  lugar de adivinar un factor de 1000). `validateExpenseDraft` valida con las
+  frases EXACTAS del contrato (monto cero, tope de 2000000000, categoría, fecha
+  mal formada, futura contra el día del salón, anterior a 2000-01-01, descripción
+  de más de 200 caracteres contados por carácter) y devuelve el campo culpable.
+  `expenseCreateBody` deja `description` opcional; `expenseUpdateBody` manda
+  SIEMPRE las cuatro claves. `normalizeExpense(s)` lee la respuesta de forma
+  defensiva (fila sin id, sin categoría o con fecha imposible se descarta; el
+  orden por `spent_on` y `created_at` descendente se recalcula) y
+  `checkExpenseRange` / `defaultExpenseRange` cubren el rango de 366 días y los
+  últimos 30 días.
+- `src/lib/profit.ts`: `normalizeProfit` completa con ceros el día que el payload
+  dejó vacío, deriva el neto cuando no es entero, ordena los días ascendente,
+  descarta fechas imposibles, deja solo categorías con total > 0 y, si los
+  totales no son enteros, los suma desde los días. `profitNetSign`,
+  `formatProfitNet` (el signo de la pérdida siempre visible), `profitPeriodLabel`
+  (día propio, semana y mes con el rótulo de la nómina), `profitDayBars` /
+  `barShare` (altura en porcentaje, nunca dinero) y `profitCategoryRows` (rótulos
+  Alquiler, Insumos, Servicios, Otros; un código desconocido se muestra tal cual).
+- `src/lib/datetime.ts`: se AGREGA `todayInTimeZone(zone, now)`, el día de hoy en
+  la zona IANA del salón vía `Intl` con vuelta a `TIME_ZONE` si la zona no sirve.
+  Ninguna función existente cambia.
+
+### 24.3 Pantallas
+
+- `/panel/gastos`: rango Desde/Hasta con atajo «Últimos 30 días», alta y edición
+  en el mismo formulario, lista del rango con Editar y Borrar. Borrar pide
+  confirmación («¿Borrar este gasto?» + «Se borra del todo y esta acción no se
+  puede deshacer.»). **No hay pintado optimista del dinero**: después de cada
+  alta, cambio o borrado la lista se vuelve a pedir al servidor, y el 400/404 se
+  muestra verbatim bajo el formulario (o en la lista).
+- `/panel/ganancias`: selector Día/Semana/Mes con fecha, cuatro tarjetas
+  (ingresos, gastos, nómina pagada y ganancia neta), barras por día local y
+  desglose de gastos por categoría, más el aviso fijo «Incluye la nómina ya
+  pagada; las liquidaciones abiertas y las comisiones sin liquidar no cuentan».
+  La ganancia negativa se pinta en rojo y conserva su signo (`-$150.00`), y el
+  pie de la tarjeta lo dice con palabras («Pérdida: …»), no solo con color.
+- La fecha por defecto del formulario y del reporte sale de `GET
+  /salons/:id/settings` (la zona del SALÓN, hoy `America/Bogota` en el mock),
+  nunca de la constante `America/Mexico_City`: si la persona elige otra fecha, la
+  respuesta tardía de ajustes no la mueve.
+- Si el service worker devuelve una respuesta guardada, la pantalla dice «Sin
+  conexión: mostrando datos guardados» (misma regla que E-10).
+
+### 24.4 Accesibilidad y estilos
+
+No hay cambios de hoja de estilo en esta entrega: se reutilizan las clases
+existentes (`panel-card`, `filters`, `field`, `table--stack`, `kpi`, `rank`,
+`notice`, `team-confirm`, `btn`) y la geometría de las barras va en `style`
+en línea con los tokens del tema (`--wine`, `--gold`, `--rose-tint`) y el rojo de
+`.field__error` para la pérdida. Las barras son CSS puro (sin dependencias), cada
+una es enfocable con teclado y lleva su nombre accesible («5 de noviembre:
+ingresos $850.00, ganancia neta -$50.00»), y debajo hay una lista con el mismo
+detalle para lectores de pantalla. Todos los controles nuevos miden 44 px o más
+(el único control de menos de 44 px de la página es la campana del shell, que ya
+existía) y `scrollWidth === clientWidth` a 390 y 1280 px.
+
+### 24.5 Verificación
+
+- `npx tsc --noEmit` sin errores; `npm test` (**450 tests**, `node --test`; 396
+  eran de la entrega anterior y 54 son nuevos de `expenses.test.ts` y
+  `profit.test.ts`); `npm run build` en verde.
+- TDD en `src/lib`: primero en rojo (`ERR_MODULE_NOT_FOUND` de `expenses.ts` y
+  `profit.ts`, y del export `profitDayBarLabel`), después en verde los 54 tests:
+  monto sin float (coma y punto, dos decimales, tope, rechazos, `10.10` = 1010
+  centavos), mensajes del contrato verbatim, cuerpo del POST (descripción
+  opcional) y del PUT (cuatro claves), orden y descarte de la lista, rango de 366
+  días y últimos 30, confirmación que avisa que no se puede deshacer, matriz de
+  roles, verbos y rutas del cliente con `fetch` simulado, 400 y 404 verbatim,
+  reporte con días en cero, neto derivado con signo, totales recalculados,
+  categorías > 0 y ordenadas, barras proporcionales con días sin ingresos,
+  rótulos en español, aviso fijo y `todayInTimeZone` con dos zonas y una zona
+  inválida.
+- Revisión visual con el bundle de `vite build` servido con una API simulada en
+  `/tmp/f3bf` y Chromium headless por protocolo DevTools, a **390 y 1280 px**:
+  Gastos (dueña) con el formulario y la lista de cuatro gastos, la confirmación
+  de borrado, Ganancias con la semana del mock (neto negativo en rojo, días en
+  cero, desglose por categoría) y las dos páginas con rol profesional (aviso de
+  administración y sin entradas en el menú). En las siete capturas
+  `scrollWidth === clientWidth`; el detalle de 44 px y el corte de texto del menú
+  se midieron en el navegador.
+- Fuera de alcance de esta entrega: el backend de gastos y ganancia (S-F3b
+  completo), gastos recurrentes, adjuntos, categorías personalizadas, exportar a
+  CSV y comparar con el período anterior.
