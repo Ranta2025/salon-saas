@@ -29,10 +29,12 @@ func (r Sales) Save(s domain.Sale) error {
 		return pgError(err)
 	}
 	for _, it := range s.Items {
+		// commission_pct viaja como NULL cuando la línea no tiene foto (F3.1):
+		// nil -> NULL, 0 -> 0. No se rellena nunca con un valor inventado.
 		if _, err := tx.Exec(ctx,
-			`INSERT INTO sale_items(id,sale_id,service_id,qty,unit_price_cents)
-			 VALUES($1,$2,$3,$4,$5)`,
-			domain.NewID(), s.ID, it.ServiceID, it.Qty, it.UnitPriceCents); err != nil {
+			`INSERT INTO sale_items(id,sale_id,service_id,qty,unit_price_cents,commission_pct)
+			 VALUES($1,$2,$3,$4,$5,$6)`,
+			domain.NewID(), s.ID, it.ServiceID, it.Qty, it.UnitPriceCents, it.CommissionPct); err != nil {
 			return pgError(err)
 		}
 	}
@@ -55,7 +57,7 @@ func (r Sales) FindByClientOpID(salonID, clientOpID string) (domain.Sale, error)
 	s.Method = domain.PaymentMethod(method)
 	s.CreatedAt = s.CreatedAt.UTC()
 	rows, err := r.Pool.Query(context.Background(),
-		`SELECT service_id, qty, unit_price_cents FROM sale_items WHERE sale_id=$1 ORDER BY id`,
+		`SELECT service_id, qty, unit_price_cents, commission_pct FROM sale_items WHERE sale_id=$1 ORDER BY id`,
 		s.ID)
 	if err != nil {
 		return domain.Sale{}, err
@@ -63,7 +65,7 @@ func (r Sales) FindByClientOpID(salonID, clientOpID string) (domain.Sale, error)
 	defer rows.Close()
 	for rows.Next() {
 		var it domain.SaleItem
-		if err := rows.Scan(&it.ServiceID, &it.Qty, &it.UnitPriceCents); err != nil {
+		if err := rows.Scan(&it.ServiceID, &it.Qty, &it.UnitPriceCents, &it.CommissionPct); err != nil {
 			return domain.Sale{}, err
 		}
 		s.Items = append(s.Items, it)
@@ -104,7 +106,7 @@ func (r Sales) ListRange(salonID string, from, to time.Time) ([]domain.Sale, err
 
 	// Ítems de esas ventas: same scope (salon_id) para no traer líneas ajenas.
 	itemRows, err := r.Pool.Query(ctx,
-		`SELECT si.sale_id, si.service_id, si.qty, si.unit_price_cents
+		`SELECT si.sale_id, si.service_id, si.qty, si.unit_price_cents, si.commission_pct
 		 FROM sale_items si
 		 JOIN sales s ON s.id = si.sale_id
 		 WHERE s.salon_id=$1 AND s.created_at >= $2 AND s.created_at < $3
@@ -118,7 +120,7 @@ func (r Sales) ListRange(salonID string, from, to time.Time) ([]domain.Sale, err
 	for itemRows.Next() {
 		var saleID string
 		var it domain.SaleItem
-		if err := itemRows.Scan(&saleID, &it.ServiceID, &it.Qty, &it.UnitPriceCents); err != nil {
+		if err := itemRows.Scan(&saleID, &it.ServiceID, &it.Qty, &it.UnitPriceCents, &it.CommissionPct); err != nil {
 			return nil, err
 		}
 		items[saleID] = append(items[saleID], it)

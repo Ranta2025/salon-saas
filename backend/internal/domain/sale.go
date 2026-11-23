@@ -33,6 +33,12 @@ type SaleItem struct {
 	ServiceID      string
 	Qty            int
 	UnitPriceCents int
+	// CommissionPct es la FOTO del % de comisión del servicio en el momento de
+	// la venta (F3.1, D1 del contrato F3). nil = la línea es anterior a F3.1 y
+	// no tiene foto (NULL en la DB): su comisión se estima después con la
+	// tarifa vigente. Congelarla al vender es lo que impide que una liquidación
+	// ya pagada cambie si el dueño edita el porcentaje del catálogo.
+	CommissionPct *int
 }
 
 // SubtotalCents es qty * precio unitario, en centavos enteros.
@@ -121,6 +127,11 @@ func ValidateSaleItems(items []SaleItem) error {
 		}
 		if it.UnitPriceCents > MaxSaleUnitPriceCents {
 			return fmt.Errorf("%w: el precio unitario no puede superar %d centavos", ErrValidation, MaxSaleUnitPriceCents)
+		}
+		// La foto de comisión (F3.1) es opcional (nil = sin foto), pero si está
+		// tiene que ser un porcentaje real: espejo del CHECK de la DB (0..100).
+		if it.CommissionPct != nil && (*it.CommissionPct < 0 || *it.CommissionPct > 100) {
+			return fmt.Errorf("%w: el porcentaje de comisión del ítem debe estar entre 0 y 100", ErrValidation)
 		}
 	}
 	return nil

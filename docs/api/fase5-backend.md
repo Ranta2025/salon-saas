@@ -1413,6 +1413,13 @@ defaults apuntan al Mailpit del stack (UI `http://localhost:8025`).
   servicio inactivo ya no se vende (`400`). El `professional_id` tiene que ser
   personal del salón que **atiende** (`400` si no): rol `professional`, o
   `owner`/`admin` con `attends = true` (F2a).
+  Desde F3.1 cada línea guarda además la **foto** del `commission_pct` que el
+  servicio tenía al venderse (`sale_items.commission_pct`, migración 023): una
+  venta nueva la copia ítem por ítem y editar el porcentaje del catálogo después
+  **no** cambia lo ya vendido; el repetido por `client_op_id` devuelve la venta
+  original con su foto original. Las ventas anteriores quedan en `NULL` (sin
+  backfill) y el **JSON de la venta no cambia**: `commission_pct` es interno y no
+  se expone en ninguna respuesta.
 - **`POST /salons/:id/bookings`**: mismo requisito de `professional_id`; además el
   turno no puede durar más de 12 h ni empezar en el pasado.
 - **`POST /salons/:id/cash-closes`**: el cierre corre en una transacción con lock

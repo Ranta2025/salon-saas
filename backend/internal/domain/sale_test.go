@@ -79,3 +79,43 @@ func TestPaymentMethod_valido(t *testing.T) {
 		t.Fatal("métodos fuera del catálogo deben ser inválidos")
 	}
 }
+
+// F3.1 (S-F3.1-2): la línea de venta lleva la FOTO del % de comisión del
+// servicio. Reglas de dominio: 0 es un porcentaje válido (no es "sin foto"),
+// nil sigue siendo nil (venta anterior a F3.1) y el rango 0..100 se valida acá
+// como espejo del CHECK de la DB (migración 023).
+func TestNewSale_foto_de_comision_por_item(t *testing.T) {
+	pct := func(v int) *int { return &v }
+	s, err := NewSale("s1", "prof1", "Lía", []SaleItem{
+		{ServiceID: "svc-gratis", Qty: 1, UnitPriceCents: 1000, CommissionPct: pct(0)},
+		{ServiceID: "svc-total", Qty: 2, UnitPriceCents: 2000, CommissionPct: pct(100)},
+	}, MethodCash)
+	if err != nil {
+		t.Fatalf("venta con foto: %v", err)
+	}
+	if s.Items[0].CommissionPct == nil || *s.Items[0].CommissionPct != 0 {
+		t.Fatalf("0%% debe guardarse como foto 0, no como NULL: %v", s.Items[0].CommissionPct)
+	}
+	if s.Items[1].CommissionPct == nil || *s.Items[1].CommissionPct != 100 {
+		t.Fatalf("100%% debe conservarse: %v", s.Items[1].CommissionPct)
+	}
+	// Sin foto se queda sin foto: el dominio no inventa un porcentaje.
+	sin, err := NewSale("s1", "prof1", "Lía", []SaleItem{
+		{ServiceID: "svc-viejo", Qty: 1, UnitPriceCents: 5000},
+	}, MethodCard)
+	if err != nil {
+		t.Fatalf("venta sin foto: %v", err)
+	}
+	if sin.Items[0].CommissionPct != nil {
+		t.Fatalf("sin foto debe quedar nil, dio %v", *sin.Items[0].CommissionPct)
+	}
+	// Fuera de rango: ErrValidation, no un dato que la DB tenga que rechazar.
+	for _, bad := range []int{-1, 101, 1000} {
+		_, err := NewSale("s1", "prof1", "Lía", []SaleItem{
+			{ServiceID: "svc-corte", Qty: 1, UnitPriceCents: 1000, CommissionPct: pct(bad)},
+		}, MethodCash)
+		if !errors.Is(err, ErrValidation) {
+			t.Fatalf("comisión %d debe dar ErrValidation, dio %v", bad, err)
+		}
+	}
+}

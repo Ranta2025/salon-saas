@@ -79,7 +79,8 @@ func (s SaleService) RegisterSaleWithOp(actor domain.Membership, salonID, profes
 	}
 	// (5) El precio lo pone el catálogo del salón, nunca el cliente, y un
 	// servicio inactivo ya no se vende. Se reconstruye la venta con los precios
-	// del catálogo: el total sale de ahí, no del body.
+	// del catálogo: el total sale de ahí, no del body. La comisión se congela en
+	// la misma relectura (F3.1, D1 del contrato F3).
 	priced := make([]domain.SaleItem, len(items))
 	for i, it := range items {
 		svc, err := s.Services.FindByID(salonID, it.ServiceID)
@@ -92,7 +93,13 @@ func (s SaleService) RegisterSaleWithOp(actor domain.Membership, salonID, profes
 		if !svc.Active {
 			return domain.Sale{}, fmt.Errorf("%w: el servicio %q ya no está activo", domain.ErrValidation, svc.Name)
 		}
-		priced[i] = domain.SaleItem{ServiceID: svc.ID, Qty: it.Qty, UnitPriceCents: svc.PriceCents}
+		// F3.1 (S-F3.1-2): la línea se lleva la FOTO del porcentaje vigente AHORA.
+		// El servicio se acaba de releer para fijar el precio, así que la tarifa
+		// sale del mismo punto de lectura y no de una segunda consulta: editar el
+		// catálogo después no toca esta venta. Se copia a una variable propia por
+		// ítem para no compartir el puntero entre líneas.
+		pct := svc.CommissionPct
+		priced[i] = domain.SaleItem{ServiceID: svc.ID, Qty: it.Qty, UnitPriceCents: svc.PriceCents, CommissionPct: &pct}
 	}
 	sale, err = domain.NewSale(salonID, professionalID, clientName, priced, method)
 	if err != nil {

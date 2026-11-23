@@ -258,3 +258,99 @@ func TestSale_idempotente_por_client_op(t *testing.T) {
 		t.Fatalf("esperaba 2 ventas, hay %d", len(sales.all))
 	}
 }
+
+// F3.1 (S-F3.1-2): toda venta NUEVA copia a cada ítem el % de comisión VIGENTE
+// del servicio, en la misma operación del alta. Editar el catálogo después no
+// cambia lo ya vendido, y el repetido por client_op_id devuelve la venta
+// original con su foto original.
+func TestSaleService_foto_de_comision_por_item(t *testing.T) {
+	sales := &fakeSales{}
+	services := &fakeServices{}
+	mems := &fakeMemberships{}
+	svc := SaleService{Sales: sales, Services: services, Memberships: mems}
+	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
+	miembro(mems, "prof1", "s1", domain.RoleProfessional)
+
+	corte, err := domain.NewService("s1", "Corte", 45, 150000, 30)
+	if err != nil {
+		t.Fatalf("catálogo: %v", err)
+	}
+	gratis, err := domain.NewService("s1", "Cortesía", 30, 0, 0)
+	if err != nil {
+		t.Fatalf("catálogo: %v", err)
+	}
+	for _, s := range []domain.Service{corte, gratis} {
+		if err := services.Save(s); err != nil {
+			t.Fatalf("catálogo save: %v", err)
+		}
+	}
+
+	sale, err := svc.RegisterSale(recep, "s1", "prof1", "Lía", []domain.SaleItem{
+		{ServiceID: corte.ID, Qty: 1, UnitPriceCents: 150000},
+		{ServiceID: gratis.ID, Qty: 2, UnitPriceCents: 0},
+	}, domain.MethodCash)
+	if err != nil {
+		t.Fatalf("registrar: %v", err)
+	}
+	// Dos servicios con porcentajes distintos en la misma venta: cada ítem
+	// guarda el suyo (no el de la venta, que no existe).
+	if len(sale.Items) != 2 {
+		t.Fatalf("ítems: %+v", sale.Items)
+	}
+	if sale.Items[0].CommissionPct == nil || *sale.Items[0].CommissionPct != 30 {
+		t.Fatalf("corte debe llevar foto 30, dio %v", sale.Items[0].CommissionPct)
+	}
+	if sale.Items[1].CommissionPct == nil || *sale.Items[1].CommissionPct != 0 {
+		t.Fatalf("comisión 0 debe ser foto 0, no NULL: %v", sale.Items[1].CommissionPct)
+	}
+	if len(sales.all) != 1 || len(sales.all[0].Items) != 2 ||
+		sales.all[0].Items[0].CommissionPct == nil || *sales.all[0].Items[0].CommissionPct != 30 {
+		t.Fatalf("la foto debe persistirse con la venta: %+v", sales.all)
+	}
+
+	// El dueño edita el catálogo: las ventas ya creadas no se mueven.
+	up, err := corte.WithDetails(corte.Name, corte.DurationMin, corte.PriceCents, 55, true)
+	if err != nil {
+		t.Fatalf("editar catálogo: %v", err)
+	}
+	if err := services.Save(up); err != nil {
+		t.Fatalf("guardar catálogo: %v", err)
+	}
+	if sales.all[0].Items[0].CommissionPct == nil || *sales.all[0].Items[0].CommissionPct != 30 {
+		t.Fatalf("editar el catálogo no debe tocar la venta vieja: %v", sales.all[0].Items[0].CommissionPct)
+	}
+	nueva, err := svc.RegisterSale(recep, "s1", "prof1", "Ana", []domain.SaleItem{
+		{ServiceID: corte.ID, Qty: 1, UnitPriceCents: 150000},
+	}, domain.MethodCard)
+	if err != nil {
+		t.Fatalf("segunda venta: %v", err)
+	}
+	if nueva.Items[0].CommissionPct == nil || *nueva.Items[0].CommissionPct != 55 {
+		t.Fatalf("la venta nueva debe llevar la tarifa vigente (55), dio %v", nueva.Items[0].CommissionPct)
+	}
+
+	// Repetido por client_op_id: devuelve la venta ORIGINAL con su foto, aunque
+	// el catálogo ya haya cambiado.
+	primera, err := svc.RegisterSaleWithOp(recep, "s1", "prof1", "Lía", []domain.SaleItem{
+		{ServiceID: corte.ID, Qty: 1, UnitPriceCents: 150000},
+	}, domain.MethodCash, "op-foto")
+	if err != nil {
+		t.Fatalf("venta con op id: %v", err)
+	}
+	if primera.Items[0].CommissionPct == nil || *primera.Items[0].CommissionPct != 55 {
+		t.Fatalf("foto de la primera: %v", primera.Items[0].CommissionPct)
+	}
+	up2, _ := up.WithDetails(up.Name, up.DurationMin, up.PriceCents, 10, true)
+	if err := services.Save(up2); err != nil {
+		t.Fatalf("editar catálogo de nuevo: %v", err)
+	}
+	replay, err := svc.RegisterSaleWithOp(recep, "s1", "prof1", "Lía", []domain.SaleItem{
+		{ServiceID: corte.ID, Qty: 1, UnitPriceCents: 150000},
+	}, domain.MethodCash, "op-foto")
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if replay.ID != primera.ID || replay.Items[0].CommissionPct == nil || *replay.Items[0].CommissionPct != 55 {
+		t.Fatalf("el replay debe devolver la venta original con su foto: %+v", replay)
+	}
+}
