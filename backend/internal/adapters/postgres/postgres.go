@@ -69,7 +69,12 @@ func (r Users) FindByEmail(email string) (domain.User, error) {
 	return u, nil
 }
 
-type Salons struct{ Pool *pgxpool.Pool }
+type Salons struct {
+	Pool *pgxpool.Pool
+	// TxTimeout acota la transacción del PUT de settings (lock de nómina +
+	// UPDATE). 0 = el tope por defecto de txtimeout.go.
+	TxTimeout time.Duration
+}
 
 func (r Salons) Save(s domain.Salon) error {
 	_, err := r.Pool.Exec(context.Background(),
@@ -105,8 +110,14 @@ func (r Salons) FindByID(id string) (domain.Salon, error) {
 // Settings lee la configuración operativa del salón (ports.SalonSettingsRepository).
 // Una fila ausente es ErrNotFound: el caso de uso decide el default.
 func (r Salons) Settings(salonID string) (domain.SalonSettings, error) {
+	return readSalonSettings(context.Background(), r.Pool, salonID)
+}
+
+// readSalonSettings es la ÚNICA lectura de la configuración: la usan el puerto
+// normal y la transacción de la liquidación, así no divergen.
+func readSalonSettings(ctx context.Context, q querier, salonID string) (domain.SalonSettings, error) {
 	var s domain.SalonSettings
-	err := r.Pool.QueryRow(context.Background(),
+	err := q.QueryRow(ctx,
 		`SELECT id, timezone, open_time, close_time, slot_step_min FROM salons WHERE id=$1`, salonID,
 	).Scan(&s.SalonID, &s.Timezone, &s.OpenTime, &s.CloseTime, &s.SlotStepMin)
 	if err != nil {
@@ -128,6 +139,59 @@ func (r Salons) SaveSettings(s domain.SalonSettings) error {
 		return domain.ErrNotFound
 	}
 	return nil
+}
+
+// SaveSettingsGuarded escribe la configuración bajo el MISMO advisory lock por
+// salón que la creación de liquidaciones ("payroll-write:<salon_id"). Sin ese
+// lock habría una ventana entre el chequeo y el UPDATE en la que una creación
+// podría derivar el período con la zona vieja y guardar una corrida con la zona
+// nueva: las ventas del borde se pagarían dos veces (o en ninguna).
+//
+// Si la zona horaria CAMBIA y el salón ya tiene liquidaciones (abiertas o
+// pagadas), no escribe NADA —ni los otros campos— y devuelve ErrAlreadyExists
+// (409). El chequeo es EXISTS, no una marca: borrar la última corrida abierta
+// descongela la zona.
+func (r Salons) SaveSettingsGuarded(s domain.SalonSettings) error {
+	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	defer cancel()
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer rollbackTx(tx) // no-op si ya commiteó
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`,
+		payrollWriteLockPrefix+s.SalonID); err != nil {
+		return err
+	}
+
+	// Zona actual y si hay liquidaciones, en UNA consulta y SIEMPRE después del
+	// lock (la lectura es la que ve el estado serializado).
+	var frozen bool
+	err = tx.QueryRow(ctx,
+		`SELECT s.timezone IS DISTINCT FROM $2
+		        AND EXISTS (SELECT 1 FROM payroll_runs r WHERE r.salon_id = s.id)
+		 FROM salons s WHERE s.id = $1`, s.SalonID, s.Timezone).Scan(&frozen)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if frozen {
+		return domain.ErrAlreadyExists
+	}
+
+	tag, err := tx.Exec(ctx,
+		`UPDATE salons SET timezone=$2, open_time=$3, close_time=$4, slot_step_min=$5 WHERE id=$1`,
+		s.SalonID, s.Timezone, s.OpenTime, s.CloseTime, s.SlotStepMin)
+	if err != nil {
+		return pgError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return tx.Commit(ctx)
 }
 
 type Memberships struct {

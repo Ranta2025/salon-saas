@@ -20,6 +20,12 @@ type fakePayrollRuns struct {
 	runs  map[string]domain.PayrollRun
 	now   func() time.Time
 	order []string
+	// settings es la configuración del salón que lee la creación DENTRO de la
+	// transacción (zona horaria del período, F3.3).
+	settings *fakeSettings
+	// pay y sales son la fuente de la vista previa dentro de la transacción.
+	pay   *fakePayModels
+	sales *fakePayrollSales
 	// failAfter simula una falla DESPUÉS de las escrituras de fn, adentro de la
 	// transacción: el fake restaura el estado, como el ROLLBACK de Postgres.
 	failAfter func() error
@@ -68,6 +74,32 @@ func (f *fakePayrollRuns) FindRun(salonID, runID string) (domain.PayrollRun, err
 		return domain.PayrollRun{}, domain.ErrNotFound
 	}
 	return cloneRun(r), nil
+}
+
+// Settings modela la lectura de la configuración bajo el lock de la transacción.
+func (f *fakePayrollRuns) Settings(salonID string) (domain.SalonSettings, error) {
+	if f.settings == nil {
+		return domain.SalonSettings{}, domain.ErrNotFound
+	}
+	return f.settings.Settings(salonID)
+}
+
+// PreviewSource modela las lecturas de la vista previa en la MISMA transacción.
+func (f *fakePayrollRuns) PreviewSource() ports.PayrollPreviewSource {
+	return fakeRunPreview{pay: f.pay, sales: f.sales}
+}
+
+type fakeRunPreview struct {
+	pay   *fakePayModels
+	sales *fakePayrollSales
+}
+
+func (s fakeRunPreview) ListPayModels(salonID string) ([]domain.MemberPayView, error) {
+	return s.pay.ListPayModels(salonID)
+}
+
+func (s fakeRunPreview) CommissionTotals(salonID string, from, to time.Time) ([]domain.PayrollSalesTotal, error) {
+	return s.sales.CommissionTotals(salonID, from, to)
 }
 
 func (f *fakePayrollRuns) SaveRun(run domain.PayrollRun) error {
@@ -179,6 +211,8 @@ func newRunEnv(t *testing.T) *runEnv {
 		UserID: "u-other-owner", SalonID: "s-other", Role: domain.RoleOwner,
 	}
 	runs := newFakePayrollRuns(func() time.Time { return base.when })
+	runs.settings = base.settings
+	runs.pay, runs.sales = base.pay, base.sales
 	env := &runEnv{payrollEnv: base, runs: runs}
 	env.svc = PayrollRunService{
 		Runs: runs, Tx: runs,

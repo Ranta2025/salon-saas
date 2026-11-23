@@ -26,6 +26,8 @@ func newRunHTTPEnv(t *testing.T) *runHTTPEnv {
 	t.Helper()
 	base := newPayEnv(t)
 	runs := newMPayrollRuns(func() time.Time { return payrollNow })
+	runs.settings = base.env.settings
+	runs.body, runs.sales = base.body, base.sales
 	d := base.env.d
 	d.PayrollRuns = PayrollRunHandler{
 		Runs: app.PayrollRunService{

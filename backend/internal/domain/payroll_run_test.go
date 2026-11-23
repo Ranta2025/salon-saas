@@ -56,8 +56,9 @@ func TestCSVCell_neutraliza_formulas(t *testing.T) {
 		{"a\nb", "\"a\nb\""},
 		// Una fórmula con coma lleva la comilla Y las comillas.
 		{"=A1,B1", "\"'=A1,B1\""},
-		// Solo el PRIMER carácter decide la neutralización.
-		{" =SUM(A1)", " =SUM(A1)"},
+		// Un espacio inicial NO salva la celda: decide el primer carácter no
+		// blanco (ver payroll_csv_whitespace_test.go, regla endurecida de F3.3).
+		{" =SUM(A1)", "' =SUM(A1)"},
 	}
 	for _, c := range cases {
 		if got := CSVCell(c.in); got != c.want {

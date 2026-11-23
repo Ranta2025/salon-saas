@@ -3,6 +3,7 @@ package domain
 import (
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -57,15 +58,30 @@ func CSVCell(text string) string {
 	return csvQuote(text)
 }
 
-// neutralizesFormula dice si el PRIMER carácter de la celda es uno de los que
-// un programa de planillas interpreta como fórmula.
+// neutralizesFormula dice si la celda se interpretaría como fórmula al abrirla
+// en una planilla. Reglas:
+//   - tab o CR como PRIMER carácter: se neutralizan igual que siempre (regla
+//     original de D8);
+//   - si no, se saltan los espacios Unicode iniciales (espacio, NBSP U+00A0,
+//     em space y demás) y se decide con el primero que queda: = + - @ o su
+//     forma de ancho completo ＝ ＋ － ＠. " =SUM(A1)" también se ejecuta al
+//     abrir el archivo, así que el espacio inicial no salva la celda;
+//   - una celda solo de blancos, un número o un nombre común no se tocan.
 func neutralizesFormula(text string) bool {
 	if text == "" {
 		return false
 	}
 	first, _ := utf8.DecodeRuneInString(text)
-	switch first {
-	case '=', '+', '-', '@', '\t', '\r':
+	if first == '\t' || first == '\r' {
+		return true
+	}
+	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
+	if trimmed == "" {
+		return false
+	}
+	leading, _ := utf8.DecodeRuneInString(trimmed)
+	switch leading {
+	case '=', '+', '-', '@', '＝', '＋', '－', '＠':
 		return true
 	default:
 		return false

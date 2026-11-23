@@ -36,6 +36,13 @@ func (f *fakeSettings) SaveSettings(s domain.SalonSettings) error {
 	return nil
 }
 
+// SaveSettingsGuarded es el camino de la API: sin liquidaciones en el fake, se
+// comporta igual que SaveSettings (la garantía de la zona congelada se prueba
+// contra Postgres real en los tests de integración).
+func (f *fakeSettings) SaveSettingsGuarded(s domain.SalonSettings) error {
+	return f.SaveSettings(s)
+}
+
 var _ ports.SalonSettingsRepository = (*fakeSettings)(nil)
 
 // fakeMembers es la vista de administración del equipo sobre las memberships:

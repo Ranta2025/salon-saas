@@ -15,6 +15,12 @@ import (
 type mPayrollRuns struct {
 	runs map[string]domain.PayrollRun
 	now  func() time.Time
+	// settings es la configuración que lee la creación dentro de la transacción
+	// (zona horaria del período, F3.3).
+	settings *msettings
+	// body y sales son la fuente de la vista previa dentro de la transacción.
+	body  *mPayModels
+	sales *mPayrollSales
 	// failAfter simula una falla dentro de la transacción después de escribir.
 	failAfter func() error
 }
@@ -62,6 +68,32 @@ func (f *mPayrollRuns) FindRun(salonID, runID string) (domain.PayrollRun, error)
 		return domain.PayrollRun{}, domain.ErrNotFound
 	}
 	return clonePRun(r), nil
+}
+
+// Settings modela la configuración leída bajo el lock de la transacción.
+func (f *mPayrollRuns) Settings(salonID string) (domain.SalonSettings, error) {
+	if f.settings == nil {
+		return domain.SalonSettings{}, domain.ErrNotFound
+	}
+	return f.settings.Settings(salonID)
+}
+
+// PreviewSource modela la vista previa leída en la MISMA transacción.
+func (f *mPayrollRuns) PreviewSource() ports.PayrollPreviewSource {
+	return mRunPreview{body: f.body, sales: f.sales}
+}
+
+type mRunPreview struct {
+	body  *mPayModels
+	sales *mPayrollSales
+}
+
+func (p mRunPreview) ListPayModels(salonID string) ([]domain.MemberPayView, error) {
+	return p.body.ListPayModels(salonID)
+}
+
+func (p mRunPreview) CommissionTotals(salonID string, from, to time.Time) ([]domain.PayrollSalesTotal, error) {
+	return p.sales.CommissionTotals(salonID, from, to)
 }
 
 func (f *mPayrollRuns) SaveRun(run domain.PayrollRun) error {

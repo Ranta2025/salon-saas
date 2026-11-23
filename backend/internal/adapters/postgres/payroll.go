@@ -28,7 +28,13 @@ const payModelColumns = `
 	 COALESCE(p.commission_enabled, true)`
 
 func (r PayModels) ListPayModels(salonID string) ([]domain.MemberPayView, error) {
-	rows, err := r.Pool.Query(context.Background(),
+	return listPayModels(context.Background(), r.Pool, salonID)
+}
+
+// listPayModels es la ÚNICA query del listado: la usan la pantalla de Equipo y
+// la vista previa (fuera y dentro de la transacción de una liquidación).
+func listPayModels(ctx context.Context, q querier, salonID string) ([]domain.MemberPayView, error) {
+	rows, err := q.Query(ctx,
 		`SELECT`+payModelColumns+`
 		 FROM memberships m
 		 JOIN users u ON u.id = m.user_id

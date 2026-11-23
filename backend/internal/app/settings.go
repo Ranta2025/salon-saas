@@ -39,7 +39,15 @@ func (s SettingsService) Update(actor domain.Membership, salonID string, in doma
 	if err != nil {
 		return domain.SalonSettings{}, err
 	}
-	if err := s.Settings.SaveSettings(settings); err != nil {
+	// La escritura pasa por el camino GUARDADO: toma el advisory lock de la
+	// nómina y, si la zona horaria cambia con liquidaciones hechas, no escribe
+	// nada. Sin eso, una corrida guardada en fechas locales quedaría calculada
+	// con una zona que ya no es la del salón (ventas pagadas dos veces o en
+	// ninguna).
+	if err := s.Settings.SaveSettingsGuarded(settings); err != nil {
+		if errors.Is(err, domain.ErrAlreadyExists) {
+			return domain.SalonSettings{}, domain.NewMessage(domain.ErrAlreadyExists, domain.MsgPayrollTimezoneFrozen)
+		}
 		return domain.SalonSettings{}, err
 	}
 	return settings, nil

@@ -204,6 +204,16 @@ type ProfessionalServiceRepository interface {
 type SalonSettingsRepository interface {
 	Settings(salonID string) (domain.SalonSettings, error)
 	SaveSettings(s domain.SalonSettings) error
+	// SaveSettingsGuarded es el ÚNICO camino de escritura de la API: corre en
+	// UNA transacción que toma el MISMO advisory lock por salón que la creación
+	// de liquidaciones ("payroll-write:<salon_id>") y, si la zona horaria CAMBIA
+	// y el salón ya tiene liquidaciones (abiertas o pagadas), no escribe NADA
+	// (ni los otros campos) y devuelve ErrAlreadyExists -> 409. Una corrida
+	// guarda fechas LOCALES y la EXCLUDE compara fechas: cambiar la zona después
+	// haría que las mismas ventas cuenten en dos liquidaciones (se pagan dos
+	// veces) o en ninguna. Es EXISTS, no una marca: borrar la última corrida
+	// abierta descongela la zona.
+	SaveSettingsGuarded(s domain.SalonSettings) error
 }
 
 // WeeklyHoursRepository: horario semanal del salón y de cada profesional (F2d1).
@@ -629,6 +639,27 @@ type PayrollRunTx interface {
 	// DeleteRun borra la corrida (y sus líneas en cascada) SOLO si está abierta,
 	// liberando los días. Pagada -> ErrAlreadyExists.
 	DeleteRun(salonID, runID string) error
+	// Settings lee la configuración del salón DENTRO de la transacción, ya con
+	// el advisory lock por salón tomado: la creación deriva el período con la
+	// zona que vale en ese instante, nunca con una que el PUT de settings está
+	// cambiando en paralelo. Fila ausente -> ErrNotFound (el caso de uso aplica
+	// los defaults, igual que la lectura normal).
+	Settings(salonID string) (domain.SalonSettings, error)
+	// PreviewSource da las lecturas de la vista previa sobre la MISMA conexión
+	// de la transacción. La creación ya tiene el advisory lock tomado: si estas
+	// lecturas pidieran otra conexión del pool, muchas creaciones simultáneas
+	// del mismo salón podrían agotarlo y esperarse entre sí.
+	PreviewSource() PayrollPreviewSource
+}
+
+// PayrollPreviewSource: lo que el motor de la vista previa necesita leer de la
+// nómina (modelos de pago y agregados de ventas) DENTRO de la transacción de una
+// liquidación. Es un subconjunto de MemberPayRepository/PayrollSalesRepository.
+type PayrollPreviewSource interface {
+	// ListPayModels trae el modelo de pago de cada miembro del salón.
+	ListPayModels(salonID string) ([]domain.MemberPayView, error)
+	// CommissionTotals agrupa por profesional las ventas del salón en [from,to).
+	CommissionTotals(salonID string, from, to time.Time) ([]domain.PayrollSalesTotal, error)
 }
 
 // PayrollTxRunner ejecuta una escritura de liquidaciones en UNA transacción que

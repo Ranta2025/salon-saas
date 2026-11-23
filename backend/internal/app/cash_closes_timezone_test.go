@@ -76,4 +76,6 @@ func (failSettings) Settings(string) (domain.SalonSettings, error) {
 }
 func (failSettings) SaveSettings(domain.SalonSettings) error { return errFakeSettings }
 
+func (failSettings) SaveSettingsGuarded(domain.SalonSettings) error { return errFakeSettings }
+
 var errFakeSettings = domain.ErrValidation

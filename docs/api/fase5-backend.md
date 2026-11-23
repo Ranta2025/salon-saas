@@ -175,6 +175,12 @@ no es un patch parcial).
   igual esos defaults.
 - Validación (zona inexistente, hora mal formada, ventana invertida, paso fuera
   de rango): `400` con mensaje claro. Cuerpo inválido: `400 {"error":"body inválido"}`.
+- **Zona congelada por la nómina (F3.3)**: con al menos una liquidación (abierta
+  o pagada), un `PUT` que **cambia** `timezone` responde `409 {"error":"No se
+  puede cambiar la zona horaria: ya hay liquidaciones de nómina calculadas con
+  la zona actual"}` y no aplica **ningún** campo. Con la misma zona, el resto de
+  la configuración se sigue guardando; borrar la última liquidación abierta
+  vuelve a permitir el cambio.
 - No miembro: `403`. Sin token: `401`.
 
 ### `GET /public/salons/:slug/availability` (sin auth)
@@ -1563,9 +1569,24 @@ migración **025** agrega `payroll_runs` y `payroll_lines`, con una `EXCLUDE` po
 salón sobre `daterange(from_date, to_date + 1, '[)')`: dos liquidaciones (de
 cualquier tipo, abiertas o pagadas) no pueden pisar los mismos días, así ninguna
 venta se paga dos veces. La creación corre en **una transacción** que primero
-toma un advisory lock por salón (`payroll-write:<salon_id>`) y después inserta
+toma un advisory lock por salón (`payroll-write:<salon_id>`), después lee la
+**zona horaria del salón** y deriva el período, y recién entonces inserta
 cabecera + líneas; la `EXCLUDE` es la red de seguridad y su `23P01` responde
 **409**, nunca 500.
+
+**Zona horaria congelada.** Como la corrida guarda fechas **locales** y la
+`EXCLUDE` compara fechas, cambiar `salons.timezone` después de una liquidación
+haría que la próxima derive otra ventana de instantes: las ventas del borde se
+pagarían dos veces (o en ninguna). Por eso, desde que el salón tiene **al menos
+una liquidación (abierta o pagada)**, `PUT /salons/:id/settings` que **cambia**
+la zona horaria responde
+`409 {"error":"No se puede cambiar la zona horaria: ya hay liquidaciones de nómina calculadas con la zona actual"}`
+y **no escribe nada** (ni los otros campos). El chequeo es un `EXISTS` de
+liquidaciones bajo el **mismo lock por salón** que la creación, así que no hay
+carrera entre un cambio de zona y una creación. Un `PUT` con la **misma** zona
+sigue funcionando (los otros campos se aplican), y **borrar la última corrida
+abierta descongela** la zona porque no es una marca: mientras no queden
+liquidaciones, la zona se puede cambiar.
 
 ### Objeto `run` (detalle)
 
@@ -1639,6 +1660,12 @@ PATCH {"adjustment_cents": -1250, "adjustment_note": "Venta duplicada"}
 - Ajuste entero con signo dentro de ±2.000.000.000 centavos (`domain.MaxPayCents`).
 - El total de la línea nunca queda negativo → `400 {"error":"El ajuste dejaría el
   total en negativo"}`.
+- El total de la línea tampoco supera el tope de dinero (2.000.000.000 centavos):
+  un ajuste que lo empuja por encima responde
+  `400 {"error":"El total de la línea no puede superar los 2000000000 centavos"}`
+  (antes llegaba al `CHECK` de la DB y salía el genérico "un dato del pedido está
+  fuera del rango permitido"). La creación de la corrida aplica la misma frase
+  si la foto de la vista previa ya viene por encima del tope.
 - `:uid` que no está en la corrida → `404 {"error":"no encontrado"}`. Corrida
   inexistente o de otro salón → `404`.
 - La escritura repite `status='open'` en el SQL: una pagada es inmutable también
@@ -1674,7 +1701,12 @@ salón). Se baja con `fetch` autenticado + blob, no con un enlace directo.
 - Comillas RFC 4180 (comillas dobles, comas y saltos de línea) y filas con CRLF.
 - **Neutralización de fórmulas (D8)**: toda celda de TEXTO (nombre y nota) que
   empiece con `=`, `+`, `-`, `@`, tab o CR se prefija con una comilla simple
-  (`=SUM(A1)` sale `'=SUM(A1)`), así abrir el archivo no ejecuta nada.
+  (`=SUM(A1)` sale `'=SUM(A1)`), así abrir el archivo no ejecuta nada. La regla
+  mira el **primer carácter no blanco**: se saltan los espacios Unicode
+  iniciales (espacio, NBSP `U+00A0`, `U+2003`, `U+3000`, etc.) y también se
+  neutralizan las formas de **ancho completo** `＝`, `＋`, `－` y `＠`
+  (`" =SUM(A1)"` sale `"' =SUM(A1)"`). Los números y los nombres comunes no se
+  tocan.
 - Se puede exportar una liquidación abierta o pagada: los montos son la foto,
   nunca un recálculo.
 

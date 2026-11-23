@@ -45,6 +45,16 @@ const (
 	// MsgPayrollAdjustmentMissing: `adjustment_cents` ausente o null (lección de
 	// F3.2: nunca un valor por defecto en silencio).
 	MsgPayrollAdjustmentMissing = "Faltan datos del ajuste: indicá el monto del ajuste"
+	// MsgPayrollTotalOverCap: el total de la línea tiene el mismo techo que el
+	// resto del dinero (MaxPayCents). Sin este chequeo el ajuste llegaba al
+	// CHECK de la DB y la persona veía el genérico "un dato del pedido está
+	// fuera del rango permitido" (o un 500 de un camino nuevo).
+	MsgPayrollTotalOverCap = "El total de la línea no puede superar los 2000000000 centavos"
+	// MsgPayrollTimezoneFrozen: la zona horaria del salón queda CONGELADA desde
+	// que hay una liquidación (abierta o pagada). Una corrida guarda fechas
+	// LOCALES y la EXCLUDE compara fechas: cambiar la zona después haría que el
+	// mismo día cuente en dos liquidaciones (se paga dos veces) o en ninguna.
+	MsgPayrollTimezoneFrozen = "No se puede cambiar la zona horaria: ya hay liquidaciones de nómina calculadas con la zona actual"
 )
 
 // MaxPayrollNote es el tope de la nota del ajuste (200 caracteres, sin saltos
@@ -190,7 +200,6 @@ func frozenPayrollLine(l PayrollLine) (PayrollLine, error) {
 		{"las ventas", l.SalesTotalCents},
 		{"la comisión", l.CommissionCents},
 		{"el fijo", l.FixedCents},
-		{"el total", l.TotalCents},
 	}
 	for _, a := range amounts {
 		if a.value < 0 {
@@ -200,6 +209,14 @@ func frozenPayrollLine(l PayrollLine) (PayrollLine, error) {
 			return PayrollLine{}, NewMessage(ErrValidation,
 				fmt.Sprintf("%s no pueden superar los %d centavos", a.name, MaxPayCents))
 		}
+	}
+	// El total es UN monto (singular) y tiene una sola frase para los dos
+	// caminos que lo calculan (crear y ajustar).
+	if l.TotalCents < 0 {
+		return PayrollLine{}, NewMessage(ErrValidation, "El total no puede ser negativo")
+	}
+	if l.TotalCents > MaxPayCents {
+		return PayrollLine{}, NewMessage(ErrValidation, MsgPayrollTotalOverCap)
 	}
 	if l.SalesCount < 0 {
 		return PayrollLine{}, NewMessage(ErrValidation, "La cantidad de ventas no puede ser negativa")
@@ -258,6 +275,11 @@ func (l PayrollLine) WithAdjustment(adjustment int, note string) (PayrollLine, e
 	total := l.CommissionCents + l.FixedCents + adj
 	if total < 0 {
 		return PayrollLine{}, NewMessage(ErrValidation, MsgPayrollNegativeTotal)
+	}
+	// El tope es el mismo que el de la DB: el ajuste no puede empujar la línea
+	// por encima de MaxPayCents y llegar al CHECK como mensaje genérico.
+	if total > MaxPayCents {
+		return PayrollLine{}, NewMessage(ErrValidation, MsgPayrollTotalOverCap)
 	}
 	out := l
 	out.AdjustmentCents = adj

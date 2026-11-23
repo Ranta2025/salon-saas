@@ -13,6 +13,9 @@ import (
 
 type msettings struct {
 	bySalon map[string]domain.SalonSettings
+	// frozen simula un salón con liquidaciones de nómina: el PUT que cambia la
+	// zona horaria no escribe nada y devuelve ErrAlreadyExists (F3.3).
+	frozen map[string]bool
 }
 
 func (f *msettings) Settings(salonID string) (domain.SalonSettings, error) {
@@ -28,6 +31,15 @@ func (f *msettings) SaveSettings(s domain.SalonSettings) error {
 	}
 	f.bySalon[s.SalonID] = s
 	return nil
+}
+
+// SaveSettingsGuarded modela la zona congelada: con liquidaciones (frozen) el
+// PUT rechaza el cambio con ErrAlreadyExists y no escribe nada.
+func (f *msettings) SaveSettingsGuarded(s domain.SalonSettings) error {
+	if f.frozen[s.SalonID] {
+		return domain.ErrAlreadyExists
+	}
+	return f.SaveSettings(s)
 }
 
 var _ ports.SalonSettingsRepository = (*msettings)(nil)

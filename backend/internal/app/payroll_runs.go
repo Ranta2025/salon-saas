@@ -20,7 +20,11 @@ type PayrollRunService struct {
 	Runs ports.PayrollRunRepository
 	// Tx ejecuta las escrituras en UNA transacción con advisory lock por salón
 	// ("payroll-write:<salon>"). Sin él no hay creación atómica: es obligatorio.
-	Tx          ports.PayrollTxRunner
+	Tx ports.PayrollTxRunner
+	// PayModels, Sales y Settings son el cableado del motor de la vista previa.
+	// La CREACIÓN no los usa: lee modelos, ventas y configuración desde la
+	// transacción (ports.PayrollPreviewSource + tx.Settings) para derivar el
+	// período bajo el lock sin pedir otra conexión al pool.
 	PayModels   ports.MemberPayRepository
 	Sales       ports.PayrollSalesRepository
 	Memberships ports.MembershipRepository
@@ -34,42 +38,64 @@ type PayrollRunService struct {
 // Reglas del contrato: solo owner/admin, el período tiene que haber terminado
 // (to < hoy local del salón), tiene que haber algo para liquidar y los días no
 // pueden estar cubiertos por otra liquidación (EXCLUDE -> 409, nunca 500).
+//
+// La zona horaria se lee DENTRO de la transacción, ya tomado el advisory lock
+// por salón: el PUT de settings usa el MISMO lock, así que esta creación nunca
+// puede derivar el período con una zona que se está cambiando en paralelo (el
+// bloqueante del verificador: fechas locales comparadas por la EXCLUDE).
 func (s PayrollRunService) Create(actor domain.Membership, salonID, kind, date string) (domain.PayrollRun, error) {
 	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
 		return domain.PayrollRun{}, err
-	}
-	// MISMO motor que la vista previa: el período y los montos no se re-calculan
-	// acá (D2/D5 viven en domain y en PayrollService).
-	preview, err := s.previewService().Preview(actor, salonID, kind, date)
-	if err != nil {
-		return domain.PayrollRun{}, err
-	}
-	if !preview.Closed {
-		return domain.PayrollRun{}, domain.NewMessage(domain.ErrValidation, domain.MsgPayrollPeriodNotClosed)
-	}
-	if len(preview.Lines) == 0 {
-		return domain.PayrollRun{}, domain.NewMessage(domain.ErrValidation, domain.MsgPayrollNothingToPay)
 	}
 	if s.Tx == nil {
 		return domain.PayrollRun{}, errors.New("payroll: falta la transacción de liquidaciones")
 	}
 
-	lines := make([]domain.PayrollLine, 0, len(preview.Lines))
-	for _, l := range preview.Lines {
-		lines = append(lines, domain.PayrollLine{
-			UserID: l.UserID, Name: l.Name, Active: l.Active,
-			SalesCount: l.SalesCount, SalesTotalCents: l.SalesTotalCents,
-			CommissionCents: l.CommissionCents, FixedCents: l.FixedCents,
-			TotalCents: l.TotalCents, Estimated: l.Estimated,
-		})
-	}
-	run, err := domain.NewPayrollRun(domain.NewID(), salonID, preview.Period, actor.UserID, s.now(), lines)
-	if err != nil {
-		return domain.PayrollRun{}, err
-	}
-
 	var out domain.PayrollRun
-	err = s.Tx.InPayrollTx(salonID, func(tx ports.PayrollRunTx) error {
+	err := s.Tx.InPayrollTx(salonID, func(tx ports.PayrollRunTx) error {
+		settings, err := tx.Settings(salonID)
+		if errors.Is(err, domain.ErrNotFound) {
+			// Un salón sin fila de settings se comporta con los defaults de
+			// fábrica, igual que la lectura normal (loadSalonSettings).
+			settings = domain.DefaultSalonSettings(salonID)
+		} else if err != nil {
+			return err
+		}
+		// MISMO motor que la vista previa (una sola fórmula), pero con TODAS sus
+		// lecturas sobre la conexión de la transacción y la zona leída bajo el
+		// lock: no pide otra conexión al pool mientras espera el advisory lock
+		// (N creaciones simultáneas del mismo salón no se agotan entre sí).
+		src := tx.PreviewSource()
+		engine := PayrollService{
+			Pay: previewPayModels{src: src}, Sales: previewPayrollSales{src: src},
+			Memberships: s.Memberships,
+			Settings:    settingsSnapshot{settings: settings},
+			Now:         s.Now,
+		}
+		preview, err := engine.preview(salonID, kind, date)
+		if err != nil {
+			return err
+		}
+		if !preview.Closed {
+			return domain.NewMessage(domain.ErrValidation, domain.MsgPayrollPeriodNotClosed)
+		}
+		if len(preview.Lines) == 0 {
+			return domain.NewMessage(domain.ErrValidation, domain.MsgPayrollNothingToPay)
+		}
+
+		lines := make([]domain.PayrollLine, 0, len(preview.Lines))
+		for _, l := range preview.Lines {
+			lines = append(lines, domain.PayrollLine{
+				UserID: l.UserID, Name: l.Name, Active: l.Active,
+				SalesCount: l.SalesCount, SalesTotalCents: l.SalesTotalCents,
+				CommissionCents: l.CommissionCents, FixedCents: l.FixedCents,
+				TotalCents: l.TotalCents, Estimated: l.Estimated,
+			})
+		}
+		run, err := domain.NewPayrollRun(domain.NewID(), salonID, preview.Period, actor.UserID, s.now(), lines)
+		if err != nil {
+			return err
+		}
 		// Cabecera + TODAS las líneas en la misma transacción: si una línea no
 		// entra, no queda una corrida a medias.
 		if err := tx.SaveRun(run); err != nil {
@@ -217,13 +243,49 @@ func (s PayrollRunService) ExportCSV(actor domain.Membership, salonID, runID str
 	return domain.PayrollCSVFilename(run.Kind, run.From, run.To), domain.PayrollCSV(run), nil
 }
 
-// previewService es la MISMA configuración del motor de F3.2: el cálculo y la
-// derivación del período no se duplican en F3.3.
-func (s PayrollRunService) previewService() PayrollService {
-	return PayrollService{
-		Pay: s.PayModels, Sales: s.Sales, Memberships: s.Memberships,
-		Settings: s.Settings, Now: s.Now,
-	}
+// errPreviewReadOnly: la fuente transaccional de la vista previa solo LEE.
+var errPreviewReadOnly = errors.New("payroll: la vista previa de la transacción es de solo lectura")
+
+// previewPayModels adapta ports.PayrollPreviewSource al puerto de los modelos
+// de pago. La creación solo lista; escribir por acá no existe.
+type previewPayModels struct{ src ports.PayrollPreviewSource }
+
+func (p previewPayModels) ListPayModels(salonID string) ([]domain.MemberPayView, error) {
+	return p.src.ListPayModels(salonID)
+}
+
+func (previewPayModels) FindPayModel(string, string) (domain.MemberPayView, error) {
+	return domain.MemberPayView{}, errPreviewReadOnly
+}
+
+func (previewPayModels) SavePayModel(domain.MemberPay) error { return errPreviewReadOnly }
+
+// previewPayrollSales adapta la misma fuente al puerto de los agregados de
+// ventas (solo CommissionTotals, que es lo que usa la vista previa).
+type previewPayrollSales struct{ src ports.PayrollPreviewSource }
+
+func (p previewPayrollSales) CommissionTotals(salonID string, from, to time.Time) ([]domain.PayrollSalesTotal, error) {
+	return p.src.CommissionTotals(salonID, from, to)
+}
+
+func (previewPayrollSales) CommissionTotalFor(string, string, time.Time, time.Time) (domain.PayrollSalesTotal, error) {
+	return domain.PayrollSalesTotal{}, errPreviewReadOnly
+}
+
+// settingsSnapshot fija la configuración leída DENTRO de la transacción de la
+// liquidación: la vista previa deriva el período con ESA zona. Solo implementa
+// la lectura; escribir settings desde acá sería una segunda vía de escritura
+// sin la garantía de la zona congelada (el PUT tiene su propio camino).
+type settingsSnapshot struct{ settings domain.SalonSettings }
+
+func (s settingsSnapshot) Settings(string) (domain.SalonSettings, error) { return s.settings, nil }
+
+func (settingsSnapshot) SaveSettings(domain.SalonSettings) error {
+	return errors.New("payroll: la configuración es de solo lectura en la creación")
+}
+
+func (settingsSnapshot) SaveSettingsGuarded(domain.SalonSettings) error {
+	return errors.New("payroll: la configuración es de solo lectura en la creación")
 }
 
 // payrollOverlapError traduce el choque de días (EXCLUDE 23P01 -> ErrAlreadyExists)

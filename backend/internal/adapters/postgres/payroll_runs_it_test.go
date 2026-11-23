@@ -268,7 +268,7 @@ func TestPayrollRunsIT_concurrencia_creaciones(t *testing.T) {
 		if err := pool.QueryRow(ctx, `SELECT COUNT(*)::int FROM payroll_runs WHERE salon_id='s-it-pay'`).Scan(&runs); err != nil {
 			t.Fatalf("contar corridas: %v", err)
 		}
-		if err := pool.QueryRow(ctx, `SELECT COUNT(*)::int FROM payroll_lines`).Scan(&lines); err != nil {
+		if err := pool.QueryRow(ctx, `SELECT COUNT(*)::int FROM payroll_lines l JOIN payroll_runs r ON r.id=l.run_id WHERE r.salon_id='s-it-pay'`).Scan(&lines); err != nil {
 			t.Fatalf("contar líneas: %v", err)
 		}
 		if runs != 1 || lines != 1 {

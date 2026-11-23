@@ -74,6 +74,14 @@ func (s PayrollService) Preview(actor domain.Membership, salonID, kind, date str
 	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
 		return PayrollPreview{}, err
 	}
+	return s.preview(salonID, kind, date)
+}
+
+// preview es el MOTOR de la vista previa, ya sin el chequeo de permisos: la
+// creación de una liquidación (F3.3) ya validó el rol y lo corre DENTRO de su
+// transacción, con las lecturas sobre la misma conexión (ver
+// ports.PayrollPreviewSource). No hay una segunda fórmula.
+func (s PayrollService) preview(salonID, kind, date string) (PayrollPreview, error) {
 	p, from, to, err := s.period(salonID, kind, date)
 	if err != nil {
 		return PayrollPreview{}, err

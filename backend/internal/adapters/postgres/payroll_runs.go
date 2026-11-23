@@ -100,8 +100,31 @@ func (r PayrollRuns) ListRuns(salonID string) ([]domain.PayrollRunSummary, error
 
 // FindRun implementa ports.PayrollRunRepository: la corrida con sus líneas,
 // scopeada por salón (la de otro tenant no existe: ErrNotFound).
+//
+// Cabecera y líneas se leen en UNA MISMA foto (transacción REPEATABLE READ de
+// solo lectura): sin eso, un borrado concurrente entre las dos consultas
+// devolvía 200 con una corrida sin líneas. Así la respuesta es la corrida
+// ENTERA o 404, nunca media.
 func (r PayrollRuns) FindRun(salonID, runID string) (domain.PayrollRun, error) {
-	return findPayrollRun(context.Background(), r.Pool, salonID, runID)
+	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	defer cancel()
+	tx, err := r.Pool.BeginTx(ctx, pgx.TxOptions{
+		IsoLevel:   pgx.RepeatableRead,
+		AccessMode: pgx.ReadOnly,
+	})
+	if err != nil {
+		return domain.PayrollRun{}, err
+	}
+	defer rollbackTx(tx) // no-op si ya commiteó
+
+	run, err := findPayrollRun(ctx, tx, salonID, runID)
+	if err != nil {
+		return domain.PayrollRun{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.PayrollRun{}, err
+	}
+	return run, nil
 }
 
 // InPayrollTx implementa ports.PayrollTxRunner: una transacción con advisory
@@ -165,6 +188,33 @@ func (t payrollRunTx) SaveRun(run domain.PayrollRun) error {
 // se está pagando).
 func (t payrollRunTx) FindRun(salonID, runID string) (domain.PayrollRun, error) {
 	return findPayrollRun(t.ctx, t.tx, salonID, runID)
+}
+
+// Settings lee la configuración del salón DENTRO de la transacción, después de
+// que InPayrollTx tomó el advisory lock: la creación deriva el período con la
+// zona que vale bajo el lock, nunca con una que el PUT está cambiando.
+func (t payrollRunTx) Settings(salonID string) (domain.SalonSettings, error) {
+	return readSalonSettings(t.ctx, t.tx, salonID)
+}
+
+// PreviewSource implementa ports.PayrollPreviewSource sobre la conexión de la
+// transacción (nunca pide otra al pool).
+func (t payrollRunTx) PreviewSource() ports.PayrollPreviewSource {
+	return payrollPreviewTx{ctx: t.ctx, q: t.tx}
+}
+
+// payrollPreviewTx son las lecturas de la vista previa dentro de la transacción.
+type payrollPreviewTx struct {
+	ctx context.Context
+	q   querier
+}
+
+func (p payrollPreviewTx) ListPayModels(salonID string) ([]domain.MemberPayView, error) {
+	return listPayModels(p.ctx, p.q, salonID)
+}
+
+func (p payrollPreviewTx) CommissionTotals(salonID string, from, to time.Time) ([]domain.PayrollSalesTotal, error) {
+	return commissionTotals(p.ctx, p.q, salonID, from, to, "")
 }
 
 // AdjustLine cambia el ajuste y la nota SOLO si la corrida sigue abierta y la
