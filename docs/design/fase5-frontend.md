@@ -2054,3 +2054,147 @@ existía) y `scrollWidth === clientWidth` a 390 y 1280 px.
 - Fuera de alcance de esta entrega: el backend de gastos y ganancia (S-F3b
   completo), gastos recurrentes, adjuntos, categorías personalizadas, exportar a
   CSV y comparar con el período anterior.
+
+## 25. Fase 6 — F1: link de un solo uso para cancelar o reprogramar (frontend)
+
+Contrato: `odd/tasks/fase6-roadmap.md`, sección «Contrato F1 (link firmado de un
+solo uso para cancelar o reprogramar desde el email)», con las formas CONGELADAS
+de los cuatro `POST` públicos. Esta entrega es **solo el frontend**: el backend
+corre en paralelo sobre `backend/**` y la API todavía puede no existir, así que
+todo se probó con `fetch` simulado sobre esas formas y, después, en el navegador
+con una API simulada. Sin dependencias nuevas y sin tocar ningún archivo fuera de
+las superficies asignadas.
+
+### 25.1 Ruta y privacidad del token
+
+- `App.tsx` suma **una** ruta pública, `/turno`, fuera de `RequireAuth` y sin
+  entrada de menú (nadie llega ahí navegando: llega desde el email). Ninguna otra
+  ruta ni el `UnauthorizedRedirect` cambian (las cuatro rutas del contrato son
+  anónimas y mandan `auth: 'none'`, así que nunca devuelven 401).
+- El token viaja en el FRAGMENTO (`/turno#<token>`), igual que `/invitacion`
+  (F2g1): `takeBookingLinkToken` lee `location.hash` en el primer render de
+  `BookingLinkPage` y lo borra con `history.replaceState` **antes de cualquier
+  pedido**, y lo deja solo en un `ref` del componente. Nunca va a
+  `localStorage`, `sessionStorage`, cookies, consola, mensajes de error, query
+  string ni path: solo en el CUERPO de los cuatro `POST`.
+- Solo el PRIMER fragmento es el slot del link: un token en otro fragmento se
+  borra y se IGNORA (nunca se usa), y un fragmento sin token se descarta entero
+  para no dejar rastro.
+
+### 25.2 Reglas puras (`src/lib/bookingLinks.ts`)
+
+| helper | regla |
+| --- | --- |
+| `isBookingLinkToken` | exactamente 43 caracteres base64url (`crypto/rand` de 32 bytes, D1): nada de padding, espacios ni `%`-encoding |
+| `readBookingLinkHash` / `takeBookingLinkToken` | token del primer fragmento + URL limpia; un fragmento inservible deja la dirección sin rastro. `null` = link inválido y **ningún pedido** |
+| `normalizeLinkBooking` | lee las ocho claves del contrato (sin teléfono, email ni ids: D6); `can_change` solo es `true` si el servidor lo dice; `min_notice_hours` cae a la constante 2 |
+| `salonTimeZone` | la zona IANA que viene con el turno; si falta o no existe, la del VISITANTE. Nunca `America/Mexico_City` |
+| `normalizeReschedule` | `{booking, new_link_sent}`; el token nuevo no viene en la respuesta y la UI no lo espera |
+| `formatLinkDay` / `formatLinkWhen` / `formatLinkZone` | día largo y rango de horas en la zona del salón (`sábado, 14 de marzo de 2026, 11:00–13:00`), con la zona impresa al lado |
+| `defaultPickDate` | hoy en la zona del salón (el selector arranca en el día del turno, que ya es futuro) |
+| `bookingLinkErrorMessage` | 404 → **la única** frase genérica de la página; 409/400/429 → la frase del servidor verbatim |
+| `canCancel` / `canReschedule` | la acción está disponible solo con `can_change` y sin pedido en curso; reprogramar exige además un horario elegido (doble clic) |
+| `initialLinkChange` / `reduceLinkChange` / `isLinkTerminal` | el flujo `view → slots/confirm_cancel → done_*`. `cancelled`, `booking` y `newLinkSent` se escriben SOLO con el evento de éxito: no hay estado optimista, y un `failed` conserva el paso y el error (la página sigue usable) |
+| `cutOffNotice`, `cancelConfirmQuestion`, `rescheduleConfirmQuestion`, `newLinkNotice`, `CANCEL_DONE`, `RESCHEDULE_DONE` | textos en español del contrato, incluida la confirmación que dice que no se puede deshacer y «Te mandamos un email con el nuevo enlace» |
+
+Los horarios reutilizan `normalizeAvailability`, `formatSlotTime`/`formatSlotRange`
+y `groupSlotsByTime` de `publicBooking.ts` (misma forma de ítem que la
+disponibilidad pública; ese archivo no se toca).
+
+### 25.3 `/turno` (pública)
+
+- Estados: «Revisando tu turno» (lookup), el turno con salón, servicio,
+  profesional, día y rango en la zona del salón y la zona impresa, y las dos
+  acciones («Cambiar horario» / «Cancelar turno»).
+- `can_change:false`: el turno se muestra igual y aparece el aviso «Faltan menos
+  de 2 horas para el turno: comunicate con el salón para cambiarlo»; las dos
+  acciones NO se renderizan.
+- Link muerto (sin token, fragmento inválido, 404, turno cancelado/atendido o
+  fuera de la ventana): «Este enlace ya se usó o el turno ya no está vigente»,
+  sin detalle, sin botones y con la instrucción de pedir un enlace nuevo. Un
+  fallo de conexión es el único estado reintentable («Reintentar»).
+- «Cancelar turno» pide confirmación («¿Cancelar tu turno del …?» + «No se puede
+  deshacer: …») y solo muestra «Tu turno quedó cancelado» cuando el `POST`
+  respondió 200. «Cambiar horario» abre un selector de UN día (`<input
+  type="date">`, `date` = `YYYY-MM-DD` de la zona del salón, mínimo hoy en esa
+  zona) con un botón por horario y «Confirmar cambio» deshabilitado hasta elegir
+  uno; al confirmar muestra el horario NUEVO que devolvió la API en la zona del
+  salón y, si `new_link_sent`, «Te mandamos un email con el nuevo enlace» (si es
+  `false`, dice que el enlace hay que pedírselo al salón).
+- Un 409 se muestra verbatim y NO consume nada: tras «Ese horario ya no está
+  disponible: elegí otro» la lista se vuelve a pedir y se puede elegir otro
+  horario; tras el 409 de la ventana de 2 h el mensaje queda a la vista. Los dos
+  éxitos son terminales (el token se consumió: el nuevo solo llega por email).
+- Ningún pedido se dispara dos veces: además de `disabled` mientras hay una
+  request en vuelo, un `ref` sincrónico corta el segundo clic del mismo tick.
+
+### 25.4 Accesibilidad y estilos
+
+No hay cambios de hoja de estilo (los CSS no estaban en las superficies
+asignadas): se reutilizan `.invite`/`.invite__card`/`.invite__actions`,
+`.booking__summary`, `.booking__slots`, `.slot-grid`, `.slot-btn`,
+`.booking__slots-empty`, `.notice--*`, `.field`, `.input` y `.btn--wine`/
+`.btn--quiet`. Todos los controles miden 44 px o más (botones 47, horarios 48,
+input de fecha 46), el foco es el anillo de 3 px de `base.css`, hay `<label for>`
+real, `role="alert"` en los errores, `role="status"` en avisos y resultados, el
+resultado se enfoca (`tabIndex={-1}`) y la primera hora libre recibe el foco al
+cargar la lista. Sin desborde horizontal: `scrollWidth === clientWidth` a 390 y
+1280 px en los siete estados.
+
+### 25.5 Verificación
+
+- `npx tsc --noEmit` sin errores; `npm test` (**482 tests**, `node --test`; 450
+  eran de la entrega anterior y 32 son nuevos de `bookingLinks.test.ts`);
+  `npm run build` en verde.
+- TDD en `src/lib`: primero en rojo (`ERR_MODULE_NOT_FOUND` de
+  `src/lib/bookingLinks.ts`), después en verde los 32 tests: token del fragmento
+  (43 caracteres, solo el primer `#`, formas malformadas, fragmentos extra), el
+  barrido de la dirección ANTES del primer pedido (orden `replace` → `fetch`
+  verificado en un `history` falso), un fragmento inválido sin ningún pedido,
+  cuerpo exacto de los cuatro `POST` (`{token}`, `{token,date}`,
+  `{token,starts_at}`) sin `Authorization`, token ausente de la URL y de
+  `localStorage`/`sessionStorage`/cookie (stubs que registran escrituras),
+  lectura defensiva del lookup y del reschedule, zona del salón (y respaldo a la
+  del visitante) sin la constante fija, fecha del selector en la zona del salón,
+  frases del contrato, 404 genérico contra 409/400 verbatim, acciones ocultas con
+  `can_change:false`, botones deshabilitados con una request en vuelo,
+  confirmación de cancelar que dice que no se deshace, resultado con la hora
+  nueva y el aviso del email, y el flujo sin estado optimista (un 409 conserva el
+  paso y el error, un éxito es terminal).
+- Revisión visual con el bundle de `vite build` y una API simulada en `/tmp/f1f`
+  (lookup válido, `can_change:false`, 404, `slots` de un día, `reschedule` 409 y
+  200, `cancel` 200) y Chromium headless por protocolo DevTools a **390 y
+  1280 px**, 20 capturas (9 estados × 2 anchos + 2 del recorrido de teclado)
+  revisadas una por una; el token malformado produce exactamente la misma
+  pantalla que el 404 (dos archivos idénticos byte a byte), así que sus capturas
+  repiten un layout ya mirado: turno válido, confirmación de cancelar, resultado
+  cancelado, selector de horarios, 409 con la lista recargada, resultado
+  reprogramado, `can_change:false`, link inválido y el recorrido de teclado.
+  Comprobado en el navegador:
+  - `location.hash` vacío y la URL sin token tras cargar `/turno#<token>`; el
+    token no aparece en el DOM, ni en `performance.getEntriesByType`, ni en
+    `localStorage`/`sessionStorage`/`document.cookie`; las 20 requests del
+    recorrido no llevan token ni `?` en la URL y sus cuerpos tienen exactamente
+    `token`, `date+token` o `starts_at+token`.
+  - Un token malformado y un 404 no disparan **ningún** pedido de `slots`; el 404
+    muestra la frase genérica sin botones y con «Ir al sitio del salón».
+  - Dos clics en el mismo tick sobre «Sí, cancelar el turno» dejan **una** sola
+    request de `cancel` (el botón además se ve deshabilitado con «Cancelando…»).
+  - Teclado: `Tab` llega a «Cambiar horario» y «Cancelar turno» (anillo sólido de
+    3 px), `Enter` real abre el selector, la primera hora libre queda enfocada,
+    `Espacio` la selecciona (`aria-pressed=true`) y habilita «Confirmar cambio»;
+    `Tab` sigue por los horarios, «Confirmar cambio» y «Volver».
+- **Desviaciones conscientes:**
+  - El runner del frontend es `node --test src/**/*.test.ts` y no hay entorno
+    DOM, así que no se agregan tests de componente: las reglas de la página
+    (orden barrido→pedido, botones deshabilitados, ausencia de estado optimista)
+    viven en funciones puras de `bookingLinks.ts` con tests propios, y lo que es
+    DOM (foco, 44 px, desborde, doble clic real) se verificó en el navegador.
+  - La frase del 404 de la PÁGINA no es la del servidor: el contrato pide «Este
+    enlace ya se usó o el turno ya no está vigente» para el visitante, aunque la
+    API responda «Enlace inválido o vencido».
+  - El selector abre en el día del turno actual (no en hoy): es el día que la
+    persona conoce, y el mínimo del input ya impide fechas pasadas en la zona del
+    salón.
+  - No se agrega `<meta name="robots" content="noindex">`: ninguna página pública
+    existente lo hace y `index.html` está fuera de esta entrega.

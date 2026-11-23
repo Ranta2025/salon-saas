@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { AppShell } from './app/AppShell'
+import { BookingLinkPage } from './app/BookingLinkPage'
 import { CalendarPage } from './app/CalendarPage'
 import { ClientDetailPage } from './app/ClientDetailPage'
 import { ClientsPage } from './app/ClientsPage'
@@ -73,6 +74,8 @@ export function App() {
         <Route path="/login" element={<LoginPage />} />
         {/* Public, no session: the token of the link lives in the fragment. */}
         <Route path="/invitacion" element={<InvitationPage />} />
+        {/* Public, no session, no menu entry: single-use booking link (F1). */}
+        <Route path="/turno" element={<BookingLinkPage />} />
 
         <Route
           path="/panel"
