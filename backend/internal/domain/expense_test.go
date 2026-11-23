@@ -183,3 +183,22 @@ func TestExpenseRange_validacion(t *testing.T) {
 		}
 	}
 }
+
+// Un NUL en el texto es válido en Go pero Postgres lo rechaza (22021) y el
+// alta terminaba en un 500: la validación lo corta antes con un 400.
+func TestExpense_descripcion_rechaza_nul(t *testing.T) {
+	now := time.Date(2026, 3, 20, 18, 0, 0, 0, time.UTC)
+	in := ExpenseFields{Category: "rent", AmountCents: 100, SpentOn: "2026-03-19", Description: "a\x00b"}
+	_, err := in.Validate(now, cdmx)
+	if err == nil || !errors.Is(err, ErrValidation) {
+		t.Fatalf("un NUL debía dar ErrValidation, dio %v", err)
+	}
+	if err.Error() != "La descripción tiene caracteres no válidos" {
+		t.Fatalf("mensaje inesperado: %q", err.Error())
+	}
+	// Saltos de línea y tabulaciones siguen siendo texto válido (no cambia lo ya probado).
+	ok := ExpenseFields{Category: "rent", AmountCents: 100, SpentOn: "2026-03-19", Description: "línea1\nlínea2\tx"}
+	if _, err := ok.Validate(now, cdmx); err != nil {
+		t.Fatalf("saltos y tabs deben seguir siendo válidos: %v", err)
+	}
+}

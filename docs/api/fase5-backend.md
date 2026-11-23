@@ -1814,6 +1814,9 @@ obligatorias (`description` puede ser `""`). Si falta una:
 | fecha futura (día local del salón) | `La fecha del gasto no puede ser futura` |
 | fecha anterior a `2000-01-01` | `La fecha del gasto es demasiado antigua` |
 | descripción de más de 200 caracteres | `La descripción no puede superar los 200 caracteres` |
+| descripción con un carácter NUL (`\u0000`) | `La descripción tiene caracteres no válidos` |
+
+Nota de zona horaria: la zona del salón puede cambiarse mientras no exista ninguna liquidación. Si cambia, los ingresos se vuelven a agrupar por el día local de la zona nueva, pero un gasto conserva su `spent_on` guardado: uno cargado como «hoy» en una zona adelantada puede pasar a ser «futuro» en la nueva y su edición (PUT) dará 400 `La fecha del gasto no puede ser futura` hasta corregir la fecha; borrarlo siempre se puede. Con una liquidación pagada o abierta la zona queda congelada (F3.3).
 
 ### `GET /salons/:id/profit?kind=day|week|month&date=YYYY-MM-DD` → `200`
 

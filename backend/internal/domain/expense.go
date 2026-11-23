@@ -112,6 +112,11 @@ func (f ExpenseFields) Validate(now time.Time, loc *time.Location) (ExpenseField
 	if day.After(todayLocalDate(now, loc)) {
 		return ExpenseFields{}, NewMessage(ErrValidation, "La fecha del gasto no puede ser futura")
 	}
+	// Un NUL no se puede guardar en un TEXT de Postgres (22021): se corta acá con
+	// un 400 en vez de dejar que llegue a la base y salga como un 500.
+	if strings.ContainsRune(f.Description, 0) {
+		return ExpenseFields{}, NewMessage(ErrValidation, "La descripción tiene caracteres no válidos")
+	}
 	if utf8.RuneCountInString(f.Description) > MaxExpenseDescription {
 		return ExpenseFields{}, NewMessage(ErrValidation, "La descripción no puede superar los 200 caracteres")
 	}
