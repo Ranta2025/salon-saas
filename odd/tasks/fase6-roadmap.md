@@ -19,8 +19,8 @@ verificada y commiteada.
 - [x] F2d3 Cubrir ausencias: reasignar los turnos de quien falta a otra profesional que haga el servicio y avisar a la clienta — hecho: a9717a3, faaefe1, dce5b6c, d948528, 73b13e1
 - [x] F2g1 Contratar por invitación por email (enlace de un solo uso, vence a los 7 días, la persona crea su cuenta y entra con el rol asignado) — hecho: fad7891, f6dda3d, ce2a9e6, bfc9b54 (backend), frontend en su commit
 - [x] F2g2 Desactivar en vez de borrar a alguien del equipo (`ended_at`): conserva el historial de turnos y ventas y puede reactivarse. Al desactivar a alguien se REVOCAN las invitaciones pendientes que emitió (hallazgo de F2g1: hoy siguen vivas hasta 7 días aunque quien las emitió ya no esté en el equipo) — hecho: 79afb7c (backend), 545046f (web)
-- [ ] F3.1 Foto de la comisión en cada venta (`sale_items.commission_pct`): sin esto una liquidación cambia sola si el dueño edita un porcentaje — ver Contrato F3
-- [ ] F3.2 Modelo de pago por miembro (fijo, comisión o mixto), cálculo por período, vista previa y «Mis comisiones» — ver Contrato F3
+- [x] F3.1 Foto de la comisión en cada venta (`sale_items.commission_pct`): sin esto una liquidación cambia sola si el dueño edita un porcentaje — ver Contrato F3 — hecho y publicado: a14189d
+- [x] F3.2 Modelo de pago por miembro (fijo, comisión o mixto), cálculo por período, vista previa y «Mis comisiones» — ver Contrato F3 — hecho y publicado: a700466, bd0f996 (backend), ed792e9 (web)
 - [ ] F3.3 Liquidaciones: congelar un período, ajustes por línea, marca de pagado y exportación CSV — ver Contrato F3
 - [ ] F3b Gastos y ganancias: registrar gastos (alquiler, insumos, servicios, otros) con fecha y categoría; ganancia neta = ingresos - gastos - nómina por período; panel de ganancias por día/semana/mes
 - [ ] F4 Exportar CSV (ventas, cierres, clientes)
