@@ -32,6 +32,9 @@ type Deps struct {
 	// Invitations son las invitaciones de equipo (F2g1): alta, listado y
 	// revocación del salón, más el lookup y el canje públicos.
 	Invitations InvitationHandler
+	// Payroll es la nómina de F3.2: modelo de pago por miembro, vista previa del
+	// período y «Mis comisiones». Los permisos de D7 los aplica el caso de uso.
+	Payroll PayrollHandler
 	// PublicInvitationLimit limita por IP el lookup y el canje públicos (nil =
 	// sin límite, como en los tests unitarios del router). Van bajo el mismo
 	// cubo que la reserva pública: son las escrituras sin sesión.
@@ -156,6 +159,14 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.POST("/salons/:id/cash-closes", d.CashCloses.Create)
 	authed.GET("/salons/:id/cash-closes", d.CashCloses.List)
 	authed.GET("/salons/:id/dashboard", d.Dashboard.Get)
+
+	// F3.2: nómina y comisiones. El modelo de pago y la vista previa son de
+	// dueño/administración; «Mis comisiones» es la única que ve un profesional
+	// (y solo lo suyo). La autorización de cada rol vive en el caso de uso.
+	authed.GET("/salons/:id/pay-models", d.Payroll.ListPayModels)
+	authed.PUT("/salons/:id/members/:uid/pay-model", d.Payroll.UpdatePayModel)
+	authed.POST("/salons/:id/payroll/preview", d.Payroll.Preview)
+	authed.GET("/salons/:id/payroll/me", d.Payroll.Me)
 
 	// Bandeja de avisos. Listar va por salón; marcar leída no (el aviso ya sabe
 	// de qué salón es y el alcance sale de las memberships del usuario).

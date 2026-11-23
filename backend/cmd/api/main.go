@@ -183,6 +183,10 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F2g1: invitaciones de equipo. El adaptador es lectura + transacción (el
 	// canje es atómico); el token se guarda solo como SHA-256.
 	invitationRepo := pgstore.Invitations{Pool: pool}
+	// F3.2: modelo de pago por miembro (member_pay, migración 024) y los
+	// agregados de comisión por profesional de una ventana.
+	payModelsRepo := pgstore.PayModels{Pool: pool}
+	payrollSalesRepo := pgstore.PayrollSales{Pool: pool}
 
 	// Realtime: el hub es el EventPublisher de los casos de uso (no saben que
 	// hay websockets). Autentica el JWT del query param, valida el Origin con la
@@ -252,6 +256,13 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		// y revocar las invitaciones pendientes que emitió commitean juntos o no
 		// pasan (mismo patrón que las invitaciones de F2g1).
 		Tx: mems,
+	}
+	// F3.2: nómina. El período se deriva en la zona del salón (settings) y la
+	// comisión sale de los agregados de ventas; el fijo se paga una vez cuando el
+	// tipo de período coincide con el del miembro (D4).
+	payModelSvc := app.PayModelService{Pay: payModelsRepo, Memberships: mems}
+	payrollSvc := app.PayrollService{
+		Pay: payModelsRepo, Sales: payrollSalesRepo, Memberships: mems, Settings: salons,
 	}
 	availabilitySvc := app.AvailabilityService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems,
@@ -344,6 +355,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Invitations: httpapi.InvitationHandler{
 			Invitations: invitationSvc, Public: invitationPublicSvc, Memberships: mems,
 		},
+		Payroll: httpapi.PayrollHandler{PayModels: payModelSvc, Payroll: payrollSvc, Memberships: mems},
 		// La reserva pública es la única escritura sin auth: rate limit por IP
 		// como en /auth (el GET de disponibilidad no pasa por acá).
 		PublicBookingLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/salons/"),

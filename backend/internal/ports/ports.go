@@ -555,3 +555,42 @@ type PhotoURLSigner interface {
 type ImageProcessor interface {
 	ToWebP(data []byte) (out []byte, width, height int, err error)
 }
+
+// --- Nómina y comisiones (F3.2 del contrato F3) ---
+
+// MemberPayRepository: el modelo de pago de cada miembro del salón (D3). Sin
+// fila rige domain.DefaultMemberPay (solo comisión), así que la ausencia de
+// datos es comportamiento, no un error.
+//
+// Todas las queries van scopeadas por salon_id: el modelo de pago de otro
+// tenant no se lista, no se encuentra y no se escribe (ErrNotFound -> 404).
+type MemberPayRepository interface {
+	// ListPayModels trae el modelo de CADA miembro del salón —activos y dados de
+	// baja— con nombre, rol y estado. Es la lectura de la pantalla de Equipo y la
+	// que arma las líneas de la vista previa.
+	ListPayModels(salonID string) ([]domain.MemberPayView, error)
+	// FindPayModel resuelve una persona del salón. Una persona que no es miembro
+	// es ErrNotFound; un miembro sin fila devuelve el default de D3.
+	FindPayModel(salonID, userID string) (domain.MemberPayView, error)
+	// SavePayModel inserta o actualiza el modelo. La FK compuesta a
+	// memberships(user_id, salon_id) es la autorización: una persona de otro
+	// salón no tiene dónde guardarse.
+	SavePayModel(p domain.MemberPay) error
+}
+
+// PayrollSalesRepository: los agregados de ventas por profesional de una
+// ventana, con el NUMERADOR de la comisión (Σ qty × precio × pct, D2). El
+// adaptador suma en enteros (bigint) y domain hace la única división.
+//
+// La foto del porcentaje (sale_items.commission_pct) manda; una línea anterior a
+// F3.1 (NULL) se estima con la tarifa ACTUAL del servicio y marca la fila.
+type PayrollSalesRepository interface {
+	// CommissionTotals agrupa por profesional las ventas del salón en [from,to).
+	// Un profesional sin ventas no aparece; uno con ventas siempre aparece, aunque
+	// ya no esté en el equipo.
+	CommissionTotals(salonID string, from, to time.Time) ([]domain.PayrollSalesTotal, error)
+	// CommissionTotalFor es el mismo agregado para UNA persona: es la única
+	// lectura de «Mis comisiones» (nunca trae los números de otra).
+	// Sin ventas devuelve el total en cero, no ErrNotFound.
+	CommissionTotalFor(salonID, userID string, from, to time.Time) (domain.PayrollSalesTotal, error)
+}

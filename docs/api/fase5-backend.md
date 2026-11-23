@@ -1397,6 +1397,154 @@ arrancar como `email deshabilitado`). Ver la tabla de variables y
 [`docs/ops/environment.md`](../ops/environment.md). Con Docker Compose los
 defaults apuntan al Mailpit del stack (UI `http://localhost:8025`).
 
+## Fase 6 — F3.2: nómina y comisiones
+
+Cada miembro del equipo puede cobrar **sueldo fijo por período**, **comisión**
+sobre lo que vendió, o **mixto**. La comisión se calcula con la **foto** del
+porcentaje que cada venta guardó desde F3.1, y el período lo deriva **siempre el
+servidor** en la zona horaria del salón: la nómina nunca usa el día UTC.
+
+### Reglas del período (D5)
+
+El cliente manda `kind` (`week` | `fortnight` | `month`) y `date`
+(`YYYY-MM-DD`, **cualquier** día dentro del período). El servidor lo deriva en la
+zona de `salons.timezone` (la misma que el cierre de caja):
+
+- **`week`**: de lunes a domingo que contiene la fecha.
+- **`fortnight`**: 1–15 o 16–fin de mes (en febrero el fin es el 28 o el 29).
+- **`month`**: el mes calendario.
+
+La respuesta devuelve `from` y `to` como fechas locales **inclusivas**
+(`YYYY-MM-DD`). Internamente la ventana es `[from 00:00 local, (to+1 día) 00:00
+local)` convertida a UTC con la zona del salón; el día siguiente se calcula como
+fecha, **nunca sumando 24 h**: un día con cambio de horario de verano dura 23 o 25
+horas (en `America/New_York`, la semana del 8/3/2026 dura 167 h y la del 1/11/2026
+169 h) y el período lo incluye entero sin correrse.
+
+`closed` es `true` cuando el período ya terminó: `to` es anterior a **hoy** en la
+zona del salón. El período en curso (incluido hoy) es `closed: false`. Un `kind`
+desconocido o una `date` que no es una fecha real → `400
+{"error":"Período inválido"}` (también sin parámetros en `/me`).
+
+### Fórmula de la comisión (D2)
+
+```
+commission_cents = floor( Σ qty × unit_price_cents × pct / 100 )
+```
+
+sobre las ventas **acreditadas a esa persona** con `created_at` en la ventana del
+período. **Una sola división al final**, no por ítem: dividir ítem por ítem
+acumula el redondeo (dos líneas de 335 centavos al 10 % dan 67 centavos con la
+fórmula y 66 si se redondea cada una). Todo en enteros (`bigint` en la suma);
+nunca `float`.
+
+`pct` es la **foto** de la línea (`sale_items.commission_pct`, F3.1) y, cuando la
+línea es anterior a F3.1 (`NULL`), la tarifa **actual** del servicio; en ese caso
+la línea de la nómina sale con `estimated: true`. No hay backfill: una venta con
+foto no cambia aunque el dueño edite el porcentaje del catálogo, una sin foto se
+estima con lo que el catálogo diga hoy y lo avisa.
+
+### `GET /salons/:id/pay-models` → `200`
+
+```json
+{ "pay_models": [
+  { "user_id": "u_...", "name": "Ana", "role": "professional", "active": true,
+    "fixed_cents": 150000, "fixed_period": "fortnight", "commission_enabled": false },
+  { "user_id": "u_...", "name": "Beto", "role": "professional", "active": false,
+    "fixed_cents": 0, "fixed_period": "month", "commission_enabled": true } ] }
+```
+
+- Devuelve **todos** los miembros del salón, activos y **dados de baja** (`active`
+  dice cuál es cuál).
+- **Sin fila** rige el default de D3: `fixed_cents: 0`, `fixed_period: "month"`,
+  `commission_enabled: true` (solo comisión, lo de siempre). No hay backfill.
+- Solo `owner`/`admin` (ver la tabla de permisos).
+
+### `PUT /salons/:id/members/:uid/pay-model` → `200`
+
+```json
+PUT {"fixed_cents":150000,"fixed_period":"fortnight","commission_enabled":false}
+-> 200 { "user_id": "u_...", "name": "...", "role": "professional", "active": true,
+         "fixed_cents": 150000, "fixed_period": "fortnight", "commission_enabled": false }
+```
+
+- Cuerpo completo; `commission_enabled` ausente vale `true` (el default de D3).
+  Para apagar la comisión hay que mandar `false` explícito.
+- Se guarda con `upsert` por `(salon_id, user_id)`: escribir dos veces deja una
+  sola fila.
+- `fixed_cents` **negativo** → `400 {"error":"El sueldo fijo no puede ser
+  negativo"}`; arriba del máximo (2.000.000.000 centavos, el tope del dinero del
+  resto del sistema) → `400 {"error":"El sueldo fijo no puede superar los
+  2000000000 centavos"}`; `fixed_period` desconocido → `400 {"error":"Período de
+  pago desconocido: usá semana, quincena o mes"}`. Un monto con decimales
+  (`1500.5`) no es un modelo válido → `400 {"error":"body inválido"}`.
+- Una persona que **no es del salón** (o es de otro tenant) → `404
+  {"error":"no encontrado"}`, y no se escribe nada. La FK compuesta de la tabla
+  es la garantía dura.
+- Los permisos se evalúan **antes** de la validación: recepción o profesional
+  con un monto inválido reciben `403`, no `400`.
+
+### `POST /salons/:id/payroll/preview {kind,date}` → `200`
+
+```json
+{ "period": { "kind": "month", "from": "2026-03-01", "to": "2026-03-31", "closed": false },
+  "lines": [
+    { "user_id": "u_...", "name": "Dueña", "active": true, "sales_count": 0,
+      "sales_total_cents": 0, "commission_cents": 0, "fixed_cents": 100000,
+      "total_cents": 100000, "estimated": false },
+    { "user_id": "u_...", "name": "Ana", "active": true, "sales_count": 3,
+      "sales_total_cents": 3499, "commission_cents": 499, "fixed_cents": 0,
+      "total_cents": 499, "estimated": true } ],
+  "totals": { "commission_cents": 499, "fixed_cents": 100000, "total_cents": 100499 } }
+```
+
+- **Líneas**: aparece quien tiene al menos una venta en el período **o** un fijo
+  que aplicar. Cada línea es `comisión + fijo`; `totals` es la suma de las líneas.
+- **Fijo (D4)**: se paga **una vez** y solo si el `kind` liquidado es el
+  `fixed_period` del miembro **y** la persona está **activa**. Una persona dada de
+  baja entra con la comisión de lo que vendió y **fijo 0** (el dueño puede sumar
+  un ajuste en F3.3).
+- **`commission_enabled: false`** deja `commission_cents: 0`, pero sus ventas
+  siguen contando en `sales_count` y `sales_total_cents` (fijo puro).
+- Un profesional **con ventas** que ya no está en el equipo aparece igual
+  (`active: false`, con la comisión de lo que vendió): la plata no se pierde.
+- **Orden**: total descendente y, a igual total, por nombre.
+- Solo `owner`/`admin`; `400 {"error":"Período inválido"}` si `kind` o `date` no
+  son válidos. La vista previa acepta el período **en curso** (`closed: false`);
+  crear una liquidación (F3.3) exigirá `closed: true`.
+
+### `GET /salons/:id/payroll/me?kind=&date=` → `200`
+
+```json
+{ "period": { "kind": "week", "from": "2026-03-09", "to": "2026-03-15", "closed": false },
+  "sales_count": 3, "sales_total_cents": 3499, "commission_cents": 499,
+  "estimated": true }
+```
+
+- **Solo las figuras de quien llama**, con la misma forma de período. La consulta
+  es de UNA persona (`CommissionTotalFor`): la respuesta no se arma leyendo los
+  números de los demás, así no hay forma de que se filtren.
+- Si su modelo tiene la comisión apagada, `commission_cents: 0` (coherente con la
+  vista previa) y sus ventas siguen informadas.
+- `owner`, `admin` y `professional` activos. `reception` → `403
+  {"error":"sin permiso"}` (tampoco ve las suyas, D7). Un miembro dado de baja no
+  entra (`403`), y `kind`/`date` inválidos → `400 {"error":"Período inválido"}`.
+
+### Permisos de la nómina (D7)
+
+| Ruta | owner | admin | professional | reception | dado de baja |
+| --- | --- | --- | --- | --- | --- |
+| `GET /salons/:id/pay-models` | 200 | 200 | 403 | 403 | 403 |
+| `PUT /salons/:id/members/:uid/pay-model` | 200 | 200 | 403 | 403 | 403 |
+| `POST /salons/:id/payroll/preview` | 200 | 200 | 403 | 403 | 403 |
+| `GET /salons/:id/payroll/me` | 200 | 200 | 200 (solo lo suyo) | 403 | 403 |
+
+`403` es `{"error":"sin permiso"}` cuando el rol no alcanza y `{"error":"sin
+acceso al salón"}` cuando no hay membresía activa en el salón de la ruta (otro
+tenant, persona dada de baja). Sin sesión, `401`. Toda consulta lleva `salon_id`:
+el modelo de pago, las ventas y las personas de otro salón no se leen ni se
+escriben (un `uid` de otro tenant en el `PUT` es `404`).
+
 ## Cambios de comportamiento en endpoints existentes
 
 - **`DELETE /salons/:id/members/:uid`** (F2g2): ya no borra la membresía, la
@@ -1626,7 +1774,26 @@ Migración de la fase 6 (F2g1):
   - Guardas en `pg_indexes` de `current_schema()` y `CREATE INDEX IF NOT EXISTS`:
     una segunda ejecución no falla ni duplica nada.
 
-Las 20 migraciones se probaron aplicándolas dos veces con
+Migración de la fase 6 (F3.2):
+
+- `024_member_pay.sql`: tabla `member_pay(salon_id TEXT NOT NULL REFERENCES
+  salons(id) ON DELETE CASCADE, user_id TEXT NOT NULL, fixed_cents INTEGER NOT
+  NULL DEFAULT 0, fixed_period TEXT NOT NULL DEFAULT 'month', commission_enabled
+  BOOLEAN NOT NULL DEFAULT true, PRIMARY KEY (salon_id, user_id))` con
+  `CONSTRAINT member_pay_membership_fkey FOREIGN KEY (user_id, salon_id)
+  REFERENCES memberships(user_id, salon_id) ON DELETE CASCADE` (el modelo de pago
+  solo existe para alguien del salón, baja incluida),
+  `member_pay_fixed_cents_range CHECK (fixed_cents >= 0 AND fixed_cents <=
+  2000000000)` (el tope del dinero de `010_limits`) y
+  `member_pay_fixed_period_check CHECK (fixed_period IN
+  ('week','fortnight','month'))`.
+  - **Sin backfill**: sin fila rige el default de D3 (fijo 0, mes, comisión
+    encendida), así que una base migrada se comporta exactamente como antes.
+  - Guarda de `information_schema` mirada en `current_schema()` (igual que
+    015–023): una segunda ejecución no hace nada y, sobre una base con datos, no
+    cambia ninguna fila.
+
+Las 21 migraciones se probaron aplicándolas dos veces con
 `psql -v ON_ERROR_STOP=1` sobre una base limpia y sobre una ya migrada, y el
 binario arranca contra esas bases. La 020 se probó además sobre una base migrada
 **solo hasta la 019** con dos servicios y dos turnos ya creados: los servicios
@@ -1634,4 +1801,8 @@ quedan con `resource_type_id` NULL, los turnos con `resource_unit_id` NULL y no
 se crea ningún tipo ni unidad (el comportamiento de hoy no cambia). El backfill de la 016 se probó además sobre
 una base migrada **solo hasta la 015**, con dueño/administración/profesional/
 recepción, dos servicios y un turno ya creados: los tres reservables quedan con
-los dos servicios, recepción con ninguno y el turno con `service_id` NULL.
+los dos servicios, recepción con ninguno y el turno con `service_id` NULL. La 024
+se probó además sobre una base migrada **solo hasta la 023** con un salón, dos
+miembros, un servicio y una venta con dos líneas (una con foto y otra `NULL`):
+las dos pasadas no cambian ninguna fila, y el modelo de pago de un miembro se
+guarda y se lee mientras la FK compuesta rechaza a quien no es del salón.

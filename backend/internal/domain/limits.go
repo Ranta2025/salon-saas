@@ -38,6 +38,10 @@ const (
 	// negocio caprichosa: system_cash_cents y counted_cents son INTEGER en la
 	// DB, así que un valor mayor no se puede guardar. Mejor 400 claro que 500.
 	MaxCashCents = 2_000_000_000
+	// MaxPayCents es el techo de un monto de nómina: el sueldo fijo de un miembro
+	// (D3 del contrato F3) vive en una columna INTEGER, con el mismo máximo que
+	// el resto del dinero. El ajuste con signo de F3.3 usa el mismo tope.
+	MaxPayCents = 2_000_000_000
 
 	// Agenda (B-18): un turno de más de medio día es un error de tipeo, no un
 	// servicio; y no se agenda hacia atrás.
