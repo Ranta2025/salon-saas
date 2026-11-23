@@ -799,3 +799,103 @@ func TestBookingLink_reschedule_rechaza_el_pasado(t *testing.T) {
 		t.Fatalf("reprogramar al futuro: %v", err)
 	}
 }
+
+// Verificador independiente, D5: una reserva nueva NUNCA cae en una unidad de
+// equipo desactivada. Reprogramar conservaba la unidad propia sin mirar si seguía
+// activa y dejaba el turno sobre un puesto fuera de servicio.
+func TestBookingLink_reschedule_no_conserva_una_unidad_desactivada(t *testing.T) {
+	env := newLinkEnv(t)
+	env.withMailer()
+	_, at := linkDay()
+	rt, units := equipa(t, env.publicEnv, "Puesto", 1)
+	svc, err := domain.NewService("s1", "Con equipo", 45, 100000, 20)
+	if err != nil {
+		t.Fatalf("servicio: %v", err)
+	}
+	svc.ResourceTypeID = rt.ID
+	if err := env.services.Save(svc); err != nil {
+		t.Fatalf("guardar servicio: %v", err)
+	}
+	own := domain.Booking{
+		ID: domain.NewID(), SalonID: "s1", ProfessionalID: "prof1", ClientName: "Lía",
+		StartsAt: at(0).UTC(), EndsAt: at(0).Add(45 * time.Minute).UTC(),
+		Status: domain.BookingBooked, ServiceID: svc.ID, ResourceUnitID: units[0].ID,
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := env.bookings.Save(own); err != nil {
+		t.Fatalf("turno: %v", err)
+	}
+	token, _ := domain.NewBookingLinkToken()
+	link, err := domain.NewBookingLink("s1", own.ID, domain.HashBookingLinkToken(token), time.Now().UTC())
+	if err != nil {
+		t.Fatalf("enlace: %v", err)
+	}
+	if err := env.links.Save(link); err != nil {
+		t.Fatalf("guardar enlace: %v", err)
+	}
+	off := units[0]
+	off.Active = false
+	if err := env.resources.SaveUnit(off); err != nil {
+		t.Fatalf("desactivar la unidad: %v", err)
+	}
+
+	_, _, err = env.svc.Reschedule(token, at(60))
+	if !errors.Is(err, domain.ErrAlreadyExists) || err.Error() != domain.MsgBookingLinkSlotTaken {
+		t.Fatalf("esperaba el 409 del contrato, dio %v", err)
+	}
+	stored, err := env.bookings.FindByID("s1", own.ID)
+	if err != nil || !stored.StartsAt.Equal(own.StartsAt) || stored.ResourceUnitID != units[0].ID {
+		t.Fatalf("el turno no se movió: %+v %v", stored, err)
+	}
+	if _, err := env.svc.Lookup(token); err != nil {
+		t.Fatalf("el 409 no consume el token: %v", err)
+	}
+}
+
+// Verificador independiente, D5: la duración del turno nuevo es la del servicio
+// HOY (como una reserva nueva y como los horarios de `slots`), no la que tenía el
+// turno cuando se reservó.
+func TestBookingLink_reschedule_usa_la_duracion_actual_del_servicio(t *testing.T) {
+	env := newLinkEnv(t)
+	env.withMailer()
+	_, at := linkDay()
+	b, token := env.bookWithEmail(t, at(0), "prof1")
+	svc := env.corte
+	svc.DurationMin = 90 // el salón lo alargó después de la reserva
+	if err := env.services.Save(svc); err != nil {
+		t.Fatalf("alargar el servicio: %v", err)
+	}
+
+	if _, _, err := env.svc.Reschedule(token, at(30)); err != nil {
+		t.Fatalf("reprogramar: %v", err)
+	}
+	stored, err := env.bookings.FindByID("s1", b.ID)
+	if err != nil {
+		t.Fatalf("turno: %v", err)
+	}
+	if want := at(30).Add(90 * time.Minute); !stored.EndsAt.Equal(want) {
+		t.Fatalf("termina %v, tenía que seguir la duración del servicio (%v)", stored.EndsAt, want)
+	}
+}
+
+// Verificador independiente, D6: un token con espacios, tabs o saltos de línea
+// alrededor NO es el token: el 404 genérico, igual que cualquier forma mala.
+func TestBookingLink_token_con_espacios_alrededor_es_invalido(t *testing.T) {
+	env := newLinkEnv(t)
+	env.withMailer()
+	_, at := linkDay()
+	_, token := env.bookWithEmail(t, at(0), "prof1")
+
+	for _, bad := range []string{" " + token, token + " ", "\t" + token, token + "\n"} {
+		if _, err := env.svc.Lookup(bad); !errors.Is(err, domain.ErrNotFound) || err.Error() != domain.MsgBookingLinkInvalid {
+			t.Fatalf("lookup %q: %v", bad, err)
+		}
+		if err := env.svc.Cancel(bad); !errors.Is(err, domain.ErrNotFound) || err.Error() != domain.MsgBookingLinkInvalid {
+			t.Fatalf("cancel %q: %v", bad, err)
+		}
+	}
+	// El token exacto sigue sirviendo (los intentos malos no lo consumieron).
+	if _, err := env.svc.Lookup(token); err != nil {
+		t.Fatalf("el token exacto sirve: %v", err)
+	}
+}

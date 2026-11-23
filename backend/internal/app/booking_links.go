@@ -188,8 +188,7 @@ func (s BookingLinkService) Reschedule(token string, startsAt time.Time) (Bookin
 	if !startsAt.After(now) {
 		return none, false, bookingLinkSlotTaken()
 	}
-	endsAt := startsAt.Add(got.booking.EndsAt.Sub(got.booking.StartsAt))
-	unitID, err := s.checkNewTime(got, startsAt, endsAt)
+	unitID, endsAt, err := s.checkNewTime(got, startsAt)
 	if err != nil {
 		return none, false, err
 	}
@@ -315,7 +314,6 @@ func (s BookingLinkService) resolve(token string) (linkedBooking, error) {
 // Cualquier otra cosa es el 404 genérico: no se distingue "no existe" de "ya se
 // usó" ni de "mal formado".
 func (s BookingLinkService) linkByToken(token string) (domain.BookingLink, error) {
-	token = strings.TrimSpace(token)
 	if !domain.ValidBookingLinkToken(token) {
 		return domain.BookingLink{}, bookingLinkInvalid()
 	}
@@ -346,7 +344,6 @@ func (s BookingLinkService) linkByToken(token string) (domain.BookingLink, error
 // Si cualquiera de los pasos posteriores falla, el error deshace la transacción y
 // el token NO queda consumido.
 func (s BookingLinkService) claim(tx ports.BookingLinkTx, token string) (linkedBooking, error) {
-	token = strings.TrimSpace(token)
 	if !domain.ValidBookingLinkToken(token) {
 		return linkedBooking{}, bookingLinkInvalid()
 	}
@@ -428,29 +425,33 @@ func (s BookingLinkService) describe(got linkedBooking) (BookingLinkView, error)
 // conflictos. Devuelve la unidad de equipo que ocupará. Cualquier horario que no
 // entre es el 409 del contrato (nunca un 500 y nunca un "no se puede" con otro
 // texto).
-func (s BookingLinkService) checkNewTime(got linkedBooking, startsAt, endsAt time.Time) (string, error) {
+func (s BookingLinkService) checkNewTime(got linkedBooking, startsAt time.Time) (string, time.Time, error) {
 	b := got.booking
 	settings := got.settings
 	loc, err := settings.Location()
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	service, err := s.Services.FindByID(got.salon.ID, b.ServiceID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			return "", bookingLinkSlotTaken()
+			return "", time.Time{}, bookingLinkSlotTaken()
 		}
-		return "", err
+		return "", time.Time{}, err
 	}
 	if !service.Active {
-		return "", bookingLinkSlotTaken()
+		return "", time.Time{}, bookingLinkSlotTaken()
 	}
+	// La duración es la del servicio HOY, igual que una reserva nueva y que los
+	// horarios de `slots`: si el salón la cambió después de reservar, el turno
+	// movido la sigue.
+	endsAt := startsAt.Add(time.Duration(service.DurationMin) * time.Minute)
 	// El profesional tiene que seguir haciendo ese servicio: si el salón se lo
 	// quitó, el turno no puede volver a entrar por el enlace.
 	if s.Professionals != nil {
 		eligible, err := s.Professionals.ListProfessionalsFor(got.salon.ID, service.ID)
 		if err != nil {
-			return "", err
+			return "", time.Time{}, err
 		}
 		does := false
 		for _, m := range eligible {
@@ -459,60 +460,60 @@ func (s BookingLinkService) checkNewTime(got linkedBooking, startsAt, endsAt tim
 			}
 		}
 		if !does {
-			return "", bookingLinkSlotTaken()
+			return "", time.Time{}, bookingLinkSlotTaken()
 		}
 	}
 
 	// Ventana del salón y de la persona (F2d1), en el día LOCAL del salón.
 	single, err := singleWindow(settings)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	weekly, err := salonWeeklyHours(s.Hours, got.salon.ID)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	segments, err := memberHours(s.Hours, got.salon.ID)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	weekday := domain.IsoWeekday(startsAt, loc)
 	startMin := localMinutes(startsAt, loc)
 	endMin := startMin + int(endsAt.Sub(startsAt)/time.Minute)
 	salonWindows, err := salonWindow(weekly, single, weekday)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	if len(salonWindows) == 0 || !salonWindows[0].Contains(startMin, endMin) {
-		return "", bookingLinkSlotTaken()
+		return "", time.Time{}, bookingLinkSlotTaken()
 	}
 	plan := domain.DayPlan{Single: single, Weekly: weekly, Segments: segments[b.ProfessionalID]}
 	fits, err := plan.Fits(weekday, startMin, endMin)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	if !fits {
-		return "", bookingLinkSlotTaken()
+		return "", time.Time{}, bookingLinkSlotTaken()
 	}
 
 	// Ausencias (F2d2): a quien está ausente no se le mueve un turno encima.
 	absences, err := timeOffRange(s.TimeOff, got.salon.ID, startsAt, endsAt)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	if awayAny(absences, b.ProfessionalID, startsAt, endsAt) {
-		return "", bookingLinkSlotTaken()
+		return "", time.Time{}, bookingLinkSlotTaken()
 	}
 
 	// Solape con otro turno del mismo profesional (el EXCLUDE de la transacción
 	// sigue siendo la barrera real; esto es el filtro amable de la reserva).
 	busy, err := s.Bookings.FindOverlapping(got.salon.ID, b.ProfessionalID, startsAt, endsAt)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	for _, other := range busy {
 		if other.ID != b.ID {
-			return "", bookingLinkSlotTaken()
+			return "", time.Time{}, bookingLinkSlotTaken()
 		}
 	}
 
@@ -520,27 +521,34 @@ func (s BookingLinkService) checkNewTime(got linkedBooking, startsAt, endsAt tim
 	// ACTIVA del mismo tipo. Cambiar de unidad es válido: el turno no cambia de
 	// servicio ni de profesional.
 	if strings.TrimSpace(b.ResourceUnitID) == "" {
-		return "", nil
+		return "", endsAt, nil
 	}
 	if s.Resources == nil {
-		return "", bookingLinkSlotTaken()
+		return "", time.Time{}, bookingLinkSlotTaken()
 	}
 	occupied, err := s.Resources.OccupiedUnits(got.salon.ID, startsAt, endsAt, b.ID)
 	if err != nil {
-		return "", err
-	}
-	if domain.UnitFree(occupied, b.ResourceUnitID, startsAt, endsAt) {
-		return b.ResourceUnitID, nil
+		return "", time.Time{}, err
 	}
 	units, err := s.Resources.ActiveUnits(got.salon.ID, service.ResourceTypeID)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
+	}
+	// Una unidad desactivada no se conserva (una reserva nueva nunca cae en ella).
+	stillActive := false
+	for _, u := range units {
+		if u.ID == b.ResourceUnitID {
+			stillActive = true
+		}
+	}
+	if stillActive && domain.UnitFree(occupied, b.ResourceUnitID, startsAt, endsAt) {
+		return b.ResourceUnitID, endsAt, nil
 	}
 	free := domain.FreeUnits(units, occupied, startsAt, endsAt)
 	if len(free) == 0 {
-		return "", bookingLinkSlotTaken()
+		return "", time.Time{}, bookingLinkSlotTaken()
 	}
-	return free[0].ID, nil
+	return free[0].ID, endsAt, nil
 }
 
 // announce publica lo MISMO que BookingService.Update (D8): el evento

@@ -84,11 +84,14 @@ func (e *linkHTTPEnv) seedLinkBooking(t *testing.T, slug string, offsetDays int)
 	body := `{"service_id":"` + svcID + `","professional_id":"` + profID +
 		`","client_name":"Lía","client_phone":"5551234","client_email":"lia@mail.com",` +
 		`"starts_at":"` + starts.Format(time.RFC3339) + `"}`
+	// El conteo se toma ANTES del pedido y con el método protegido: la
+	// confirmación viaja en una goroutine y puede llegar antes de que se mire.
+	before := e.mailer.count()
 	w := doReq(e.r, "POST", "/api/v1/public/salons/"+slug+"/bookings", body, "")
 	if w.Code != http.StatusCreated {
 		t.Fatalf("reserva pública: %d %s", w.Code, w.Body.String())
 	}
-	msg := e.mailer.waitCount(t, len(e.mailer.sent)+1)
+	msg := e.mailer.waitCount(t, before+1)
 	last := msg[len(msg)-1]
 	idx := strings.Index(last.Text, "/turno#")
 	if idx < 0 {

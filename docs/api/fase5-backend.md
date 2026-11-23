@@ -1948,11 +1948,18 @@ un turno cerrado o pasado: `404`.
 en segundo plano; **el token nuevo nunca viaja en la respuesta**. `starts_at` en
 RFC3339.
 
+Reglas del horario nuevo (las de una reserva pública nueva, con el propio turno excluido):
+tiene que ser **futuro**; la **duración es la del servicio hoy** (no la que tenía el turno
+al reservarse); el profesional y el servicio no cambian; la unidad de equipo se
+conserva solo si sigue **activa** y libre (si no, se toma otra activa libre). El token
+tiene que llegar **exacto**: un token con espacios, tabs o saltos de línea alrededor es
+el `404` genérico (no se recorta).
+
 | Caso | Respuesta |
 | --- | --- |
 | ok | `200` con el turno movido |
 | el mismo instante | `400 {"error":"Elegí un horario distinto al actual"}` |
-| horario ocupado, fuera de horario, ausencia o sin equipo | `409 {"error":"Ese horario ya no está disponible: elegí otro"}` (el token sigue vivo) |
+| horario pasado o «ahora», ocupado, fuera de horario, ausencia, sin equipo o con la única unidad de equipo desactivada | `409 {"error":"Ese horario ya no está disponible: elegí otro"}` (el token sigue vivo) |
 | menos de 2 horas | `409` con el texto de la ventana mínima |
 | token que no sirve | `404 {"error":"Enlace inválido o vencido"}` |
 
