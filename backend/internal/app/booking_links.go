@@ -182,6 +182,12 @@ func (s BookingLinkService) Reschedule(token string, startsAt time.Time) (Bookin
 		return none, false, domain.NewMessage(domain.ErrValidation, domain.MsgBookingLinkSameSlot)
 	}
 	now := s.now()
+	// El nuevo horario tiene que ser futuro: mover un turno vigente a un instante
+	// que ya pasó dejaría un turno "ya empezado" que nadie atiende (R3-001). Es el
+	// mismo 409 que cualquier horario que no entra; el token no se consume.
+	if !startsAt.After(now) {
+		return none, false, bookingLinkSlotTaken()
+	}
 	endsAt := startsAt.Add(got.booking.EndsAt.Sub(got.booking.StartsAt))
 	unitID, err := s.checkNewTime(got, startsAt, endsAt)
 	if err != nil {

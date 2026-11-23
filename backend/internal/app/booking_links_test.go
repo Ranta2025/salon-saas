@@ -767,3 +767,35 @@ func TestBookingLink_reschedule_cambia_de_unidad(t *testing.T) {
 		t.Fatalf("tenía que tomar la unidad libre: %q (esperaba %q)", stored.ResourceUnitID, units[1].ID)
 	}
 }
+
+// R3-001 (revisión nativa): reprogramar no puede mover un turno futuro a un
+// instante que ya pasó. Con el reloj del servicio en las 10:00 de un día, las
+// 09:30 de ese día están DENTRO del horario del salón y libres: solo la regla
+// "tiene que ser futuro" las frena.
+func TestBookingLink_reschedule_rechaza_el_pasado(t *testing.T) {
+	env := newLinkEnv(t)
+	env.withMailer()
+	_, at := linkDay()
+	// El turno está tres días después: faltan más de 2 horas y se puede cambiar.
+	b, token := env.bookWithEmail(t, at(0).AddDate(0, 0, 3), "prof1")
+	env.svc.Now = func() time.Time { return at(60) } // "ahora" = 10:00 del día 1
+
+	for _, starts := range []time.Time{at(30), at(60)} { // pasado y justo ahora
+		_, _, err := env.svc.Reschedule(token, starts)
+		if !errors.Is(err, domain.ErrAlreadyExists) || err.Error() != domain.MsgBookingLinkSlotTaken {
+			t.Fatalf("horario %v: esperaba el 409 del contrato, dio %v", starts, err)
+		}
+	}
+	// Nada cambió y el token sigue vivo.
+	stored, err := env.bookings.FindByID("s1", b.ID)
+	if err != nil || !stored.StartsAt.Equal(b.StartsAt) {
+		t.Fatalf("el turno no se movió: %+v %v", stored, err)
+	}
+	if _, err := env.svc.Lookup(token); err != nil {
+		t.Fatalf("el 409 no consume el token: %v", err)
+	}
+	// Un horario futuro y libre sigue funcionando.
+	if _, _, err := env.svc.Reschedule(token, at(120)); err != nil {
+		t.Fatalf("reprogramar al futuro: %v", err)
+	}
+}
