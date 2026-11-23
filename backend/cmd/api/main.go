@@ -194,6 +194,10 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// gastos y nómina PAGADA en UNA sola transacción REPEATABLE READ de lectura.
 	expenseRepo := pgstore.Expenses{Pool: pool}
 	profitRepo := pgstore.Profit{Pool: pool}
+	// F4: lecturas masivas del export (ventas con el nombre del profesional y la
+	// suma de ítems, cierres por closed_at y clientes por nombre), una sentencia
+	// SQL por archivo y con LIMIT.
+	exportRepo := pgstore.Exports{Pool: pool}
 
 	// Realtime: el hub es el EventPublisher de los casos de uso (no saben que
 	// hay websockets). Autentica el JWT del query param, valida el Origin con la
@@ -282,6 +286,13 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// día LOCAL del salón, no UTC.
 	expenseSvc := app.ExpenseService{Expenses: expenseRepo, Memberships: mems, Settings: salons}
 	profitSvc := app.ProfitService{Profit: profitRepo, Memberships: mems, Settings: salons}
+	// F4: exportación CSV de ventas, cierres de caja y clientes. Solo dueño y
+	// administración (la autorización vive en el caso de uso). Las lecturas son
+	// métodos nuevos con LIMIT (una sola sentencia por archivo) y el tope de
+	// filas queda en el valor del contrato.
+	exportSvc := app.ExportService{
+		Exports: exportRepo, Memberships: mems, Settings: salons,
+	}
 	availabilitySvc := app.AvailabilityService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems,
 		Bookings: bookings, Professionals: professionals, Hours: weeklyHours,
@@ -399,6 +410,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		},
 		Expenses: httpapi.ExpenseHandler{Expenses: expenseSvc, Memberships: mems},
 		Profit:   httpapi.ProfitHandler{Profit: profitSvc, Memberships: mems},
+		Exports:  httpapi.ExportHandler{Exports: exportSvc, Memberships: mems},
 		// La reserva pública es la única escritura sin auth: rate limit por IP
 		// como en /auth (el GET de disponibilidad no pasa por acá).
 		PublicBookingLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/salons/"),

@@ -43,6 +43,9 @@ type Deps struct {
 	// Profit es el reporte de ganancia neta de F3b (ingresos - gastos - nómina
 	// pagada). Solo owner/admin: lo aplica el caso de uso.
 	Profit ProfitHandler
+	// Exports son las tres exportaciones CSV de F4 (ventas, cierres de caja y
+	// clientes). Solo owner/admin: lo aplica el caso de uso.
+	Exports ExportHandler
 	// BookingLinks son las cuatro rutas públicas del enlace firmado de un turno
 	// (F1): lookup, horarios, cancelar y reprogramar. Sin sesión y con el token
 	// en el cuerpo.
@@ -216,6 +219,14 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.PUT("/salons/:id/expenses/:eid", d.Expenses.Update)
 	authed.DELETE("/salons/:id/expenses/:eid", d.Expenses.Delete)
 	authed.GET("/salons/:id/profit", d.Profit.Get)
+
+	// F4: exportación CSV de ventas, cierres de caja y clientes. Salida MASIVA de
+	// datos personales y de dinero: solo dueño/administración (la autorización
+	// vive en el caso de uso). El CSV baja con fetch autenticado (Bearer), no con
+	// un enlace directo, y no se cachea.
+	authed.GET("/salons/:id/export/sales.csv", d.Exports.Sales)
+	authed.GET("/salons/:id/export/cash-closes.csv", d.Exports.CashCloses)
+	authed.GET("/salons/:id/export/clients.csv", d.Exports.Clients)
 
 	// Bandeja de avisos. Listar va por salón; marcar leída no (el aviso ya sabe
 	// de qué salón es y el alcance sale de las memberships del usuario).

@@ -1967,6 +1967,78 @@ Errores comunes a las cuatro: `400 {"error":"body inválido"}` (JSON roto, tipo
 equivocado —incluido un token que no es una cadena— o `starts_at`/`date`
 ausentes) y `429` por velocidad. Nunca un `500` por entrada del cliente.
 
+## Fase 6 — F4: exportación CSV de ventas, cierres de caja y clientes
+
+Salida **masiva** de datos personales y de dinero: las tres rutas son solo
+**dueño y administración** (D1). Recepción, profesional y cliente reciben `403`
+`{"error":"sin permiso"}` aunque hoy puedan ver esas listas en pantalla; sin
+sesión `401`; pedir el salón de otro tenant `403` (`sin acceso al salón`). No
+cambian los permisos de `GET /sales`, `/cash-closes` ni `/clients` (D8: sus
+repositorios y queries no se tocan; las lecturas del export son métodos nuevos
+con `LIMIT`, una sola sentencia SQL por archivo).
+
+- **D2 día local**: `from`/`to` son días **locales** del salón
+  (`salons.timezone`), inclusivos, con la ventana `[from 00:00 local, (to+1)
+  00:00 local)` calculada con `time.Date` (correcta en los días de 23 y 25
+  horas). Las fechas del archivo se escriben en esa zona como
+  `AAAA-MM-DD HH:MM`; el alta de un cliente como `AAAA-MM-DD`. Los clientes no
+  llevan rango. Rango máximo **366 días**.
+- **D3 sin truncar en silencio**: tope de **50000 filas** por archivo. La
+  consulta pide `tope + 1`; si hay más, `400` y **ningún archivo parcial**. El
+  tope es un campo del caso de uso (`ExportService.RowCap`): las pruebas lo
+  bajan en vez de cargar 50000 filas.
+- **D4 mínimo necesario**: las ventas **no** llevan teléfono ni email de la
+  clienta (solo el nombre tal como se anotó en la venta); los montos son
+  decimales con punto, sin símbolo de moneda; el método sale en español
+  (`Efectivo`, `Tarjeta`, `Transferencia`); sin filas → `200` con **solo la
+  cabecera**.
+- **D5 fórmulas**: toda celda de TEXTO (profesional, cliente, notas, teléfono,
+  email, nota del cierre) pasa por `CSVCell` (la regla de la nómina, sin
+  cambios); las celdas NUMÉRICAS (montos, cantidades) se escriben crudas, así
+  una diferencia de caja negativa sigue siendo un número (`-5.00`). Un teléfono
+  que empieza con `+` sale con la comilla simple de neutralización
+  (`'+54 11 5555-1234`): es el comportamiento deliberado de `CSVCell`.
+- **D6 cabeceras HTTP**: `Content-Type: text/csv; charset=utf-8`,
+  `Content-Disposition: attachment; filename="..."` con el nombre saneado por
+  `csvSafe` (solo `[a-z0-9-]`, guiones y el punto del `.csv`), `Cache-Control:
+  no-store` y `X-Content-Type-Options: nosniff`.
+- **D7 rastro**: sin tabla de auditoría (F10), cada export deja **una** línea de
+  log del servidor `export csv: tipo=<ventas|cierres|clientes> salon=<id>
+  usuario=<id> filas=<n>`, sin ningún dato personal, monto ni contenido. Un
+  `400`/`403` no es un export y no deja línea.
+
+### `GET /salons/:id/export/sales.csv?from=YYYY-MM-DD&to=YYYY-MM-DD` → `200`
+
+Cabecera exacta `Fecha,Venta,Profesional,Cliente,Método,Ítems,Total`: una fila
+por **venta**, más reciente primero (`created_at DESC, id`). `Venta` es el id;
+`Profesional` el nombre de la cuenta (vacío si no existe); `Ítems` la suma de
+cantidades de sus líneas; `Total` como decimal con punto. Archivo
+`ventas-<from>_<to>.csv`.
+
+### `GET /salons/:id/export/cash-closes.csv?from=&to=` → `200`
+
+Cabecera exacta `Apertura,Cierre,Efectivo del sistema,Efectivo contado,Diferencia,Nota`:
+cierres con `closed_at` dentro de la ventana, más reciente primero. `Diferencia`
+conserva su signo. Archivo `cierres-<from>_<to>.csv`.
+
+### `GET /salons/:id/export/clients.csv` → `200`
+
+Cabecera exacta `Nombre,Teléfono,Email,Notas,Alta`, ordenado por nombre. `Alta`
+es el día local de `created_at`. Archivo `clientes-<hoy local>.csv`.
+
+### Errores de la exportación
+
+| Caso | Status | Texto exacto |
+| --- | --- | --- |
+| sin `from`/`to`, fecha mal formada, `to` < `from`, más de 366 días | 400 | `Rango inválido: indicá desde y hasta (AAAA-MM-DD), hasta 366 días` |
+| más de 50000 ventas o cierres | 400 | `El archivo tiene más de 50000 filas: elegí un rango más corto` |
+| más de 50000 clientes | 400 | `Hay más de 50000 clientes: no se puede exportar de una vez` |
+| rol sin permiso | 403 | `sin permiso` |
+| sin token | 401 | — |
+
+Nunca un `500` por entrada de la persona. Un `400` no devuelve archivo ni anuncia
+`Content-Disposition`.
+
 ## Cambios de comportamiento en endpoints existentes
 
 - **`DELETE /salons/:id/members/:uid`** (F2g2): ya no borra la membresía, la
