@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { SALON } from '../landing/content'
 import { fetchStaff } from '../lib/api'
 import { canOpenMyAgenda } from '../lib/myAgenda'
+import { canViewOwnCommissions } from '../lib/payroll'
 import { activeRole, isManager } from '../lib/permissions'
 import type { StaffMember } from '../lib/staff'
 import { purgeOfflineApiCache } from '../lib/pwa'
@@ -22,6 +23,11 @@ type NavEntry = {
   managerOnly?: boolean
   /** Only whoever attends clients in the active salon sees it (S-F2b-5). */
   agendaOnly?: boolean
+  /**
+   * Only owner, admin and professional see their own commissions (D7); reception
+   * does not, and the page itself also guards the role.
+   */
+  commissionsOnly?: boolean
 }
 
 const NAV: readonly NavEntry[] = [
@@ -36,6 +42,10 @@ const NAV: readonly NavEntry[] = [
   { to: '/panel/clientes', label: 'Clientes', end: false },
   { to: '/panel/avisos', label: 'Avisos', end: false },
   { to: '/panel/equipo', label: 'Equipo', end: false, managerOnly: true },
+  { to: '/panel/nomina', label: 'Nómina', end: false, managerOnly: true },
+  // Short label on purpose: eleven entries keep five columns without overflow at
+  // 375/390 px (S-F2e-5 and S-F3.2-5). The page is titled «Mis comisiones».
+  { to: '/panel/mis-comisiones', label: 'Comisiones', end: false, commissionsOnly: true },
   { to: '/panel/ajustes', label: 'Ajustes', end: false, managerOnly: true },
 ]
 
@@ -137,6 +147,9 @@ function ShellChrome() {
   const showManagerEntries = isManager(role) || role === null
   const navItems = NAV.filter((item) => {
     if (item.managerOnly && !showManagerEntries) {
+      return false
+    }
+    if (item.commissionsOnly && role !== null && !canViewOwnCommissions(role)) {
       return false
     }
     return !item.agendaOnly || canOpenMine

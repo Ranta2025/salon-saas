@@ -3709,3 +3709,182 @@
   gap: 0.35rem;
   margin-left: auto;
 }
+
+/* ---------- F3: nómina, comisiones y modelo de pago (S-F3.2-5) ---------- */
+
+.payroll-filters {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.payroll-filters .filters {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.payroll-filters__period {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--wine);
+}
+
+/* Badge of a line whose commission was estimated with the current rate (D1). */
+.payroll-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid rgba(201, 162, 39, 0.5);
+  border-radius: var(--radius-pill);
+  background: var(--gold-tint);
+  color: var(--ink);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+
+.payroll-table {
+  min-width: 0;
+}
+
+.payroll-table__person {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.payroll-table__name {
+  font-weight: 600;
+}
+
+.payroll-table__total-label {
+  font-weight: 700;
+}
+
+.payroll-table tfoot td {
+  border-top: 2px solid var(--line-strong);
+  border-bottom: 0;
+  font-weight: 700;
+}
+
+.payroll-table__total {
+  color: var(--wine);
+}
+
+.pay-models-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.pay-model {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.pay-model__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem 0.75rem;
+}
+
+.pay-model__head h3 {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  overflow-wrap: anywhere;
+}
+
+.pay-model__fields {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pay-model__fields .field {
+  min-width: 0;
+}
+
+.pay-model__commission {
+  min-height: 44px;
+}
+
+.pay-model__self {
+  display: inline-flex;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-pill);
+  background: var(--gold-tint);
+  color: var(--ink);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.ex-team__pay {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  margin-top: 0.15rem;
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 760px) {
+  .pay-models-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 699px) {
+  /* The totals row of the payroll follows the stacked rows of the body instead
+     of being squeezed into the six columns of the desktop table. */
+  .table--stack tfoot {
+    display: block;
+  }
+
+  .table--stack tfoot tr {
+    display: grid;
+    gap: 0.15rem;
+    margin-top: 0.6rem;
+    padding: 0.8rem 0.9rem;
+    background: var(--gold-tint);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-md);
+  }
+
+  .table--stack tfoot td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.2rem 0;
+    border-top: 0;
+    border-bottom: 0;
+    text-align: left;
+  }
+
+  /* The first cell of the totals row already says «Totales»: no repeated label. */
+  .table--stack tfoot td.payroll-table__total-label::before {
+    content: none;
+  }
+
+  .table--stack tfoot td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+}

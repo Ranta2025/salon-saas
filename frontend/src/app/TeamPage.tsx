@@ -49,6 +49,16 @@ import {
   isManager,
   roleLabel,
 } from '../lib/permissions'
+import {
+  applyPayModel,
+  fetchPayModels,
+  FORMER_MEMBER_LABEL,
+  PAY_MODEL_EXPLANATION,
+  payModelSummary,
+  restorePayModel,
+  setMemberPayModel,
+  type PayModel,
+} from '../lib/payroll'
 import { fetchSalonHours, fetchSettings } from '../lib/settings'
 import { TIME_ZONE, addDaysToDateValue, fromDateInputValue, toDateInputValue } from '../lib/datetime'
 import { fetchTimeOff, type TimeOff } from '../lib/timeOff'
@@ -58,6 +68,7 @@ import { useSalon } from './SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
 import { MemberHoursCard } from './components/MemberHoursCard'
 import { PageHeader } from './components/PageHeader'
+import { PayModelCard, type PayModelDraft } from './components/PayModelCard'
 import { TeamInvitations } from './components/TeamInvitations'
 import { TimeOffCard } from './components/TimeOffCard'
 
@@ -101,6 +112,10 @@ export function TeamPage() {
   // of every card reads them from here, one request for the whole team.
   const [coverAbsences, setCoverAbsences] = useState<CoverAbsence[]>([])
   const [coverReady, setCoverReady] = useState(false)
+  // Pay models of the whole team, active and ex team (F3, S-F3.2-5).
+  const [payModels, setPayModels] = useState<PayModel[]>([])
+  const [payModelsError, setPayModelsError] = useState<string | null>(null)
+  const [payModelsLoaded, setPayModelsLoaded] = useState(false)
   const [now] = useState(() => new Date())
   const [reloadKey, setReloadKey] = useState(0)
 
@@ -128,6 +143,34 @@ export function TeamPage() {
       .finally(() => {
         if (active) {
           setLoading(false)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [salonId, allowed, reloadKey])
+
+  // Model of payment of every member (active and given de baja): only owner and
+  // admin reach this endpoint, and the page is already manager-only.
+  useEffect(() => {
+    if (!salonId || !allowed) {
+      return
+    }
+    let active = true
+    setPayModelsError(null)
+    setPayModelsLoaded(false)
+    fetchPayModels(salonId)
+      .then((list) => {
+        if (active) {
+          setPayModels(list)
+          setPayModelsLoaded(true)
+        }
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setPayModelsError(
+            describeApiError(err, 'No pudimos cargar los modelos de pago.').message,
+          )
         }
       })
     return () => {
@@ -372,6 +415,35 @@ export function TeamPage() {
       return saved
     } catch (err: unknown) {
       setMembers((list) => applyMemberServices(list, member.id, previous))
+      throw err
+    }
+  }
+
+  /**
+   * Pay model of one member (S-F3.2-5): the card paints the new values before the
+   * answer and the list comes back to the previous snapshot if the server
+   * rejects the change, with its Spanish sentence shown verbatim.
+   */
+  const handleSavePayModel = async (
+    memberId: string,
+    next: PayModelDraft,
+  ): Promise<void> => {
+    const previous = payModels.find((row) => row.user_id === memberId)
+    if (!previous) {
+      throw new Error('Todavía no pudimos leer el modelo de pago de esa persona.')
+    }
+    setPayModels((list) => applyPayModel(list, memberId, next))
+    try {
+      const saved = await setMemberPayModel(salonId, memberId, next)
+      setPayModels((list) =>
+        applyPayModel(list, memberId, {
+          fixed_cents: saved.fixed_cents,
+          fixed_period: saved.fixed_period,
+          commission_enabled: saved.commission_enabled,
+        }),
+      )
+    } catch (err: unknown) {
+      setPayModels((list) => restorePayModel(list, previous))
       throw err
     }
   }
@@ -651,12 +723,14 @@ export function TeamPage() {
             <>
               <p className="page-head__desc">
                 Ya no tienen acceso al salón, pero su historial de turnos y ventas se conserva.
-                Reactivar a alguien le devuelve el acceso con el mismo rol.
+                Reactivar a alguien le devuelve el acceso con el mismo rol. Su modelo de pago se
+                muestra solo para consulta, con la marca «{FORMER_MEMBER_LABEL}».
               </p>
               <ul id="ex-team-list" className="ex-team__list">
               {exTeam.map((member) => {
                 const left = endedOnLabel(member.ended_at, { timeZone })
                 const pending = reactivatingId === member.id
+                const payModel = payModels.find((row) => row.user_id === member.id)
                 return (
                   <li key={member.id} className="ex-team__item">
                     <div className="ex-team__person">
@@ -668,6 +742,14 @@ export function TeamPage() {
                       <span className="ex-team__meta">
                         <span className="pill pill--off">{roleLabel(member.role)}</span>
                         <span className="ex-team__date">{left ?? 'Sin fecha de baja'}</span>
+                      </span>
+                      <span className="ex-team__pay">
+                        <span className="pill pill--off">{FORMER_MEMBER_LABEL}</span>
+                        <span>
+                          {payModel
+                            ? payModelSummary(payModel)
+                            : 'Modelo de pago sin leer todavía.'}
+                        </span>
                       </span>
                     </div>
                     <div className="ex-team__actions">
@@ -727,6 +809,60 @@ export function TeamPage() {
               </ul>
             </>
           ) : null}
+        </section>
+      ) : null}
+
+      {loaded ? (
+        <section className="panel-card" aria-labelledby="team-pay-title">
+          <div className="panel-card__head">
+            <h2 id="team-pay-title">Modelo de pago de cada persona</h2>
+            <span className="panel-card__meta">{team.length} personas</span>
+          </div>
+          <p className="page-head__desc">
+            Fijo, comisión o ambos. El monto fijo se paga una sola vez, y solo cuando el período
+            que se liquida coincide con el período fijo de la persona.
+          </p>
+          {payModelsError ? (
+            <p className="notice notice--error" role="alert">
+              {payModelsError}
+            </p>
+          ) : null}
+          {!payModelsLoaded && payModelsError === null ? (
+            <LoadingState label="Cargando modelos de pago…" />
+          ) : null}
+          {payModelsLoaded && team.length === 0 ? (
+            <p className="empty-state">No hay personas activas a las que configurarles el pago.</p>
+          ) : null}
+          {payModelsLoaded ? (
+            <div className="pay-models-grid">
+              {team.map((member) => {
+                const model = payModels.find((row) => row.user_id === member.id)
+                if (!model) {
+                  return (
+                    <article
+                      key={member.id}
+                      className="panel-card pay-model"
+                      aria-labelledby={`pay-model-missing-${member.id}`}
+                    >
+                      <h3 id={`pay-model-missing-${member.id}`}>{member.name}</h3>
+                      <p className="field__hint">
+                        El servidor todavía no devolvió su modelo de pago.
+                      </p>
+                    </article>
+                  )
+                }
+                return (
+                  <PayModelCard
+                    key={member.id}
+                    model={model}
+                    isSelf={member.id === user?.id}
+                    onSave={(next) => handleSavePayModel(member.id, next)}
+                  />
+                )
+              })}
+            </div>
+          ) : null}
+          <p className="field__hint">{PAY_MODEL_EXPLANATION}</p>
         </section>
       ) : null}
 

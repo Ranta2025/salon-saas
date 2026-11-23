@@ -1670,3 +1670,147 @@ las frases largas del servidor (`overflow-wrap`).
 - Fuera de alcance de esta entrega: borrar definitivamente, reasignación masiva
   de turnos al dar de baja y columnas del calendario para los dados de baja
   (el contrato los excluye).
+
+## 22. Fase 6 — F3.2: modelo de pago, nómina y mis comisiones
+
+Contrato `odd/tasks/fase6-roadmap.md`, «Contrato F3» (formas de D3/D5/D7 y
+S-F3.2-5). Sin dependencias nuevas. El backend de F3.1/F3.2 se implementa en
+paralelo y no se tocó: la UI consume `GET /salons/:id/pay-models`,
+`PUT /salons/:id/members/:uid/pay-model`,
+`POST /salons/:id/payroll/preview {kind,date}` y
+`GET /salons/:id/payroll/me?kind=&date=` con las formas del contrato, y muestra
+las frases del servidor verbatim en los errores de esos endpoints.
+
+### 22.1 Lectura defensiva (`src/lib/payroll.ts`)
+
+| payload | regla |
+| --- | --- |
+| `GET /pay-models` | lee `{pay_models:[…]}` o una lista suelta y descarta filas sin `user_id`; `fixed_cents` negativo, fraccionario, infinito o que no es número → `0`; `fixed_period` desconocido → `month` (D3); `commission_enabled` ausente → `true` (sin fila = solo comisión); `active` ausente → `true`; `role` desconocido → `professional`; sin nombre se usa el id, nunca una persona vacía |
+| `PUT …/pay-model` | lee el objeto devuelto, suelto o bajo `pay_model`; si no trae `user_id` es un error explícito, no un guardado mudo |
+| `POST /payroll/preview` | `period` exige `kind` válido y dos fechas locales reales (el round-trip por `Date.UTC` rechaza `2026-02-30`), `closed` es `true` solo si vino `true`; `lines` descarta filas sin `user_id` y normaliza conteos y centavos; un `total_cents` ausente es `commission + fixed` en enteros; los `totals` del servidor se usan solo si son enteros no negativos y, si no, se recalculan de las líneas para que la tabla y su pie nunca se contradigan |
+| `GET /payroll/me` | `{period, sales_count, sales_total_cents, commission_cents, estimated}`; todo campo ausente o inválido cae a `0`/`false`; la pantalla no pide ni muestra datos de otra persona |
+
+### 22.2 Reglas puras (`src/lib/payroll.ts`)
+
+| helper | regla |
+| --- | --- |
+| `canManagePayroll` | solo dueño/administración (D7): la entrada «Nómina» del menú y la página |
+| `canViewOwnCommissions` | dueño, administración y profesional sí; recepción no (D7) |
+| `isPayPeriodKind` / `isValidPayrollDate` / `checkPayrollInput` | `week`/`fortnight`/`month` y un día de calendario `YYYY-MM-DD` real; si alguno falla, la frase del servidor `Período inválido` y no se hace la request |
+| `payPeriodLabel` | «Semana del 3 al 9 de noviembre», «Quincena del 1 al 15 de noviembre», «Noviembre de 2026»; una semana que cruza mes nombra los dos bordes («Semana del 30 de noviembre al 6 de diciembre») y si cruza año lleva los dos años; una fecha inusable imprime «Período» en vez de inventar un día |
+| `payrollTotals` / `payrollSalesTotals` | sumas de centavos y conteos en enteros, sin pasar por coma flotante; lista vacía → ceros |
+| `amountInputFromCents` | `150000` → `1500.00` con aritmética entera (nunca `cents / 100`); el monto se escribe con `parseAmountToCents` |
+| `applyPayModel` / `restorePayModel` | guardado optimista de una fila sin mutar la lista y vuelta atrás **exacta** al objeto que el llamador guardó |
+| `payModelSummary` | lectura del modelo para el ex equipo: «Fijo $1,500.00 por mes + comisión», «Fijo $500.00 por semana, sin comisión», «Solo comisión», «Sin pago fijo ni comisión» |
+
+Copias del contrato exportadas y usadas por las pantallas: `ESTIMATED_BADGE`
+(«estimado»), `ESTIMATED_NOTICE` («Incluye ventas anteriores a la nómina: su
+comisión se calcula con el porcentaje actual del servicio»), `OPEN_PERIOD_NOTICE`
+(«Período en curso: las cifras pueden cambiar»), `FORMER_MEMBER_LABEL` («Dado de
+baja») y `PAY_MODEL_EXPLANATION` (mixto = fijo + comisión; el fijo se paga solo
+cuando el período liquidado coincide con el período fijo de la persona).
+
+### 22.3 `/panel/equipo` (S-F3.2-5)
+
+- Bloque **«Modelo de pago de cada persona»** con una tarjeta por miembro activo
+  (`PayModelCard`): monto fijo (se guarda al salir del campo o con Enter; `0` =
+  sin fijo), selector del período fijo (Semana, Quincena, Mes) y casilla
+  «También gana comisión sobre sus ventas». Cada cambio se pinta antes de la
+  respuesta y, si el servidor rechaza, la fila vuelve **idéntica** y su frase se
+  lee en `role="alert"` (probado con un `400` de monto máximo: el campo vuelve a
+  `5000.00`). Un monto ilegible se rechaza en el cliente con su propio mensaje y
+  no viaja.
+- El **ex equipo** muestra el modelo **solo para consulta** junto a la píldora
+  «Dado de baja» («Fijo $900.00 por quincena + comisión»); no hay campos
+  editables ahí. Si `/pay-models` falla, la tarjeta dice que no se pudo leer y no
+  se edita a ciegas (nunca se envía un modelo inventado).
+
+### 22.4 `/panel/nomina` (S-F3.2-5)
+
+- Dueño/administración. Selector «Período» (Semana, Quincena, Mes) y «Fecha
+  dentro del período» (`type="date"`); el servidor deriva el período en la zona
+  del salón, así que cualquier día del período sirve. El rótulo del período
+  llegado del servidor se imprime tal cual lo arma `payPeriodLabel`.
+- Tabla «Por profesional»: profesional, ventas, total vendido, comisión, fijo y
+  total, con una fila de **Totales** en `tfoot` (conteo y montos en enteros). Las
+  personas dadas de baja llevan «Dado de baja»; las líneas estimadas llevan la
+  píldora «estimado» y, cuando hay alguna, la explicación llana del contrato.
+- `period.closed === false` muestra «Período en curso: las cifras pueden cambiar».
+- Estados: carga y actualización (`LoadingState`), error con «Reintentar»
+  (`ErrorNotice`), aviso de copia guardada por el service worker («Sin conexión:
+  mostrando datos guardados…») y vacío honesto («No hay ventas ni montos fijos en
+  este período»). Al cambiar de período se limpian las líneas anteriores: un
+  error del período nuevo nunca deja las cifras viejas bajo el selector nuevo.
+- Recepción y profesionales que escriben la URL ven la misma explicación de rol
+  que Equipo o Equipamiento («Esta sección es de la administración»).
+
+### 22.5 `/panel/mis-comisiones` (S-F3.2-5, D7)
+
+- Solo dueño, administración y profesional; recepción ve la explicación de su rol
+  y no la página. Consume **solo** `GET /payroll/me` y muestra las cifras propias
+  (ventas, total vendido, comisión) con el rótulo del período, el aviso de
+  período en curso, la píldora «estimado» con su explicación y los mismos estados
+  de carga/error/sin conexión. Nunca pide, dibuja ni enlaza datos de otra persona
+  ni el modelo de pago de nadie.
+
+### 22.6 Menú y navegación móvil
+
+- `NAV` suma «Nómina» (`managerOnly`, entre Equipo y Ajustes) y «Comisiones»
+  (`commissionsOnly`: dueño/administración/profesional; recepción no la ve).
+- Doce entradas para el dueño en la grilla móvil de cinco columnas: tres filas,
+  cada enlace con 44 px de alto y `scrollWidth === clientWidth` a 390 px. El
+  profesional ve ocho (sin Nómina, Equipo, Puestos ni Ajustes) y recepción siete.
+  **Desviación consciente:** la etiqueta del menú es «Comisiones» y no «Mis
+  comisiones» porque la etiqueta larga no entra en una columna de ~69 px a 390 px
+  sin desbordar; el `h1` de la página mantiene «Mis comisiones».
+
+### 22.7 Accesibilidad y estilos
+
+`app.css` suma el bloque «F3»: `.payroll-filters` (período + fecha en `.filters`,
+rótulo del período en la display), `.payroll-badge` (píldora dorada del
+«estimado»), `.payroll-table` (nombre que envuelve, pie con filete fuerte),
+`.pay-model*` (tarjetas en una columna en el teléfono y dos desde 760 px, casilla
+con 44 px de objetivo) y `.ex-team__pay`. La fila de totales se apila en el
+teléfono con el mismo patrón `data-label` de `.table--stack`, sin repetir el
+rótulo «Totales». Etiquetas `<label for>` reales en todos los campos, `fieldset`
+con `legend` por tarjeta, `aria-label` en la casilla con el nombre de la persona
+y el anillo de foco de 3 px de `base.css` (medido al tabular: el campo «Monto
+fijo» recibe `outline: 3px solid`). Los campos y selectores nuevos miden 44 px o
+más; los únicos controles menores son los `btn--sm` preexistentes de otras
+secciones.
+
+### 22.8 Verificación
+
+- `npx tsc --noEmit` sin errores, `npm test` (**374 tests**, `node --test`; 351
+  eran de la entrega anterior, 23 nuevas) y `npm run build` en verde.
+- TDD en `src/lib` (primero en rojo: `ERR_MODULE_NOT_FOUND` de
+  `src/lib/payroll.ts`): `payroll.test.ts` cubre la lectura de los tres payloads
+  (campos ausentes, tipos equivocados, negativos, fraccionarios, filas sin id,
+  flag de comisión y período por defecto, totales recalculados), el período
+  (`kind`/fechas reales, `closed`), las etiquetas en español de las tres formas y
+  de una semana que cruza mes y año, la validación de `kind`/`date` con «Período
+  inválido», las sumas en enteros (`payrollTotals`, `payrollSalesTotals`), el
+  valor del campo de monto, la matriz de roles de D7 (las ocho combinaciones), el
+  guardado optimista con vuelta atrás exacta, la copia del modelo y el cliente de
+  la API (rutas, cuerpos exactos, query de `/me`, frases del servidor en 400).
+- Revisión visual con el bundle de `vite build` servido junto a una API simulada
+  en `/tmp/f32-shot` (miembros activos y uno dado de baja, tres modelos de pago,
+  vista previa semanal/mensual/vacía, un `500` con frase en español, un `PUT`
+  rechazado con monto máximo, `payroll/me` y `/me` por rol) y Chromium headless
+  por protocolo DevTools (el flag `--screenshot` se cuelga en este entorno) a
+  **390 y 1280 px**, con **20 capturas revisadas una por una**:
+  - `/panel/nomina`: cargada con «estimado» y «Período en curso», mes cerrado,
+    vacío, error y el estado de error móvil.
+  - `/panel/mis-comisiones`: dueño (390/1280) y profesional (390).
+  - `/panel/equipo`: editor del modelo de pago (390/1280), error del `PUT` con la
+    frase del servidor y el campo devuelto a su valor anterior (390/1280), ex
+    equipo desplegado con «Dado de baja» y el modelo en solo lectura (390/1280) y
+    foco de teclado en «Monto fijo».
+  - Guardas: profesional en `/panel/nomina` y recepción en `/panel/nomina` y
+    `/panel/mis-comisiones` (explicación de rol, sin datos), y el menú móvil sin
+    «Nómina»/«Comisiones» para recepción. Comprobado en el navegador:
+    `scrollWidth === clientWidth` en todas las capturas y en la barra móvil
+    (doce enlaces de 44 px), ningún control nuevo por debajo de 44 px y el anillo
+    de foco de 3 px al tabular.
+- Fuera de alcance de esta entrega: las liquidaciones (F3.3), los ajustes por
+  línea y la exportación CSV (D6/D8).
