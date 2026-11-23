@@ -131,9 +131,12 @@ func payrollLine(m domain.MemberPayView, t domain.PayrollSalesTotal, kind domain
 		SalesCount: t.SalesCount, SalesTotalCents: t.SalesTotalCents, Estimated: t.Estimated,
 	}
 	// Comisión apagada (fijo puro): no cobra comisión, pero sus ventas siguen
-	// contando en cantidad y total.
+	// contando en cantidad y total. `estimated` avisa que la COMISIÓN usó el
+	// porcentaje actual de un servicio: sin comisión no hay nada estimado.
 	if m.CommissionEnabled {
 		line.CommissionCents = t.CommissionCents()
+	} else {
+		line.Estimated = false
 	}
 	if m.Active && m.FixedCents > 0 && m.FixedPeriod == kind {
 		line.FixedCents = m.FixedCents
@@ -194,7 +197,8 @@ func (s PayrollService) Me(actor domain.Membership, salonID, kind, date string) 
 	return PayrollMe{
 		Period: p, Closed: p.Closed(s.now()),
 		SalesCount: total.SalesCount, SalesTotalCents: total.SalesTotalCents,
-		CommissionCents: commission, Estimated: total.Estimated,
+		// Sin comisión no hay nada estimado (ver payrollLine).
+		CommissionCents: commission, Estimated: total.Estimated && model.CommissionEnabled,
 	}, nil
 }
 

@@ -70,8 +70,9 @@ func (h PayrollHandler) ListPayModels(c *gin.Context) {
 }
 
 // UpdatePayModel: PUT /api/v1/salons/:id/members/:uid/pay-model -> 200 el modelo.
-// `commission_enabled` ausente vale true (el default de D3): para apagar la
-// comisión hay que decir false explícitamente.
+// El PUT REEMPLAZA el modelo entero, así que los tres campos son obligatorios:
+// un cuerpo parcial ({"fixed_period":"week"}) guardaba fixed_cents=0 en silencio
+// y borraba un sueldo (hallazgo de F3.2). Ausente o null es un 400 y no escribe.
 func (h PayrollHandler) UpdatePayModel(c *gin.Context) {
 	salonID := c.Param("id")
 	actor, ok := h.loadActor(c, salonID)
@@ -79,20 +80,21 @@ func (h PayrollHandler) UpdatePayModel(c *gin.Context) {
 		return
 	}
 	var in struct {
-		FixedCents        int    `json:"fixed_cents"`
-		FixedPeriod       string `json:"fixed_period"`
-		CommissionEnabled *bool  `json:"commission_enabled"`
+		FixedCents        *int    `json:"fixed_cents"`
+		FixedPeriod       *string `json:"fixed_period"`
+		CommissionEnabled *bool   `json:"commission_enabled"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		// Incluye un monto con decimales (1500.5): no es un modelo válido.
 		badBody(c)
 		return
 	}
-	enabled := true
-	if in.CommissionEnabled != nil {
-		enabled = *in.CommissionEnabled
+	if in.FixedCents == nil || in.FixedPeriod == nil || in.CommissionEnabled == nil {
+		respondErr(c, domain.NewMessage(domain.ErrValidation,
+			"Faltan datos del modelo de pago: indicá el sueldo fijo, su período y si cobra comisión"))
+		return
 	}
-	v, err := h.PayModels.Update(actor, salonID, c.Param("uid"), in.FixedCents, in.FixedPeriod, enabled)
+	v, err := h.PayModels.Update(actor, salonID, c.Param("uid"), *in.FixedCents, *in.FixedPeriod, *in.CommissionEnabled)
 	if err != nil {
 		respondErr(c, err)
 		return

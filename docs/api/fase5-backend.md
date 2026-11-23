@@ -1468,7 +1468,11 @@ PUT {"fixed_cents":150000,"fixed_period":"fortnight","commission_enabled":false}
          "fixed_cents": 150000, "fixed_period": "fortnight", "commission_enabled": false }
 ```
 
-- Cuerpo completo; `commission_enabled` ausente vale `true` (el default de D3).
+- El PUT REEMPLAZA el modelo entero: `fixed_cents`, `fixed_period` y `commission_enabled`
+  son OBLIGATORIOS. Un cuerpo parcial (campo ausente o `null`) es un `400`
+  `{"error":"Faltan datos del modelo de pago: indicá el sueldo fijo, su período y si cobra comisión"}`
+  y no escribe nada (antes `{"fixed_period":"week"}` guardaba `fixed_cents: 0` en
+  silencio y borraba un sueldo).
   Para apagar la comisión hay que mandar `false` explícito.
 - Se guarda con `upsert` por `(salon_id, user_id)`: escribir dos veces deja una
   sola fila.
@@ -1505,7 +1509,7 @@ PUT {"fixed_cents":150000,"fixed_period":"fortnight","commission_enabled":false}
   baja entra con la comisión de lo que vendió y **fijo 0** (el dueño puede sumar
   un ajuste en F3.3).
 - **`commission_enabled: false`** deja `commission_cents: 0`, pero sus ventas
-  siguen contando en `sales_count` y `sales_total_cents` (fijo puro).
+  siguen contando en `sales_count` y `sales_total_cents` (fijo puro). Tampoco marca `estimated`: sin comisión no hay nada estimado.
 - Un profesional **con ventas** que ya no está en el equipo aparece igual
   (`active: false`, con la comisión de lo que vendió): la plata no se pierde.
 - **Orden**: total descendente y, a igual total, por nombre.
