@@ -15,6 +15,7 @@ func TestValidateEmail_rechaza_direcciones_mal_formadas(t *testing.T) {
 		"x@y.com\r\nBcc:z@z.com", "x@y.com\nBcc:z@z.com", "a\tb@x.com", "@x.com", "ab@", "a@.com",
 		"a@com.", "a@b..com", "<a@b.com>", "a\"b@x.com", "a@b c.com", "(a)@b.com", "a@[b.com]",
 		"no-tiene-arroba", "a@b\x00.com",
+		".a@x.com", "a.@x.com", "a..b@x.com", "a\xff@x.com", "a@b\xc3.com",
 	}
 	for _, e := range bad {
 		err := ValidateEmail(e)

@@ -230,7 +230,7 @@ func ValidateEmail(email string) error {
 	// línea, controles, comas, punto y coma, comillas, paréntesis, corchetes).
 	// Antes solo se pedía un "@": se guardaban "a b@x.com" o "x@y.com,evil@z" y
 	// lo único que las frenaba era el mailer (hallazgo de F2g1).
-	if strings.Count(email, "@") != 1 {
+	if strings.Count(email, "@") != 1 || !utf8.ValidString(email) {
 		return fmt.Errorf("%w: email inválido", ErrValidation)
 	}
 	for _, r := range email {
@@ -241,6 +241,7 @@ func ValidateEmail(email string) error {
 	at := strings.IndexByte(email, '@')
 	local, host := email[:at], email[at+1:]
 	if local == "" || host == "" ||
+		strings.HasPrefix(local, ".") || strings.HasSuffix(local, ".") || strings.Contains(local, "..") ||
 		strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") || strings.Contains(host, "..") {
 		return fmt.Errorf("%w: email inválido", ErrValidation)
 	}
