@@ -57,6 +57,11 @@ type config struct {
 	// ReminderInterval es la cadencia de la tarea de recordatorios, en duración
 	// de Go: 60s en producción, 2s para probar en desarrollo.
 	ReminderInterval time.Duration
+	// WaitlistInterval es la cadencia del barrido de la lista de espera (F7),
+	// en duración de Go: 60s en producción. CERO la DESHABILITA (el contrato lo
+	// pide así): con 0 la goroutine no arranca y la lista queda solo como
+	// registro, sin avisos por email.
+	WaitlistInterval time.Duration
 	// AppURL es la base pública del frontend: con ella se arma el enlace de la
 	// invitación de equipo (F2g1), "<APP_URL>/invitacion#<token>".
 	AppURL string
@@ -113,6 +118,17 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("REMINDER_INTERVAL debe ser mayor que cero (dio %s)", interval)
 	}
 	cfg.ReminderInterval = interval
+	// WAITLIST_INTERVAL: el barrido de la lista de espera (F7). A diferencia del
+	// de recordatorios, CERO es un valor válido (deshabilita la tarea); un valor
+	// negativo o ilegible es error de configuración, no un default silencioso.
+	waitlist, err := time.ParseDuration(envOr(getenv, "WAITLIST_INTERVAL", "60s"))
+	if err != nil {
+		return config{}, fmt.Errorf("WAITLIST_INTERVAL debe ser una duración de Go (por ejemplo 60s o 2s; 0 la deshabilita): %w", err)
+	}
+	if waitlist < 0 {
+		return config{}, fmt.Errorf("WAITLIST_INTERVAL no puede ser negativo (0 deshabilita la tarea, dio %s)", waitlist)
+	}
+	cfg.WaitlistInterval = waitlist
 	// APP_URL es la base del enlace de la invitación (F2g1): sin una URL http(s)
 	// válida el correo llevaría a un lugar que no existe, y eso no se arregla
 	// después de enviado. La barra final se quita porque el enlace agrega

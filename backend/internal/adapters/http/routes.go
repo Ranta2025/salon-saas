@@ -54,6 +54,14 @@ type Deps struct {
 	// (F1): lookup, horarios, cancelar y reprogramar. Sin sesión y con el token
 	// en el cuerpo.
 	BookingLinks BookingLinkHandler
+	// Waitlist es la lista de espera (F7): el alta pública, la baja por enlace y
+	// las dos rutas del personal (listar y quitar). La autorización vive en el
+	// caso de uso.
+	Waitlist WaitlistHandler
+	// PublicWaitlistLeaveLimit limita por IP la baja de la lista (D5): tiene SU
+	// PROPIO cubo, con el mismo valor que /auth, como el de los enlaces de turno
+	// (nil = sin límite, como en los tests unitarios del router).
+	PublicWaitlistLeaveLimit gin.HandlerFunc
 	// PublicBookingLinkLimit limita por IP el prefijo de los enlaces (D7): tiene
 	// SU PROPIO cubo, con el mismo valor que /auth, para que una inundación de
 	// enlaces no gaste el cupo de la reserva pública ni de las invitaciones.
@@ -91,6 +99,20 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 		publicBooking = append([]gin.HandlerFunc{d.PublicBookingLimit}, publicBooking...)
 	}
 	v1.POST("/public/salons/:slug/bookings", publicBooking...)
+
+	// F7: el alta de la lista de espera comparte el limitador de la reserva
+	// pública (D4: es la misma escritura sin sesión bajo el prefijo
+	// /public/salons/) y la baja tiene SU PROPIO cubo (D5).
+	publicWaitlistJoin := []gin.HandlerFunc{d.Waitlist.Join}
+	if d.PublicBookingLimit != nil {
+		publicWaitlistJoin = append([]gin.HandlerFunc{d.PublicBookingLimit}, publicWaitlistJoin...)
+	}
+	v1.POST("/public/salons/:slug/waitlist", publicWaitlistJoin...)
+	publicWaitlistLeave := []gin.HandlerFunc{d.Waitlist.Leave}
+	if d.PublicWaitlistLeaveLimit != nil {
+		publicWaitlistLeave = append([]gin.HandlerFunc{d.PublicWaitlistLeaveLimit}, publicWaitlistLeave...)
+	}
+	v1.POST("/public/waitlist/leave", publicWaitlistLeave...)
 
 	// F2g1: el canje de una invitación también es público (la persona todavía no
 	// tiene sesión) y va bajo el rate limit por IP, como /auth. El token viaja en
@@ -196,6 +218,11 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.PUT("/salons/:id/products/:pid", d.Products.Update)
 	authed.POST("/salons/:id/products/:pid/adjust", d.Products.Adjust)
 	authed.GET("/salons/:id/products/:pid/movements", d.Products.Movements)
+
+	// F7: lista de espera del salón (D8). Owner, administración y recepción; la
+	// autorización vive en el caso de uso y toda consulta lleva salon_id.
+	authed.GET("/salons/:id/waitlist", d.Waitlist.List)
+	authed.DELETE("/salons/:id/waitlist/:eid", d.Waitlist.Remove)
 
 	// POS: ventas, cierre de caja y panel del día
 	authed.POST("/salons/:id/sales", d.Sales.Create)

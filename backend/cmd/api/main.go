@@ -93,7 +93,6 @@ func main() {
 	} else {
 		log.Printf("email: smtp %s:%s tls=%s", cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPTLS)
 	}
-	_ = deps
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -112,6 +111,14 @@ func main() {
 	// Recordatorios de turno (T12): la goroutine comparte el contexto del
 	// shutdown. Con email deshabilitado RunOnce no hace nada y no reclama.
 	go runReminders(stopCtx, reminders, cfg.ReminderInterval, log.Printf)
+	// Lista de espera (F7): su propia goroutine, con el mismo contexto del
+	// shutdown. WAITLIST_INTERVAL=0 la deshabilita (el contrato lo pide así).
+	if cfg.WaitlistInterval > 0 {
+		log.Printf("lista de espera: barrido cada %s", cfg.WaitlistInterval)
+		go runWaitlist(stopCtx, deps.Waitlist.Service, cfg.WaitlistInterval, log.Printf)
+	} else {
+		log.Print("lista de espera: deshabilitada (WAITLIST_INTERVAL=0)")
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -321,6 +328,17 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Bookings: bookings, Professionals: professionals, Hours: weeklyHours,
 		TimeOff: timeOffRepo, Resources: resourceRepo,
 	}
+	// F7: lista de espera del salón (migración 030). El barrido periódico reclama
+	// avisos con el advisory lock `waitlist-write:<salón>` y manda el email fuera
+	// del lock; la pantalla del personal lista y da de baja.
+	waitlistRepo := pgstore.Waitlist{Pool: pool}
+	waitlistSvc := app.WaitlistService{
+		Waitlist: waitlistRepo, Tx: waitlistRepo,
+		Salons: salons, Services: servicesRepo, Professionals: professionals,
+		Settings: salons, Availability: availabilitySvc, Memberships: mems,
+		// El sender y APP_URL se completan abajo, cuando el mailer existe.
+		AppURL: cfg.AppURL,
+	}
 	// Email a clientes (T12): adaptador SMTP del puerto MailSender. Sin
 	// SMTP_HOST el sender queda deshabilitado y los casos de uso lo ven como
 	// nil (no hay correo en este entorno).
@@ -349,6 +367,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Invitations: invitationRepo, Tx: invitationRepo, Users: users, Salons: salons,
 		Hasher: hasher, Tokens: tokens,
 	}
+	// F7: el aviso de la lista sale por el mismo MailSender. Sin email
+	// configurado queda nil y la tarea no reclama nada (D7).
+	waitlistSvc.Mailer = mailer
 	// F2d3 avisa a la clienta del cambio de turno por el mismo email.
 	coverageSvc.Mailer = mailer
 	coverageSvc.Emails = bookingEmails
@@ -437,12 +458,20 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Exports:  httpapi.ExportHandler{Exports: exportSvc, Memberships: mems},
 		// F6: productos e inventario del POS (cinco rutas + `products` en POST /sales).
 		Products: httpapi.ProductHandler{Products: productSvc, Memberships: mems},
+		// F7: lista de espera (alta pública, baja por enlace y las dos rutas del
+		// personal). El barrido periódico se arranca en main con el mismo
+		// servicio (deps.Waitlist.Service).
+		Waitlist: httpapi.WaitlistHandler{Service: waitlistSvc, Memberships: mems},
 		// La reserva pública es la única escritura sin auth: rate limit por IP
 		// como en /auth (el GET de disponibilidad no pasa por acá).
 		PublicBookingLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/salons/"),
 		// F2g1: el lookup y el canje de una invitación son las otras escrituras
 		// sin sesión; van bajo el mismo límite por IP que /auth.
 		PublicInvitationLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/invitations/"),
+		// F7/D5: la baja de la lista de espera tiene SU PROPIO cubo (20/min por
+		// IP), como el de los enlaces de turno; el alta comparte
+		// PublicBookingLimit (D4).
+		PublicWaitlistLeaveLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/waitlist/"),
 		// F1/D7: el enlace del turno tiene su PROPIO cubo (20/min por IP): una
 		// inundación de enlaces no puede gastar el cupo de la reserva pública ni el
 		// de las invitaciones, ni al revés.

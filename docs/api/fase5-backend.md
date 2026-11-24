@@ -2532,3 +2532,155 @@ ya estaba bajo no hay aviso nuevo; un fallo al avisar nunca cambia la respuesta.
   existentes quedan en 0). `sale_items` no cambia y no hay `DELETE` de producto
   (se desactiva con `active=false`; un producto con ventas no se puede borrar).
   Idempotente: una segunda pasada no cambia ninguna fila.
+
+## Fase 6 — F7: lista de espera (aviso por email cuando se libera un hueco)
+
+Una persona deja su contacto para **un servicio**, **un día local del salón** y,
+opcionalmente, **una profesional**. Una tarea periódica (cada
+`WAITLIST_INTERVAL`, 60 s por defecto) consulta la misma disponibilidad de la
+reserva pública (`AvailabilityService.Day`) y, cuando ese día vuelve a tener
+horarios, manda **un** email con el enlace al salón y otro para darse de baja.
+La lista **no reserva nada**: el hueco se lo lleva quien reserve primero por el
+flujo normal (el `EXCLUDE` de turnos sigue siendo el árbitro).
+
+Reglas (D1..D8 del contrato de la fase 6):
+
+- **D1 — detección por tarea periódica, no por ganchos.** Ningún camino que
+  libera un hueco (cancelar, reprogramar, `no_show`/`done`, cubrir una ausencia,
+  el enlace de F1) cambia: el barrido los cubre a todos y a los que vengan.
+- **D2 — una entrada = servicio + día local + (profesional opcional) + contacto.**
+  `professional_id` ausente significa «cualquiera». El día es del calendario del
+  salón (`salons.timezone`), no UTC.
+- **D3 — estados derivados de las fechas:** `waiting` (sin `notified_at` ni
+  `left_at`), `notified` (`notified_at`) y `left` (`left_at`: la baja por enlace
+  o el «Quitar» del personal). Un día ya pasado no se barre ni se lista. No hay
+  purga automática.
+- **D4 — el alta es pública y sin sesión**, y **no** rellena ningún campo
+  obligatorio: `service_id`, `date`, `name` y `email` son obligatorios.
+- **D5 — la baja es una capability:** el token va en el **fragmento** del enlace
+  (`<APP_URL>/lista-de-espera#<token>`), son 32 bytes de `crypto/rand` en
+  base64url y de él se guarda **solo el SHA-256**. El token se emite cuando el
+  aviso sale: una entrada que nunca se avisa no tiene enlace vivo.
+- **D6 — retención blanda de 2 h:** un aviso enviado ocupa un hueco durante 2
+  horas, para que quien lo recibió tenga tiempo de reservar. Los reclamos van con
+  un `pg_advisory_xact_lock('waitlist-write:' || salón)` y un
+  `UPDATE ... FOR UPDATE SKIP LOCKED`: dos instancias del job (o dos ticks)
+  **nunca** avisan dos veces a la misma entrada. Una entrada se avisa **una sola
+  vez**; volver a anotarse crea otra.
+- **D7 — email** (`MailSender`): asunto `Se liberó un turno en <salón>`, con el
+  salón, el servicio, el día local, el enlace a la página pública del salón, el
+  de baja y el aviso «te escribimos solo por esta lista; ya no recibirás más
+  avisos de esta entrada». Sin email configurado la tarea **no reclama nada**.
+- **D8 — el personal** (dueño, administración y recepción) lista las entradas
+  vigentes y las da de baja. Profesional, cliente y una baja del equipo reciben
+  `403`; sin token `401`; toda consulta lleva `salon_id`.
+
+### `POST /api/v1/public/salons/:slug/waitlist` → `201`
+
+Alta pública, **sin sesión** y bajo el **mismo rate limit por IP** que
+`POST /public/salons/:slug/bookings` (20/min).
+
+```json
+{"service_id":"sv_...","professional_id":"u_...","date":"2027-01-02",
+ "name":"Lía","email":"lia@mail.com","phone":"11 5555-1234"}
+```
+
+`professional_id` y `phone` son opcionales. La respuesta **nunca** lleva el token
+ni el id:
+
+```json
+{"status":"waiting","date":"2027-01-02","service_id":"sv_..."}
+```
+
+| Caso | Respuesta |
+| --- | --- |
+| alta nueva | `201 {"status":"waiting","date":"YYYY-MM-DD","service_id":"..."}` |
+| pedido **idéntico** ya anotado (activo) | `200` con la misma forma, sin crear otra entrada ni gastar cupo |
+| el día todavía tiene horarios | `409 {"error":"Todavía hay horarios libres ese día"}` |
+| el email ya tiene 3 avisos activos en el salón | `409 {"error":"Ya tenés el máximo de avisos activos"}` |
+| el salón llegó a 500 avisos activos | `409 {"error":"La lista de espera de este salón está completa"}` |
+| falta `service_id`, `date`, `name` o `email` | `400 {"error":"Faltan datos del aviso: servicio, fecha, nombre y email"}` |
+| servicio inexistente o inactivo | `400 {"error":"El servicio no está disponible en este salón"}` |
+| la profesional no es del salón o no hace ese servicio | `400 {"error":"Esa persona no atiende ese servicio"}` |
+| fecha mal formada | `400 {"error":"Fecha inválida: usá AAAA-MM-DD"}` |
+| fecha fuera de [hoy, hoy+30] local | `400 {"error":"Elegí un día entre hoy y los próximos 30 días"}` |
+| nombre vacío / de más de 120 / email vacío / email inválido / teléfono de más de 40 | `400` con su texto (los de la reserva pública) |
+| un **NUL** en nombre, email o teléfono | `400 {"error":"El texto tiene caracteres no válidos"}` |
+| salón inexistente | `404` |
+
+Un `400`, un `409` y un `404` **no escriben nada**. JSON de tipo equivocado es
+`400 {"error":"body inválido"}`; nunca un `500` por entrada del cliente.
+
+### `POST /api/v1/public/waitlist/leave` → `200`
+
+```json
+{"token":"<43 caracteres base64url>"}
+```
+
+`200 {"status":"left"}`. Repetir el mismo token responde `200` igual
+(idempotente). Un token desconocido, ya dado de baja o **mal formado** es el
+MISMO `404 {"error":"Aviso no encontrado"}` (no se distingue el motivo y no se
+recorta: con espacios alrededor tampoco sirve). Tiene su **propio** cubo de rate
+limit por IP (20/min), separado del de la reserva pública, del de las
+invitaciones y del de los enlaces de turno. El token viaja siempre en el
+**cuerpo**, nunca en la ruta ni en el query.
+
+### `GET /api/v1/salons/:id/waitlist` → `200`
+
+Dueño, administración y recepción. Entradas **vigentes** (`left_at IS NULL`) con
+día local `>= hoy`, ordenadas por `date` y `created_at`:
+
+```json
+{"entries":[{"id":"w_...","service_id":"sv_...","service_name":"Corte",
+  "professional_id":null,"professional_name":null,"date":"2027-01-02",
+  "name":"Lía","email":"lia@mail.com","phone":"11 5555-1234",
+  "status":"waiting","created_at":"2026-11-24T15:04:05Z","notified_at":null}]}
+```
+
+`status` es `"waiting"` o `"notified"`. `professional_id`, `professional_name`,
+`phone` y `notified_at` son `null` cuando no hay valor. Sin entradas:
+`{"entries":[]}` (nunca `null`).
+
+### `DELETE /api/v1/salons/:id/waitlist/:eid` → `204`
+
+Da de baja la entrada (`left_at`) con la misma autorización que el `GET`. Una
+entrada de **otro salón** o ya dada de baja es
+`404 {"error":"Aviso no encontrado"}`; sin permiso, `403`; sin token, `401`.
+
+### Permisos de la lista (D8)
+
+| Ruta | Dueño | Admin | Recepción | Profesional | Cliente | Sin token |
+| --- | --- | --- | --- | --- | --- | --- |
+| `GET /salons/:id/waitlist` | 200 | 200 | 200 | 403 | 403 | 401 |
+| `DELETE /salons/:id/waitlist/:eid` | 204 | 204 | 204 | 403 | 403 | 401 |
+
+Un miembro dado de baja recibe `403` (no figura en la lista del equipo) y pedir
+el salón de otro tenant es `403` (`sin acceso al salón`).
+
+### Barrido y email (`WAITLIST_INTERVAL`)
+
+Cada `WAITLIST_INTERVAL` (60 s por defecto; `0` **deshabilita** la tarea) una
+goroutine recorre los grupos con avisos en espera, consulta la disponibilidad del
+día y reclama como máximo `libres - retenidos` entradas (tope de 5 por grupo y
+por pasada) en orden FIFO (`created_at, id`). Los avisos retenidos son los
+enviados con un reclamo de las últimas **2 h** más los que están en vuelo (reclamo
+de los últimos 5 minutos). Si el envío falla, la entrada se reintenta pasados
+**5 minutos** con `notify_attempts < 3`; con 3 intentos gastados no se vuelve a
+avisar (la persona puede anotarse otra vez). El email sale **fuera** del lock y
+recién después se marca `notified_at`.
+
+### Migración `030_waitlist.sql`
+
+- `waitlist_entries(id, salon_id FK CASCADE, service_id FK CASCADE,
+  professional_id NULL FK users SET NULL, day DATE, name, email, phone NULL,
+  token_hash UNIQUE, created_at, notify_claimed_at, notify_attempts, notified_at,
+  left_at)` con CHECKs (nombre 1..120, email 3..254, teléfono NULL o 1..40,
+  intentos 0..3, `token_hash` de 64 hex cuando existe y `notified_at` implica
+  `notify_claimed_at`).
+- Índice único **parcial** `(salon_id, lower(email), service_id,
+  coalesce(professional_id, ''), day) WHERE left_at IS NULL`: no hay dos avisos
+  activos idénticos y una baja libera el lugar.
+- Índice parcial del barrido `(salon_id, day, created_at, id) WHERE left_at IS
+  NULL AND notified_at IS NULL` y uno para la pantalla del personal.
+- Idempotente (guardas con `current_schema()`): una segunda pasada no hace nada y
+  no reescribe ninguna fila de las tablas existentes.

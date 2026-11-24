@@ -85,6 +85,11 @@ SMTP_TLS=none
 # Cada cuánto la API mira la cola de recordatorios (duración de Go: 60s, 2s...).
 REMINDER_INTERVAL=60s
 
+# Cada cuánto la API barre la lista de espera (duración de Go: 60s, 2s...).
+# 0 la DESHABILITA: no arranca la tarea y la lista queda solo como registro, sin
+# avisos por email.
+WAITLIST_INTERVAL=60s
+
 # De qué peers se acepta X-Forwarded-For (IP del cliente para el rate limit y
 # el log). Vacío = no se confía en nadie: la IP es el peer directo.
 # "private" = loopback + rangos privados (comportamiento de la fase 5).
@@ -166,6 +171,7 @@ push.
 | `SMTP_USER` / `SMTP_PASS` | vacíos | Autenticación SMTP (PLAIN). Sin usuario no se autentica. |
 | `SMTP_TLS` | `none` | `none` (plano, Mailpit/relay interno), `starttls` (587) o `tls` (TLS implícito, 465). Un valor desconocido impide arrancar. |
 | `REMINDER_INTERVAL` | `60s` | Cada cuánto se mira la cola de recordatorios. Es una duración de Go: `60s`, `2s` para probar. Tiene que ser > 0. |
+| `WAITLIST_INTERVAL` | `60s` | Cada cuánto se barre la lista de espera (F7) y se avisa a quien esperaba un turno de un día que se liberó. Duración de Go (`60s`, `2s` para probar). **`0` deshabilita la tarea**; un valor negativo o ilegible impide arrancar. |
 
 Abrí `http://localhost:8025` (Mailpit) para ver lo que se envió. Con la API
 corriendo fuera de Docker, el Mailpit del stack escucha en `127.0.0.1:1025`
