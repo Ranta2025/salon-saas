@@ -279,14 +279,30 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Photos:      store,                                      // filesystem local
 		Images:      imaging.WebP{MaxSide: domain.MaxPhotoSide}, // cwebp
 	}
+	// F16: perfil público del salón (migración 032) y su galería de fotos. La
+	// galería reutiliza el MISMO storage y el MISMO conversor a WebP que las fotos
+	// de clientas, pero en su propia tabla: la ruta pública nunca sirve una foto
+	// de clienta.
+	salonProfileRepo := pgstore.SalonProfiles{Pool: pool}
+	salonGalleryRepo := pgstore.SalonGallery{Pool: pool}
+	salonProfileSvc := app.SalonProfileService{Profiles: salonProfileRepo, Memberships: mems}
+	gallerySvc := app.GalleryService{
+		Gallery: salonGalleryRepo, Memberships: mems, Salons: salons,
+		Photos: store, Images: imaging.WebP{MaxSide: domain.MaxPhotoSide},
+	}
 	clientHistorySvc := app.ClientHistoryService{
 		Clients: clientsRepo, Source: clientHistoryRepo,
 		Memberships: mems, Settings: salons,
 	}
 	meSvc := app.MeService{Users: users, Salons: salons, Members: mems}
 	staffSvc := app.StaffService{Staff: mems, Memberships: mems}
+	// F16 (D4): la vidriera sale del panel: perfil, equipo que atiende, galería y
+	// paquetes activos, y la carta se filtra con la MISMA regla que la
+	// disponibilidad (ListProfessionalsFor).
 	publicSvc := app.PublicSalonService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Hours: weeklyHours,
+		Profiles: salonProfileRepo, Staff: mems, Professionals: professionals,
+		Gallery: salonGalleryRepo, Packages: packagesRepo,
 	}
 	settingsSvc := app.SettingsService{Settings: salons, Memberships: mems}
 	salonHoursSvc := app.SalonHoursService{Hours: weeklyHours, Settings: salons, Memberships: mems}
@@ -421,8 +437,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// CORS con allowlist por env (B-01): sin esto el navegador no puede ni
 	// loguearse (el preflight daba 404).
 	router.Use(httpapi.CORS(cfg.CORSOrigins...))
-	// Tope de 1 MB para JSON (B-11).
-	router.Use(httpapi.MaxJSONBody(maxJSONBody))
+	// Tope de 1 MB para JSON (B-11). La subida de la galería del salón (F16)
+	// queda exenta por RUTA: tiene su propio tope de 8 MB.
+	router.Use(httpapi.MaxJSONBodyExceptGalleryUpload(maxJSONBody))
 	// Rate limit por IP solo en auth (B-07).
 	router.Use(httpapi.RateLimit(authRateLimit, time.Minute, "/api/v1/auth/"))
 	// Proxies confiables (H3): la lista sale de TRUSTED_PROXIES (validada al
@@ -472,6 +489,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Products: httpapi.ProductHandler{Products: productSvc, Memberships: mems},
 		// F8: paquetes y bonos prepagos (ocho rutas: catálogo y por clienta).
 		Packages: httpapi.PackageHandler{Packages: packageSvc, Memberships: mems},
+		// F16: perfil público del salón y su galería de fotos.
+		Profile: httpapi.SalonProfileHandler{Profile: salonProfileSvc, Memberships: mems},
+		Gallery: httpapi.GalleryHandler{Gallery: gallerySvc, Memberships: mems},
 		// F7: lista de espera (alta pública, baja por enlace y las dos rutas del
 		// personal). El barrido periódico se arranca en main con el mismo
 		// servicio (deps.Waitlist.Service).

@@ -147,6 +147,8 @@ rol). Es la fuente del select de profesional de la agenda.
 - Solo servicios **activos**, ordenados por nombre.
 - `services` es siempre un array.
 - Slug inexistente → `404 {"error":"no encontrado"}`.
+- **F16 amplía este payload** (perfil, equipo, galería, paquetes) y **filtra la
+  carta** a los servicios que alguien hace: ver «Fase 6 — F16».
 - Es la **única** ruta sin scope de membership; no expone precios facturados,
   clientes ni personal.
 
@@ -2906,4 +2908,210 @@ ganancia y el export F4 suman `total_cents`, que **incluye** el paquete.
   packages_cents <= total_cents)` (sin backfill: las ventas existentes quedan en
   0). Idempotente (guardas con `current_schema()`): una segunda pasada no cambia
   ninguna fila.
+- No hay variables de entorno nuevas.
+
+## Fase 6 — F16: web pública fiel al panel
+
+Lo que ve la clienta en la web pública **sale del panel**: perfil del salón,
+carta con precios, equipo, galería y paquetes. Para cada sección hay **una**
+fuente de verdad (lo que el dueño edita); si cambia algo, la página pública lo
+muestra en la siguiente carga. El dinero es **centavos enteros**; todos los IDs
+son strings. Esta sección es **solo backend**: la landing y la página «Mi salón»
+son del frontend.
+
+### Rutas
+
+| Método | Ruta | Quién |
+|---|---|---|
+| `GET` | `/salons/:id/profile` | cualquier miembro activo |
+| `PUT` | `/salons/:id/profile` | owner/admin |
+| `POST` | `/salons/:id/gallery` | owner/admin |
+| `GET` | `/salons/:id/gallery` | owner/admin |
+| `PUT` | `/salons/:id/gallery/:pid` | owner/admin |
+| `DELETE` | `/salons/:id/gallery/:pid` | owner/admin |
+| `GET` | `/public/salons/:slug/gallery/:pid` | **sin sesión** (público por diseño) |
+| `GET` | `/public/salons/:slug` | **sin sesión** (cambia: ver D4) |
+
+`POST/PUT /salons/:id/services` y `GET /salons/:id/services` siguen igual y
+agregan la clave opcional `description` (D2). Sin token: `401`. No miembro del
+salón (o de otro salón): `403 {"error":"sin acceso al salón"}`. En **todas** las
+escrituras el permiso se mira **antes** de leer el cuerpo: quien no puede recibe
+`403` aunque el cuerpo esté mal formado.
+
+### D1 — Perfil del salón
+
+`GET /salons/:id/profile` → `200`:
+
+```json
+{"name":"Navajas de Oro","slug":"navajas-oro","description":"Barbería clásica",
+ "address":"Calle 1 #23","phone":"+52 55 1234 5678","email":"hola@navajas.com",
+ "instagram":"navajas.oro"}
+```
+
+Los datos sin cargar salen como `null` (`description`, `address`, `phone`,
+`email`, `instagram`); `name` y `slug` siempre tienen valor.
+
+`PUT /salons/:id/profile` **reemplaza** el perfil y **exige las SEIS claves**
+(`name`, `description`, `address`, `phone`, `email`, `instagram`): `null`
+explícito vale («sin dato»), una clave ausente **no se rellena en silencio**.
+`slug` **no se edita**: si viene en el cuerpo se ignora. `""` (o solo espacios) se
+guarda como `NULL`. Responde `200` con el perfil nuevo (la misma forma del `GET`).
+
+| Campo | Regla |
+|---|---|
+| `name` | obligatorio, 1..120 caracteres |
+| `description` | `null` o texto, hasta 500 |
+| `address` | `null` o texto, hasta 200 |
+| `phone` | `null` o texto, hasta 40 |
+| `email` | `null` o email válido (la misma regla que el de una cuenta; se guarda en minúsculas), hasta 254 |
+| `instagram` | `null` o **solo el usuario** (letras, números, `.` y `_`), hasta 60: sin `@` ni enlaces |
+
+Errores (`400`, un rechazo **no escribe nada**, ni los campos que sí venían bien):
+
+| Caso | Cuerpo |
+|---|---|
+| Falta una clave | `{"error":"Faltan datos del salón: nombre, descripción, dirección, teléfono, email e instagram"}` |
+| Email con formato inválido | `{"error":"Email inválido"}` |
+| NUL o salto de línea en cualquier texto | `{"error":"El texto no puede tener saltos de línea ni caracteres no válidos"}` (nunca un `500`) |
+| Nombre vacío / `null` | `{"error":"El nombre del salón es obligatorio"}` |
+| Nombre largo | `{"error":"El nombre del salón no puede superar los 120 caracteres"}` |
+| Descripción / dirección / teléfono largos | `{"error":"La descripción no puede superar los 500 caracteres"}`, `{"error":"La dirección no puede superar los 200 caracteres"}`, `{"error":"El teléfono no puede superar los 40 caracteres"}` |
+| Instagram con `@`, enlace o caracteres no válidos | `{"error":"Instagram inválido: escribí solo el usuario, sin @ ni enlaces"}` |
+| Instagram largo | `{"error":"El instagram no puede superar los 60 caracteres"}` |
+| Tipo equivocado (p. ej. un número) o JSON roto | `{"error":"body inválido"}` |
+
+Sin permiso (recepción, profesional, ajeno): `403`.
+
+### D2 — Descripción del servicio
+
+`services.description` es **opcional** (`null` = sin descripción, hasta 300
+caracteres, una sola línea). Los endpoints de servicios la aceptan como clave
+**opcional**:
+
+- `POST /salons/:id/services`: ausente, `null` o `""` = el servicio nace sin
+  descripción. Todo lo demás del alta no cambia.
+- `PUT /salons/:id/services/:service_id`: **ausente = se conserva** la que tiene
+  (un cliente anterior a F16 no la borra sin querer); `null` o `""` la quita; con
+  texto la reemplaza. El `PUT` no pasó a exigir todas las claves.
+- El JSON del servicio (`POST`, `PUT` y `GET /services`) agrega `"description":
+  <string|null>`; no cambia ninguna otra clave.
+- Errores: más de 300 caracteres → `400 {"error":"La descripción del servicio no
+  puede superar los 300 caracteres"}`; NUL o salto de línea → `400
+  {"error":"El texto no puede tener saltos de línea ni caracteres no válidos"}`.
+  Un `400` no cambia ningún campo del servicio.
+
+### D3 — Galería del salón
+
+Hasta **12 fotos por salón**. Es una tabla propia (`salon_photos`), separada de
+`client_photos`: la ruta pública no puede servir una foto de clienta.
+
+**`POST /salons/:id/gallery`** (owner/admin) → `201`:
+
+```json
+{"photo":{"id":"ph_...","url":"/api/v1/public/salons/navajas-oro/gallery/ph_...",
+          "caption":null,"created_at":"2026-03-10T12:00:00Z"}}
+```
+
+Multipart con el campo `file` (también se acepta `photo`) o el archivo crudo con
+`Content-Type: image/*`. Reutiliza el pipeline de las fotos de clientas: tipos
+`image/jpeg`, `image/png` e `image/webp` (nada de SVG ni GIF), **máximo 8 MB**,
+conversión a WebP con el lado mayor acotado y el mismo puerto de almacenamiento
+(disco local o S3). El permiso se mira antes de leer el archivo.
+
+| Caso | Respuesta |
+|---|---|
+| Tipo no permitido | `400 {"error":"Tipo de archivo no permitido (solo jpg, png o webp)"}` |
+| Vacío o de más de 8 MB | `400 {"error":"El archivo debe pesar entre 1 byte y 8 MB"}` |
+| Ya hay 12 | `409 {"error":"La galería ya tiene 12 fotos"}` (no se guarda el archivo) |
+| Body que no es multipart ni imagen | `400` con el texto de la subida de fotos |
+
+El tope se garantiza **bajo concurrencia**: el adaptador cuenta dentro de un lock
+por salón, así que dos subidas simultáneas con 11 fotos dejan 12, nunca 13 (y el
+archivo de la que pierde se borra).
+
+**`GET /salons/:id/gallery`** → `200 {"photos":[{"id","url","caption","created_at"}]}`
+en **orden de subida** (la más vieja primero). `caption` es `null` si no tiene.
+
+**`PUT /salons/:id/gallery/:pid`** `{"caption": <string|null>}` → `200 {"photo":{...}}`.
+La clave es **obligatoria**: `null` o `""` = sin leyenda; ausente →
+`400 {"error":"Falta la leyenda de la foto (caption)"}`. Hasta 120 caracteres,
+una línea (`400 {"error":"La leyenda no puede superar los 120 caracteres"}`).
+
+**`DELETE /salons/:id/gallery/:pid`** → `204`. Borra la fila **y el archivo**.
+
+Una foto inexistente **o de otro salón** es `404 {"error":"Foto no encontrada"}`
+(en `PUT` y `DELETE`); la foto de otro salón no cambia.
+
+**`GET /public/salons/:slug/gallery/:pid`** (sin sesión ni firma) sirve la imagen:
+
+- `Content-Type` **fijo** del tipo guardado (`image/webp`), nunca el que declaró
+  quien la subió; `X-Content-Type-Options: nosniff`;
+  `Cache-Control: public, max-age=300`.
+- `404 {"error":"Foto no encontrada"}` **uniforme** (mismo código, mismo cuerpo,
+  sin cache) para id inexistente, id de otro salón (con el slug de este),
+  slug inexistente, archivo perdido y **foto de una clienta**.
+- Solo lee: no hay ninguna escritura nueva sin autenticar. Conserva los límites de
+  la vidriera (los `GET` públicos no se limitan; la reserva sigue con su tope).
+- El tope de body de 1 MB de la API (`MaxJSONBody`) exime **por ruta** a
+  `POST /salons/:id/gallery` (como a la subida de fotos de clientas, que tiene su
+  propio tope de 8 MB); el resto de las rutas siguen con 1 MB.
+
+### D4 — `GET /public/salons/:slug` (solo se agrega)
+
+```json
+{
+  "salon": {"id":"s_...","slug":"navajas-oro","name":"Navajas de Oro",
+            "description":"Barbería clásica","address":"Calle 1 #23",
+            "phone":"+52 55 1234 5678","email":"hola@navajas.com",
+            "instagram":"navajas.oro","timezone":"America/Mexico_City"},
+  "services": [
+    {"id":"sv_...","name":"Corte","duration_min":45,"price_cents":15000,
+     "description":"Corte clásico"}
+  ],
+  "team": [ {"name":"Ana","trade":"Estilista"} ],
+  "gallery": [ {"id":"ph_...","url":"/api/v1/public/salons/navajas-oro/gallery/ph_...","caption":"El local"} ],
+  "packages": [
+    {"id":"pk_...","name":"Pack 5 cortes","service_name":"Corte","sessions":5,
+     "price_cents":60000,"validity_days":90}
+  ],
+  "hours": [ {"weekday":1,"open":"09:00","close":"19:00"} ]
+}
+```
+
+- **Nada de lo anterior se quita**: `salon.id`, `salon.slug`, `salon.name`,
+  `services[].id|name|duration_min|price_cents` y `hours` (días abiertos, ya
+  expandido, F2d1) quedan como estaban.
+- `salon.description|address|phone|email|instagram` son `null` si no se cargaron;
+  `salon.timezone` es la zona de `/settings`.
+- **Cambio de comportamiento (el único):** `services` son **solo los servicios
+  activos que al menos UNA profesional activa y reservable hace** (la misma regla
+  que usa la disponibilidad, F2c: `ListProfessionalsFor`), por nombre. Un servicio
+  que nadie hace deja de listarse (antes se mostraba con precio y no tenía
+  horarios). `description` es `null` si no tiene.
+- `team` son **solo las profesionales activas que atienden clientes** (F2a),
+  ordenadas por nombre. **Solo `name` y `trade`** (`trade` es `""` si no tienen
+  oficio): ni ids, ni email, ni rol, ni pagos.
+- `gallery`: la galería en orden de subida; `url` es la ruta pública de D3
+  (relativa, sirve tal cual en `<img src>`); `caption` es `null` si no tiene.
+- `packages`: el catálogo F8 **activo** cuyo servicio sigue **activo**; `validity_days`
+  es `null` si no vence. Comprar sigue siendo del personal.
+- `services`, `team`, `gallery` y `packages` son **siempre arrays** (vacíos si no
+  hay datos). Slug inexistente → `404 {"error":"no encontrado"}`.
+- La reserva pública, la disponibilidad y la lista de espera **no cambian**.
+
+### Migración `032_salon_profile.sql`
+
+- `salons`: `description` (≤500), `address` (≤200), `phone` (≤40), `email`
+  (≤254), `instagram` (≤60, solo `[A-Za-z0-9._]`), todas `TEXT NULL`. Cada una
+  con un `CHECK` de largo (1..N) y sin saltos de línea (`[\r\n]`); un NUL no se
+  puede guardar en un `TEXT` de Postgres. Sin backfill: los salones existentes
+  quedan con todo en `NULL`.
+- `services.description TEXT NULL` con `CHECK` (1..300, sin saltos de línea).
+- `salon_photos(id PK, salon_id FK ON DELETE CASCADE, storage_key, content_type
+  ∈ image/jpeg|png|webp, caption NULL 1..120 sin saltos de línea, created_at)` e
+  índice `(salon_id, created_at, id)`. El tope de 12 por salón lo garantiza el
+  adaptador bajo un lock por salón, no un `CHECK`.
+- Idempotente (guardas con `current_schema()`): una segunda pasada no cambia
+  ninguna fila; el md5 de `salons`, `services` y `client_photos` es idéntico
+  antes y después, también sobre datos previos.
 - No hay variables de entorno nuevas.

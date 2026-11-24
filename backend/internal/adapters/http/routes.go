@@ -54,6 +54,10 @@ type Deps struct {
 	// por clienta, comprar, ver el saldo, descontar una sesión y ajustarlo. La
 	// autorización vive en el caso de uso.
 	Packages PackageHandler
+	// Profile es el perfil público del salón (F16, D1) y Gallery su galería de
+	// fotos (F16, D3): la autorización vive en el caso de uso.
+	Profile SalonProfileHandler
+	Gallery GalleryHandler
 	// BookingLinks son las cuatro rutas públicas del enlace firmado de un turno
 	// (F1): lookup, horarios, cancelar y reprogramar. Sin sesión y con el token
 	// en el cuerpo.
@@ -96,6 +100,9 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	// Vidriera pública del salón: la landing no tiene login.
 	v1.GET("/public/salons/:slug", d.Public.GetSalon)
 	v1.GET("/public/salons/:slug/availability", d.Public.Availability)
+	// F16: la imagen de la galería se sirve SIN firma (pública por diseño: es la
+	// foto que el salón eligió mostrar). Solo lee; no escribe nada sin sesión.
+	v1.GET("/public/salons/:slug/gallery/:pid", d.Gallery.PublicImage)
 	// La reserva pública se limita por IP (como /auth): es la única escritura
 	// sin autenticación. El GET de arriba no pasa por el limiter.
 	publicBooking := []gin.HandlerFunc{d.Public.CreateBooking}
@@ -211,10 +218,21 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.POST("/salons/:id/resources/:tid/units", d.Resources.AddUnits)
 	authed.PATCH("/salons/:id/resource-units/:uid", d.Resources.UpdateUnit)
 
+	// F16: perfil público del salón (cualquier miembro lee; owner/admin edita) y
+	// galería de fotos (owner/admin). La subida se registra sobre el ENGINE con su
+	// ruta completa (RouteGalleryUpload) y el mismo AuthMiddleware: es el string
+	// que usa MaxJSONBodyExceptGalleryUpload para dejarla pasar con su tope propio.
+	authed.GET("/salons/:id/profile", d.Profile.Get)
+	authed.PUT("/salons/:id/profile", d.Profile.Update)
+	r.POST(RouteGalleryUpload, AuthMiddleware(d.TokenIssuer), d.Gallery.Add)
+	authed.GET("/salons/:id/gallery", d.Gallery.List)
+	authed.PUT("/salons/:id/gallery/:pid", d.Gallery.SetCaption)
+	authed.DELETE("/salons/:id/gallery/:pid", d.Gallery.Delete)
+
 	// Catálogo de servicios
-	authed.GET("/salons/:id/services", d.Services.List)
-	authed.POST("/salons/:id/services", d.Services.Create)
-	authed.PUT("/salons/:id/services/:service_id", d.Services.Update)
+	authed.GET("/salons/:id/services", d.Services.ListDescribed)
+	authed.POST("/salons/:id/services", d.Services.CreateDescribed)
+	authed.PUT("/salons/:id/services/:service_id", d.Services.UpdateDescribed)
 
 	// F6: productos e inventario del POS (stock y alerta de stock bajo).
 	authed.GET("/salons/:id/products", d.Products.List)

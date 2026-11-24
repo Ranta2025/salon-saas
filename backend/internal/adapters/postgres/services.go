@@ -12,28 +12,30 @@ type Services struct{ Pool *pgxpool.Pool }
 
 func scanService(scan func(...interface{}) error) (domain.Service, error) {
 	var s domain.Service
-	if err := scan(&s.ID, &s.SalonID, &s.Name, &s.DurationMin, &s.PriceCents, &s.CommissionPct, &s.Active, &s.ResourceTypeID); err != nil {
+	if err := scan(&s.ID, &s.SalonID, &s.Name, &s.DurationMin, &s.PriceCents, &s.CommissionPct, &s.Active, &s.ResourceTypeID, &s.Description); err != nil {
 		return domain.Service{}, err
 	}
 	return s, nil
 }
 
 // serviceColumns: resource_type_id va con COALESCE porque NULL significa "el
-// servicio no usa equipo" (F2e) y el escaneo no necesita tipos anulables.
-const serviceColumns = `id,salon_id,name,duration_min,price_cents,commission_pct,active,COALESCE(resource_type_id,'')`
+// servicio no usa equipo" (F2e) y el escaneo no necesita tipos anulables. La
+// descripción (F16, D2) sigue la misma regla: NULL es "" en el dominio.
+const serviceColumns = `id,salon_id,name,duration_min,price_cents,commission_pct,active,COALESCE(resource_type_id,''),COALESCE(description,'')`
 
 func (r Services) Save(s domain.Service) error {
 	_, err := r.Pool.Exec(context.Background(),
-		`INSERT INTO services(id,salon_id,name,duration_min,price_cents,commission_pct,active,resource_type_id)
-		 VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''))
+		`INSERT INTO services(id,salon_id,name,duration_min,price_cents,commission_pct,active,resource_type_id,description)
+		 VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),NULLIF($9,''))
 		 ON CONFLICT (id) DO UPDATE SET
 		   name=EXCLUDED.name,
 		   duration_min=EXCLUDED.duration_min,
 		   price_cents=EXCLUDED.price_cents,
 		   commission_pct=EXCLUDED.commission_pct,
 		   active=EXCLUDED.active,
-		   resource_type_id=EXCLUDED.resource_type_id`,
-		s.ID, s.SalonID, s.Name, s.DurationMin, s.PriceCents, s.CommissionPct, s.Active, s.ResourceTypeID)
+		   resource_type_id=EXCLUDED.resource_type_id,
+		   description=EXCLUDED.description`,
+		s.ID, s.SalonID, s.Name, s.DurationMin, s.PriceCents, s.CommissionPct, s.Active, s.ResourceTypeID, s.Description)
 	// Nombre activo duplicado -> índice único -> ErrAlreadyExists (409).
 	return pgError(err)
 }

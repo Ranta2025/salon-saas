@@ -18,8 +18,11 @@ type PublicHandler struct {
 	Bookings app.PublicBookingService
 }
 
-// GetSalon: GET /api/v1/public/salons/:slug. Solo nombre, slug, la carta de
-// servicios activos y el horario de los días abiertos (F2d1).
+// GetSalon: GET /api/v1/public/salons/:slug. La vidriera del salón (F16, D4):
+// perfil, la carta de servicios activos que alguien hace (con precio, duración y
+// descripción), el equipo que atiende (solo nombre y oficio), la galería, los
+// paquetes activos y el horario de los días abiertos (F2d1). Todo sale de lo que
+// el dueño edita en el panel; las secciones vacías son listas vacías.
 func (h PublicHandler) GetSalon(c *gin.Context) {
 	p, err := h.Public.Public(c.Param("slug"))
 	if err != nil {
@@ -33,6 +36,32 @@ func (h PublicHandler) GetSalon(c *gin.Context) {
 			"name":         s.Name,
 			"duration_min": s.DurationMin,
 			"price_cents":  s.PriceCents,
+			// description (F16, D2): null si el servicio no tiene.
+			"description": optionalID(s.Description),
+		})
+	}
+	// Equipo: SOLO nombre y oficio. Ni ids, ni email, ni rol, ni pagos.
+	team := make([]gin.H, 0, len(p.Team))
+	for _, m := range p.Team {
+		team = append(team, gin.H{"name": m.Name, "trade": m.Trade})
+	}
+	gallery := make([]gin.H, 0, len(p.Gallery))
+	for _, ph := range p.Gallery {
+		gallery = append(gallery, gin.H{"id": ph.ID, "url": ph.URL, "caption": optionalID(ph.Caption)})
+	}
+	packages := make([]gin.H, 0, len(p.Packages))
+	for _, pk := range p.Packages {
+		var validity any
+		if pk.ValidityDays != nil {
+			validity = *pk.ValidityDays
+		}
+		packages = append(packages, gin.H{
+			"id":            pk.ID,
+			"name":          pk.Name,
+			"service_name":  pk.ServiceName,
+			"sessions":      pk.Sessions,
+			"price_cents":   pk.PriceCents,
+			"validity_days": validity,
 		})
 	}
 	// `hours` viene ya expandido: solo los días abiertos. La landing pone
@@ -42,8 +71,21 @@ func (h PublicHandler) GetSalon(c *gin.Context) {
 		hours = append(hours, gin.H{"weekday": d.Weekday, "open": d.Open, "close": d.Close})
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"salon":    gin.H{"id": p.Salon.ID, "slug": p.Salon.Slug, "name": p.Salon.Name},
+		"salon": gin.H{
+			"id":          p.Salon.ID,
+			"slug":        p.Salon.Slug,
+			"name":        p.Profile.Name,
+			"description": optionalID(p.Profile.Description),
+			"address":     optionalID(p.Profile.Address),
+			"phone":       optionalID(p.Profile.Phone),
+			"email":       optionalID(p.Profile.Email),
+			"instagram":   optionalID(p.Profile.Instagram),
+			"timezone":    p.Timezone,
+		},
 		"services": services,
+		"team":     team,
+		"gallery":  gallery,
+		"packages": packages,
 		"hours":    hours,
 	})
 }
