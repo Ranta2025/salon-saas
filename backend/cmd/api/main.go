@@ -179,6 +179,11 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// por salesRepo.Save, intacto.
 	productsRepo := pgstore.Products{Pool: pool}
 	saleProductsRepo := pgstore.SaleProducts{Pool: pool}
+	// F8: catálogo de paquetes y paquetes comprados por cada clienta (con su libro
+	// de saldo). Comprar escribe la venta, el paquete y el movimiento en UNA
+	// transacción; consumir es un UPDATE condicional más su movimiento.
+	packagesRepo := pgstore.Packages{Pool: pool}
+	clientPackagesRepo := pgstore.ClientPackages{Pool: pool}
 	closesRepo := pgstore.CashCloses{Pool: pool}
 	servicesRepo := pgstore.Services{Pool: pool}
 	// F2c: qué servicios hace cada quien (disponibilidad, reserva pública y
@@ -253,6 +258,13 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// solo owner/admin (D7). El aviso de stock bajo sale DESPUÉS del commit.
 	productSvc := app.ProductService{
 		Products: productsRepo, Memberships: mems, Events: hub, Notifier: notifSvc,
+	}
+	// F8: paquetes y bonos prepagos. Comprar es una VENTA (el dinero entra hoy);
+	// consumir una sesión no lo es. Vender, consumir y leer: owner/admin/recepción;
+	// catálogo (crear/editar) y ajustar el saldo: solo owner/admin (D5/D7/D9/D10).
+	packageSvc := app.PackageService{
+		Packages: packagesRepo, ClientPackages: clientPackagesRepo, Services: servicesRepo,
+		Clients: clientsRepo, Memberships: mems, Settings: salons, Events: hub,
 	}
 	// Tx: el cierre corre en una transacción con advisory lock por salón (B-09).
 	// Settings: la ventana del cierre es el día LOCAL del salón (su zona), no UTC.
@@ -458,6 +470,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Exports:  httpapi.ExportHandler{Exports: exportSvc, Memberships: mems},
 		// F6: productos e inventario del POS (cinco rutas + `products` en POST /sales).
 		Products: httpapi.ProductHandler{Products: productSvc, Memberships: mems},
+		// F8: paquetes y bonos prepagos (ocho rutas: catálogo y por clienta).
+		Packages: httpapi.PackageHandler{Packages: packageSvc, Memberships: mems},
 		// F7: lista de espera (alta pública, baja por enlace y las dos rutas del
 		// personal). El barrido periódico se arranca en main con el mismo
 		// servicio (deps.Waitlist.Service).

@@ -50,6 +50,10 @@ type Deps struct {
 	// La autorización vive en el caso de uso (leer owner/admin/recepción;
 	// escribir y ver movimientos solo owner/admin).
 	Products ProductHandler
+	// Packages son los paquetes y bonos prepagos (F8): el catálogo del salón y,
+	// por clienta, comprar, ver el saldo, descontar una sesión y ajustarlo. La
+	// autorización vive en el caso de uso.
+	Packages PackageHandler
 	// BookingLinks son las cuatro rutas públicas del enlace firmado de un turno
 	// (F1): lookup, horarios, cancelar y reprogramar. Sin sesión y con el token
 	// en el cuerpo.
@@ -218,6 +222,18 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.PUT("/salons/:id/products/:pid", d.Products.Update)
 	authed.POST("/salons/:id/products/:pid/adjust", d.Products.Adjust)
 	authed.GET("/salons/:id/products/:pid/movements", d.Products.Movements)
+
+	// F8: paquetes y bonos prepagos con saldo por clienta. Comprar es una venta;
+	// consumir una sesión no lo es. Owner/admin/recepción leen, venden y
+	// consumen; crear/editar el catálogo y ajustar el saldo, solo owner/admin.
+	authed.GET("/salons/:id/packages", d.Packages.ListCatalog)
+	authed.POST("/salons/:id/packages", d.Packages.CreateCatalog)
+	authed.PUT("/salons/:id/packages/:pid", d.Packages.UpdateCatalog)
+	authed.GET("/salons/:id/clients/:cid/packages", d.Packages.ListClient)
+	authed.POST("/salons/:id/clients/:cid/packages", d.Packages.Purchase)
+	authed.GET("/salons/:id/clients/:cid/packages/:cpid/movements", d.Packages.Movements)
+	authed.POST("/salons/:id/clients/:cid/packages/:cpid/redeem", d.Packages.Redeem)
+	authed.POST("/salons/:id/clients/:cid/packages/:cpid/adjust", d.Packages.Adjust)
 
 	// F7: lista de espera del salón (D8). Owner, administración y recepción; la
 	// autorización vive en el caso de uso y toda consulta lleva salon_id.

@@ -2711,3 +2711,199 @@ recién después se marca `notified_at`.
   token nuevo (solo sirve el del último).
 - Sin doble opt-in y sin purga de entradas viejas (las de días pasados no cuentan
   para los topes ni se listan).
+
+## Fase 6 — F8: paquetes y bonos prepagos con saldo por clienta
+
+Un paquete es **N sesiones de UN servicio a un precio fijo**, con vigencia
+opcional («5 cortes por $X, vence a los 90 días»). **Comprar** el paquete es una
+**venta** (el dinero entra hoy: la caja, el dashboard, la ganancia, los exportes
+y el historial de la clienta lo ven sin cambios porque suman `sales.total_cents`);
+**consumir** una sesión **no** es una venta: es un movimiento de saldo sin dinero.
+`POST /sales` y `sale_items` no cambian y no hay un método de pago nuevo. El
+dinero es **centavos enteros**; todos los IDs son strings. El vencimiento se
+aplica **al consumir** (no hay barrido).
+
+El saldo es un contador y cada cambio escribe su movimiento en el libro en la
+**misma transacción**: en todo momento `sessions_left = Σ delta`, nunca negativo
+y nunca mayor que `sessions_total`.
+
+### Objetos
+
+`package` (catálogo):
+
+```json
+{"id":"pk_...","name":"Pack 5 cortes","service_id":"sv_...","service_name":"Corte",
+ "sessions":5,"price_cents":60000,"validity_days":90,"active":true,
+ "created_at":"2026-03-10T12:00:00Z"}
+```
+
+`validity_days` es `null` si el paquete no vence. `service_name` es solo de
+lectura.
+
+`client_package` (lo comprado por una clienta; **forma D8**):
+
+```json
+{"id":"cp_...","name":"Pack 5 cortes","service_id":"sv_...","service_name":"Corte",
+ "sessions_total":5,"sessions_left":3,"price_cents":60000,
+ "purchased_at":"2026-03-10T12:00:00Z","expires_at":"2026-06-08T10:59:59Z",
+ "expired":false}
+```
+
+`name` y `price_cents` son una **foto** del catálogo al comprar (editar el
+catálogo después no los mueve). `expires_at` es el **fin del día LOCAL del salón**
+(su zona horaria) de `compra + validity_days` (su último microsegundo) o `null`;
+`expired` es `true` cuando `expires_at <= ahora` (la misma regla del consumo).
+
+### Rutas
+
+| Método | Ruta | Quién |
+|---|---|---|
+| GET | `/salons/:id/packages` | owner/admin/recepción |
+| POST | `/salons/:id/packages` | owner/admin |
+| PUT | `/salons/:id/packages/:pid` | owner/admin |
+| GET | `/salons/:id/clients/:cid/packages` | owner/admin/recepción |
+| POST | `/salons/:id/clients/:cid/packages` (comprar) | owner/admin/recepción |
+| GET | `/salons/:id/clients/:cid/packages/:cpid/movements` | owner/admin/recepción |
+| POST | `/salons/:id/clients/:cid/packages/:cpid/redeem` (descontar) | owner/admin/recepción |
+| POST | `/salons/:id/clients/:cid/packages/:cpid/adjust` (ajustar) | owner/admin |
+
+Profesional, cliente y una persona dada de baja reciben `403` en **todo** (los
+precios y los saldos son dinero); una persona de otro salón `403`; sin token
+`401`. Toda consulta lleva `salon_id`.
+
+### Catálogo
+
+- `GET /packages` → `200 {"packages":[package...]}` por nombre (activos e
+  inactivos). La recepción los necesita para vender.
+- `POST /packages {name, service_id, sessions, price_cents, validity_days?}` →
+  `201 package`. `name`, `service_id`, `sessions` y `price_cents` son
+  obligatorios: si falta alguno (o es `null` o el nombre/servicio vienen en
+  blanco) → `400 {"error":"Faltan datos del paquete: nombre, servicio, sesiones y
+  precio"}` y no escribe nada (no se rellena con valores por defecto; un
+  `price_cents: 0` explícito sí es válido). `validity_days` ausente o `null` = no
+  vence. Servicio inexistente, de otro salón o inactivo → `400
+  {"error":"Paquete inválido"}`. Nombre activo repetido (sin importar
+  mayúsculas) → `409 {"error":"Ya hay un paquete activo con ese nombre"}`; un
+  paquete inactivo libera el nombre.
+- `PUT /packages/:pid {name, price_cents, validity_days, active}` → `200 package`.
+  **REEMPLAZA y exige las cuatro claves**: si falta una (o `name`, `price_cents`
+  o `active` vienen en `null`) → `400 {"error":"Faltan datos del paquete: nombre,
+  precio, vigencia y estado"}` y no escribe nada. `validity_days` tiene que estar
+  **presente**: `null` explícito = «sin vencimiento»; la clave ausente **no** se
+  rellena en silencio. `service_id` y `sessions` no se editan (se ignoran si
+  llegan). Inexistente o de otro salón → `404 {"error":"Paquete no encontrado"}`;
+  nombre activo repetido → `409` (mismo texto).
+- No hay borrado: se desactiva con `active:false`.
+- Validaciones (`400`): nombre vacío `El nombre del paquete es obligatorio`; más de
+  120 caracteres `El nombre del paquete no puede superar los 120 caracteres`;
+  sesiones fuera de 1..100 `Las sesiones deben estar entre 1 y 100`; precio fuera
+  de 0..10000000 `El precio debe estar entre 0 y 10000000 centavos`; vigencia
+  fuera de 1..3650 `La vigencia debe estar entre 1 y 3650 días`; un NUL o un
+  salto de línea (`\n`, `\r`, U+2028…) en el nombre o en una nota `El texto no
+  puede tener saltos de línea ni caracteres no válidos`. JSON de tipo equivocado
+  (un número con decimales, un texto donde va un número…) es `400 {"error":"body
+  inválido"}`; nunca `500`.
+
+### Comprar — `POST /salons/:id/clients/:cid/packages`
+
+Cuerpo `{package_id, professional_id, method, client_op_id?}` (`method` es
+`cash|card|transfer`) → `201 {"sale_id":"...","client_package":{...forma D8}}`.
+
+En **una** transacción se escribe: la **venta** (`total_cents` = precio del
+paquete, `packages_cents` = precio, **sin** `sale_items`, `client_id` = la clienta,
+`client_name` = el nombre de su ficha, el método y el profesional), el
+`client_packages` (precio y nombre de foto, saldo completo, vencimiento) y el
+movimiento `purchase` (`+sesiones`). El profesional se valida igual que en el POS
+(del salón y que atiende). Si algo falla no queda **nada**.
+
+- Paquete inexistente, inactivo, de otro salón o con el servicio inactivo (o un
+  `package_id` en blanco): `400 {"error":"Paquete inválido"}`.
+- Clienta inexistente o de otro salón: `404 {"error":"Ficha no encontrada"}`.
+- Método o profesional inválidos: `400` (los mismos textos del POS).
+- **Idempotente por `client_op_id`** (el índice único de `sales`): el repetido
+  devuelve la compra **original** (`201`, mismo `sale_id` y mismo paquete) sin crear
+  otra, aunque el catálogo haya cambiado o el paquete se haya desactivado. Un
+  `client_op_id` ya usado para **otra clienta** o para una venta que no es un
+  paquete → `409 {"error":"Esa operación ya se usó en otro pedido"}`. Un
+  `client_op_id` con NUL o de más de 200 caracteres → `400 {"error":"El
+  identificador de la operación no es válido"}`.
+
+### Leer — `GET .../clients/:cid/packages` y `.../movements`
+
+- `GET /clients/:cid/packages` → `200 {"packages":[client_package...]}`: los
+  **vigentes con saldo primero**, después el resto, cada grupo del más nuevo al
+  más viejo; tope 200. Clienta de otro salón o inexistente → `404 {"error":"Ficha
+  no encontrada"}`.
+- `GET /clients/:cid/packages/:cpid/movements` → `200 {"movements":[{"id","delta",
+  "reason","note":null|"...","professional_id":null|"...","created_at"}]}` más
+  nuevos primero, tope 200. `reason` ∈ `purchase|redeem|adjust`. Paquete
+  inexistente, de otra clienta o de otro salón → `404 {"error":"Paquete no
+  encontrado"}`.
+
+### Consumir una sesión — `POST .../packages/:cpid/redeem`
+
+Cuerpo `{professional_id?, note?, client_op_id?}` (todo opcional; un cuerpo vacío
+vale como `{}`) → `200 {"client_package":{...forma D8}}`.
+
+Es **un** `UPDATE client_packages SET sessions_left = sessions_left - 1 WHERE
+id=… AND salon_id=… AND client_id=… AND sessions_left >= 1 AND (expires_at IS NULL
+OR expires_at > ahora)` más el movimiento `redeem` (`-1`) en la **misma**
+transacción: dos consumos simultáneos de la última sesión → **uno** gana. Sin
+filas afectadas se distingue (en la misma transacción):
+
+- inexistente, de otra clienta o de otro salón: `404 {"error":"Paquete no
+  encontrado"}`;
+- sin saldo: `409 {"error":"No quedan sesiones en este paquete"}`;
+- vencido: `409 {"error":"El paquete venció"}` (si está agotado **y** vencido gana
+  «No quedan sesiones»: no hay nada que consumir).
+
+**Idempotente por `client_op_id`** (índice único parcial de los movimientos): el
+repetido devuelve el **estado actual** (`200`) **sin descontar** otra vez, también
+cuando ya no quedan sesiones. Un `client_op_id` ya usado en otro paquete o por
+otra clienta → `409 {"error":"Esa operación ya se usó en otro pedido"}`. Nota con
+NUL/salto de línea → `400`; de más de 200 caracteres → `400 {"error":"La nota no
+puede superar los 200 caracteres"}`. Un `professional_id` informado se valida
+como en el POS (`400` si no atiende en el salón).
+
+Consumir **no** es una venta ni genera comisión (v1).
+
+### Ajustar el saldo — `POST .../packages/:cpid/adjust` (solo owner/admin)
+
+Cuerpo `{delta, note}` → `200 {"client_package":{...forma D8}}`. Corrige un
+consumo equivocado (no hay anulación de ventas). Escribe el movimiento `adjust`.
+`delta` entero distinto de 0 (`400 {"error":"El ajuste no puede ser cero"}`, también
+si falta); `note` obligatoria de 1..200 (`400 {"error":"Escribí el motivo del
+ajuste"}`); el saldo resultante tiene que quedar en `0..sessions_total` (`409
+{"error":"El ajuste deja el saldo fuera de rango"}`, y un `delta` de más de ±100
+también). Paquete ajeno o inexistente → `404 {"error":"Paquete no encontrado"}`.
+Un rechazo no escribe nada.
+
+### Nómina (D6)
+
+La consulta `ventas` de la nómina (vista previa, corridas y «Mis comisiones»)
+pasa a usar `total_cents - products_cents - packages_cents`: para toda venta
+anterior y toda venta sin paquetes el resultado es **idéntico**; una venta de
+paquete **cuenta** en `sales_count` pero **no** suma a `sales_total_cents`, y un
+paquete **no paga comisión** (no tiene líneas de servicio) ni al vender ni al
+consumir (decisión de v1; seguimiento). La caja, el dashboard, `GET /sales`, la
+ganancia y el export F4 suman `total_cents`, que **incluye** el paquete.
+
+### Migración `031_packages.sql`
+
+- `service_packages(id, salon_id FK CASCADE, name 1..120 sin saltos de línea,
+  service_id FK RESTRICT, sessions 1..100, price_cents 0..10000000, validity_days
+  NULL o 1..3650, active, created_at)` con índice único parcial `(salon_id,
+  lower(name)) WHERE active`.
+- `client_packages(id, salon_id, client_id NOT NULL FK RESTRICT, package_id FK
+  RESTRICT, service_id, name, sessions_total, price_cents, sessions_left CHECK
+  `0..sessions_total`, purchased_at, expires_at NULL, sale_id NOT NULL UNIQUE FK
+  RESTRICT)`.
+- `package_movements(id, salon_id, client_package_id FK CASCADE, delta <> 0,
+  reason ∈ purchase|redeem|adjust, note NULL ≤ 200, professional_id NULL,
+  client_op_id NULL, created_at, actor)` append-only, con índice único parcial
+  `(salon_id, client_op_id) WHERE client_op_id IS NOT NULL`.
+- `sales.packages_cents INTEGER NOT NULL DEFAULT 0 CHECK (packages_cents >= 0 AND
+  packages_cents <= total_cents)` (sin backfill: las ventas existentes quedan en
+  0). Idempotente (guardas con `current_schema()`): una segunda pasada no cambia
+  ninguna fila.
+- No hay variables de entorno nuevas.
