@@ -45,6 +45,16 @@ func (f *fakeClientLinks) LinkSaleByID(salonID, saleID, clientID string) error {
 	return nil
 }
 
+// SaleClientID devuelve la ficha del último vínculo guardado de esa venta.
+func (f *fakeClientLinks) SaleClientID(salonID, saleID string) (string, error) {
+	for i := len(f.sales) - 1; i >= 0; i-- {
+		if f.sales[i].SalonID == salonID && f.sales[i].SaleID == saleID {
+			return f.sales[i].ClientID, nil
+		}
+	}
+	return "", nil
+}
+
 // fakeClientHistory devuelve una foto fija y recuerda con qué argumentos se pidió.
 type fakeClientHistory struct {
 	data     domain.ClientHistoryData

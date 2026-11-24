@@ -61,3 +61,19 @@ func (r ClientLinks) LinkSaleByID(salonID, saleID, clientID string) error {
 		salonID, saleID, clientID)
 	return pgError(err)
 }
+
+// SaleClientID lee el vínculo real de la venta (scopeado por salón). Sin fila o
+// sin vínculo devuelve "".
+func (r ClientLinks) SaleClientID(salonID, saleID string) (string, error) {
+	var id string
+	err := r.Pool.QueryRow(context.Background(),
+		`SELECT COALESCE(client_id, '') FROM sales WHERE salon_id = $1 AND id = $2`,
+		salonID, saleID).Scan(&id)
+	if err != nil {
+		if notFound(err) != nil {
+			return "", nil
+		}
+		return "", pgError(err)
+	}
+	return id, nil
+}

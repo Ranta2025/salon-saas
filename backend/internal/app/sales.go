@@ -211,3 +211,18 @@ func (s SaleService) member(actor domain.Membership, salonID string) (domain.Mem
 	}
 	return m, nil
 }
+
+// LinkedClient devuelve la ficha a la que la venta quedó vinculada de verdad ("" si
+// no tiene o si no se pudo leer). El handler la usa para responder lo que se
+// guardó y no lo que se pidió.
+func (s SaleService) LinkedClient(salonID, saleID string) string {
+	if s.ClientLinks == nil {
+		return ""
+	}
+	id, err := s.ClientLinks.SaleClientID(salonID, saleID)
+	if err != nil {
+		log.Printf("leer el vínculo de la venta %s: %v", saleID, err)
+		return ""
+	}
+	return id
+}

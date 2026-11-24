@@ -810,4 +810,8 @@ type ClientLinkRepository interface {
 	LinkBookingByPhone(salonID, bookingID string) error
 	// LinkSaleByID vincula la venta del POS con la ficha elegida a mano (D3-c).
 	LinkSaleByID(salonID, saleID, clientID string) error
+	// SaleClientID devuelve el vínculo REAL de la venta ("" si no tiene): la
+	// respuesta de POST /sales dice lo que quedó guardado y no lo que se pidió
+	// (R4-001: un UPDATE caído o un replay no deben afirmar un vínculo falso).
+	SaleClientID(salonID, saleID string) (string, error)
 }

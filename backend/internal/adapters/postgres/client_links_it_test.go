@@ -271,3 +271,46 @@ func TestClientLinks_vinculo_estable_y_borrado(t *testing.T) {
 		t.Fatalf("la ficha borrada no existe: %v", err)
 	}
 }
+
+// R4-001 (revisión nativa): SaleClientID devuelve el vínculo REAL de la venta. Sin
+// vínculo, con una venta que no existe o pidiéndola desde otro salón devuelve "":
+// la respuesta de POST /sales nunca afirma una ficha que no quedó guardada.
+func TestClientLinks_SaleClientID_dice_lo_que_quedo_guardado(t *testing.T) {
+	pool := itPool(t)
+	defer pool.Close()
+	f5Seed(t, pool, "s-f5e", "u-f5e")
+	f5Seed(t, pool, "s-f5f", "u-f5f")
+	repo := Clients{Pool: pool}
+	links := ClientLinks{Pool: pool}
+
+	c, _ := domain.NewClient("s-f5e", "Lía", "11 5555-1234", "", "")
+	if err := repo.Save(c); err != nil {
+		t.Fatalf("ficha: %v", err)
+	}
+	day := time.Date(2026, 5, 4, 10, 0, 0, 0, time.UTC)
+	f5Sale(t, pool, "se-1", "s-f5e", "u-f5e", 5000, "cash", day, "")
+	f5Sale(t, pool, "se-2", "s-f5e", "u-f5e", 7000, "cash", day, "")
+
+	// Sin vínculo: "" (no error).
+	if got, err := links.SaleClientID("s-f5e", "se-1"); err != nil || got != "" {
+		t.Fatalf("venta sin vínculo: %q %v", got, err)
+	}
+	// Con vínculo: la ficha.
+	if err := links.LinkSaleByID("s-f5e", "se-1", c.ID); err != nil {
+		t.Fatalf("vincular: %v", err)
+	}
+	if got, err := links.SaleClientID("s-f5e", "se-1"); err != nil || got != c.ID {
+		t.Fatalf("venta vinculada: %q %v", got, err)
+	}
+	// Otra venta del mismo salón sigue sin vínculo.
+	if got, _ := links.SaleClientID("s-f5e", "se-2"); got != "" {
+		t.Fatalf("la otra venta no tiene ficha: %q", got)
+	}
+	// Desde otro salón la venta no existe; una venta inexistente tampoco.
+	if got, err := links.SaleClientID("s-f5f", "se-1"); err != nil || got != "" {
+		t.Fatalf("otro salón: %q %v", got, err)
+	}
+	if got, err := links.SaleClientID("s-f5e", "no-existe"); err != nil || got != "" {
+		t.Fatalf("venta inexistente: %q %v", got, err)
+	}
+}

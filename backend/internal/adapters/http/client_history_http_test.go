@@ -96,11 +96,29 @@ func (f *historyClients) PhotoByID(string) (domain.ClientPhoto, error) {
 type fakeHTTPLinks struct {
 	bookings int
 	sales    int
+	// saleClient es el vínculo REAL por venta (lo que SaleClientID devuelve).
+	saleClient map[string]string
+	// failSales hace que el UPDATE de vínculo de ventas falle de verdad (el
+	// servicio de ventas del handler es una COPIA: se inyecta el fallo acá).
+	failSales bool
 }
 
 func (f *fakeHTTPLinks) LinkBookingByID(string, string, string) error { f.bookings++; return nil }
 func (f *fakeHTTPLinks) LinkBookingByPhone(string, string) error      { f.bookings++; return nil }
-func (f *fakeHTTPLinks) LinkSaleByID(string, string, string) error    { f.sales++; return nil }
+func (f *fakeHTTPLinks) LinkSaleByID(_, saleID, clientID string) error {
+	if f.failSales {
+		return errors.New("db caída")
+	}
+	f.sales++
+	if f.saleClient == nil {
+		f.saleClient = map[string]string{}
+	}
+	f.saleClient[saleID] = clientID
+	return nil
+}
+func (f *fakeHTTPLinks) SaleClientID(_, saleID string) (string, error) {
+	return f.saleClient[saleID], nil
+}
 
 // newHistoryEnv rearma el router con el historial y los vínculos cableados.
 func newHistoryEnv() (*posEnv, *fakeHistoryRepo, *fakeHTTPLinks) {
@@ -403,14 +421,20 @@ func TestHTTP_pos_client_id(t *testing.T) {
 	}
 
 	// Un fallo del vínculo no tumba la venta (best-effort).
-	env.d.Sales.Sales.ClientLinks = failingLinks{}
-	if w := doReq(env.r, "POST", base, body(c.ID, "Lía"), ownerTok); w.Code != http.StatusCreated {
+	links.failSales = true
+	w = doReq(env.r, "POST", base, body(c.ID, "Lía"), ownerTok)
+	if w.Code != http.StatusCreated {
 		t.Fatalf("fallo del vínculo: %d %s", w.Code, w.Body.String())
 	}
+	// R4-001 (revisión nativa): la respuesta dice el vínculo REAL de la venta, no el
+	// que se pidió. Con el vínculo caído la venta quedó sin ficha: client_id "".
+	var failed struct {
+		ClientID string `json:"client_id"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &failed); err != nil {
+		t.Fatalf("respuesta: %v %s", err, w.Body.String())
+	}
+	if failed.ClientID != "" {
+		t.Fatalf("el vínculo falló: client_id tenía que ser \"\" y fue %q", failed.ClientID)
+	}
 }
-
-type failingLinks struct{}
-
-func (failingLinks) LinkBookingByID(string, string, string) error { return errors.New("db caída") }
-func (failingLinks) LinkBookingByPhone(string, string) error      { return errors.New("db caída") }
-func (failingLinks) LinkSaleByID(string, string, string) error    { return errors.New("db caída") }

@@ -145,10 +145,6 @@ func (h SaleHandler) loadActor(c *gin.Context, salonID string) (domain.Membershi
 	return m, true
 }
 
-// linkedClientID refleja lo que se pidió vincular: el caso de uso ya validó que
-// la ficha es del salón; sin client_id la venta no tiene vínculo ("").
-func linkedClientID(clientID string) string { return clientID }
-
 func saleJSON(s domain.Sale) gin.H {
 	items := make([]gin.H, 0, len(s.Items))
 	for _, it := range s.Items {
@@ -210,8 +206,9 @@ func (h SaleHandler) Create(c *gin.Context) {
 		respondErr(c, err)
 		return
 	}
-	// client_id viaja en la respuesta ("" si la venta no quedó vinculada).
-	c.JSON(http.StatusCreated, gin.H{"sale_id": sale.ID, "total": sale.TotalCents, "client_id": linkedClientID(in.ClientID)})
+	// client_id viaja en la respuesta: el vínculo REAL de la venta ("" si no quedó
+	// vinculada: sin client_id, UPDATE caído o replay de otra venta).
+	c.JSON(http.StatusCreated, gin.H{"sale_id": sale.ID, "total": sale.TotalCents, "client_id": h.Sales.LinkedClient(salonID, sale.ID)})
 }
 
 // List: GET /salons/:id/sales?from=&to= (por defecto, hoy UTC)
