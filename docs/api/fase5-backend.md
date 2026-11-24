@@ -2469,6 +2469,11 @@ libro (`stock = Σ delta`, nunca negativo). Los IDs de producto son strings.
 - `PUT /products/:pid {name, price_cents, low_stock_threshold, active}` →
   `200 product`. **Exige las cuatro claves**: si falta una (o es `null`) → `400
   {"error":"Faltan datos del producto: nombre, precio, umbral de stock bajo y estado"}`
+
+`POST /products` exige el nombre y el **precio**: si falta `price_cents` o viene `null` responde
+`400 {"error":"Faltan datos del producto: nombre y precio"}` y no escribe nada (el precio no se
+rellena con 0). Un `price_cents: 0` explícito es válido (un producto regalo). `stock` y
+`low_stock_threshold` siguen siendo opcionales (por defecto 0).
   y no escribe nada. **No cambia el stock**. Inexistente o de otro salón: `404
   {"error":"Producto no encontrado"}`.
 - `POST /products/:pid/adjust {delta, reason, note?}` → `200 product`, con

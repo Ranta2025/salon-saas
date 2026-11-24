@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"salon-saas/internal/domain"
@@ -516,5 +517,34 @@ func TestHTTP_sales_without_products_unchanged(t *testing.T) {
 	}
 	if len(list.Sales) != 1 || list.Sales[0].TotalCents != 300000 || len(list.Sales[0].Items) != 1 {
 		t.Fatalf("GET /sales: %+v", list.Sales)
+	}
+}
+
+// Verificador independiente (F6): un POST sin precio, o con `price_cents: null`,
+// creaba un producto GRATIS en silencio. Un campo obligatorio no se rellena por
+// defecto (misma lección que el PUT de F3.2): 400 y no se escribe nada. Un precio
+// 0 explícito sí es válido (un producto regalo existe).
+func TestHTTP_products_create_exige_el_precio(t *testing.T) {
+	env, _, ownerTok, salonID := productsSetup(t)
+	base := productBase(salonID)
+
+	for _, body := range []string{
+		`{"name":"Sin precio"}`,
+		`{"name":"Precio nulo","price_cents":null}`,
+		`{"name":"Precio nulo con stock","price_cents":null,"stock":3}`,
+	} {
+		w := doReq(env.r, "POST", base, body, ownerTok)
+		if w.Code != http.StatusBadRequest || okErr(t, w.Body.Bytes()) != "Faltan datos del producto: nombre y precio" {
+			t.Fatalf("%s: %d %s", body, w.Code, w.Body.String())
+		}
+	}
+	// No se escribió nada.
+	w := doReq(env.r, "GET", base, "", ownerTok)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"products":[]`) {
+		t.Fatalf("un 400 no debía crear nada: %d %s", w.Code, w.Body.String())
+	}
+	// El precio 0 explícito sigue siendo válido.
+	if w := doReq(env.r, "POST", base, `{"name":"Regalo","price_cents":0}`, ownerTok); w.Code != http.StatusCreated {
+		t.Fatalf("precio 0 explícito: %d %s", w.Code, w.Body.String())
 	}
 }

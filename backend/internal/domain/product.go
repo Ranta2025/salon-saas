@@ -40,6 +40,9 @@ const (
 	MsgProductInvalidChars  = "El texto tiene caracteres no válidos"
 	MsgProductNameTaken     = "Ya hay un producto activo con ese nombre"
 	MsgProductMissingFields = "Faltan datos del producto: nombre, precio, umbral de stock bajo y estado"
+	// MsgProductCreateMissing es el 400 de un POST sin nombre o sin precio: el precio
+	// no se rellena por defecto (un producto gratis por omisión es un error).
+	MsgProductCreateMissing = "Faltan datos del producto: nombre y precio"
 	MsgProductNotFound      = "Producto no encontrado"
 	MsgProductInvalid       = "Producto inválido"
 	MsgProductAdjustZero    = "El ajuste no puede ser cero"

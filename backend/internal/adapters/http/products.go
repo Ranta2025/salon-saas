@@ -78,7 +78,7 @@ func (h ProductHandler) Create(c *gin.Context) {
 	}
 	var in struct {
 		Name              string `json:"name"`
-		PriceCents        int    `json:"price_cents"`
+		PriceCents        *int   `json:"price_cents"`
 		Stock             *int   `json:"stock"`
 		LowStockThreshold *int   `json:"low_stock_threshold"`
 	}
@@ -86,7 +86,13 @@ func (h ProductHandler) Create(c *gin.Context) {
 		badBody(c)
 		return
 	}
-	p, err := h.Products.Create(actor, salonID, in.Name, in.PriceCents, in.Stock, in.LowStockThreshold)
+	// El precio es obligatorio: ausente o null es 400 y no se escribe nada (no se
+	// rellena con 0). Un 0 explícito sí es un precio válido.
+	if in.PriceCents == nil {
+		respondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgProductCreateMissing))
+		return
+	}
+	p, err := h.Products.Create(actor, salonID, in.Name, *in.PriceCents, in.Stock, in.LowStockThreshold)
 	if err != nil {
 		respondErr(c, err)
 		return
