@@ -37,6 +37,24 @@ export function canCreateClient(role: Role | null | undefined): boolean {
 }
 
 /**
+ * Editing an existing client file (contract F5, D5): the same rule as creating
+ * one — `puedeGestionarClientes` on the server, which also answers 403 to anyone
+ * else. A professional reads the file (allergies included) but never edits it.
+ */
+export function canEditClient(role: Role | null | undefined): boolean {
+  return canCreateClient(role)
+}
+
+/**
+ * Money of a client history (contract F5, D6: `puedeVerPlata`): owner, admin and
+ * reception. The server sends `spend` and `sales` as null to everyone else, so
+ * this only decides the explanatory copy, never a figure.
+ */
+export function canSeeClientMoney(role: Role | null | undefined): boolean {
+  return isManager(role) || role === 'reception'
+}
+
+/**
  * Home of `/panel` for a role. A professional has no dashboard (the API answers
  * 403) and lands on their own agenda (S-F2b-4). `null` means the dashboard is
  * the right page: owner/admin keep it, with a "Mi agenda" card when they attend.

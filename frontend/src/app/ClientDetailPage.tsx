@@ -4,15 +4,26 @@ import {
   deleteClientPhoto,
   describeApiError,
   fetchClientPhotos,
-  fetchClients,
   uploadClientPhoto,
   type ApiErrorNotice,
 } from '../lib/api'
+import {
+  createClientSaveGate,
+  fetchClientRecord,
+  saveClientRecord,
+  type ClientRecord,
+  type ClientRecordInput,
+} from '../lib/clientRecord'
+import { fetchClientHistory, type ClientHistory } from '../lib/clientHistory'
+import { canEditClient, canSeeClientMoney, activeRole } from '../lib/permissions'
 import { formatBytes, validatePhotoFile } from '../lib/photos'
-import { displayPhone } from '../lib/phone'
-import type { Client, ClientPhoto } from '../types'
+import type { ClientPhoto } from '../types'
 import { useSalon } from './SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
+import { ClientHistorySection } from './components/ClientHistorySection'
+import { ClientRecordAllergies } from './components/ClientRecordAllergies'
+import { ClientRecordForm } from './components/ClientRecordForm'
+import { ClientRecordSummary } from './components/ClientRecordSummary'
 import { PageHeader } from './components/PageHeader'
 import { PhotoUploader } from './components/PhotoUploader'
 
@@ -27,21 +38,36 @@ function photoSizeLabel(photo: ClientPhoto): string {
   return parts.join(' · ')
 }
 
+/**
+ * `/panel/clientes/:id` (contract F5): the file comes from `GET /clients/:cid`,
+ * the allergies are shown to every member, the edit form (five keys, owner/admin/
+ * reception only) reloads the file from the server after saving, and the history
+ * shows visits, no-shows, next and last visit — with the money ONLY when the API
+ * sends `spend`, which it never does for a professional.
+ */
 export function ClientDetailPage() {
-  const { salonId } = useSalon()
+  const { salonId, salons } = useSalon()
   const { clientId = '' } = useParams<{ clientId: string }>()
-  const [client, setClient] = useState<Client | null>(null)
+  const [record, setRecord] = useState<ClientRecord | null>(null)
   const [photos, setPhotos] = useState<ClientPhoto[]>([])
+  const [history, setHistory] = useState<ClientHistory | null>(null)
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<ApiErrorNotice | null>(null)
+  const [historyError, setHistoryError] = useState<ApiErrorNotice | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   // The photo url is a signed URL that expires: a failed load triggers exactly one
   // refetch of the list, which comes back with fresh signatures.
   const signatureRefresh = useRef(false)
+  // One save at a time: a double click cannot send two PUTs (the state only paints
+  // the disabled button).
+  const saveGate = useRef(createClientSaveGate())
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), [])
 
@@ -53,16 +79,15 @@ export function ClientDetailPage() {
     const controller = new AbortController()
     setLoading(true)
     setError(null)
-    // There is no GET /clients/:id in the contract yet, so the name comes from the list.
     Promise.all([
-      fetchClients(salonId, controller.signal),
+      fetchClientRecord(salonId, clientId, controller.signal),
       fetchClientPhotos(salonId, clientId, controller.signal),
     ])
-      .then(([clients, photoList]) => {
+      .then(([clientRecord, photoList]) => {
         if (!active) {
           return
         }
-        setClient(clients.find((item) => item.id === clientId) ?? null)
+        setRecord(clientRecord)
         setPhotos(photoList)
         setLoaded(true)
         signatureRefresh.current = false
@@ -75,6 +100,37 @@ export function ClientDetailPage() {
       .finally(() => {
         if (active) {
           setLoading(false)
+        }
+      })
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [salonId, clientId, reloadKey])
+
+  // The history is its own request: a failure here never hides the file.
+  useEffect(() => {
+    if (!salonId || clientId === '') {
+      return
+    }
+    let active = true
+    const controller = new AbortController()
+    setHistoryLoading(true)
+    setHistoryError(null)
+    fetchClientHistory(salonId, clientId, controller.signal)
+      .then((loadedHistory) => {
+        if (active) {
+          setHistory(loadedHistory)
+        }
+      })
+      .catch((err: unknown) => {
+        if (active && !controller.signal.aborted) {
+          setHistoryError(describeApiError(err, 'No pudimos cargar el historial de la clienta.'))
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setHistoryLoading(false)
         }
       })
     return () => {
@@ -108,6 +164,28 @@ export function ClientDetailPage() {
     [salonId, clientId],
   )
 
+  const handleSave = useCallback(
+    async (input: ClientRecordInput): Promise<void> => {
+      if (!salonId) {
+        return
+      }
+      setSaving(true)
+      setSaveError(null)
+      setNotice(null)
+      const outcome = await saveClientRecord(saveGate.current, salonId, clientId, input)
+      setSaving(false)
+      if (outcome.status !== 'saved') {
+        setSaveError(outcome.message)
+        return
+      }
+      setNotice('Ficha guardada. Volvimos a pedirla al servidor.')
+      // No optimistic state: the file, the allergies and the history are read
+      // again from the server, so the screen shows what the API stored.
+      reload()
+    },
+    [salonId, clientId, reload],
+  )
+
   const confirmDelete = async (): Promise<void> => {
     if (!salonId || !deleteTarget) {
       return
@@ -135,14 +213,16 @@ export function ClientDetailPage() {
     )
   }
 
-  const clientName = client?.name ?? 'Cliente sin nombre'
+  const role = activeRole(salons, salonId)
+  const canEdit = canEditClient(role)
+  const clientName = record?.name ?? 'Cliente sin nombre'
 
   return (
     <>
       <PageHeader
         eyebrow="Clientes"
         title={clientName}
-        description="Fotos de referencia del cliente. Cada foto se guarda con su variante WebP optimizada."
+        description="Ficha, alergias, historial de visitas y fotos de referencia del trabajo."
         actions={
           <>
             <Link className="btn btn--quiet btn--sm" to="/panel/clientes">
@@ -165,50 +245,43 @@ export function ClientDetailPage() {
         </p>
       ) : null}
 
-      <div className="client-detail">
-        <section className="panel-card" aria-labelledby="client-info-title">
-          <div className="panel-card__head">
-            <h2 id="client-info-title">Datos del cliente</h2>
-            <span className="panel-card__meta">{photos.length} fotos</span>
+      {record ? <ClientRecordAllergies allergies={record.allergies} /> : null}
+
+      {record ? <ClientRecordSummary record={record} /> : null}
+
+      <ClientHistorySection
+        history={history}
+        error={historyError}
+        loading={historyLoading}
+        onRetry={reload}
+        canSeeMoney={canSeeClientMoney(role)}
+      />
+
+      {record && canEdit ? (
+        <ClientRecordForm
+          record={record}
+          saving={saving}
+          serverError={saveError}
+          onSave={(input) => void handleSave(input)}
+        />
+      ) : null}
+
+      <section className="panel-card" aria-labelledby="client-photos-title">
+        <div className="panel-card__head">
+          <h2 id="client-photos-title">Fotos de referencia</h2>
+          <span className="panel-card__meta">JPG, PNG o WebP · máx. 8 MB</span>
+        </div>
+
+        <PhotoUploader onUpload={handleUpload} disabled={!loaded} />
+
+        {loaded && photos.length === 0 ? (
+          <div className="empty-state">
+            <h2>Sin fotos todavía</h2>
+            <p>Sube una foto de referencia para que el equipo vea el resultado esperado.</p>
           </div>
-          <dl className="client-info">
-            <div>
-              <dt>Nombre</dt>
-              <dd>{clientName}</dd>
-            </div>
-            <div>
-              <dt>Teléfono</dt>
-              <dd>{displayPhone(client?.phone ?? '') || 'Sin teléfono'}</dd>
-            </div>
-            <div>
-              <dt>Correo</dt>
-              <dd>{client?.email ?? 'Sin correo'}</dd>
-            </div>
-            <div>
-              <dt>Identificador</dt>
-              <dd>
-                <code>{clientId}</code>
-              </dd>
-            </div>
-          </dl>
-        </section>
+        ) : null}
 
-        <section className="panel-card" aria-labelledby="client-photos-title">
-          <div className="panel-card__head">
-            <h2 id="client-photos-title">Fotos de referencia</h2>
-            <span className="panel-card__meta">JPG, PNG o WebP · máx. 8 MB</span>
-          </div>
-
-          <PhotoUploader onUpload={handleUpload} disabled={!loaded} />
-
-          {loaded && photos.length === 0 ? (
-            <div className="empty-state">
-              <h2>Sin fotos todavía</h2>
-              <p>Sube una foto de referencia para que el equipo vea el resultado esperado.</p>
-            </div>
-          ) : null}
-
-          <ul className="photos-grid">
+        <ul className="photos-grid">
             {photos.map((photo, index) => {
               const label = `Foto ${index + 1} de ${clientName}`
               return (
@@ -263,9 +336,8 @@ export function ClientDetailPage() {
                 </li>
               )
             })}
-          </ul>
-        </section>
-      </div>
+        </ul>
+      </section>
     </>
   )
 }

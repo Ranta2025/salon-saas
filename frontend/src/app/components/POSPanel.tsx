@@ -2,7 +2,18 @@ import { useState, type FormEvent } from 'react'
 import { formatCents } from '../../lib/money'
 import { dropReasonLabel, findDropped, type DroppedOperation } from '../../lib/offlineQueue'
 import type { StaffMember } from '../../lib/staff'
-import { changeQty, itemCount, lineSubtotal, removeItem, totalCents, type Cart } from '../../lib/posCart'
+import {
+  changeQty,
+  itemCount,
+  lineSubtotal,
+  removeItem,
+  saleWithClient,
+  totalCents,
+  type Cart,
+  type PosPickedClient,
+} from '../../lib/posCart'
+import type { PickableClient } from '../../lib/clientRecord'
+import { ClientPicker } from './ClientPicker'
 import {
   SALE_METHODS,
   type SaleInput,
@@ -23,6 +34,14 @@ type POSPanelProps = {
   pendingCount?: number
   /** Operations the queue gave up on: a queued sale here never reached the API. */
   dropped?: readonly DroppedOperation[]
+  /**
+   * Client files of the salon for the OPTIONAL picker (F5, D3c). Absent means the
+   * panel behaves exactly as before: a free-text name and no `client_id`.
+   */
+  clients?: readonly PickableClient[]
+  /** Message of the failed /clients request, shown next to the picker. */
+  clientsError?: string | null
+  clientsLoading?: boolean
 }
 
 /**
@@ -45,8 +64,14 @@ export function POSPanel({
   onCompleted,
   pendingCount = 0,
   dropped = [],
+  clients = [],
+  clientsError = null,
+  clientsLoading = false,
 }: POSPanelProps) {
   const [clientName, setClientName] = useState('')
+  // F5: the client file is optional. Picking one fills the name and sends
+  // `client_id`; with nobody picked the body and the flow are exactly as before.
+  const [pickedClient, setPickedClient] = useState<PickableClient | null>(null)
   const [professionalId, setProfessionalId] = useState('')
   const [method, setMethod] = useState<SaleMethod>('cash')
   const [error, setError] = useState<string | null>(null)
@@ -73,26 +98,31 @@ export function POSPanel({
       setError('Elige al profesional que atendió la venta.')
       return
     }
-    if (clientName.trim() === '') {
+    if (clientName.trim() === '' && !pickedClient) {
       setError('Escribe el nombre del cliente para el ticket.')
       return
     }
-    const input: SaleInput = {
-      professional_id: professionalId.trim(),
-      client_name: clientName.trim(),
-      method,
-      items: cart.map((line) => ({
-        service_id: line.service_id,
-        qty: line.qty,
-        unit_price_cents: line.unit_price_cents,
-      })),
-    }
+    const picked: PosPickedClient | null = pickedClient
+    const input: SaleInput = saleWithClient(
+      {
+        professional_id: professionalId.trim(),
+        client_name: clientName.trim(),
+        method,
+        items: cart.map((line) => ({
+          service_id: line.service_id,
+          qty: line.qty,
+          unit_price_cents: line.unit_price_cents,
+        })),
+      },
+      picked,
+    )
     setPending(true)
     try {
       const outcome = await onSubmit(input)
       setReceipt({ outcome, uiTotal })
       onCartChange([])
       setClientName('')
+      setPickedClient(null)
       onCompleted()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No pudimos registrar la venta.')
@@ -161,6 +191,18 @@ export function POSPanel({
       </dl>
 
       <div className="pos-fields">
+        <ClientPicker
+          clients={clients}
+          error={clientsError}
+          loading={clientsLoading}
+          selected={pickedClient}
+          onSelect={(client) => {
+            setPickedClient(client)
+            if (client) {
+              setClientName(client.name)
+            }
+          }}
+        />
         <div className="field">
           <label htmlFor="pos-client">Cliente</label>
           <input
@@ -171,6 +213,11 @@ export function POSPanel({
             autoComplete="off"
             placeholder="Nombre de la clienta"
           />
+          {pickedClient ? (
+            <p className="field__hint">
+              La venta queda vinculada a la ficha de {pickedClient.name}.
+            </p>
+          ) : null}
         </div>
         <div className="field">
           <label htmlFor="pos-professional">Profesional que atendió</label>

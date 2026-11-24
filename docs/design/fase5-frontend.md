@@ -2311,3 +2311,118 @@ que el recorrido con `Tab` llega a «Exportar» y a los tres botones.
   - `ManagerOnlyNotice` conserva su texto actual («no puede ver la nómina ni las
     comisiones del equipo») también en Exportar: es el hallazgo H20(g) del
     roadmap y el componente queda fuera de las superficies de esta entrega.
+
+## 27. Fase 6 — F5: ficha de la clienta con historial, gasto y alergias (frontend)
+
+Contrato: `odd/tasks/fase6-roadmap.md`, sección «Contrato F5 (historial de la
+clienta: visitas, gasto, última visita, alergias)». Esta entrega es **solo el
+frontend**: el backend corre en paralelo (`bookings.client_id`,
+`sales.client_id`, migración 028, `GET`/`PUT` de la ficha y
+`GET /clients/:cid/history`), así que la API todavía puede no existir y todo se
+probó con `fetch` simulado sobre las formas congeladas.
+
+### 27.1 Lógica pura
+
+- `src/lib/clientRecord.ts` — la ficha (`client` de D5): `normalizeClientRecord`
+  (con `allergies`, `""` cuando la API no lo manda), `clientRecordBody` (las
+  **cinco** claves `name, phone, email, notes, allergies` siempre, recortadas y
+  con el correo en minúsculas), `validateClientRecordDraft` (nombre obligatorio,
+  largos 120/40/2000/500 contados por CARÁCTER y no por byte, `Email inválido`,
+  NUL en cualquiera de los cinco campos), `fetchClientRecord` /
+  `updateClientRecord` y `clientApiMessage` (la frase del servidor **verbatim**,
+  también el 403 `sin permiso` y el 404 `Ficha no encontrada`: F5 los congela por
+  estado, por eso no pasa por `describeApiError`, que reemplaza el 403).
+- `createClientSaveGate` / `saveClientRecord`: la guarda de una escritura a la vez
+  es SÍNCRONA (el estado de React solo pinta el botón deshabilitado), así que un
+  doble clic en el mismo tick manda **un** `PUT`; la segunda pulsación responde
+  `busy`. `saved` NO se pinta: la página vuelve a pedir la ficha (y el historial)
+  al servidor, así que la pantalla nunca muestra un dato sin guardar.
+- `src/lib/clientHistory.ts` — el historial (D6/D7): `normalizeClientHistory`
+  lee la forma congelada, PINEA el orden más reciente primero, descarta filas sin
+  id o con fecha ilegible y convierte un `total_cents` con decimales en «sin
+  dinero» (nunca se pinta un monto inventado). `clientHistoryMoney` devuelve
+  `null` cuando `spend` es `null` — un profesional no puede pintar gasto ni
+  ventas aunque la API mandara la lista por error. `summaryCards` arma las cuatro
+  tarjetas (visitas, no-shows, próxima y última visita); la última es el día
+  `YYYY-MM-DD` **tal como vino** y la próxima se lee en la zona del salón que
+  trae el propio historial (`2026-11-25T16:00:00Z` → `2026-11-25 10:00` en
+  America/Mexico_City). `formatCents` es el único formateador de dinero.
+- `src/lib/permissions.ts` (aditivo): `canEditClient` delega en `canCreateClient`
+  (D5: `puedeGestionarClientes`) y `canSeeClientMoney` en `puedeVerPlata`; ningún
+  helper existente cambia.
+- `src/lib/posCart.ts` (aditivo): `saleWithClient(body, picked)` — sin ficha
+  elegida devuelve el MISMO objeto (la clave `client_id` no existe, no es
+  `undefined`) y con ficha completa el nombre si el campo está vacío y agrega
+  `client_id` (D3c). El cuerpo sigue viajando igual por la cola offline.
+
+### 27.2 Pantalla `/panel/clientes/:id`
+
+- La ficha sale de `GET /salons/:id/clients/:cid` (ya no busca en el listado) y
+  las fotos de su endpoint de siempre. El historial es un pedido aparte: si falla,
+  la ficha se sigue viendo y el error se muestra solo en su sección.
+- Bloque «Alergias» destacado ARRIBA de los datos, con `notice notice--error` y la
+  etiqueta «Dato de salud», para todos los roles; cuando la ficha no tiene
+  alergias el bloque no se renderiza y la fila de datos dice «Sin alergias
+  registradas.».
+- «Historial»: cuatro tarjetas (visitas, no asistió, próxima, última), la lista de
+  turnos recientes (estado con `statusLabel`) y, **solo si `spend` no es null**,
+  la tarjeta de gasto y las ventas vinculadas con `formatCents`. Para el resto, en
+  lugar de un monto, la frase «Tu rol ve las visitas y los turnos, no los importes
+  de las ventas.». Sin turnos vinculados se muestra el estado vacío con el texto
+  EXACTO del contrato.
+- Formulario «Editar ficha» solo para owner/admin/recepción (un profesional no
+  tiene ningún campo de edición): cinco campos, `PhoneInput` del alta, errores en
+  el campo con las frases de la API, y tras guardar se vuelve a pedir todo al
+  servidor. Las tablas usan `table--stack`, así que a 390 px cada fila es una
+  tarjeta y no hay scroll lateral.
+
+### 27.3 POS: selector OPCIONAL de clienta
+
+- `POSPanel` gana tres props opcionales (`clients`, `clientsError`,
+  `clientsLoading`) y `PosPage` pide `GET /salons/:id/clients` en su propio
+  pedido: si falla, se avisa junto al selector y el catálogo, las ventas y el
+  cobro con nombre a mano siguen funcionando.
+- `ClientPicker`: buscador que filtra la lista **ya descargada** (por nombre o por
+  dígitos del teléfono), 8 filas visibles con el resto acotado por la búsqueda,
+  botones de 44 px con `aria-pressed`, «Quitar» para desvincular. Elegir una ficha
+  completa el nombre del ticket y agrega `client_id`; sin ficha, el cuerpo es el
+  de siempre. Verificado en el navegador: el `POST /sales` con ficha lleva
+  `{"…","client_name":"Ana Pérez","client_id":"c1"}` y sin ficha NO tiene la clave.
+
+### 27.4 Pruebas
+
+- TDD en `src/lib` con `node --test` y `fetch` simulado: primero en rojo (los dos
+  módulos nuevos no existían), después en verde. 33 tests nuevos en
+  `clientRecord.test.ts` (18) y `clientHistory.test.ts` (15): la URL exacta del
+  `GET` de la ficha y del historial, el `PUT` con las cinco claves en orden y sin
+  sobrantes, el `POST /sales` con y sin `client_id` (cuerpo exacto), 400/403/404
+  verbatim, la validación por campo (incluidos NUL y 500/501 de alergias), la
+  matriz de roles de edición y de dinero, el doble clic = un `PUT`, las tarjetas
+  del resumen, la última visita tal como vino y la próxima en dos zonas, el estado
+  vacío exacto, el dinero que desaparece con `spend: null` o con centavos no
+  enteros, y el buscador del POS que no vuelve a pedir la lista.
+- `npx tsc --noEmit` limpio, `npm test` 538/538 (505 previos sin tocar) y
+  `npm run build` correcto.
+- Revisión visual con el bundle de `vite build` y una API simulada en `/tmp/f5f`
+  (Chromium del caché de Playwright por protocolo DevTools) a **1280 y 390 px**:
+  dueña con historial, gasto y alergias; profesional sin dinero ni formulario;
+  ficha sin alergias y con historial vacío; POS con el selector y con una ficha
+  elegida. `document.documentElement.scrollWidth === innerWidth` en las cinco
+  pantallas medidas (sin desborde horizontal). Guardado verificado en el
+  navegador: `PUT` con las cinco claves y, después, `GET` de la ficha, de las
+  fotos y del historial (sin estado optimista).
+- **Desviaciones conscientes:**
+  - El runner no tiene entorno DOM, así que no hay tests de componente: las
+    reglas de la pantalla viven en funciones puras con tests y lo que es DOM
+    (44 px, desborde, teclado, guardado real) se verificó en el navegador.
+  - Las cuatro tarjetas del resumen usan el estilo `.kpi` pero el valor en tamaño
+    de texto normal: `.kpi__value` (2.4 rem) no entra en las cuatro columnas de
+    una sección a ancho completo con una fecha `AAAA-MM-DD` y no hay CSS propio
+    en las superficies de esta entrega. La tarjeta de gasto sí usa `KPICard`.
+  - La página ya no usa el grid `.client-detail` (dos columnas, 22 rem a la
+    izquierda): con las secciones nuevas la columna angosta cortaba las tablas y
+    las tarjetas. Ahora las secciones se apilan a ancho completo, como Gastos y
+    Ganancias.
+  - `describeApiError` sigue reemplazando el 403 en las CARGA de la página
+    (convención del panel); las escrituras de la ficha usan `clientApiMessage`
+    porque el contrato F5 congela el 403 `sin permiso`.

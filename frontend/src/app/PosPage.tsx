@@ -2,12 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   createSale,
   describeApiError,
+  fetchClients,
   fetchSales,
   fetchServices,
   fetchStaff,
   NetworkError,
   type ApiErrorNotice,
 } from '../lib/api'
+import type { PickableClient } from '../lib/clientRecord'
 import { dayRange } from '../lib/datetime'
 import { formatCents } from '../lib/money'
 import { newClientOpId, type QueuedOperation } from '../lib/offlineQueue'
@@ -48,6 +50,11 @@ export function PosPage() {
   const [sales, setSales] = useState<Sale[]>([])
   const [staff, setStaff] = useState<StaffMember[]>([])
   const [staffError, setStaffError] = useState<string | null>(null)
+  // F5: the optional client picker of the checkout. Its own request, so a failure
+  // here never hides the catalogue nor blocks a free-text sale.
+  const [clients, setClients] = useState<PickableClient[]>([])
+  const [clientsError, setClientsError] = useState<string | null>(null)
+  const [clientsLoading, setClientsLoading] = useState(true)
   const [cart, setCart] = useState<Cart>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
@@ -65,6 +72,8 @@ export function PosPage() {
     setLoading(true)
     setError(null)
     setStaffError(null)
+    setClientsError(null)
+    setClientsLoading(true)
     const { from, to } = dayRange(new Date())
     // The team comes from its own endpoint: a failure here must not hide the
     // catalogue, so it is reported next to the professional select.
@@ -79,6 +88,24 @@ export function PosPage() {
           setStaffError(
             err instanceof Error ? err.message : 'No pudimos cargar el equipo del salón.',
           )
+        }
+      })
+    fetchClients(salonId)
+      .then((list) => {
+        if (active) {
+          setClients(list)
+        }
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setClientsError(
+            err instanceof Error ? err.message : 'No pudimos cargar las fichas de clientas.',
+          )
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setClientsLoading(false)
         }
       })
     Promise.all([fetchServices(salonId), fetchSales(salonId, from, to)])
@@ -238,6 +265,9 @@ export function PosPage() {
               cart={cart}
               staff={staff}
               staffError={staffError}
+              clients={clients}
+              clientsError={clientsError}
+              clientsLoading={clientsLoading}
               onCartChange={setCart}
               onSubmit={handleSubmit}
               onCompleted={reload}

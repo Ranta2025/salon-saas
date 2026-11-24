@@ -61,3 +61,32 @@ export function totalCents(cart: Cart): number {
 export function itemCount(cart: Cart): number {
   return cart.reduce((count, line) => count + line.qty, 0)
 }
+
+/**
+ * Client file picked in the POS selector (contract F5). Only the two fields the
+ * checkout needs: the id that travels to the API and the name that fills the
+ * free-text field of the ticket.
+ */
+export type PosPickedClient = { id: string; name: string }
+
+/**
+ * Sale body with an optional client file (F5, D3c). With nobody picked the body
+ * is EXACTLY the one of today: the `client_id` key is absent, never `undefined`.
+ * A picked file fills the name when the field is empty (the person may have
+ * typed another one) and travels as `client_id`.
+ */
+export function saleWithClient<T extends { client_name: string }>(
+  body: T,
+  picked: PosPickedClient | null,
+): T & { client_id?: string } {
+  const clientId = picked?.id.trim() ?? ''
+  if (!picked || clientId === '') {
+    return body
+  }
+  const typed = body.client_name.trim()
+  return {
+    ...body,
+    client_name: typed === '' ? picked.name.trim() : body.client_name,
+    client_id: clientId,
+  }
+}

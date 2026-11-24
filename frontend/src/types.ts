@@ -69,6 +69,11 @@ export type SaleInput = {
   items: { service_id: string; qty: number; unit_price_cents: number }[]
   /** Idempotency key of the offline queue; the server deduplicates on it. */
   client_op_id?: string
+  /**
+   * F5 (D3c): client file the sale is linked to. Optional and absent unless the
+   * POS picker chose one; the server validates it belongs to the salon.
+   */
+  client_id?: string
 }
 
 /** Body accepted by POST bookings. */
@@ -88,6 +93,8 @@ export type BookingInput = {
 export type SaleCreated = {
   sale_id: string
   total: number
+  /** F5: client file the sale got linked to (`""` when it has none). */
+  client_id?: string
 }
 
 /**
@@ -139,6 +146,11 @@ export type Client = {
   phone: string | null
   email: string | null
   created_at: string | null
+  /**
+   * F5 (D4): allergies of the client. Optional because the field is new; the
+   * full file with the editable text is read through `lib/clientRecord.ts`.
+   */
+  allergies?: string
 }
 
 /** Body accepted by POST /api/v1/salons/:id/clients (owner/admin/reception). */
