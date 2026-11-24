@@ -1,8 +1,11 @@
 /*
- * Aurelia · service worker (vanilla, no dependencies).
+ * Salon · service worker (vanilla, no dependencies).
  *
  * - precaches the app shell and the hashed build assets referenced by it
  * - network-first for API GETs, with a cached copy as fallback
+ * - EXCEPT GET /api/v1/public/: the public page (prices, hours, gallery) goes
+ *   straight to the network and is never cached, so it can never show old
+ *   prices without saying so (F16, D6); the page shows its own offline notice
  * - never intercepts or caches non-GET requests: mutations are queued by the app
  *   (`src/lib/offlineQueue.ts`) so the server keeps deduplicating by client_op_id
  * - cache-first for same-origin static assets (JS/CSS/fonts/images)
@@ -10,7 +13,7 @@
 
 // Bump this value on every deploy that changes the worker or the precache list:
 // `activate` deletes every cache that is not part of the current version.
-const VERSION = 'salon-v3'
+const VERSION = 'salon-v4'
 const SHELL_CACHE = `${VERSION}-shell`
 const STATIC_CACHE = `${VERSION}-static`
 const API_CACHE = `${VERSION}-api`
@@ -106,6 +109,12 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
+  // Public API (F16, D6): no respondWith, so the browser goes to the network
+  // and nothing is stored. A failed request reaches the page, which says so.
+  if (isPublicApiPath(url.pathname)) {
+    return
+  }
+
   if (url.pathname.startsWith('/api/v1/')) {
     event.respondWith(networkFirstApi(request))
     return
@@ -118,6 +127,11 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(cacheFirstStatic(request))
   }
 })
+
+/** `GET /api/v1/public/...`: anonymous salon data that must never come from a cache. */
+function isPublicApiPath(pathname) {
+  return pathname === '/api/v1/public' || pathname.startsWith('/api/v1/public/')
+}
 
 async function networkFirstApi(request) {
   const cache = await caches.open(API_CACHE)

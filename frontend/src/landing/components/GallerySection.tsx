@@ -1,27 +1,26 @@
-import { GALLERY } from '../content'
+import type { PublicPhoto } from '../../lib/publicSalon'
 import { GalleryItem } from './GalleryItem'
 
-export function GallerySection() {
+type GallerySectionProps = {
+  photos: readonly PublicPhoto[]
+  salonName: string
+}
+
+/** Rendered only when the salon uploaded photos from the panel. */
+export function GallerySection({ photos, salonName }: GallerySectionProps) {
   return (
     <section className="section gallery on-dark" id="galeria" aria-labelledby="gallery-title">
       <div className="container">
         <div className="gallery__head">
           <div className="section-head">
             <p className="eyebrow">Galería</p>
-            <h2 id="gallery-title">Así se siente salir del salón</h2>
-            <p className="lede">
-              Referencias de color, corte, uñas y maquillaje que replicamos en cada cita. Las fotos
-              vienen de bancos de imágenes libres: los créditos están al pie de la página.
-            </p>
+            <h2 id="gallery-title">Galería</h2>
           </div>
-          <a className="btn btn--ghost" href="#reservar">
-            Quiero un cambio así
-          </a>
         </div>
 
-        <div className="gallery__grid">
-          {GALLERY.map((photo) => (
-            <GalleryItem key={photo.src} photo={photo} />
+        <div className="gallery__grid" data-count={photos.length}>
+          {photos.map((photo) => (
+            <GalleryItem key={photo.id} photo={photo} salonName={salonName} />
           ))}
         </div>
       </div>

@@ -1,7 +1,7 @@
 {
-  "name": "Aurelia · Panel del salón",
-  "short_name": "Aurelia",
-  "description": "Agenda, ventas, servicios, clientes y avisos del salón Aurelia, con modo sin conexión para cobrar.",
+  "name": "Panel del salón",
+  "short_name": "Salón",
+  "description": "Agenda, ventas, servicios, clientes y avisos del salón, con modo sin conexión para cobrar.",
   "lang": "es-MX",
   "dir": "ltr",
   "start_url": "/panel",

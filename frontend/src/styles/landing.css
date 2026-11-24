@@ -864,6 +864,8 @@
 }
 
 .site-footer__address {
+  display: grid;
+  gap: 0.15rem;
   font-style: normal;
   font-size: 0.875rem;
   line-height: 1.8;
@@ -952,7 +954,7 @@
 
 @media (min-width: 760px) {
   .site-footer__grid {
-    grid-template-columns: 1.1fr 0.8fr 1.5fr;
+    grid-template-columns: 1.4fr 1fr;
   }
 }
 
@@ -1192,4 +1194,150 @@
    --ink-muted, so it is readable. */
 .site-footer__hours-note {
   color: var(--cream-soft);
+}
+
+
+/* ---------- F16: data-driven sections (team, packages, states) ---------- */
+
+/* Gallery with a variable number of photos (1..12): one photo spans the row. */
+.gallery__grid[data-count='1'] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: clamp(14rem, 50vw, 26rem);
+}
+
+.team {
+  background: var(--surface);
+}
+
+.team .section-head,
+.packages .section-head {
+  margin-bottom: clamp(1.5rem, 3vw, 2.5rem);
+}
+
+.team__grid,
+.packages__grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
+}
+
+.team-card,
+.package-card {
+  display: grid;
+  gap: 0.3rem;
+  align-content: start;
+  padding: clamp(1.1rem, 2.2vw, 1.5rem);
+  background: var(--cream);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.team-card__name {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  line-height: 1.15;
+  color: var(--ink);
+}
+
+.team-card__trade {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--wine);
+}
+
+.packages {
+  background: var(--cream);
+}
+
+.package-card {
+  background: var(--surface);
+}
+
+.package-card__name {
+  font-size: 1.3rem;
+  line-height: 1.15;
+}
+
+.package-card__detail {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.package-card__price {
+  margin-top: 0.4rem;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--wine);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+/* Loading, error and «no encontramos este salón» states: no salon data at all. */
+.landing-state {
+  display: grid;
+  gap: var(--space-4);
+  align-content: center;
+  justify-items: start;
+  min-height: 100vh;
+  max-width: var(--container-narrow);
+  margin-inline: auto;
+  padding: var(--space-5) clamp(1.15rem, 4vw, 2.5rem);
+}
+
+.landing-state__card {
+  display: grid;
+  gap: var(--space-4);
+  justify-items: start;
+}
+
+.landing-state__card h1 {
+  font-size: var(--step-3, 2rem);
+  line-height: 1.2;
+}
+
+/* Offline notice (D6): a strip fixed to the bottom, never silent stale data. */
+.landing-offline {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 60;
+  margin: 0;
+  padding: 0.6rem clamp(1.15rem, 4vw, 2.5rem);
+  background: var(--ink);
+  color: var(--cream);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.landing-state .landing-offline {
+  position: static;
+  justify-self: stretch;
+  border-radius: var(--radius-sm);
+}
+
+/*
+ * The catalogue has any number of services now (not the eight of the old fixed
+ * list), so the grid cannot rely on a 1px gap over a grey background: an
+ * incomplete last row would show a grey block. Separate cards instead.
+ */
+.services__grid {
+  gap: 0.85rem;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.services__grid .service-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+@media (min-width: 1080px) {
+  .services__grid {
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  }
 }

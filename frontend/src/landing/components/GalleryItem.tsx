@@ -1,27 +1,25 @@
-import type { GalleryEntry } from '../content'
+import type { PublicPhoto } from '../../lib/publicSalon'
 
 type GalleryItemProps = {
-  photo: GalleryEntry
+  photo: PublicPhoto
+  salonName: string
 }
 
-/** One photo of the gallery: varied span + caption revealed on hover/focus. */
-export function GalleryItem({ photo }: GalleryItemProps) {
+/** One photo of the salon gallery; the caption appears only when the salon wrote one. */
+export function GalleryItem({ photo, salonName }: GalleryItemProps) {
   return (
-    <figure className={`gallery-item gallery-item--${photo.variant}`}>
+    <figure className="gallery-item">
       <img
-        src={photo.src}
-        alt={photo.alt}
-        width={photo.width}
-        height={photo.height}
+        src={photo.url}
+        alt={photo.caption !== '' ? photo.caption : `Foto de ${salonName}`}
         loading="lazy"
         decoding="async"
       />
-      <figcaption>
-        <span className="gallery-item__caption">{photo.caption}</span>
-        <span className="gallery-item__credit">
-          {photo.author} · {photo.license}
-        </span>
-      </figcaption>
+      {photo.caption !== '' ? (
+        <figcaption>
+          <span className="gallery-item__caption">{photo.caption}</span>
+        </figcaption>
+      ) : null}
     </figure>
   )
 }

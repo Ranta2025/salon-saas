@@ -1,5 +1,5 @@
 import { formatCents, formatMinutes } from '../../lib/money'
-import type { LandingService } from '../content'
+import type { LandingService } from '../../lib/publicSalon'
 
 type ServiceCardProps = {
   service: LandingService
@@ -12,9 +12,10 @@ export function ServiceCard({ service, onSelect }: ServiceCardProps) {
       <h3 className="service-card__name">{service.name}</h3>
       <p className="service-card__meta">
         <span>{formatMinutes(service.durationMin)}</span>
-        {service.tag ? <span className="tag">{service.tag}</span> : null}
       </p>
-      <p className="service-card__desc">{service.description}</p>
+      {service.description !== null ? (
+        <p className="service-card__desc">{service.description}</p>
+      ) : null}
       <div className="service-card__foot">
         <p className="service-card__price">
           <span className="visually-hidden">Precio: </span>

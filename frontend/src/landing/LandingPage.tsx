@@ -1,88 +1,169 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { fetchPublicSalon } from '../lib/api'
-import { preloadLandingHero, releaseLandingHero } from '../lib/landingPreload'
-import { toLandingServices } from '../lib/publicSalon'
-import type { SalonDay } from '../lib/weeklyHours'
-import type { LandingService } from './content'
-import { SERVICES, TRUST_POINTS } from './content'
+import { isBrowserOnline, subscribeOnlineStatus } from '../lib/connectivity'
+import {
+  buildLanding,
+  landingFailure,
+  LANDING_ERROR_MESSAGE,
+  LANDING_NOT_FOUND_MESSAGE,
+  LANDING_OFFLINE_NOTICE,
+  type LandingService,
+  type PublicSalon,
+} from '../lib/publicSalon'
 import { BookingCta } from './components/BookingCta'
 import { GallerySection } from './components/GallerySection'
 import { Hero } from './components/Hero'
+import { PackagesSection } from './components/PackagesSection'
 import { ServicesSection } from './components/ServicesSection'
 import { SiteFooter } from './components/SiteFooter'
 import { SiteHeader } from './components/SiteHeader'
-import { TestimonialsSection } from './components/TestimonialsSection'
-import { WhyUsSection } from './components/WhyUsSection'
+import { TeamSection } from './components/TeamSection'
 
-/** Salon shown by the public page: the route slug, or the configured default. */
+/**
+ * Slug the public page shows at `/` when the URL has none: a deployment setting
+ * (`VITE_SALON_SLUG`), not salon data. Everything printed comes from the API.
+ */
 const DEFAULT_SLUG =
   (import.meta.env.VITE_SALON_SLUG as string | undefined)?.trim() || 'aurelia'
 
-/** Public landing page, shared by `/` and `/salon/:slug`. */
-export function LandingPage() {
-  const { slug } = useParams<{ slug?: string }>()
-  const [preselected, setPreselected] = useState<LandingService | null>(null)
-  const [services, setServices] = useState<readonly LandingService[]>(SERVICES)
-  // Real opening hours of the salon (F2d1). `null` means the API did not send
-  // them: the landing asks to confirm on WhatsApp instead of inventing hours.
-  const [hours, setHours] = useState<readonly SalonDay[] | null>(null)
+type LoadState =
+  | { kind: 'loading' }
+  | { kind: 'ready'; salon: PublicSalon }
+  | { kind: 'not_found' }
+  | { kind: 'error' }
 
-  // Client-side navigation to the landing still starts the hero early.
-  useEffect(() => {
-    preloadLandingHero()
-    return () => releaseLandingHero()
+/** `true` while the browser reports a connection (D6 shows a notice otherwise). */
+function useOnline(): boolean {
+  const [online, setOnline] = useState(isBrowserOnline)
+  useEffect(() => subscribeOnlineStatus(setOnline), [])
+  return online
+}
+
+/** Offline notice (D6): the data on screen may be old, and the page says so. */
+function OfflineNotice() {
+  return (
+    <p className="landing-offline" role="status">
+      {LANDING_OFFLINE_NOTICE}
+    </p>
+  )
+}
+
+/** Public landing page, shared by `/` and `/salon/:slug`. Every datum comes from the API. */
+export function LandingPage() {
+  const { slug: routeSlug } = useParams<{ slug?: string }>()
+  const slug = routeSlug ?? DEFAULT_SLUG
+  const online = useOnline()
+  const [state, setState] = useState<LoadState>({ kind: 'loading' })
+  const [preselected, setPreselected] = useState<LandingService | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+
+  const retry = useCallback(() => {
+    setState({ kind: 'loading' })
+    setReloadKey((key) => key + 1)
   }, [])
+
+  // A new salon starts from the loading state: never show another salon's data.
+  useEffect(() => {
+    setState({ kind: 'loading' })
+    setPreselected(null)
+  }, [slug])
 
   useEffect(() => {
     let active = true
-    // The bundled catalogue is the fallback for a slow or unavailable API.
-    setServices(SERVICES)
-    setHours(null)
-    fetchPublicSalon(slug ?? DEFAULT_SLUG)
+    fetchPublicSalon(slug)
       .then((salon) => {
         if (active) {
-          setServices(toLandingServices(salon.services, SERVICES))
-          setHours(salon.hours)
+          setState({ kind: 'ready', salon })
         }
       })
-      .catch(() => {
-        // Keep the static catalogue: the landing never depends on the API.
+      .catch((error: unknown) => {
+        // The data on screen (if any) is kept only when it is not a 404: a salon
+        // that stopped existing must not keep showing.
+        if (active) {
+          setState({ kind: landingFailure(error) })
+        }
       })
     return () => {
       active = false
     }
-  }, [slug])
+  }, [slug, reloadKey])
+
+  // Back online: read the salon again so the page stops showing data that may be old.
+  const [wasOffline, setWasOffline] = useState(false)
+  useEffect(() => {
+    if (!online) {
+      setWasOffline(true)
+      return
+    }
+    if (wasOffline) {
+      setWasOffline(false)
+      setReloadKey((key) => key + 1)
+    }
+  }, [online, wasOffline])
+
+  const model = useMemo(
+    () => (state.kind === 'ready' ? buildLanding(state.salon) : null),
+    [state],
+  )
+
+  useEffect(() => {
+    if (model !== null) {
+      document.title = model.name
+    }
+  }, [model])
+
+  if (state.kind !== 'ready' || model === null) {
+    return (
+      <main className="landing-state" id="contenido" aria-busy={state.kind === 'loading'}>
+        {!online ? <OfflineNotice /> : null}
+        {state.kind === 'loading' ? (
+          <p className="loading" role="status">
+            <span className="loading__dot" aria-hidden="true" />
+            Cargando…
+          </p>
+        ) : null}
+        {state.kind === 'not_found' ? (
+          <div className="landing-state__card" role="alert">
+            <h1>{LANDING_NOT_FOUND_MESSAGE}</h1>
+          </div>
+        ) : null}
+        {state.kind === 'error' ? (
+          <div className="landing-state__card" role="alert">
+            <h1>{LANDING_ERROR_MESSAGE}</h1>
+            <button type="button" className="btn btn--wine" onClick={retry}>
+              Reintentar
+            </button>
+          </div>
+        ) : null}
+      </main>
+    )
+  }
 
   return (
     <>
       <a className="skip-link" href="#contenido">
         Saltar al contenido
       </a>
-      <SiteHeader />
+      {!online ? <OfflineNotice /> : null}
+      <SiteHeader model={model} />
       <main id="contenido">
-        <Hero />
-        <div className="trust-strip">
-          <div className="container">
-            <ul>
-              {TRUST_POINTS.map((point) => (
-                <li key={point}>{point}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-        <ServicesSection services={services} onSelect={setPreselected} />
-        <GallerySection />
-        <WhyUsSection />
-        <TestimonialsSection />
-        <BookingCta
-          slug={slug ?? DEFAULT_SLUG}
-          services={services}
-          preselected={preselected}
-          hours={hours}
-        />
+        <Hero model={model} />
+        {model.sections.services ? (
+          <ServicesSection
+            services={model.services}
+            whatsapp={model.phone?.whatsapp ?? null}
+            onSelect={setPreselected}
+          />
+        ) : null}
+        {model.sections.team ? <TeamSection team={model.team} /> : null}
+        {model.sections.packages ? <PackagesSection packages={model.packages} /> : null}
+        {model.sections.gallery ? (
+          <GallerySection photos={model.gallery} salonName={model.name} />
+        ) : null}
+        <BookingCta slug={slug} services={model.services} preselected={preselected} model={model} />
       </main>
-      <SiteFooter hours={hours} />
+      <SiteFooter model={model} />
     </>
   )
 }

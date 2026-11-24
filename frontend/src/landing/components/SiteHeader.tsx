@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { NAV_LINKS, SALON } from '../content'
+import type { LandingModel } from '../../lib/publicSalon'
 
-/** Sticky public site header with a mobile menu. */
-export function SiteHeader() {
+type SiteHeaderProps = {
+  model: LandingModel
+}
+
+/** Sticky public site header with a mobile menu; every link comes from the salon data. */
+export function SiteHeader({ model }: SiteHeaderProps) {
   const [open, setOpen] = useState(false)
 
   // The mobile panel is a disclosure: close it with Escape.
@@ -23,14 +27,13 @@ export function SiteHeader() {
   return (
     <header className="site-header">
       <div className="container site-header__inner">
-        <a className="brand" href="#inicio" aria-label={`${SALON.name}, ir al inicio`}>
-          <span className="brand__name">{SALON.name}</span>
-          <span className="brand__kicker">{SALON.tagline}</span>
+        <a className="brand" href="#inicio" aria-label={`${model.name}, ir al inicio`}>
+          <span className="brand__name">{model.name}</span>
         </a>
 
         <nav className="site-nav" aria-label="Secciones del sitio">
           <ul>
-            {NAV_LINKS.map((link) => (
+            {model.nav.map((link) => (
               <li key={link.href}>
                 <a href={link.href}>{link.label}</a>
               </li>
@@ -39,12 +42,16 @@ export function SiteHeader() {
         </nav>
 
         <div className="site-header__actions">
-          <a className="header-phone" href={SALON.phoneHref}>
-            {SALON.phone}
-          </a>
-          <a className="btn btn--gold btn--sm" href="#reservar">
-            Reservar
-          </a>
+          {model.phone !== null && model.phone.tel !== null ? (
+            <a className="header-phone" href={model.phone.tel}>
+              {model.phone.display}
+            </a>
+          ) : null}
+          {model.canBook ? (
+            <a className="btn btn--gold btn--sm" href="#reservar">
+              Reservar
+            </a>
+          ) : null}
           <button
             type="button"
             className="menu-toggle"
@@ -62,18 +69,20 @@ export function SiteHeader() {
 
       <div id="mobile-nav" className="mobile-nav" hidden={!open}>
         <ul>
-          {NAV_LINKS.map((link) => (
+          {model.nav.map((link) => (
             <li key={link.href}>
               <a href={link.href} onClick={() => setOpen(false)}>
                 {link.label}
               </a>
             </li>
           ))}
-          <li>
-            <a href="#reservar" onClick={() => setOpen(false)}>
-              Reservar mi cita
-            </a>
-          </li>
+          {model.canBook ? (
+            <li>
+              <a href="#reservar" onClick={() => setOpen(false)}>
+                Reservar mi cita
+              </a>
+            </li>
+          ) : null}
           <li>
             <Link to="/login" onClick={() => setOpen(false)}>
               Acceso del equipo

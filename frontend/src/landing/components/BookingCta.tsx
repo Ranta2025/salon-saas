@@ -21,8 +21,9 @@ import {
   type BookingFailure,
   type PublicBookingCreated,
 } from '../../lib/publicBooking'
-import { weekSummary, type SalonDay } from '../../lib/weeklyHours'
-import { PUBLIC_HOURS_FALLBACK, SALON, type LandingService } from '../content'
+import { whatsappUrl, type LandingModel, type LandingService } from '../../lib/publicSalon'
+import { weekSummary } from '../../lib/weeklyHours'
+import { PUBLIC_HOURS_FALLBACK } from '../content'
 import { WaitlistForm } from './WaitlistForm'
 
 /** `2025-03-14` → `viernes, 14 de marzo de 2025` without shifting the day. */
@@ -52,15 +53,16 @@ type Confirmation = {
 type BookingCtaProps = {
   /** Public slug of the salon, used by the anonymous availability/booking endpoints. */
   slug: string
-  /** Catalogue in use: the public API when it answers, the bundled one otherwise. */
+  /** Services of the salon, as the public API sent them (never a bundled catalogue). */
   services: readonly LandingService[]
   /** Service preselected when a service card was clicked. */
   preselected: LandingService | null
   /**
-   * `hours` of the public salon (F2d1): the real schedule when the API sends it,
-   * `null` when the field is missing (the block asks to confirm on WhatsApp).
+   * The salon as the landing renders it: name, contact and `hours` (F2d1). The
+   * contact rows only show what the salon filled in; without hours the block
+   * asks to confirm on WhatsApp when the salon has a phone.
    */
-  hours: readonly SalonDay[] | null
+  model: LandingModel
 }
 
 /**
@@ -69,7 +71,8 @@ type BookingCtaProps = {
  * visitor's local time, and the request carries a `client_op_id` so a retry is
  * never a double booking. WhatsApp stays as the secondary channel.
  */
-export function BookingCta({ slug, services, preselected, hours }: BookingCtaProps) {
+export function BookingCta({ slug, services, preselected, model }: BookingCtaProps) {
+  const { hours } = model
   // Minimum date and slot times use the visitor's local calendar (not UTC).
   const timeZone = useMemo(() => visitorTimeZone(), [])
   const today = toDateInputValue(new Date(), timeZone)
@@ -263,7 +266,7 @@ export function BookingCta({ slug, services, preselected, hours }: BookingCtaPro
 
   const whatsappMessage = confirmation
     ? [
-        `Hola ${SALON.name}, reservé una cita en el sitio.`,
+        `Hola ${model.name}, reservé una cita en el sitio.`,
         `Nombre: ${name.trim()}`,
         `Teléfono: ${phone.trim()}`,
         `Servicio: ${confirmation.serviceName}`,
@@ -271,7 +274,7 @@ export function BookingCta({ slug, services, preselected, hours }: BookingCtaPro
         `Horario: ${confirmation.timeLabel}`,
       ].join('\n')
     : [
-        `Hola ${SALON.name}, quiero reservar una cita.`,
+        `Hola ${model.name}, quiero reservar una cita.`,
         `Nombre: ${name.trim()}`,
         `Teléfono: ${phone.trim()}`,
         service ? `Servicio: ${service.name}` : '',
@@ -280,7 +283,9 @@ export function BookingCta({ slug, services, preselected, hours }: BookingCtaPro
       ]
         .filter(Boolean)
         .join('\n')
-  const whatsappHref = `https://wa.me/${SALON.whatsapp}?text=${encodeURIComponent(whatsappMessage)}`
+  // Only a salon with a usable phone has a WhatsApp channel.
+  const whatsappHref = whatsappUrl(model.phone?.display, whatsappMessage)
+  const whatsappBase = model.phone?.whatsapp ?? null
 
   return (
     <section className="section booking on-dark" id="reservar" aria-labelledby="booking-title">
@@ -290,41 +295,66 @@ export function BookingCta({ slug, services, preselected, hours }: BookingCtaPro
           <h2 id="booking-title">Aparta tu cita en línea</h2>
           <p className="lede">
             Elige servicio, día y horario. La confirmación es inmediata y la especialista queda
-            asignada según la disponibilidad del salón en {SALON.district}.
+            asignada según la disponibilidad del salón.
           </p>
           <ul className="booking__contact">
-            <li>
-              <span className="booking__label">WhatsApp</span>
-              <a href={`https://wa.me/${SALON.whatsapp}`} target="_blank" rel="noreferrer">
-                {SALON.phone}
-              </a>
-            </li>
-            <li>
-              <span className="booking__label">Correo</span>
-              <a href={`mailto:${SALON.email}`}>{SALON.email}</a>
-            </li>
-            <li>
-              <span className="booking__label">Salón</span>
-              <span>{SALON.address}</span>
-            </li>
-            <li>
-              <span className="booking__label">Horario</span>
-              {hours === null ? (
+            {model.phone !== null ? (
+              <li>
+                <span className="booking__label">{whatsappBase !== null ? 'WhatsApp' : 'Teléfono'}</span>
+                {whatsappBase !== null ? (
+                  <a href={whatsappBase} target="_blank" rel="noreferrer">
+                    {model.phone.display}
+                  </a>
+                ) : (
+                  <span>{model.phone.display}</span>
+                )}
+              </li>
+            ) : null}
+            {model.email !== null ? (
+              <li>
+                <span className="booking__label">Correo</span>
+                <a href={`mailto:${model.email}`}>{model.email}</a>
+              </li>
+            ) : null}
+            {model.address !== null ? (
+              <li>
+                <span className="booking__label">Salón</span>
+                <span>{model.address}</span>
+              </li>
+            ) : null}
+            {model.instagram !== null ? (
+              <li>
+                <span className="booking__label">Instagram</span>
+                <a href={model.instagram.url} target="_blank" rel="noreferrer">
+                  @{model.instagram.handle}
+                </a>
+              </li>
+            ) : null}
+            {hours !== null ? (
+              <li>
+                <span className="booking__label">Horario</span>
+                <span>{weekSummary(hours)}</span>
+              </li>
+            ) : whatsappBase !== null ? (
+              <li>
+                <span className="booking__label">Horario</span>
                 <span>
                   {PUBLIC_HOURS_FALLBACK}:{' '}
-                  <a href={`https://wa.me/${SALON.whatsapp}`} target="_blank" rel="noreferrer">
-                    {SALON.phone}
+                  <a href={whatsappBase} target="_blank" rel="noreferrer">
+                    {model.phone?.display}
                   </a>
                 </span>
-              ) : (
-                <span>{weekSummary(hours)}</span>
-              )}
-            </li>
+              </li>
+            ) : null}
           </ul>
         </div>
 
         <div className="booking__form">
-          {confirmation ? (
+          {!model.canBook ? (
+            <p className="booking__note" role="status">
+              Por ahora este salón no tiene servicios disponibles para reservar en línea.
+            </p>
+          ) : confirmation ? (
             <div className="booking__confirmation" aria-labelledby="booking-confirmed-title">
               <p className="eyebrow">Cita confirmada</p>
               <h3 id="booking-confirmed-title" tabIndex={-1} ref={confirmationRef}>
@@ -371,13 +401,17 @@ export function BookingCta({ slug, services, preselected, hours }: BookingCtaPro
                 </p>
               )}
               <p className="booking__note">
-                Te esperamos en {SALON.address}. Si necesitas mover la cita, escríbenos por
-                WhatsApp con el folio de tu reserva.
+                {model.address !== null ? `Te esperamos en ${model.address}. ` : ''}
+                {whatsappHref !== null
+                  ? 'Si necesitas mover la cita, escríbenos por WhatsApp con el folio de tu reserva.'
+                  : 'Guarda el folio de tu reserva por si necesitas mover la cita.'}
               </p>
               <div className="booking__actions">
-                <a className="btn btn--wine" href={whatsappHref} target="_blank" rel="noreferrer">
-                  Avisar también por WhatsApp
-                </a>
+                {whatsappHref !== null ? (
+                  <a className="btn btn--wine" href={whatsappHref} target="_blank" rel="noreferrer">
+                    Avisar también por WhatsApp
+                  </a>
+                ) : null}
                 <button type="button" className="btn btn--quiet" onClick={reload}>
                   Reservar otra cita
                 </button>
@@ -467,8 +501,8 @@ export function BookingCta({ slug, services, preselected, hours }: BookingCtaPro
                   {!slotsLoading && !slotsError && date !== '' && groups.length === 0 ? (
                     <>
                       <p className="booking__slots-empty">
-                        No quedan horarios libres ese día. Prueba con otra fecha o escríbenos por
-                        WhatsApp.
+                        No quedan horarios libres ese día. Prueba con otra fecha
+                        {whatsappBase !== null ? ' o escríbenos por WhatsApp' : ''}.
                       </p>
                       {/*
                        * F7 (D9a): only when the day has no slots at all. The form
@@ -599,12 +633,13 @@ export function BookingCta({ slug, services, preselected, hours }: BookingCtaPro
               >
                 {submitting ? 'Confirmando tu cita…' : 'Confirmar cita'}
               </button>
-              <p className="booking__fineprint">
-                <a href={whatsappHref} target="_blank" rel="noreferrer">
-                  ¿Prefieres WhatsApp? También puedes confirmar por mensaje
-                </a>
-                . No cobramos anticipo para apartar el horario.
-              </p>
+              {whatsappHref !== null ? (
+                <p className="booking__fineprint">
+                  <a href={whatsappHref} target="_blank" rel="noreferrer">
+                    ¿Prefieres WhatsApp? También puedes confirmar por mensaje
+                  </a>
+                </p>
+              ) : null}
             </form>
           )}
         </div>
