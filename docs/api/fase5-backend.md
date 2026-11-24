@@ -2432,3 +2432,100 @@ desvincula.
   vacío) coincide con **exactamente una** ficha del mismo salón; los ambiguos o
   sin coincidencia quedan en `NULL`. No toca filas que ya tienen `client_id` y no
   rellena ventas. Idempotente: una segunda pasada no cambia nada.
+
+## Fase 6 — F6: productos e inventario en el POS
+
+Productos con stock y alerta de stock bajo. El dinero sigue en **centavos
+enteros**; el stock es un contador y cada cambio escribe un movimiento en el
+libro (`stock = Σ delta`, nunca negativo). Los IDs de producto son strings.
+
+### Objeto `product`
+
+```json
+{"id":"p_...","name":"Shampoo","price_cents":50000,"stock":4,
+ "low_stock_threshold":2,"active":true,"low":true,
+ "created_at":"2026-03-10T12:00:00Z"}
+```
+
+`low` es `true` solo si el producto está **activo**, el umbral es `> 0` y
+`stock <= umbral`.
+
+### Rutas
+
+| Método | Ruta | Quién |
+|---|---|---|
+| GET | `/salons/:id/products` | owner/admin/recepción |
+| POST | `/salons/:id/products` | owner/admin |
+| PUT | `/salons/:id/products/:pid` | owner/admin |
+| POST | `/salons/:id/products/:pid/adjust` | owner/admin |
+| GET | `/salons/:id/products/:pid/movements?limit=` | owner/admin |
+
+- `GET /products` → `200 {"products":[product...]}` por nombre (activos e
+  inactivos; el POS filtra los activos).
+- `POST /products {name, price_cents, stock?, low_stock_threshold?}` → `201
+  product` (`stock` y umbral, 0 por defecto; si `stock > 0` se escribe el
+  movimiento `initial`). Nombre activo repetido (sin importar mayúsculas): `409
+  {"error":"Ya hay un producto activo con ese nombre"}`.
+- `PUT /products/:pid {name, price_cents, low_stock_threshold, active}` →
+  `200 product`. **Exige las cuatro claves**: si falta una (o es `null`) → `400
+  {"error":"Faltan datos del producto: nombre, precio, umbral de stock bajo y estado"}`
+  y no escribe nada. **No cambia el stock**. Inexistente o de otro salón: `404
+  {"error":"Producto no encontrado"}`.
+- `POST /products/:pid/adjust {delta, reason, note?}` → `200 product`, con
+  `reason` en `"restock" | "loss" | "correction"`; `restock` exige `delta > 0`,
+  `loss` exige `delta < 0`; `note` hasta 200 caracteres. `delta` distinto de cero
+  y dentro de ±1000000. Errores exactos: `400 {"error":"El ajuste no puede ser cero"}`,
+  `400 {"error":"Motivo inválido: usá restock, loss o correction"}`,
+  `400 {"error":"El signo del ajuste no coincide con el motivo"}` y
+  `409 {"error":"El stock no puede quedar negativo"}` (sin escribir nada).
+- `GET /products/:pid/movements?limit=` → `200 {"movements":[{"id","delta",
+  "reason","note","sale_id":null|"s_...","created_at"}]}`, más reciente primero,
+  `limit` 1..100 (por defecto 50; un `0` explícito es `400`).
+
+Validaciones (400, textos exactos): nombre vacío `El nombre del producto es
+obligatorio`; más de 120 caracteres `El nombre del producto no puede superar los
+120 caracteres`; precio fuera de rango `El precio debe estar entre 0 y 10000000
+centavos`; stock o umbral fuera de rango `El stock y el umbral deben estar entre 0
+y 1000000`; un NUL en nombre o nota `El texto tiene caracteres no válidos`. Un
+`400` no escribe nada y JSON de tipo equivocado es `400` (nunca `500`). Otro
+salón: `403`/`404`; profesional y cliente `403` en todo; sin token `401`.
+
+### POS: `POST /salons/:id/sales` con `products`
+
+Cuerpo opcional `products: [{product_id, qty}]` (hasta 50 líneas, cantidad
+1..1000; un producto repetido **se suma**). El precio sale **siempre** del
+catálogo del servidor y se congela en la venta (un precio enviado se ignora). Una
+venta solo de productos es válida; el total = servicios + productos. Producto
+inexistente, de otro salón o inactivo: `400 {"error":"Producto inválido"}`.
+Stock insuficiente: `409 {"error":"No hay stock suficiente de «<nombre>»"}` y **no
+se guarda nada** (ni la venta ni el descuento de los productos anteriores). El
+repetido por `client_op_id` devuelve la venta original sin descontar dos veces.
+**Sin `products`** el cuerpo y el flujo son exactamente los de antes.
+
+Los productos **no** generan comisión: la nómina (`/payroll/preview`, las
+corridas y `/payroll/me`) sigue calculando sobre las líneas de servicio
+(`sales.total_cents - sales.products_cents`), así el resultado es idéntico al de
+antes para toda venta sin productos. El dashboard, `GET /sales`, el cierre de
+caja y el export F4 suman el total de la venta, que **incluye** los productos (el
+ranking `top_services` y la columna `Ítems` del export cuentan solo servicios).
+
+### Alerta de stock bajo
+
+Cuando una venta o un ajuste hace que un producto **cruce** de `stock > umbral` a
+`stock <= umbral`, después del commit se deja **un** aviso interno (`Stock bajo`,
+con el nombre y el stock) y se publica el evento realtime `product.updated`. Si
+ya estaba bajo no hay aviso nuevo; un fallo al avisar nunca cambia la respuesta.
+
+### Migración `029_products.sql`
+
+- `products(id, salon_id, name, price_cents, stock, low_stock_threshold, active,
+  created_at)` con CHECKs (precio 0..10000000, stock/umbral 0..1000000, nombre
+  1..120 caracteres) e índice único `(salon_id, lower(name)) WHERE active`.
+- `stock_movements(id, salon_id, product_id, delta, reason, note, sale_id,
+  created_by, created_at)` append-only (razones `initial|restock|loss|correction|sale`,
+  `delta <> 0`).
+- `sale_products(id, sale_id, product_id, qty, unit_price_cents)`.
+- `sales.products_cents INTEGER NOT NULL DEFAULT 0` (sin backfill: las ventas
+  existentes quedan en 0). `sale_items` no cambia y no hay `DELETE` de producto
+  (se desactiva con `active=false`; un producto con ventas no se puede borrar).
+  Idempotente: una segunda pasada no cambia ninguna fila.

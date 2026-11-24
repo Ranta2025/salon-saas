@@ -167,6 +167,11 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	tenSvc := app.TenantService{Salons: salons, Memberships: mems}
 	bookings := pgstore.Bookings{Pool: pool}
 	salesRepo := pgstore.Sales{Pool: pool}
+	// F6: catálogo de productos (con su libro de stock) y la venta CON productos
+	// en una sola transacción con tope de tiempo. Una venta sin productos sigue
+	// por salesRepo.Save, intacto.
+	productsRepo := pgstore.Products{Pool: pool}
+	saleProductsRepo := pgstore.SaleProducts{Pool: pool}
 	closesRepo := pgstore.CashCloses{Pool: pool}
 	servicesRepo := pgstore.Services{Pool: pool}
 	// F2c: qué servicios hace cada quien (disponibilidad, reserva pública y
@@ -235,6 +240,12 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	saleSvc := app.SaleService{
 		Sales: salesRepo, Services: servicesRepo, Memberships: mems, Events: hub,
 		Clients: clientsRepo, ClientLinks: clientLinks,
+		Products: productsRepo, ProductSales: saleProductsRepo, Notifier: notifSvc,
+	}
+	// F6: productos e inventario del POS. Leer owner/admin/recepción; escribir
+	// solo owner/admin (D7). El aviso de stock bajo sale DESPUÉS del commit.
+	productSvc := app.ProductService{
+		Products: productsRepo, Memberships: mems, Events: hub, Notifier: notifSvc,
 	}
 	// Tx: el cierre corre en una transacción con advisory lock por salón (B-09).
 	// Settings: la ventana del cierre es el día LOCAL del salón (su zona), no UTC.
@@ -424,6 +435,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Expenses: httpapi.ExpenseHandler{Expenses: expenseSvc, Memberships: mems},
 		Profit:   httpapi.ProfitHandler{Profit: profitSvc, Memberships: mems},
 		Exports:  httpapi.ExportHandler{Exports: exportSvc, Memberships: mems},
+		// F6: productos e inventario del POS (cinco rutas + `products` en POST /sales).
+		Products: httpapi.ProductHandler{Products: productSvc, Memberships: mems},
 		// La reserva pública es la única escritura sin auth: rate limit por IP
 		// como en /auth (el GET de disponibilidad no pasa por acá).
 		PublicBookingLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/salons/"),

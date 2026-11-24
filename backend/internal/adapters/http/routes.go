@@ -46,6 +46,10 @@ type Deps struct {
 	// Exports son las tres exportaciones CSV de F4 (ventas, cierres de caja y
 	// clientes). Solo owner/admin: lo aplica el caso de uso.
 	Exports ExportHandler
+	// Products es el catálogo de productos y su inventario (F6): cinco rutas.
+	// La autorización vive en el caso de uso (leer owner/admin/recepción;
+	// escribir y ver movimientos solo owner/admin).
+	Products ProductHandler
 	// BookingLinks son las cuatro rutas públicas del enlace firmado de un turno
 	// (F1): lookup, horarios, cancelar y reprogramar. Sin sesión y con el token
 	// en el cuerpo.
@@ -185,6 +189,13 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.GET("/salons/:id/services", d.Services.List)
 	authed.POST("/salons/:id/services", d.Services.Create)
 	authed.PUT("/salons/:id/services/:service_id", d.Services.Update)
+
+	// F6: productos e inventario del POS (stock y alerta de stock bajo).
+	authed.GET("/salons/:id/products", d.Products.List)
+	authed.POST("/salons/:id/products", d.Products.Create)
+	authed.PUT("/salons/:id/products/:pid", d.Products.Update)
+	authed.POST("/salons/:id/products/:pid/adjust", d.Products.Adjust)
+	authed.GET("/salons/:id/products/:pid/movements", d.Products.Movements)
 
 	// POS: ventas, cierre de caja y panel del día
 	authed.POST("/salons/:id/sales", d.Sales.Create)

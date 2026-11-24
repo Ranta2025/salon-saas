@@ -25,6 +25,15 @@ type SaleService struct {
 	// best-effort (un fallo no tumba la venta).
 	Clients     ports.ClientRepository
 	ClientLinks ports.ClientLinkRepository
+	// Products y ProductSales son la venta CON productos (F6, D3/D5).
+	// Opcionales: nil = este proceso no vende productos, y una venta sin
+	// productos no los toca nunca (sigue por Sales.Save, byte por byte).
+	Products     ports.ProductRepository
+	ProductSales ports.SaleProductsRepository
+	// Notifier es opcional (nil = no avisa): el aviso de stock bajo de una
+	// venta se deja DESPUÉS del commit y un fallo al avisar no cambia la
+	// respuesta de la venta (F6, D8).
+	Notifier Notifier
 }
 
 // puedeVender: recepción y quien administra (el profesional cobra en caja...

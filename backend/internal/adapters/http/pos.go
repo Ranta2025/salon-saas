@@ -188,6 +188,14 @@ func (h SaleHandler) Create(c *gin.Context) {
 			Qty            int    `json:"qty"`
 			UnitPriceCents int    `json:"unit_price_cents"`
 		} `json:"items"`
+		// Products son las líneas de producto (F6, D5): opcional. Sin esta
+		// clave el cuerpo y el flujo son EXACTAMENTE los de siempre
+		// (RegisterSaleForClient). El precio de un producto NUNCA se lee de
+		// acá: lo pone el catálogo del servidor.
+		Products []struct {
+			ProductID string `json:"product_id"`
+			Qty       int    `json:"qty"`
+		} `json:"products"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		badBody(c)
@@ -201,7 +209,18 @@ func (h SaleHandler) Create(c *gin.Context) {
 			UnitPriceCents: it.UnitPriceCents,
 		})
 	}
-	sale, err := h.Sales.RegisterSaleForClient(actor, salonID, in.ProfessionalID, in.ClientName, in.ClientID, items, domain.PaymentMethod(in.Method), in.ClientOpID)
+	var sale domain.Sale
+	var err error
+	if len(in.Products) == 0 {
+		// Venta SIN productos: el camino de siempre, byte por byte.
+		sale, err = h.Sales.RegisterSaleForClient(actor, salonID, in.ProfessionalID, in.ClientName, in.ClientID, items, domain.PaymentMethod(in.Method), in.ClientOpID)
+	} else {
+		products := make([]domain.SaleProduct, 0, len(in.Products))
+		for _, p := range in.Products {
+			products = append(products, domain.SaleProduct{ProductID: p.ProductID, Qty: p.Qty})
+		}
+		sale, err = h.Sales.RegisterSaleWithProducts(actor, salonID, in.ProfessionalID, in.ClientName, in.ClientID, items, products, domain.PaymentMethod(in.Method), in.ClientOpID)
+	}
 	if err != nil {
 		respondErr(c, err)
 		return

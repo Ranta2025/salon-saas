@@ -121,7 +121,11 @@ type PayrollSales struct{ Pool *pgxpool.Pool }
 func commissionTotals(ctx context.Context, q querier, salonID string, from, to time.Time, userID string) ([]domain.PayrollSalesTotal, error) {
 	rows, err := q.Query(ctx,
 		`WITH ventas AS (
-		   SELECT s.id, s.professional_id, s.total_cents
+		   -- F6/D6: la nómina ve SOLO la parte de servicios de una venta. Las
+		   -- líneas de producto no generan comisión y products_cents ya está
+		   -- descontado del total; para toda venta sin productos (todas las
+		   -- anteriores también) products_cents = 0 y el resultado es IDÉNTICO.
+		   SELECT s.id, s.professional_id, s.total_cents - s.products_cents AS total_cents
 		   FROM sales s
 		   WHERE s.salon_id=$1 AND s.created_at >= $2 AND s.created_at < $3
 		     AND ($4 = '' OR s.professional_id = $4)
