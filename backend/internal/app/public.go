@@ -16,6 +16,16 @@ type PublicSalon struct {
 	// muestra "Cerrado" en los días que no están acá. Sin horario propio son los
 	// 7 días de la ventana única de /settings.
 	Hours []domain.WeekdayHours
+	// F16 (D4): lo que la web pública muestra del perfil del salón, sin que nada
+	// de lo anterior cambie. Timezone sale de /settings.
+	Profile  domain.SalonProfile
+	Timezone string
+	// Team: solo quienes atienden clientes y siguen activas; sin email, pagos ni ids.
+	Team []domain.StaffMember
+	// Gallery con la URL pública de cada foto (D3).
+	Gallery []GalleryPhoto
+	// Packages: el catálogo F8 ACTIVO cuyo servicio sigue activo.
+	Packages []domain.ServicePackage
 }
 
 type PublicSalonService struct {
@@ -24,22 +34,34 @@ type PublicSalonService struct {
 	// Settings y Hours dan la ventana única y el horario semanal (F2d1).
 	Settings ports.SalonSettingsRepository
 	Hours    ports.WeeklyHoursRepository
+	// F16 (D4). Todos opcionales: nil = esa sección sale vacía (y, sin
+	// Professionals, la carta no se filtra por profesional: solo tests; el
+	// composition root los cablea a todos).
+	Profiles ports.SalonProfileRepository
+	// Staff da el equipo que atiende (ListStaff: activas y reservables).
+	Staff ports.StaffLister
+	// Professionals es el filtro F2c de la carta: la MISMA regla que usa la
+	// disponibilidad (ListProfessionalsFor).
+	Professionals ports.ProfessionalServiceRepository
+	Gallery       ports.SalonGalleryRepository
+	Packages      ports.PackageRepository
 }
 
-// Public resuelve el salón por slug y devuelve sus servicios activos.
-// Es la única query sin scope de membership a propósito: el slug ES la
-// credencial pública, y solo expone lo que ya está en la vidriera.
+// Public resuelve el salón por slug y devuelve su vidriera. Es la única query
+// sin scope de membership a propósito: el slug ES la credencial pública, y solo
+// expone lo que el negocio quiere mostrar (F16, D4).
 func (s PublicSalonService) Public(slug string) (PublicSalon, error) {
 	salon, err := s.Salons.FindBySlug(slug)
 	if err != nil {
 		return PublicSalon{}, err
 	}
-	services, err := s.Services.List(salon.ID, false)
+	active, err := s.Services.List(salon.ID, false)
 	if err != nil {
 		return PublicSalon{}, err
 	}
-	if services == nil {
-		services = []domain.Service{}
+	services, err := s.offeredServices(salon.ID, active)
+	if err != nil {
+		return PublicSalon{}, err
 	}
 	// Horario visible: las filas propias o, si el salón nunca configuró días, la
 	// ventana única expandida a la semana (lo que hoy se mostraba como texto
@@ -48,13 +70,90 @@ func (s PublicSalonService) Public(slug string) (PublicSalon, error) {
 	if err != nil {
 		return PublicSalon{}, err
 	}
+	settings, err := loadSalonSettings(s.Settings, salon.ID)
+	if err != nil {
+		return PublicSalon{}, err
+	}
 	hours := weekly.Days()
 	if !weekly.Custom() {
-		settings, err := loadSalonSettings(s.Settings, salon.ID)
+		hours = expandedDays(settings)
+	}
+	out := PublicSalon{Salon: salon, Services: services, Hours: hours, Timezone: settings.Timezone,
+		Team: []domain.StaffMember{}, Gallery: []GalleryPhoto{}, Packages: []domain.ServicePackage{},
+		Profile: domain.SalonProfile{SalonID: salon.ID, Slug: salon.Slug, Name: salon.Name}}
+	if s.Profiles != nil {
+		profile, err := s.Profiles.Profile(salon.ID)
 		if err != nil {
 			return PublicSalon{}, err
 		}
-		hours = expandedDays(settings)
+		out.Profile = profile
 	}
-	return PublicSalon{Salon: salon, Services: services, Hours: hours}, nil
+	if s.Staff != nil {
+		staff, err := s.Staff.ListStaff(salon.ID)
+		if err != nil {
+			return PublicSalon{}, err
+		}
+		for _, m := range staff {
+			// Solo quien atiende clientes: recepción o un dueño sin la marca no
+			// son «el equipo» de cara a la clienta.
+			if m.Bookable() {
+				out.Team = append(out.Team, m)
+			}
+		}
+	}
+	if s.Gallery != nil {
+		photos, err := s.Gallery.List(salon.ID)
+		if err != nil {
+			return PublicSalon{}, err
+		}
+		for _, p := range photos {
+			out.Gallery = append(out.Gallery, withURL(salon.Slug, p))
+		}
+	}
+	if s.Packages != nil {
+		packages, err := s.Packages.List(salon.ID)
+		if err != nil {
+			return PublicSalon{}, err
+		}
+		// Servicio activo: el mismo conjunto de servicios activos del salón (la
+		// compra sigue siendo del personal; acá solo se muestra el catálogo).
+		activeIDs := make(map[string]bool, len(active))
+		for _, svc := range active {
+			activeIDs[svc.ID] = true
+		}
+		for _, p := range packages {
+			if p.Active && activeIDs[p.ServiceID] {
+				out.Packages = append(out.Packages, p)
+			}
+		}
+	}
+	return out, nil
+}
+
+// offeredServices aplica el filtro de la carta pública (F16, D4): solo los
+// servicios activos que al menos UNA profesional activa y reservable hace. Usa la
+// MISMA consulta que la disponibilidad (ListProfessionalsFor, F2c): así la carta
+// y los horarios no pueden divergir. Sin Professionals no se filtra.
+func (s PublicSalonService) offeredServices(salonID string, active []domain.Service) ([]domain.Service, error) {
+	out := make([]domain.Service, 0, len(active))
+	for _, svc := range active {
+		if s.Professionals != nil {
+			who, err := s.Professionals.ListProfessionalsFor(salonID, svc.ID)
+			if err != nil {
+				return nil, err
+			}
+			offered := false
+			for _, m := range who {
+				if m.Bookable() {
+					offered = true
+					break
+				}
+			}
+			if !offered {
+				continue
+			}
+		}
+		out = append(out, svc)
+	}
+	return out, nil
 }

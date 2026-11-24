@@ -20,6 +20,9 @@ type Service struct {
 	// duración (F2e, S-F2e-1). Vacío = el servicio no necesita equipo y se
 	// comporta como antes de F2e.
 	ResourceTypeID string
+	// Description es el texto opcional que ve la clienta en la web pública (F16,
+	// D2). Vacío = sin descripción (la columna es NULL).
+	Description string
 }
 
 // NewService valida y crea un servicio activo.
@@ -77,4 +80,15 @@ func validateServiceFields(salonID, name string, durationMin, priceCents, commis
 		return "", fmt.Errorf("%w: la comisión debe estar entre 0 y 100", ErrValidation)
 	}
 	return name, nil
+}
+
+// WithDescription devuelve el servicio con la descripción validada (F16, D2).
+// Vacía = sin descripción.
+func (s Service) WithDescription(description string) (Service, error) {
+	clean, err := ValidateServiceDescription(description)
+	if err != nil {
+		return Service{}, err
+	}
+	s.Description = clean
+	return s, nil
 }

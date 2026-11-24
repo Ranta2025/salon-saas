@@ -32,11 +32,21 @@ const maxProfessionalIDs = 50
 // profesionales, que tienen que ser reservables de ESTE salón. Todos los ids se
 // validan antes de guardar nada: un alta rechazada no deja el servicio creado.
 func (s ServiceService) Create(actor domain.Membership, salonID, name string, durationMin, priceCents, commissionPct int, professionalIDs []string, resourceTypeID string) (domain.Service, error) {
+	return s.CreateDescribed(actor, salonID, name, durationMin, priceCents, commissionPct, professionalIDs, resourceTypeID, "")
+}
+
+// CreateDescribed es el alta con la descripción opcional que ve la clienta en la
+// web pública (F16, D2): vacía = el servicio nace sin descripción. Create
+// conserva su firma y su comportamiento.
+func (s ServiceService) CreateDescribed(actor domain.Membership, salonID, name string, durationMin, priceCents, commissionPct int, professionalIDs []string, resourceTypeID, description string) (domain.Service, error) {
 	if _, err := s.manager(actor, salonID); err != nil {
 		return domain.Service{}, err
 	}
 	svc, err := domain.NewService(salonID, name, durationMin, priceCents, commissionPct)
 	if err != nil {
+		return domain.Service{}, err
+	}
+	if svc, err = svc.WithDescription(description); err != nil {
 		return domain.Service{}, err
 	}
 	if err := s.ensureFreeName(salonID, svc.Name, ""); err != nil {
@@ -97,6 +107,13 @@ func (s ServiceService) bookableProfessionals(salonID string, professionalIDs []
 
 // Update cambia nombre, duración, precio, comisión y estado. Solo owner/admin.
 func (s ServiceService) Update(actor domain.Membership, salonID, serviceID, name string, durationMin, priceCents, commissionPct int, active bool, resourceTypeID string) (domain.Service, error) {
+	return s.UpdateDescribed(actor, salonID, serviceID, name, durationMin, priceCents, commissionPct, active, resourceTypeID, nil)
+}
+
+// UpdateDescribed es la edición con la descripción opcional (F16, D2): nil =
+// la clave no vino y la descripción actual se CONSERVA (un cliente anterior a
+// F16 no la borra sin querer); un puntero a "" la quita; con texto, la reemplaza.
+func (s ServiceService) UpdateDescribed(actor domain.Membership, salonID, serviceID, name string, durationMin, priceCents, commissionPct int, active bool, resourceTypeID string, description *string) (domain.Service, error) {
 	if _, err := s.manager(actor, salonID); err != nil {
 		return domain.Service{}, err
 	}
@@ -107,6 +124,11 @@ func (s ServiceService) Update(actor domain.Membership, salonID, serviceID, name
 	updated, err := current.WithDetails(name, durationMin, priceCents, commissionPct, active)
 	if err != nil {
 		return domain.Service{}, err
+	}
+	if description != nil {
+		if updated, err = updated.WithDescription(*description); err != nil {
+			return domain.Service{}, err
+		}
 	}
 	if err := s.ensureFreeName(salonID, updated.Name, updated.ID); err != nil {
 		return domain.Service{}, err
