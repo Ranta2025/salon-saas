@@ -52,6 +52,9 @@ type PublicBookingService struct {
 	// Clients deja la ficha del visitante cuando la reserva entra (E-03). Es
 	// opcional como los avisos: nil = este entorno no lleva fichas.
 	Clients ports.ClientRepository
+	// ClientLinks vincula el turno con ESA ficha después de guardarlo (F5,
+	// D3-a). Best-effort: nil o un fallo del UPDATE no tumba la reserva.
+	ClientLinks ports.ClientLinkRepository
 	// Opcionales: nil = no avisa (tests sin infraestructura).
 	Events   ports.EventPublisher
 	Notifier Notifier
@@ -266,7 +269,13 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 	// La ficha del visitante se escribe DESPUÉS de la reserva y no puede
 	// tumbarla: el turno es lo que la persona pidió (E-03). Si falla, queda el
 	// detalle en el log y la ficha se puede crear a mano desde el mostrador.
-	s.upsertClient(salon.ID, b.ClientName, b.ClientPhone)
+	// El turno se vincula con ESA ficha (nueva o reusada) por id (F5, D3-a): el
+	// vínculo es un UPDATE aparte y también best-effort.
+	if clientID := s.upsertClient(salon.ID, b.ClientName, b.ClientPhone); clientID != "" && s.ClientLinks != nil {
+		if err := s.ClientLinks.LinkBookingByID(salon.ID, b.ID, clientID); err != nil {
+			log.Printf("reserva pública: vincular la ficha del turno %s en el salón %s: %v", b.ID, salon.ID, err)
+		}
+	}
 
 	// La dirección para la confirmación y el recordatorio. Best-effort igual
 	// que la ficha: si la DB falla, el turno ya entró y la confirmación se
@@ -318,32 +327,38 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 // Si la ficha ya existe no se toca: la del mostrador puede tener notas, fotos y
 // un nombre corregido a mano que una reserva desde la web no tiene por qué
 // pisar. Best-effort a propósito: la reserva ya entró.
-func (s PublicBookingService) upsertClient(salonID, name, phone string) {
+// Devuelve el id de la ficha (la reusada o la nueva) o "" si no se pudo: es lo
+// que el vínculo del turno (D3-a) necesita, y no cambia ninguna de las búsquedas
+// que ya existían.
+func (s PublicBookingService) upsertClient(salonID, name, phone string) string {
 	if s.Clients == nil {
-		return
+		return ""
 	}
 	phoneNorm := domain.NormalizePhone(phone)
+	var found domain.Client
 	var err error
 	if phoneNorm != "" {
-		_, err = s.Clients.FindByPhone(salonID, phoneNorm)
+		found, err = s.Clients.FindByPhone(salonID, phoneNorm)
 	} else {
-		_, err = s.Clients.FindByName(salonID, strings.TrimSpace(name))
+		found, err = s.Clients.FindByName(salonID, strings.TrimSpace(name))
 	}
 	switch {
 	case err == nil:
-		return // ya tiene ficha
+		return found.ID // ya tiene ficha
 	case !errors.Is(err, domain.ErrNotFound):
 		log.Printf("reserva pública: buscar ficha en el salón %s: %v", salonID, err)
-		return
+		return ""
 	}
 	c, err := domain.NewClient(salonID, name, phone, "", "")
 	if err != nil {
 		log.Printf("reserva pública: ficha inválida en el salón %s: %v", salonID, err)
-		return
+		return ""
 	}
 	if err := s.Clients.Save(c); err != nil {
 		log.Printf("reserva pública: guardar ficha en el salón %s: %v", salonID, err)
+		return ""
 	}
+	return c.ID
 }
 
 // maxBookingAttempts es cuántas veces se reintenta un par (profesional, unidad)

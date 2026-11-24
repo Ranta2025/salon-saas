@@ -6,6 +6,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -19,6 +20,11 @@ type SaleService struct {
 	Memberships ports.MembershipRepository
 	// Events es opcional (nil = no avisa): la venta no depende del realtime.
 	Events ports.EventPublisher
+	// Clients resuelve la ficha elegida en el POS (F5, D3-c): tiene que ser de
+	// ESTE salón. ClientLinks escribe el vínculo después de guardar la venta,
+	// best-effort (un fallo no tumba la venta).
+	Clients     ports.ClientRepository
+	ClientLinks ports.ClientLinkRepository
 }
 
 // puedeVender: recepción y quien administra (el profesional cobra en caja...
@@ -41,6 +47,15 @@ func (s SaleService) RegisterSale(actor domain.Membership, salonID, professional
 	return s.RegisterSaleWithOp(actor, salonID, professionalID, clientName, items, method, "")
 }
 
+// RegisterSaleForClient es la venta del POS con la ficha elegida a mano (F5,
+// D3-c). clientID vacío = la venta de siempre, sin vínculo (no se infiere por
+// nombre). Una ficha de otro salón es 400 «Ficha de clienta inválida» y la venta
+// NO se guarda; el nombre de la venta se completa con el de la ficha si vino
+// vacío.
+func (s SaleService) RegisterSaleForClient(actor domain.Membership, salonID, professionalID, clientName, clientID string, items []domain.SaleItem, method domain.PaymentMethod, clientOpID string) (domain.Sale, error) {
+	return s.register(actor, salonID, professionalID, clientName, clientID, items, method, clientOpID)
+}
+
 // RegisterSaleWithOp registra la venta con un operation id del cliente.
 // Idempotente: si esa operación ya existe en este salón, devuelve la venta
 // original (mismo id y mismo total) en vez de crear otra. Es lo que evita que
@@ -53,12 +68,31 @@ func (s SaleService) RegisterSale(actor domain.Membership, salonID, professional
 //  4. el profesional atiende en el salón (B-12);
 //  5. precio desde el catálogo y servicio activo (B-04).
 func (s SaleService) RegisterSaleWithOp(actor domain.Membership, salonID, professionalID, clientName string, items []domain.SaleItem, method domain.PaymentMethod, clientOpID string) (domain.Sale, error) {
+	return s.register(actor, salonID, professionalID, clientName, "", items, method, clientOpID)
+}
+
+// register es el cuerpo común de las ventas. El replay devuelve la venta
+// original ANTES de guardar, así que nunca vuelve a tocar su vínculo (D3-d).
+func (s SaleService) register(actor domain.Membership, salonID, professionalID, clientName, clientID string, items []domain.SaleItem, method domain.PaymentMethod, clientOpID string) (domain.Sale, error) {
 	m, err := s.member(actor, salonID)
 	if err != nil {
 		return domain.Sale{}, err
 	}
 	if !puedeVender(m) {
 		return domain.Sale{}, domain.ErrForbidden
+	}
+	// (1.b) La ficha del POS (F5): tiene que existir EN ESTE salón. Se lee antes
+	// de validar la venta porque, si client_name vino vacío, el nombre de la
+	// ficha es parte del pedido. Un id de otro tenant no se puede vincular.
+	clientID = strings.TrimSpace(clientID)
+	if clientID != "" {
+		client, err := s.lookupClient(salonID, clientID)
+		if err != nil {
+			return domain.Sale{}, err
+		}
+		if strings.TrimSpace(clientName) == "" {
+			clientName = client.Name
+		}
 	}
 	// (2) El pedido se valida tal como llegó: un precio manipulado fuera de
 	// rango se rechaza con 400 en vez de "corregirse" en silencio.
@@ -116,6 +150,13 @@ func (s SaleService) RegisterSaleWithOp(actor domain.Membership, salonID, profes
 		}
 		return domain.Sale{}, err
 	}
+	// D3-c: la venta se vincula con la ficha ELEGIDA (solo si vino client_id).
+	// Best-effort, igual que el turno: un fallo del UPDATE no deshace la venta.
+	if clientID != "" && s.ClientLinks != nil {
+		if err := s.ClientLinks.LinkSaleByID(salonID, sale.ID, clientID); err != nil {
+			log.Printf("venta %s: vincular la ficha en el salón %s: %v", sale.ID, salonID, err)
+		}
+	}
 	// El total que viaja acá es el que calculó el dominio, no el del cliente.
 	publish(s.Events, ports.Event{
 		Type:    "sale.created",
@@ -130,6 +171,22 @@ func (s SaleService) RegisterSaleWithOp(actor domain.Membership, salonID, profes
 		TS: sale.CreatedAt,
 	})
 	return sale, nil
+}
+
+// lookupClient resuelve la ficha del POS con el scope del salón: otro tenant es
+// el 400 del contrato (no un 404, porque lo que se está creando es la venta).
+func (s SaleService) lookupClient(salonID, clientID string) (domain.Client, error) {
+	if s.Clients == nil {
+		return domain.Client{}, domain.NewMessage(domain.ErrValidation, domain.MsgSaleClientInvalid)
+	}
+	c, err := s.Clients.FindByID(salonID, clientID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.Client{}, domain.NewMessage(domain.ErrValidation, domain.MsgSaleClientInvalid)
+		}
+		return domain.Client{}, err
+	}
+	return c, nil
 }
 
 // ListSales trae las ventas del salón en [from,to). Solo quien puede ver la plata.

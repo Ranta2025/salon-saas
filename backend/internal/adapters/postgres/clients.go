@@ -11,11 +11,11 @@ import (
 // (y por client_id cuando aplica): el id de otro tenant no existe.
 type Clients struct{ Pool *pgxpool.Pool }
 
-const clientColumns = `id,salon_id,name,phone,email,notes,created_at`
+const clientColumns = `id,salon_id,name,phone,email,notes,allergies,created_at`
 
 func scanClient(scan func(...interface{}) error) (domain.Client, error) {
 	var c domain.Client
-	if err := scan(&c.ID, &c.SalonID, &c.Name, &c.Phone, &c.Email, &c.Notes, &c.CreatedAt); err != nil {
+	if err := scan(&c.ID, &c.SalonID, &c.Name, &c.Phone, &c.Email, &c.Notes, &c.Allergies, &c.CreatedAt); err != nil {
 		return domain.Client{}, err
 	}
 	c.CreatedAt = c.CreatedAt.UTC()
@@ -24,11 +24,11 @@ func scanClient(scan func(...interface{}) error) (domain.Client, error) {
 
 func (r Clients) Save(c domain.Client) error {
 	_, err := r.Pool.Exec(context.Background(),
-		`INSERT INTO clients(id,salon_id,name,phone,email,notes,created_at)
-		 VALUES($1,$2,$3,$4,$5,$6,$7)
+		`INSERT INTO clients(id,salon_id,name,phone,email,notes,allergies,created_at)
+		 VALUES($1,$2,$3,$4,$5,$6,$7,$8)
 		 ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, phone=EXCLUDED.phone,
-		   email=EXCLUDED.email, notes=EXCLUDED.notes`,
-		c.ID, c.SalonID, c.Name, c.Phone, c.Email, c.Notes, c.CreatedAt)
+		   email=EXCLUDED.email, notes=EXCLUDED.notes, allergies=EXCLUDED.allergies`,
+		c.ID, c.SalonID, c.Name, c.Phone, c.Email, c.Notes, c.Allergies, c.CreatedAt)
 	return pgError(err)
 }
 

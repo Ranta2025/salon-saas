@@ -238,6 +238,13 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	// que usa MaxJSONBody para saber que la ruta tiene tope de body propio.
 	authed.GET("/salons/:id/clients", d.Clients.List)
 	authed.POST("/salons/:id/clients", d.Clients.Create)
+	// F5: la ficha por id y su historial. GET lo ve cualquier miembro activo; el
+	// PUT solo owner/admin/recepción (la autorización vive en el caso de uso) y
+	// el DINERO del historial solo quien puede ver la plata. Una ficha de otro
+	// salón es 404 «Ficha no encontrada».
+	authed.GET("/salons/:id/clients/:cid", d.Clients.Get)
+	authed.PUT("/salons/:id/clients/:cid", d.Clients.Update)
+	authed.GET("/salons/:id/clients/:cid/history", d.Clients.ClientHistory)
 	r.POST(routePhotoUpload, AuthMiddleware(d.TokenIssuer), d.Clients.AddPhoto)
 	authed.GET("/salons/:id/clients/:cid/photos", d.Clients.ListPhotos)
 	authed.DELETE("/salons/:id/clients/:cid/photos/:pid", d.Clients.DeletePhoto)

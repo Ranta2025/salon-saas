@@ -145,6 +145,10 @@ func (h SaleHandler) loadActor(c *gin.Context, salonID string) (domain.Membershi
 	return m, true
 }
 
+// linkedClientID refleja lo que se pidió vincular: el caso de uso ya validó que
+// la ficha es del salón; sin client_id la venta no tiene vínculo ("").
+func linkedClientID(clientID string) string { return clientID }
+
 func saleJSON(s domain.Sale) gin.H {
 	items := make([]gin.H, 0, len(s.Items))
 	for _, it := range s.Items {
@@ -177,6 +181,10 @@ func (h SaleHandler) Create(c *gin.Context) {
 		ProfessionalID string `json:"professional_id"`
 		ClientName     string `json:"client_name"`
 		Method         string `json:"method"`
+		// ClientID es la ficha elegida en el POS (F5, D3-c): opcional. Si viene,
+		// tiene que ser del salón (si no, 400 «Ficha de clienta inválida») y el
+		// nombre vacío se completa con el de la ficha. Sin él no hay vínculo.
+		ClientID string `json:"client_id"`
 		// ClientOpID es opcional: lo manda la cola offline para idempotencia.
 		ClientOpID string `json:"client_op_id"`
 		Items      []struct {
@@ -197,12 +205,13 @@ func (h SaleHandler) Create(c *gin.Context) {
 			UnitPriceCents: it.UnitPriceCents,
 		})
 	}
-	sale, err := h.Sales.RegisterSaleWithOp(actor, salonID, in.ProfessionalID, in.ClientName, items, domain.PaymentMethod(in.Method), in.ClientOpID)
+	sale, err := h.Sales.RegisterSaleForClient(actor, salonID, in.ProfessionalID, in.ClientName, in.ClientID, items, domain.PaymentMethod(in.Method), in.ClientOpID)
 	if err != nil {
 		respondErr(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"sale_id": sale.ID, "total": sale.TotalCents})
+	// client_id viaja en la respuesta ("" si la venta no quedó vinculada).
+	c.JSON(http.StatusCreated, gin.H{"sale_id": sale.ID, "total": sale.TotalCents, "client_id": linkedClientID(in.ClientID)})
 }
 
 // List: GET /salons/:id/sales?from=&to= (por defecto, hoy UTC)

@@ -25,6 +25,10 @@ type ClientHandler struct {
 	// Photos firma la url de cada foto con vencimiento (24 h). Sin firma válida
 	// el streaming responde 403: la capability ya no es solo el id aleatorio.
 	Photos ports.PhotoURLSigner
+	// History es el historial de la clienta (F5, D6): visitas, turnos y —solo
+	// para quien puede ver la plata— gasto y ventas. La autorización vive en el
+	// caso de uso.
+	History app.ClientHistoryService
 }
 
 // photoURLTTL es el vencimiento de la url firmada.
@@ -46,12 +50,14 @@ func (h ClientHandler) loadActor(c *gin.Context, salonID string) (domain.Members
 // clientJSON es la forma única de serializar una ficha.
 func clientJSON(c domain.Client) gin.H {
 	return gin.H{
-		"id":         c.ID,
-		"salon_id":   c.SalonID,
-		"name":       c.Name,
-		"phone":      c.Phone,
-		"email":      c.Email,
-		"notes":      c.Notes,
+		"id":       c.ID,
+		"salon_id": c.SalonID,
+		"name":     c.Name,
+		"phone":    c.Phone,
+		"email":    c.Email,
+		"notes":    c.Notes,
+		// allergies (F5, D4): campo NUEVO en cada ficha; nada se quita ni cambia.
+		"allergies":  c.Allergies,
 		"created_at": c.CreatedAt.Format(time.RFC3339),
 	}
 }
@@ -94,12 +100,14 @@ func (h ClientHandler) Create(c *gin.Context) {
 		Phone string `json:"phone"`
 		Email string `json:"email"`
 		Notes string `json:"notes"`
+		// Allergies es opcional (F5, D5): sin la clave queda "".
+		Allergies string `json:"allergies"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		badBody(c)
 		return
 	}
-	client, err := h.Clients.Create(actor, salonID, in.Name, in.Phone, in.Email, in.Notes)
+	client, err := h.Clients.CreateWithAllergies(actor, salonID, in.Name, in.Phone, in.Email, in.Notes, in.Allergies)
 	if err != nil {
 		respondErr(c, err)
 		return

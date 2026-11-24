@@ -7,6 +7,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -29,6 +30,9 @@ type BookingService struct {
 	// sin servicio o sin unidad el turno se mueve como siempre.
 	Services  ports.ServiceRepository
 	Resources ports.ResourceRepository
+	// ClientLinks vincula el turno con la ficha por id o por teléfono (F5, D3-b).
+	// Best-effort: nil o un fallo del UPDATE no tumba el turno.
+	ClientLinks ports.ClientLinkRepository
 }
 
 // puedeAgendar: recepción y superiores agendan a cualquiera; el profesional solo a sí mismo.
@@ -89,6 +93,14 @@ func (s BookingService) CreateBookingWithOp(actor domain.Membership, salonID, pr
 			}
 		}
 		return domain.Booking{}, err
+	}
+	// D3-b: el turno se vincula a la ÚNICA ficha del salón cuyo teléfono
+	// normalizado coincide (nunca se crea una ficha desde acá). Best-effort: un
+	// fallo del UPDATE se loguea y el turno queda como está.
+	if s.ClientLinks != nil && strings.TrimSpace(b.ClientPhone) != "" {
+		if err := s.ClientLinks.LinkBookingByPhone(salonID, b.ID); err != nil {
+			log.Printf("turno %s: vincular la ficha en el salón %s: %v", b.ID, salonID, err)
+		}
 	}
 	// La agenda cambió: el calendario de los demás se actualiza solo.
 	publish(s.Events, ports.Event{

@@ -2358,3 +2358,77 @@ simultáneos con el mismo token (al cancelar y al reprogramar) con exactamente u
 `200`, un horario ocupado que no consume el token, dos reprogramaciones distintas
 al mismo hueco con un solo ganador y sin solape, el turno de otro salón, el enlace
 del recordatorio y el `CHECK` del hash.
+
+## F5: historial de la clienta, alergias y vínculo por id (fase 6)
+
+Un dato de salud (`allergies`) y el dinero de la clienta (`spend`/`sales`) son
+información sensible: los permisos de esta sección son parte del contrato.
+
+### Ficha
+
+- `POST /salons/:id/clients` acepta `allergies` **opcional** (por defecto `""`).
+  `GET /salons/:id/clients` agrega `allergies` a cada ficha (campo nuevo: nada se
+  quita ni cambia). El export CSV de clientes (F4) **no** cambia.
+- `GET /salons/:id/clients/:cid` → 200 `{"id","salon_id","name","phone","email","notes","allergies","created_at"}`.
+  Lo lee **cualquier miembro activo** (la misma regla del listado). Una ficha de
+  otro salón es `404 {"error":"Ficha no encontrada"}`.
+- `PUT /salons/:id/clients/:cid` **reemplaza** los cinco campos
+  `{name, phone, email, notes, allergies}` (email, notas y alergias pueden ser
+  `""`). Solo owner/admin/recepción; el resto `403 {"error":"sin permiso"}`.
+  - Faltó una clave: `400 {"error":"Faltan datos de la ficha: nombre, teléfono, email, notas y alergias"}`.
+  - Alergias de más de 500 caracteres: `400 {"error":"Las alergias no pueden superar los 500 caracteres"}`.
+  - Un NUL en cualquiera de los cinco campos: `400 {"error":"La ficha tiene caracteres no válidos"}`.
+  - Las demás validaciones son las del alta (nombre ≤ 120, teléfono ≤ 40, email
+    válido o vacío, notas ≤ 2000). Un `400` **no escribe nada**.
+
+### Historial
+
+`GET /salons/:id/clients/:cid/history` → 200:
+
+```json
+{"client_id":"c_...",
+ "summary":{"visits":4,"no_shows":1,"cancelled":2,"upcoming":1,
+            "last_visit":"2026-03-07"|null,"next_visit":"2026-03-20T16:00:00Z"|null,
+            "timezone":"America/Mexico_City"},
+ "bookings":[{"id","starts_at","status","service_name","professional_name"}],
+ "spend":null|{"sales_count":2,"total_cents":123400},
+ "sales":null|[{"id","created_at","total_cents","method"}]}
+```
+
+- Visita = turno `done`; `no_shows`, `cancelled` y `upcoming` (`booked` futuros)
+  son conteos del mismo cliente.
+- `last_visit` es el día **LOCAL** del salón del turno `done` más reciente;
+  `next_visit` es el próximo `booked` futuro en RFC3339.
+- `spend.total_cents` suma **solo** las ventas vinculadas (`sales.client_id`): el
+  gasto anterior a F5 no se atribuye. Cada lista tiene `LIMIT 20`, más reciente
+  primero.
+- Lo lee cualquier miembro activo. El dinero (`spend` y `sales`) solo
+  owner/admin/recepción; para un profesional y para el rol cliente vienen en
+  **`null`**. Ficha inexistente o de otro salón: `404 {"error":"Ficha no encontrada"}`.
+
+### POS
+
+`POST /salons/:id/sales` acepta `client_id` **opcional**. Si viene, tiene que ser
+una ficha del mismo salón: si no, `400 {"error":"Ficha de clienta inválida"}` y la
+venta **no se guarda**. Si `client_name` viene vacío se completa con el nombre de
+la ficha. Sin `client_id` no hay vínculo (no se infiere por nombre). La respuesta
+agrega `client_id` (`""` si no hay). El replay por `client_op_id` devuelve la
+venta original sin tocar su vínculo.
+
+Los turnos se vinculan solos, con un `UPDATE` aparte **best-effort** (un fallo se
+loguea y nunca tumba el turno ni la venta): la reserva pública con la ficha que
+crea o reusa, el turno del personal con la **única** ficha cuyo teléfono
+normalizado coincide (nunca crea una ficha). Un cambio de teléfono **no**
+desvincula.
+
+### Migración `028_client_links.sql`
+
+- `clients.allergies TEXT NOT NULL DEFAULT ''` + `CHECK (char_length(allergies) <= 500)`.
+  Sin relleno desde `notes`.
+- `bookings.client_id` y `sales.client_id` (`TEXT NULL`, FK a `clients(id)
+  ON DELETE SET NULL`) con índice parcial `(salon_id, client_id) WHERE client_id
+  IS NOT NULL`.
+- Relleno **acotado** (solo turnos): el teléfono normalizado (solo dígitos, no
+  vacío) coincide con **exactamente una** ficha del mismo salón; los ambiguos o
+  sin coincidencia quedan en `NULL`. No toca filas que ya tienen `client_id` y no
+  rellena ventas. Idempotente: una segunda pasada no cambia nada.

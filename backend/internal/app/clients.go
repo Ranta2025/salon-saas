@@ -4,6 +4,7 @@
 package app
 
 import (
+	"errors"
 	"strings"
 
 	"salon-saas/internal/domain"
@@ -27,10 +28,16 @@ func puedeGestionarClientes(m domain.Membership) bool {
 // Create abre la ficha de un cliente del salón. El email es opcional y se
 // guarda normalizado (minúsculas, sin espacios), igual que el del login.
 func (s ClientService) Create(actor domain.Membership, salonID, name, phone, email, notes string) (domain.Client, error) {
+	return s.CreateWithAllergies(actor, salonID, name, phone, email, notes, "")
+}
+
+// CreateWithAllergies es el alta con alergias opcionales (F5, D5): la función
+// nueva existe para que Create conserve su firma y su comportamiento (D8).
+func (s ClientService) CreateWithAllergies(actor domain.Membership, salonID, name, phone, email, notes, allergies string) (domain.Client, error) {
 	if _, err := s.manager(actor, salonID); err != nil {
 		return domain.Client{}, err
 	}
-	c, err := domain.NewClient(salonID, name, phone, email, notes)
+	c, err := domain.NewClientWithAllergies(salonID, name, phone, email, notes, allergies)
 	if err != nil {
 		return domain.Client{}, err
 	}
@@ -38,6 +45,51 @@ func (s ClientService) Create(actor domain.Membership, salonID, name, phone, ema
 		return domain.Client{}, err
 	}
 	return c, nil
+}
+
+// Get resuelve UNA ficha del salón (F5, D5). La lee cualquier miembro activo,
+// igual que el listado (H22-c): en el mostrador todos atienden al cliente. Una
+// ficha de otro salón es el 404 genérico, sin distinguir de una inexistente.
+func (s ClientService) Get(actor domain.Membership, salonID, clientID string) (domain.Client, error) {
+	if _, err := s.member(actor, salonID); err != nil {
+		return domain.Client{}, err
+	}
+	c, err := s.Clients.FindByID(salonID, clientID)
+	if err != nil {
+		return domain.Client{}, clientError(err)
+	}
+	return c, nil
+}
+
+// Update REEMPLAZA los cinco campos editables de la ficha (PUT, D5). Solo
+// owner/admin/recepción (la misma regla que crear fichas). Valida ANTES de
+// escribir: un 400 no cambia nada, ni siquiera los campos que sí venían bien.
+func (s ClientService) Update(actor domain.Membership, salonID, clientID, name, phone, email, notes, allergies string) (domain.Client, error) {
+	if _, err := s.manager(actor, salonID); err != nil {
+		return domain.Client{}, err
+	}
+	c, err := s.Clients.FindByID(salonID, clientID)
+	if err != nil {
+		return domain.Client{}, clientError(err)
+	}
+	updated, err := c.Updated(name, phone, email, notes, allergies)
+	if err != nil {
+		return domain.Client{}, err
+	}
+	if err := s.Clients.Save(updated); err != nil {
+		return domain.Client{}, err
+	}
+	return updated, nil
+}
+
+// clientError traduce la falta de la ficha al mensaje del contrato F5: una
+// ficha de otro salón es «Ficha no encontrada» (404), nunca un 500 ni un 403
+// que confirme que existe.
+func clientError(err error) error {
+	if errors.Is(err, domain.ErrNotFound) {
+		return domain.NewMessage(domain.ErrNotFound, domain.MsgClientNotFound)
+	}
+	return err
 }
 
 // List trae las fichas del salón. Cualquier miembro puede leer.

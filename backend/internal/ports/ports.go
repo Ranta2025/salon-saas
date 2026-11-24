@@ -779,3 +779,35 @@ type ProfitRepository interface {
 	// aparece en los mapas: el reporte lo rellena con ceros.
 	DailyProfit(salonID, timezone string, from, to time.Time) (domain.ProfitData, error)
 }
+
+// --- Historial de la clienta y vínculos por id (F5 del contrato Fase 6) ---
+
+// ClientHistoryRepository: la LECTURA del historial (D6). Todo sale de UNA
+// transacción REPEATABLE READ de solo lectura con tope de 25 s en el adaptador,
+// así la foto es una sola: un turno que se marca hecho a mitad de camino no
+// puede entrar en los conteos y no en la lista.
+//
+// `now` lo decide el caso de uso (los próximos son los `booked` con starts_at >
+// now) y `limit` acota CADA lista (más reciente primero). Las queries van
+// scopeadas por salon_id Y client_id: el historial de otra ficha no existe.
+type ClientHistoryRepository interface {
+	History(salonID, clientID string, now time.Time, limit int) (domain.ClientHistoryData, error)
+}
+
+// ClientLinkRepository: el UPDATE aparte que vincula un turno o una venta con la
+// ficha (D1/D3). NO es parte del INSERT: es best-effort, un fallo se loguea y
+// nunca tumba el turno ni la venta.
+//
+// Todas las escrituras van scopeadas por salon_id: la ficha de otro salón no se
+// vincula (el EXISTS de la query es la garantía dura, no solo el caso de uso).
+type ClientLinkRepository interface {
+	// LinkBookingByID vincula el turno con ESA ficha (misma ficha que ya creó o
+	// reusó la reserva pública).
+	LinkBookingByID(salonID, bookingID, clientID string) error
+	// LinkBookingByPhone vincula el turno del personal con la ÚNICA ficha del
+	// salón cuyo teléfono normalizado coincide: sin coincidencia o con dos
+	// candidatas no toca nada (nunca crea una ficha, D3-b).
+	LinkBookingByPhone(salonID, bookingID string) error
+	// LinkSaleByID vincula la venta del POS con la ficha elegida a mano (D3-c).
+	LinkSaleByID(salonID, saleID, clientID string) error
+}

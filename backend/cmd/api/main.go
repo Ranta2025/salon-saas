@@ -216,18 +216,26 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	photoSigner := security.NewPhotoSigner(cfg.JWTSecret)
 
 	// Settings: los avisos de turno se formatean en la zona horaria del salón.
+	// F5: el vínculo de turnos/ventas con la ficha es un UPDATE aparte (D1), y
+	// el historial se lee en UNA transacción REPEATABLE READ con tope de 25 s.
+	clientLinks := pgstore.ClientLinks{Pool: pool}
+	clientHistoryRepo := pgstore.ClientHistory{Pool: pool}
+	clientsRepo := pgstore.Clients{Pool: pool}
 	bookSvc := app.BookingService{
 		Bookings: bookings, Memberships: mems, Settings: salons, Events: hub, Notifier: notifSvc,
 		Services: servicesRepo, Resources: resourceRepo,
+		ClientLinks: clientLinks,
 	}
-	clientsRepo := pgstore.Clients{Pool: pool}
 	svcSvc := app.ServiceService{
 		Services: servicesRepo, Memberships: mems, Professionals: professionals, Resources: resourceRepo,
 	}
 	resourceSvc := app.ResourceService{
 		Resources: resourceRepo, Services: servicesRepo, Memberships: mems,
 	}
-	saleSvc := app.SaleService{Sales: salesRepo, Services: servicesRepo, Memberships: mems, Events: hub}
+	saleSvc := app.SaleService{
+		Sales: salesRepo, Services: servicesRepo, Memberships: mems, Events: hub,
+		Clients: clientsRepo, ClientLinks: clientLinks,
+	}
 	// Tx: el cierre corre en una transacción con advisory lock por salón (B-09).
 	// Settings: la ventana del cierre es el día LOCAL del salón (su zona), no UTC.
 	cashCloseSvc := app.CashCloseService{
@@ -240,6 +248,10 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Memberships: mems,
 		Photos:      store,                                      // filesystem local
 		Images:      imaging.WebP{MaxSide: domain.MaxPhotoSide}, // cwebp
+	}
+	clientHistorySvc := app.ClientHistoryService{
+		Clients: clientsRepo, Source: clientHistoryRepo,
+		Memberships: mems, Settings: salons,
 	}
 	meSvc := app.MeService{Users: users, Salons: salons, Members: mems}
 	staffSvc := app.StaffService{Staff: mems, Memberships: mems}
@@ -339,9 +351,10 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	publicBookingSvc := app.PublicBookingService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems, Bookings: bookings,
 		Professionals: professionals, Hours: weeklyHours, TimeOff: timeOffRepo,
-		Resources: resourceRepo, // el turno ocupa una unidad de equipo (F2e)
-		Clients:   clientsRepo,  // cada reserva pública deja la ficha de la clienta (E-03)
-		Events:    hub, Notifier: notifSvc,
+		Resources:   resourceRepo, // el turno ocupa una unidad de equipo (F2e)
+		Clients:     clientsRepo,  // cada reserva pública deja la ficha de la clienta (E-03)
+		ClientLinks: clientLinks,  // y el turno se vincula con ESA ficha (F5, D3-a)
+		Events:      hub, Notifier: notifSvc,
 		Mailer: mailer, Emails: bookingEmails,
 		// F1: un token nuevo por cada email enviado; solo para turnos con email.
 		Links: bookingLinks, AppURL: cfg.AppURL,
@@ -388,7 +401,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		CashCloses:    httpapi.CashCloseHandler{CashCloses: cashCloseSvc, Memberships: mems},
 		Dashboard:     httpapi.DashboardHandler{Dashboard: dashSvc, Memberships: mems},
 		Notifications: httpapi.NotificationHandler{Notifications: notifSvc, Memberships: mems},
-		Clients:       httpapi.ClientHandler{Clients: clientSvc, Memberships: mems, Photos: photoSigner},
+		Clients:       httpapi.ClientHandler{Clients: clientSvc, Memberships: mems, Photos: photoSigner, History: clientHistorySvc},
 		Me:            httpapi.MeHandler{Me: meSvc},
 		Staff:         httpapi.StaffHandler{Staff: staffSvc, Memberships: mems},
 		Public:        httpapi.PublicHandler{Public: publicSvc, Avail: availabilitySvc, Bookings: publicBookingSvc},

@@ -4,18 +4,23 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Client es la ficha de un cliente del salón: quién viene, cómo se le avisa y
 // qué conviene recordar (alergias, color usado, preferencias). Es del salón,
 // no del usuario: el cliente puede no tener cuenta en el sistema.
 type Client struct {
-	ID        string
-	SalonID   string
-	Name      string
-	Phone     string
-	Email     string
-	Notes     string
+	ID      string
+	SalonID string
+	Name    string
+	Phone   string
+	Email   string
+	Notes   string
+	// Allergies son las alergias declaradas por la clienta (F5, D4): un DATO DE
+	// SALUD que el profesional necesita ver al atender. Vive en su propia
+	// columna (no en Notes) para que se pueda mostrar destacado y limitar aparte.
+	Allergies string
 	CreatedAt time.Time
 }
 
@@ -55,6 +60,75 @@ func NewClient(salonID, name, phone, email, notes string) (Client, error) {
 		Notes:     notes,
 		CreatedAt: time.Now().UTC(),
 	}, nil
+}
+
+// NewClientWithAllergies es el alta con alergias (F5, D5). Es una función NUEVA
+// a propósito: NewClient conserva su firma y su comportamiento (D8), así que
+// ninguna llamada existente cambia de significado.
+func NewClientWithAllergies(salonID, name, phone, email, notes, allergies string) (Client, error) {
+	c, err := NewClient(salonID, name, phone, email, notes)
+	if err != nil {
+		return Client{}, err
+	}
+	return c.WithAllergies(allergies)
+}
+
+// WithAllergies valida y deja las alergias en la ficha. Se recortan (un espacio
+// de más no es dato de salud) y se miden en runes: 500 caracteres como máximo.
+// Un NUL no se puede guardar en un TEXT de Postgres (22021), así que se corta
+// acá con el 400 del contrato en vez de salir como un 500.
+func (c Client) WithAllergies(allergies string) (Client, error) {
+	allergies = strings.TrimSpace(allergies)
+	if strings.ContainsRune(allergies, 0) {
+		return Client{}, NewMessage(ErrValidation, MsgClientInvalidChars)
+	}
+	if utf8.RuneCountInString(allergies) > MaxTextAllergies {
+		return Client{}, NewMessage(ErrValidation, MsgClientAllergiesTooLong)
+	}
+	c.Allergies = allergies
+	return c, nil
+}
+
+// Updated devuelve la ficha con los CINCO campos editables reemplazados (PUT,
+// D5). No toca identidad, salón ni fecha de alta: es una corrección de la ficha,
+// no una ficha nueva. Se valida con las mismas reglas del alta (más alergias) y
+// un NUL en CUALQUIERA de los cinco campos es el 400 exacto del contrato: si
+// llega a Postgres, la respuesta sería un 500.
+func (c Client) Updated(name, phone, email, notes, allergies string) (Client, error) {
+	for _, field := range []string{name, phone, email, notes, allergies} {
+		if strings.ContainsRune(field, 0) {
+			return Client{}, NewMessage(ErrValidation, MsgClientInvalidChars)
+		}
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Client{}, fmt.Errorf("%w: el nombre del cliente es obligatorio", ErrValidation)
+	}
+	if err := validateText("el nombre del cliente", name, MaxTextName); err != nil {
+		return Client{}, err
+	}
+	phone = strings.TrimSpace(phone)
+	if err := validateText("el teléfono", phone, MaxTextPhone); err != nil {
+		return Client{}, err
+	}
+	normalizedEmail, err := NormalizeAndValidateEmail(email)
+	if err != nil {
+		return Client{}, err
+	}
+	notes = strings.TrimSpace(notes)
+	if err := validateText("las notas", notes, MaxTextNotes); err != nil {
+		return Client{}, err
+	}
+	allergies = strings.TrimSpace(allergies)
+	if utf8.RuneCountInString(allergies) > MaxTextAllergies {
+		return Client{}, NewMessage(ErrValidation, MsgClientAllergiesTooLong)
+	}
+	c.Name = name
+	c.Phone = phone
+	c.Email = normalizedEmail
+	c.Notes = notes
+	c.Allergies = allergies
+	return c, nil
 }
 
 // NormalizeAndValidateEmail normaliza (minúsculas, sin espacios) y valida un
