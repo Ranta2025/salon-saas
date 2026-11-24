@@ -21,6 +21,7 @@ import type { ClientPhoto } from '../types'
 import { useSalon } from './SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
 import { ClientHistorySection } from './components/ClientHistorySection'
+import { ClientPackagesSection } from './components/ClientPackagesSection'
 import { ClientRecordAllergies } from './components/ClientRecordAllergies'
 import { ClientRecordForm } from './components/ClientRecordForm'
 import { ClientRecordSummary } from './components/ClientRecordSummary'
@@ -256,6 +257,9 @@ export function ClientDetailPage() {
         onRetry={reload}
         canSeeMoney={canSeeClientMoney(role)}
       />
+
+      {/* F8: prepaid packages. Its own requests: a failure here never hides the file. */}
+      <ClientPackagesSection clientId={clientId} refreshKey={reloadKey} onSold={reload} />
 
       {record && canEdit ? (
         <ClientRecordForm

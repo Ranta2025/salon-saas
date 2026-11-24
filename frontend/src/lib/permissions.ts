@@ -83,6 +83,29 @@ export function canViewWaitlist(role: Role | null | undefined): boolean {
 }
 
 /**
+ * Prepaid packages (contract F8, D8/D10): owner, admin and reception read the
+ * catalog and the balances of a client, sell a package and take a session off it.
+ * A professional gets 403 from the server on every route (the answers carry prices
+ * and balances), so the page shows a notice and the menu entry stays hidden.
+ */
+export function canViewPackages(role: Role | null | undefined): boolean {
+  return isManager(role) || role === 'reception'
+}
+
+/** Creating and editing the catalog of packages: owner and admin only (D10). */
+export function canManagePackages(role: Role | null | undefined): boolean {
+  return isManager(role)
+}
+
+/**
+ * Adjusting the balance of a client package and reading its movements: owner and
+ * admin only (D9). Reception sells and redeems but never corrects a balance.
+ */
+export function canAdjustPackages(role: Role | null | undefined): boolean {
+  return isManager(role)
+}
+
+/**
  * Home of `/panel` for a role. A professional has no dashboard (the API answers
  * 403) and lands on their own agenda (S-F2b-4). `null` means the dashboard is
  * the right page: owner/admin keep it, with a "Mi agenda" card when they attend.

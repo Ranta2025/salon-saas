@@ -2667,3 +2667,160 @@ toca centavos ni un flotante.
     `/invitacion` (F2g1) leen su token con un `useRef` del montaje y en
     `npm run dev` (StrictMode remonta) pierden el token igual que perdía esta
     página; quedan como están y se anotan para su dueño.
+
+## 30. Fase 6 — F8: paquetes prepagos con saldo por clienta (frontend)
+
+Cierre del frente de «Contrato F8 (paquetes y bonos prepagos con saldo por
+clienta)»: las formas congeladas de D5 (comprar), D7 (consumir), D8 (lectura),
+D9 (ajuste) y D10 (catálogo) y el frontend de D11. Sin dependencias nuevas y sin
+CSS nuevo (`app.css` quedó fuera de las superficies): las pantallas reusan
+`panel-card`, `table table--stack`, `team-confirm`, `service-form`, `field`,
+`pill`, `notice`, `empty-state` y `btn`. El backend de F8 corre en paralelo, así
+que todo se probó con `fetch` simulado y con una API simulada en el navegador.
+El dinero viaja siempre en centavos enteros: el precio que se escribe pasa por
+el parser entero de los gastos (`12.50` → `1250`, nunca un flotante) y se imprime
+con `formatCents`.
+
+### 30.1 Rutas, menú y permisos
+
+- Ruta nueva `/panel/paquetes` en `App.tsx` y entrada «Paquetes» en `AppShell.tsx`
+  (etiqueta corta: la rejilla de tres columnas a 390 px la mantiene en dos filas
+  sin recorte; el título de la página es «Paquetes prepagos»). La entrada es
+  visible mientras el rol es desconocido (`role === null`), como las demás.
+- `lib/permissions.ts` gana tres funciones nuevas sin tocar las existentes:
+  `canViewPackages` (owner, admin y recepción: leer el catálogo y los saldos,
+  vender y descontar), `canManagePackages` (owner y admin: crear y editar el
+  catálogo) y `canAdjustPackages` (owner y admin: ajustar el saldo y ver los
+  movimientos). El profesional recibe 403 en todo: no ve la entrada y, si entra
+  por URL o abre la ficha, ve `PackagesNotice` (nuevo, en
+  `components/PackagesNotice.tsx`) y no la tabla. Es un aviso propio y no
+  `ManagerOnlyNotice` porque el copy compartido habla de «la nómina ni las
+  comisiones del equipo».
+
+### 30.2 Lógica pura (`src/lib/packages.ts`)
+
+- Tipos y normalizadores del catálogo (`ServicePackage`), del saldo
+  (`ClientPackage`) y del libro (`PackageMovement`). Una fila sin id o nombre, con
+  un precio que no es entero en centavos, con un saldo inconsistente
+  (`sessions_left` fuera de `0..sessions_total`) o con un movimiento en cero, se
+  descarta: un precio malformado nunca se muestra como `$0.00`. `expired` es la
+  decisión del servidor (solo un `true` literal cuenta): el cliente no compara
+  fechas con el reloj.
+- Orden: el catálogo sale activos primero y por nombre; los saldos con una
+  partición estable «vigentes con saldo primero» que no reordena dentro de cada
+  grupo (el servidor ya lo promete); los movimientos conservan el orden del
+  servidor (más nuevos primero).
+- Validación y cuerpos: `validatePackageDraft` (alta: nombre, servicio, sesiones
+  1..100, precio 0..10000000 centavos, vigencia 1..3650 o «Sin vencimiento»;
+  edición: las cuatro claves del PUT con `validity_days: null` explícito para
+  «sin vencimiento», y nunca servicio ni sesiones), `validateSellDraft`,
+  `validateRedeemDraft` y `validatePackageAdjustDraft` (delta entero distinto de
+  0 y nota obligatoria de 1..200). Los cuerpos omiten lo opcional vacío
+  (`packageCreateBody`, `sellBody`, `redeemBody`). Un NUL o un salto de línea en
+  el nombre o la nota se rechaza antes de enviar (D10: 400, nunca 500).
+- Textos del servidor impresos tal cual (`PACKAGE_MESSAGES`): `Faltan datos del
+  paquete: nombre, servicio, sesiones y precio`, `…nombre, precio, vigencia y
+  estado`, `Ya hay un paquete activo con ese nombre`, `Paquete inválido`,
+  `Paquete no encontrado`, `No quedan sesiones en este paquete`, `El paquete
+  venció`, `Escribí el motivo del ajuste`, `El ajuste deja el saldo fuera de
+  rango`. Una respuesta `ApiError` se muestra verbatim; el 403 de las escrituras
+  también.
+- Presentación: «3 de 5 sesiones», «Vigente / Vencido / Sin sesiones»
+  («Vencido» gana), «Vence el 2027-02-01» / «Venció el …» con el día LOCAL del
+  salón (el vencimiento es el fin de ese día: en UTC cae al día siguiente) y
+  «Sin vencimiento».
+
+### 30.3 Solo en línea y `client_op_id`
+
+- Nada de este módulo toca la cola offline (D11-c: la cola descarta los 4xx y una
+  venta de dinero no puede terminar en «Esta venta no se registró»).
+  `writePackage` no envía nada si el navegador está sin conexión (estado
+  `offline`) y, ante un error de red, devuelve `network` con un aviso que dice
+  que no quedó en cola. La sección de la ficha además muestra un aviso y
+  deshabilita «Vender», «Descontar» y «Ajustar» sin conexión. Se verificó en el
+  navegador (modo sin red de DevTools) que `salon.offline_queue` sigue vacía.
+- Un `client_op_id` por intento (`createOpAttempt`, como el `BookingAttempt` de la
+  landing): el reintento del MISMO intento (misma clienta, paquete, profesional y
+  método, o mismo saldo, profesional y nota) reutiliza el id; cualquier cambio, un
+  éxito, un 4xx (rechazo definitivo: el servidor no guardó nada) o cerrar el
+  panel abren un intento nuevo. Un error de red, la falta de conexión o un 5xx
+  (resultado desconocido: pudo haberse guardado) conservan el intento, así que el
+  reintento no vende ni descuenta dos veces. Alta, edición y ajuste no llevan id
+  (el contrato no lo define): tras un error de red el aviso pide revisar la lista
+  antes de reintentar. Un guardián síncrono (`createPackagesGate`) hace que dos
+  pulsaciones del mismo render envíen UN pedido.
+
+### 30.4 Pantalla `/panel/paquetes` (D10, D11-a)
+
+- Tabla con paquete, servicio, sesiones, precio, vigencia («90 días», «Sin
+  vencimiento») y estado; a 390 px cada fila es una tarjeta (`table--stack`).
+  Owner y admin ven «Nuevo paquete» y «Editar»; la recepción ve la tabla sin un
+  solo control de escritura y una línea que lo explica.
+- `PackageForm`: nombre, servicio (solo al crear; solo servicios activos),
+  sesiones (solo al crear), precio en dólares, vigencia en días con la casilla
+  «Sin vencimiento» y, al editar, «Activo». Al editar el servicio y las sesiones
+  se muestran de solo lectura. El 409 de nombre repetido y los 400 salen
+  verbatim en el formulario, que sigue abierto.
+- Estados de carga, error con «Reintentar», vacío honesto (distinto para quien
+  puede crear) y «N paquetes». Después de CADA escritura, también la rechazada, se
+  vuelve a pedir la lista al servidor: no hay filas optimistas.
+
+### 30.5 Sección «Paquetes» de la ficha (D5, D7, D8, D9, D11-b)
+
+- `ClientPackagesSection` (nuevo) dentro de `ClientDetailPage`, con sus propios
+  pedidos: un fallo ahí no oculta la ficha ni el historial. Saldos con «3 de 5
+  sesiones», vencimiento y estado («Vencido» en gris, sin «Descontar»).
+- «Vender paquete» (`PackageSellForm`): paquete (solo activos, con su precio),
+  profesional y método de pago con las etiquetas de `SALE_METHODS`
+  (Efectivo/Tarjeta/Transferencia). El botón dice «Vender por $250.00». El
+  importe lo pone el servidor desde su catálogo; el formulario no lo envía. La
+  venta también cambia el historial y el gasto de la clienta, así que la página
+  vuelve a pedir la ficha entera.
+- «Descontar una sesión»: confirmación explícita («¿Descontar UNA sesión de
+  «5 cortes»?», saldo de hoy y aclaración de que no es una venta), profesional y
+  nota opcionales, «Sí, descontar una sesión» / «Cancelar». El 409 («No quedan
+  sesiones…», «El paquete venció») sale verbatim dentro de la confirmación.
+- Owner y admin: «Ajustar saldo» (`PackageAdjustForm`: delta con signo y motivo
+  obligatorio; el 409 de rango sale verbatim) y «Movimientos»
+  (`PackageMovements`: fecha en la zona del salón, motivo, sesiones con signo,
+  profesional y nota). La recepción no ve esos dos botones y la sección lo dice.
+- Después de cada acción el saldo se vuelve a pedir al servidor; el éxito se
+  anuncia pero la cifra en pantalla es la que devolvió el servidor.
+
+### 30.6 Pruebas
+
+- TDD con `node --test` y `fetch` simulado: primero en rojo (`packages.ts` no
+  existía: `ERR_MODULE_NOT_FOUND`), después en verde. 49 tests nuevos en
+  `packages.test.ts`: las nueve frases verbatim, la validación de cada campo con
+  sus bordes (0/1/100/101 sesiones, 0 y 100000.00 de precio, 3650 días, NUL y
+  saltos de línea, 120/121 caracteres), los cuerpos que omiten lo opcional vacío
+  y el PUT con `validity_days: null`, los normalizadores (precio flotante o
+  negativo, saldo inconsistente, `expired` solo con `true`), el orden, el día
+  local del vencimiento, el error de red frente al del servidor, el `client_op_id`
+  estable en el reintento y nuevo tras `settle()`, las URLs y los métodos de las
+  ocho rutas, la ausencia de pedidos y de cola sin conexión, el 5xx como
+  resultado desconocido, el doble clic con un solo pedido y la matriz de roles de
+  las tres funciones nuevas (más una prueba de que las existentes responden lo
+  mismo).
+- `npx tsc --noEmit` limpio, `npm test` 676/676 (627 previos sin tocar) y
+  `npm run build` correcto. Ningún `*.test.ts` preexistente se modificó.
+- Revisión visual con el bundle de `vite build`, `vite preview` y una API
+  simulada en `/tmp/f8f` (Chromium del caché de Playwright por protocolo
+  DevTools) a **1280 y 390 px**: catálogo (tabla, alta vacía con el mensaje
+  verbatim, 409 verbatim, edición, recepción de solo lectura, profesional con el
+  aviso), ficha con saldos, confirmación, error de red con reintento (se capturó
+  el cuerpo de los dos pedidos: mismo `client_op_id`), 409 verbatim, venta,
+  ajuste con 409 y con nota obligatoria, movimientos y el estado sin conexión.
+  `document.documentElement.scrollWidth === innerWidth` en todas.
+- **Desviaciones conscientes:**
+  - El runner no tiene entorno DOM: las reglas viven en funciones puras con tests
+    y lo que es DOM (estados, confirmación, 44 px, desborde) se verificó en el
+    navegador. No hay `.test.tsx`.
+  - La forma de la fila del catálogo (`GET /packages`) no está congelada en D10:
+    el cliente lee `{id, name, service_id, service_name?, sessions, price_cents,
+    validity_days, active, created_at?}` y, si falta `service_name`, busca el
+    servicio en `GET /services`. Las respuestas de alta, edición y ajuste se
+    leen como fila suelta o `{package}` / `{client_package}`; la pantalla no
+    depende de ellas porque vuelve a pedir la lista.
+  - Los días del vencimiento («Vence el 2027-02-01») pueden partirse en dos
+    líneas en la tabla de 1280 px: el CSS quedó fuera de las superficies.

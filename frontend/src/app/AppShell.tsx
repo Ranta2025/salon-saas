@@ -4,7 +4,13 @@ import { SALON } from '../landing/content'
 import { fetchStaff } from '../lib/api'
 import { canOpenMyAgenda } from '../lib/myAgenda'
 import { canViewOwnCommissions } from '../lib/payroll'
-import { activeRole, canViewInventory, canViewWaitlist, isManager } from '../lib/permissions'
+import {
+  activeRole,
+  canViewInventory,
+  canViewPackages,
+  canViewWaitlist,
+  isManager,
+} from '../lib/permissions'
 import type { StaffMember } from '../lib/staff'
 import { purgeOfflineApiCache } from '../lib/pwa'
 import { clearSalonId, clearToken, clearUserId } from '../lib/session'
@@ -38,6 +44,11 @@ type NavEntry = {
    * a professional does not see the entry and gets the notice on the page.
    */
   waitlistOnly?: boolean
+  /**
+   * Prepaid packages (contract F8, D8/D10): owner, admin and reception read the
+   * catalog; a professional does not see the entry and gets the notice on the page.
+   */
+  packagesOnly?: boolean
 }
 
 const NAV: readonly NavEntry[] = [
@@ -47,6 +58,9 @@ const NAV: readonly NavEntry[] = [
   { to: '/panel/pos', label: 'Ventas', end: false },
   { to: '/panel/servicios', label: 'Servicios', end: false },
   { to: '/panel/inventario', label: 'Inventario', end: false, inventoryOnly: true },
+  // F8: short label on purpose (three columns at 390 px); the page is titled
+  // «Paquetes prepagos».
+  { to: '/panel/paquetes', label: 'Paquetes', end: false, packagesOnly: true },
   // The label is short on purpose: five columns at 375 px keep every entry in
   // two rows (S-F2e-5). The page itself is titled «Equipamiento del salón».
   { to: '/panel/equipamiento', label: 'Puestos', end: false, managerOnly: true },
@@ -178,6 +192,9 @@ function ShellChrome() {
       return false
     }
     if (item.waitlistOnly && role !== null && !canViewWaitlist(role)) {
+      return false
+    }
+    if (item.packagesOnly && role !== null && !canViewPackages(role)) {
       return false
     }
     return !item.agendaOnly || canOpenMine

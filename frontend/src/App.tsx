@@ -14,6 +14,7 @@ import { LoginPage } from './app/LoginPage'
 import { MyAgendaPage } from './app/MyAgendaPage'
 import { MyCommissionsPage } from './app/MyCommissionsPage'
 import { NotificationsPage } from './app/NotificationsPage'
+import { PackagesPage } from './app/PackagesPage'
 import { PanelHome } from './app/PanelHome'
 import { PayrollPage } from './app/PayrollPage'
 import { PayrollRunDetailPage } from './app/PayrollRunDetailPage'
@@ -97,6 +98,7 @@ export function App() {
           <Route path="pos" element={<PosPage />} />
           <Route path="servicios" element={<ServicesPage />} />
           <Route path="inventario" element={<InventoryPage />} />
+          <Route path="paquetes" element={<PackagesPage />} />
           <Route path="clientes" element={<ClientsPage />} />
           <Route path="clientes/:clientId" element={<ClientDetailPage />} />
           <Route path="avisos" element={<NotificationsPage />} />
