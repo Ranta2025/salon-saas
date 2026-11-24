@@ -865,19 +865,6 @@ type WaitlistRepository interface {
 	// profesional y día): es la idempotencia del alta (D4). Sin fila es
 	// ErrNotFound.
 	FindActive(salonID, serviceID, professionalID, day, email string) (domain.WaitlistEntry, error)
-	// Create inserta la entrada. Si el índice único parcial rechaza (dos altas
-	// idénticas simultáneas) devuelve ErrAlreadyExists: el caso de uso la trata
-	// como idempotente releyendo la que ganó.
-	Create(e domain.WaitlistEntry) error
-	// CountActiveByEmail cuenta los avisos activos (sin left_at) de ese email en
-	// el salón con día >= fromDay: el tope de D4 son 3. fromDay es HOY en la zona
-	// del salón ("YYYY-MM-DD"): un aviso cuyo día ya pasó no ocupa cupo (no hay
-	// purga, y sin este filtro tres avisos viejos bloquearían al email para
-	// siempre).
-	CountActiveByEmail(salonID, email, fromDay string) (int, error)
-	// CountActiveBySalon cuenta los avisos activos del salón con día >= fromDay:
-	// el tope de D4 son 500. Mismo criterio de fromDay.
-	CountActiveBySalon(salonID, fromDay string) (int, error)
 	// FindByTokenHash es la ÚNICA query sin salon_id: el hash del token es la
 	// capability que resuelve la entrada antes de saber de qué salón es (quien
 	// abre el enlace no tiene sesión). Sin fila es ErrNotFound.
@@ -911,6 +898,19 @@ type WaitlistTx interface {
 	// LockWrites toma el advisory lock de escrituras de la lista del salón. Es
 	// el único lock de la transacción y se libera solo al terminar.
 	LockWrites(salonID string) error
+	// FindActive, CountActiveByEmail, CountActiveBySalon, Create y MarkLeft son las
+	// escrituras del ALTA (D4) atadas a la MISMA transacción que LockWrites: el
+	// conteo de los topes y el insert no pueden intercalarse con otra alta del
+	// salón. FindActive resuelve la entrada ACTIVA idéntica (mismo email,
+	// servicio, profesional y día). fromDay es HOY en la zona del salón: un aviso
+	// de un día pasado no ocupa cupo. Create devuelve ErrAlreadyExists si el
+	// índice único parcial rechaza. MarkLeft cierra una entrada por id (la ya
+	// avisada que se reemplaza al volver a anotarse).
+	FindActive(salonID, serviceID, professionalID, day, email string) (domain.WaitlistEntry, error)
+	CountActiveByEmail(salonID, email, fromDay string) (int, error)
+	CountActiveBySalon(salonID, fromDay string) (int, error)
+	Create(e domain.WaitlistEntry) error
+	MarkLeft(id string, now time.Time) error
 	// CountRetained cuenta los avisos RETENIDOS del grupo (D6): los enviados con
 	// reclamo de las últimas 2 h y los que están EN VUELO (reclamo de los
 	// últimos 5 minutos sin aviso). Un envío que falló no retiene nada: se

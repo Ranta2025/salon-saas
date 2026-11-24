@@ -2595,20 +2595,31 @@ ni el id:
 | Caso | Respuesta |
 | --- | --- |
 | alta nueva | `201 {"status":"waiting","date":"YYYY-MM-DD","service_id":"..."}` |
-| pedido **idéntico** ya anotado (activo) | `200` con la misma forma, sin crear otra entrada ni gastar cupo |
+| pedido **idéntico** ya anotado y **esperando** | `200` con la misma forma, sin crear otra entrada ni gastar cupo |
+| la misma persona **ya fue avisada** y vuelve a anotarse (el día se llenó otra vez) | `201`: la entrada vieja se cierra (baja) y se crea otra que espera; una entrada se avisa UNA sola vez |
 | el día todavía tiene horarios | `409 {"error":"Todavía hay horarios libres ese día"}` |
-| el email ya tiene 3 avisos activos en el salón | `409 {"error":"Ya tenés el máximo de avisos activos"}` |
-| el salón llegó a 500 avisos activos | `409 {"error":"La lista de espera de este salón está completa"}` |
+| el email ya tiene 3 avisos activos **de hoy en adelante** en el salón | `409 {"error":"Ya tenés el máximo de avisos activos"}` |
+| el salón llegó a 500 avisos activos **de hoy en adelante** | `409 {"error":"La lista de espera de este salón está completa"}` |
 | falta `service_id`, `date`, `name` o `email` | `400 {"error":"Faltan datos del aviso: servicio, fecha, nombre y email"}` |
 | servicio inexistente o inactivo | `400 {"error":"El servicio no está disponible en este salón"}` |
 | la profesional no es del salón o no hace ese servicio | `400 {"error":"Esa persona no atiende ese servicio"}` |
 | fecha mal formada | `400 {"error":"Fecha inválida: usá AAAA-MM-DD"}` |
 | fecha fuera de [hoy, hoy+30] local | `400 {"error":"Elegí un día entre hoy y los próximos 30 días"}` |
 | nombre vacío / de más de 120 / email vacío / email inválido / teléfono de más de 40 | `400` con su texto (los de la reserva pública) |
-| un **NUL** en nombre, email o teléfono | `400 {"error":"El texto tiene caracteres no válidos"}` |
+| un email con **espacios o saltos de línea adentro** | `400 {"error":"Email inválido"}` (el mailer lo rechazaría al enviar) |
+| un **NUL** (o un salto de línea u otro carácter de control) en nombre o teléfono; un NUL en el email | `400 {"error":"El texto tiene caracteres no válidos"}` |
 | salón inexistente | `404` |
 
-Un `400`, un `409` y un `404` **no escriben nada**. JSON de tipo equivocado es
+Un `400`, un `409` y un `404` **no escriben nada**.
+
+**Los topes cuentan solo los avisos de hoy en adelante** (día local del salón): no hay
+purga de entradas viejas, y sin ese filtro tres avisos de días pasados bloquearían a un
+email para siempre (revisión nativa R4-001).
+
+**El alta es atómica.** La consulta de disponibilidad corre fuera del lock; después
+la escritura (buscar la idéntica, cerrar la ya avisada, contar los topes e insertar)
+es UNA transacción bajo el advisory lock `waitlist-write:<salón>`, el mismo del
+barrido. Seis altas simultáneas del mismo email ya no pasan el tope de 3. JSON de tipo equivocado es
 `400 {"error":"body inválido"}`; nunca un `500` por entrada del cliente.
 
 ### `POST /api/v1/public/waitlist/leave` → `200`
@@ -2684,3 +2695,19 @@ recién después se marca `notified_at`.
   NULL AND notified_at IS NULL` y uno para la pantalla del personal.
 - Idempotente (guardas con `current_schema()`): una segunda pasada no hace nada y
   no reescribe ninguna fila de las tablas existentes.
+
+### Límites conocidos (verificación independiente y revisión nativa)
+
+- Un grupo «cualquier profesional» y un grupo «profesional concreta» se cuentan por
+  separado: con UN hueco libre, una entrada «cualquiera» y una de esa profesional
+  pueden recibir cada una su aviso (retención blanda; la restricción `EXCLUDE` de
+  los turnos sigue decidiendo quién reserva).
+- Las entradas de un servicio desactivado se siguen recorriendo y escriben una línea
+  de log por pasada (no se avisa a nadie).
+- Una entrada cuyos 3 envíos fallaron queda `waiting` en la pantalla del personal,
+  sin señal del fallo.
+- Si `MarkNotified` falla después de un envío correcto, la misma persona puede
+  recibir hasta 3 emails idénticos (uno por gracia de 5 minutos), cada uno con un
+  token nuevo (solo sirve el del último).
+- Sin doble opt-in y sin purga de entradas viejas (las de días pasados no cuentan
+  para los topes ni se listan).

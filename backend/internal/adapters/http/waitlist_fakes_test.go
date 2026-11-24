@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"sort"
 	"strings"
 	"sync"
@@ -51,11 +52,34 @@ func (f *mwaitlist) Create(e domain.WaitlistEntry) error {
 	return nil
 }
 
-func (f *mwaitlist) CountActiveByEmail(salonID, email, fromDay string) (int, error) {
+// --- Transacción del alta (D4/D6) -------------------------------------------
+// InWaitlistTx toma el mutex del fake (hace de advisory lock) y entrega una
+// transacción con las primitivas del alta; las del barrido no las usa ningún test
+// HTTP y devuelven error si alguien las llama por error.
+
+type mwaitlistTx struct{ repo *mwaitlist }
+
+func (f *mwaitlist) InWaitlistTx(fn func(tx ports.WaitlistTx) error) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	return fn(mwaitlistTx{repo: f})
+}
+
+func (t mwaitlistTx) LockWrites(string) error { return nil }
+
+func (t mwaitlistTx) FindActive(salonID, serviceID, professionalID, day, email string) (domain.WaitlistEntry, error) {
+	for _, e := range t.repo.entries {
+		if e.Active() && e.SalonID == salonID && e.ServiceID == serviceID &&
+			e.ProfessionalID == professionalID && e.Day == day && strings.EqualFold(e.Email, email) {
+			return e, nil
+		}
+	}
+	return domain.WaitlistEntry{}, domain.ErrNotFound
+}
+
+func (t mwaitlistTx) CountActiveByEmail(salonID, email, fromDay string) (int, error) {
 	n := 0
-	for _, e := range f.entries {
+	for _, e := range t.repo.entries {
 		if e.Active() && e.SalonID == salonID && strings.EqualFold(e.Email, email) && e.Day >= fromDay {
 			n++
 		}
@@ -63,17 +87,49 @@ func (f *mwaitlist) CountActiveByEmail(salonID, email, fromDay string) (int, err
 	return n, nil
 }
 
-func (f *mwaitlist) CountActiveBySalon(salonID, fromDay string) (int, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+func (t mwaitlistTx) CountActiveBySalon(salonID, fromDay string) (int, error) {
 	n := 0
-	for _, e := range f.entries {
+	for _, e := range t.repo.entries {
 		if e.Active() && e.SalonID == salonID && e.Day >= fromDay {
 			n++
 		}
 	}
 	return n, nil
 }
+
+func (t mwaitlistTx) Create(e domain.WaitlistEntry) error {
+	for _, other := range t.repo.entries {
+		if other.Active() && other.SalonID == e.SalonID && other.ServiceID == e.ServiceID &&
+			other.ProfessionalID == e.ProfessionalID && other.Day == e.Day && strings.EqualFold(other.Email, e.Email) {
+			return domain.ErrAlreadyExists
+		}
+	}
+	t.repo.entries = append(t.repo.entries, e)
+	return nil
+}
+
+func (t mwaitlistTx) MarkLeft(id string, now time.Time) error {
+	for i := range t.repo.entries {
+		if t.repo.entries[i].ID == id {
+			left := now.UTC()
+			t.repo.entries[i].LeftAt = &left
+			return nil
+		}
+	}
+	return domain.ErrNotFound
+}
+
+var errMWaitlistSweep = errors.New("el barrido no se usa en los tests HTTP")
+
+func (t mwaitlistTx) CountRetained(domain.WaitlistGroup, time.Time) (int, error) {
+	return 0, errMWaitlistSweep
+}
+
+func (t mwaitlistTx) Claim(domain.WaitlistGroup, time.Time, int) ([]domain.WaitlistEntry, error) {
+	return nil, errMWaitlistSweep
+}
+
+func (t mwaitlistTx) SetToken(string, string) error { return errMWaitlistSweep }
 
 func (f *mwaitlist) FindByTokenHash(tokenHash string) (domain.WaitlistEntry, error) {
 	f.mu.Lock()
@@ -229,7 +285,7 @@ func (e *waitlistHTTPEnv) wire(t *testing.T, mutate func(d *Deps)) {
 	d := e.d
 	d.Waitlist = WaitlistHandler{
 		Service: app.WaitlistService{
-			Waitlist: e.wl, Tx: nil,
+			Waitlist: e.wl, Tx: e.wl,
 			Salons: e.salons, Services: e.services, Professionals: e.profs,
 			Settings: e.settings, Availability: app.AvailabilityService{
 				Salons: e.salons, Services: e.services, Settings: e.settings,

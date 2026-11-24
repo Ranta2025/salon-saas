@@ -32,6 +32,10 @@ type fakeWaitlist struct {
 	locks []string
 	// claimCalls cuenta los reclamos (para probar que sin email no se reclama).
 	claimCalls int
+	// countGate, si no es nil, se llama al entrar a un conteo de topes y ANTES de
+	// tomar el mutex: el test de atomicidad lo usa para forzar que todas las
+	// altas simultáneas lean el conteo antes de que alguna escriba.
+	countGate func()
 }
 
 func (f *fakeWaitlist) FindActive(salonID, serviceID, professionalID, day, email string) (domain.WaitlistEntry, error) {
@@ -65,30 +69,6 @@ func (f *fakeWaitlist) Create(e domain.WaitlistEntry) error {
 	}
 	f.entries = append(f.entries, e)
 	return nil
-}
-
-func (f *fakeWaitlist) CountActiveByEmail(salonID, email, fromDay string) (int, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	n := 0
-	for _, e := range f.entries {
-		if e.Active() && e.SalonID == salonID && strings.EqualFold(e.Email, email) && e.Day >= fromDay {
-			n++
-		}
-	}
-	return n, nil
-}
-
-func (f *fakeWaitlist) CountActiveBySalon(salonID, fromDay string) (int, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	n := 0
-	for _, e := range f.entries {
-		if e.Active() && e.SalonID == salonID && e.Day >= fromDay {
-			n++
-		}
-	}
-	return n, nil
 }
 
 func (f *fakeWaitlist) FindByTokenHash(tokenHash string) (domain.WaitlistEntry, error) {
@@ -235,6 +215,73 @@ func (t *fakeWaitlistTx) LockWrites(salonID string) error {
 	// El mutex ya lo tomó InWaitlistTx (hace de advisory lock de la transacción).
 	t.repo.locks = append(t.repo.locks, "waitlist-write:"+salonID)
 	return nil
+}
+
+// --- Primitivas del alta dentro de la transacción (D4/D6) ------------------
+// InWaitlistTx ya tiene tomado el mutex del repo (hace de advisory lock), así que
+// estas versiones NO lo vuelven a tomar.
+
+func (t *fakeWaitlistTx) FindActive(salonID, serviceID, professionalID, day, email string) (domain.WaitlistEntry, error) {
+	if t.repo.findErr != nil {
+		return domain.WaitlistEntry{}, t.repo.findErr
+	}
+	for _, e := range t.repo.entries {
+		if e.Active() && e.SalonID == salonID && e.ServiceID == serviceID &&
+			e.ProfessionalID == professionalID && e.Day == day &&
+			strings.EqualFold(e.Email, email) {
+			return e, nil
+		}
+	}
+	return domain.WaitlistEntry{}, domain.ErrNotFound
+}
+
+func (t *fakeWaitlistTx) CountActiveByEmail(salonID, email, fromDay string) (int, error) {
+	if t.repo.countGate != nil {
+		t.repo.countGate()
+	}
+	n := 0
+	for _, e := range t.repo.entries {
+		if e.Active() && e.SalonID == salonID && strings.EqualFold(e.Email, email) && e.Day >= fromDay {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (t *fakeWaitlistTx) CountActiveBySalon(salonID, fromDay string) (int, error) {
+	n := 0
+	for _, e := range t.repo.entries {
+		if e.Active() && e.SalonID == salonID && e.Day >= fromDay {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (t *fakeWaitlistTx) Create(e domain.WaitlistEntry) error {
+	if t.repo.createErr != nil {
+		return t.repo.createErr
+	}
+	for _, other := range t.repo.entries {
+		if other.Active() && other.SalonID == e.SalonID && other.ServiceID == e.ServiceID &&
+			other.ProfessionalID == e.ProfessionalID && other.Day == e.Day &&
+			strings.EqualFold(other.Email, e.Email) {
+			return domain.ErrAlreadyExists
+		}
+	}
+	t.repo.entries = append(t.repo.entries, e)
+	return nil
+}
+
+func (t *fakeWaitlistTx) MarkLeft(id string, now time.Time) error {
+	for i := range t.repo.entries {
+		if t.repo.entries[i].ID == id {
+			left := now.UTC()
+			t.repo.entries[i].LeftAt = &left
+			return nil
+		}
+	}
+	return domain.ErrNotFound
 }
 
 func (t *fakeWaitlistTx) CountRetained(g domain.WaitlistGroup, now time.Time) (int, error) {

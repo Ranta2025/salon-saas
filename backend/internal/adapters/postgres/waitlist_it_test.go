@@ -67,6 +67,14 @@ type itWaitlistEnv struct {
 	profID   string
 }
 
+// createEntry inserta una entrada por la primitiva de la transacción del alta
+// (el repositorio ya no tiene Create suelto: el alta corre bajo el lock del salón).
+// Devuelve el error del insert tal cual (ErrAlreadyExists si el índice único parcial
+// lo rechaza).
+func (e *itWaitlistEnv) createEntry(entry domain.WaitlistEntry) error {
+	return e.repo.InWaitlistTx(func(tx ports.WaitlistTx) error { return tx.Create(entry) })
+}
+
 func newItWaitlistEnv(t *testing.T) *itWaitlistEnv {
 	t.Helper()
 	pool := itPool(t)
@@ -471,13 +479,13 @@ func TestWaitlist_IT_migracion_sobre_datos_previos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("entrada: %v", err)
 	}
-	if err := env.repo.Create(entry); err != nil {
+	if err := env.createEntry(entry); err != nil {
 		t.Fatalf("alta: %v", err)
 	}
 	// Dos activas idénticas: el índice parcial rechaza la segunda.
 	dup := entry
 	dup.ID = domain.NewID()
-	if err := env.repo.Create(dup); !errors.Is(err, domain.ErrAlreadyExists) {
+	if err := env.createEntry(dup); !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("duplicado activo: %v", err)
 	}
 	// Nombre vacío, email demasiado corto y 3+ intentos: CHECK rechazados.
@@ -500,7 +508,7 @@ func TestWaitlist_IT_migracion_sobre_datos_previos(t *testing.T) {
 	if err := env.repo.RemoveByID(env.salonID, entry.ID, left); err != nil {
 		t.Fatalf("baja: %v", err)
 	}
-	if err := env.repo.Create(dup); err != nil {
+	if err := env.createEntry(dup); err != nil {
 		t.Fatalf("después de la baja la misma entrada entra: %v", err)
 	}
 }

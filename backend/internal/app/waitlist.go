@@ -132,13 +132,15 @@ func (s WaitlistService) Join(slug string, in WaitlistJoinInput) (WaitlistJoinRe
 
 	// Idempotencia (D4): el mismo pedido, ya anotado y vigente, devuelve la misma
 	// forma sin crear otra entrada ni gastar cupo.
+	// Solo corta acá la entrada que ESPERA: una ya avisada (notified_at) no es un
+	// repetido sino una persona que vuelve a anotarse (D6) y sigue al alta.
 	existing, err := s.Waitlist.FindActive(salon.ID, service.ID, professionalID, day, contact.Email)
 	switch {
-	case err == nil:
+	case err == nil && existing.NotifiedAt == nil:
 		return WaitlistJoinResult{
 			Status: existing.Status(), Date: existing.Day, ServiceID: existing.ServiceID, Created: false,
 		}, nil
-	case !errors.Is(err, domain.ErrNotFound):
+	case err != nil && !errors.Is(err, domain.ErrNotFound):
 		return none, err
 	}
 
@@ -152,32 +154,54 @@ func (s WaitlistService) Join(slug string, in WaitlistJoinInput) (WaitlistJoinRe
 		return none, waitlistSlotsAvailable()
 	}
 
-	// Los topes cuentan solo los avisos de HOY en adelante en la zona del salón.
-	if err := s.checkCaps(salon.ID, contact.Email, s.now().In(loc).Format("2006-01-02")); err != nil {
-		return none, err
-	}
-
+	// El aviso todavía no tiene token: la capability de la baja se emite cuando
+	// hay un email que mandar (D5). La entrada nace sin enlace vivo.
 	entry, err := domain.NewWaitlistEntry(salon.ID, service.ID, professionalID, day, contact, s.now())
 	if err != nil {
 		return none, err
 	}
-	// El aviso todavía no tiene token: la capability de la baja se emite cuando
-	// hay un email que mandar (D5). La entrada nace sin enlace vivo.
-	if err := s.Waitlist.Create(entry); err != nil {
-		// Dos altas idénticas simultáneas: el índice único parcial decide y la
-		// que pierde también responde 200 (idempotente), no un 409.
-		if errors.Is(err, domain.ErrAlreadyExists) {
-			if existing, findErr := s.Waitlist.FindActive(salon.ID, service.ID, professionalID, day, contact.Email); findErr == nil {
-				return WaitlistJoinResult{
-					Status: existing.Status(), Date: existing.Day, ServiceID: existing.ServiceID, Created: false,
-				}, nil
-			}
+	if s.Tx == nil {
+		return none, errors.New("lista de espera: falta el ejecutor de transacciones")
+	}
+	// Los topes cuentan solo los avisos de HOY en adelante en la zona del salón.
+	today := s.now().In(loc).Format("2006-01-02")
+	result := WaitlistJoinResult{
+		Status: domain.WaitlistStatusWaiting, Date: entry.Day, ServiceID: entry.ServiceID, Created: true,
+	}
+	// La escritura del alta es UNA transacción bajo el lock de la lista del salón
+	// (el mismo del barrido): el conteo de los topes y el insert no se intercalan
+	// con otra alta (seis altas simultáneas ya no pasaban el tope de 3). La
+	// consulta de disponibilidad de arriba quedó FUERA del lock.
+	err = s.Tx.InWaitlistTx(func(tx ports.WaitlistTx) error {
+		if err := tx.LockWrites(salon.ID); err != nil {
+			return err
 		}
+		current, err := tx.FindActive(salon.ID, service.ID, professionalID, day, contact.Email)
+		switch {
+		case err == nil && current.NotifiedAt == nil:
+			// Otra alta idéntica ganó la carrera: también es idempotente (200).
+			result = WaitlistJoinResult{
+				Status: current.Status(), Date: current.Day, ServiceID: current.ServiceID, Created: false,
+			}
+			return nil
+		case err == nil:
+			// Ya fue avisada y vuelve a anotarse: se cierra la vieja (baja) para
+			// que el índice único parcial deje entrar a la nueva (D6).
+			if err := tx.MarkLeft(current.ID, s.now()); err != nil {
+				return err
+			}
+		case !errors.Is(err, domain.ErrNotFound):
+			return err
+		}
+		if err := checkWaitlistCaps(tx, salon.ID, contact.Email, today); err != nil {
+			return err
+		}
+		return tx.Create(entry)
+	})
+	if err != nil {
 		return none, err
 	}
-	return WaitlistJoinResult{
-		Status: domain.WaitlistStatusWaiting, Date: entry.Day, ServiceID: entry.ServiceID, Created: true,
-	}, nil
+	return result, nil
 }
 
 // Leave da de baja la entrada del token (D5). Es idempotente: repetir el mismo
@@ -407,18 +431,25 @@ func (s WaitlistService) ensureDoes(salonID, serviceID, userID string) error {
 	return domain.NewMessage(domain.ErrValidation, domain.MsgWaitlistProfessionalInvalid)
 }
 
-// checkCaps aplica los topes de D4: 3 avisos activos por email y 500 por salón.
+// waitlistCounter es lo que checkWaitlistCaps necesita contar: lo cumple la
+// transacción del alta (los conteos corren bajo el lock del salón).
+type waitlistCounter interface {
+	CountActiveByEmail(salonID, email, fromDay string) (int, error)
+	CountActiveBySalon(salonID, fromDay string) (int, error)
+}
+
+// checkWaitlistCaps aplica los topes de D4: 3 avisos activos por email y 500 por salón.
 // fromDay es hoy en la zona del salón: los avisos de días pasados no cuentan
 // (revisión nativa R4-001).
-func (s WaitlistService) checkCaps(salonID, email, fromDay string) error {
-	mine, err := s.Waitlist.CountActiveByEmail(salonID, email, fromDay)
+func checkWaitlistCaps(c waitlistCounter, salonID, email, fromDay string) error {
+	mine, err := c.CountActiveByEmail(salonID, email, fromDay)
 	if err != nil {
 		return err
 	}
 	if mine >= domain.MaxWaitlistActivePerEmail {
 		return domain.NewMessage(domain.ErrAlreadyExists, domain.MsgWaitlistEmailLimit)
 	}
-	total, err := s.Waitlist.CountActiveBySalon(salonID, fromDay)
+	total, err := c.CountActiveBySalon(salonID, fromDay)
 	if err != nil {
 		return err
 	}

@@ -83,42 +83,6 @@ func (r Waitlist) FindActive(salonID, serviceID, professionalID, day, email stri
 	return entry, nil
 }
 
-// Create inserta la entrada. El token nace NULL: la capability de la baja se
-// emite con el aviso, así un alta que nunca se anuncia no deja un enlace vivo.
-func (r Waitlist) Create(e domain.WaitlistEntry) error {
-	_, err := r.Pool.Exec(context.Background(),
-		`INSERT INTO waitlist_entries(id,salon_id,service_id,professional_id,day,name,email,phone,
-		   token_hash,created_at,notify_attempts)
-		 VALUES($1,$2,$3,NULLIF($4,''),$5::date,$6,$7,NULLIF($8,''),NULLIF($9,''),$10,0)`,
-		e.ID, e.SalonID, e.ServiceID, e.ProfessionalID, e.Day, e.Name, e.Email, e.Phone,
-		e.TokenHash, e.CreatedAt.UTC())
-	return pgError(err)
-}
-
-// CountActiveByEmail cuenta los avisos activos de ese email en el salón con día
-// >= fromDay (tope de 3, D4). fromDay es hoy en la zona del salón: un aviso de un
-// día pasado no ocupa cupo (revisión nativa R4-001).
-func (r Waitlist) CountActiveByEmail(salonID, email, fromDay string) (int, error) {
-	var n int
-	err := r.Pool.QueryRow(context.Background(),
-		`SELECT count(*) FROM waitlist_entries
-		 WHERE salon_id=$1 AND lower(email)=lower($2) AND left_at IS NULL
-		   AND day >= $3::date`,
-		salonID, email, fromDay).Scan(&n)
-	return n, err
-}
-
-// CountActiveBySalon cuenta los avisos activos del salón con día >= fromDay (tope
-// de 500, D4); mismo criterio de fromDay.
-func (r Waitlist) CountActiveBySalon(salonID, fromDay string) (int, error) {
-	var n int
-	err := r.Pool.QueryRow(context.Background(),
-		`SELECT count(*) FROM waitlist_entries
-		 WHERE salon_id=$1 AND left_at IS NULL AND day >= $2::date`,
-		salonID, fromDay).Scan(&n)
-	return n, err
-}
-
 // FindByTokenHash es la ÚNICA query sin salon_id: el hash del token es la
 // capability que resuelve la entrada antes de saber de qué salón es (quien abre
 // el enlace no tiene sesión). Sin fila es ErrNotFound.
@@ -266,6 +230,73 @@ type waitlistTx struct {
 func (t waitlistTx) LockWrites(salonID string) error {
 	_, err := t.tx.Exec(t.ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, "waitlist-write:"+salonID)
 	return err
+}
+
+// FindActive resuelve la entrada ACTIVA idéntica DENTRO de la transacción del
+// alta (ya con LockWrites tomado): idempotencia del alta (D4). El email se
+// compara sin mayúsculas, igual que el índice único.
+func (t waitlistTx) FindActive(salonID, serviceID, professionalID, day, email string) (domain.WaitlistEntry, error) {
+	entry, err := scanWaitlistEntry(t.tx.QueryRow(t.ctx,
+		`SELECT `+waitlistColumns+` FROM waitlist_entries
+		 WHERE salon_id=$1 AND service_id=$2 AND coalesce(professional_id,'')=$3
+		   AND day=$4::date AND lower(email)=lower($5) AND left_at IS NULL`,
+		salonID, serviceID, professionalID, day, email).Scan)
+	if err != nil {
+		return domain.WaitlistEntry{}, notFound(err)
+	}
+	return entry, nil
+}
+
+// CountActiveByEmail cuenta los avisos activos de ese email en el salón con día
+// >= fromDay (tope de 3, D4). fromDay es hoy en la zona del salón: un aviso de un
+// día pasado no ocupa cupo (revisión nativa R4-001). Corre bajo el lock del alta.
+func (t waitlistTx) CountActiveByEmail(salonID, email, fromDay string) (int, error) {
+	var n int
+	err := t.tx.QueryRow(t.ctx,
+		`SELECT count(*) FROM waitlist_entries
+		 WHERE salon_id=$1 AND lower(email)=lower($2) AND left_at IS NULL
+		   AND day >= $3::date`,
+		salonID, email, fromDay).Scan(&n)
+	return n, err
+}
+
+// CountActiveBySalon cuenta los avisos activos del salón con día >= fromDay (tope
+// de 500, D4); mismo criterio de fromDay. Corre bajo el lock del alta.
+func (t waitlistTx) CountActiveBySalon(salonID, fromDay string) (int, error) {
+	var n int
+	err := t.tx.QueryRow(t.ctx,
+		`SELECT count(*) FROM waitlist_entries
+		 WHERE salon_id=$1 AND left_at IS NULL AND day >= $2::date`,
+		salonID, fromDay).Scan(&n)
+	return n, err
+}
+
+// Create inserta la entrada. El token nace NULL: la capability de la baja se
+// emite con el aviso, así un alta que nunca se anuncia no deja un enlace vivo.
+// Si el índice único parcial rechaza devuelve ErrAlreadyExists.
+func (t waitlistTx) Create(e domain.WaitlistEntry) error {
+	_, err := t.tx.Exec(t.ctx,
+		`INSERT INTO waitlist_entries(id,salon_id,service_id,professional_id,day,name,email,phone,
+		   token_hash,created_at,notify_attempts)
+		 VALUES($1,$2,$3,NULLIF($4,''),$5::date,$6,$7,NULLIF($8,''),NULLIF($9,''),$10,0)`,
+		e.ID, e.SalonID, e.ServiceID, e.ProfessionalID, e.Day, e.Name, e.Email, e.Phone,
+		e.TokenHash, e.CreatedAt.UTC())
+	return pgError(err)
+}
+
+// MarkLeft cierra una entrada por id (UPDATE condicional): la ya avisada que se
+// reemplaza cuando la persona vuelve a anotarse (D6). Sin fila activa es
+// ErrNotFound.
+func (t waitlistTx) MarkLeft(id string, now time.Time) error {
+	tag, err := t.tx.Exec(t.ctx,
+		`UPDATE waitlist_entries SET left_at=$2 WHERE id=$1 AND left_at IS NULL`, id, now.UTC())
+	if err != nil {
+		return pgError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }
 
 // CountRetained cuenta los avisos RETENIDOS del grupo (D6): los ENVIADOS con

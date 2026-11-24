@@ -100,6 +100,14 @@ func TestHTTP_waitlist_join_validaciones(t *testing.T) {
 		{"nombre con NUL", wlBody(env.serviceID, day, `Lía\u0000`, "a@mail.com"), 400, domain.MsgWaitlistInvalidChars},
 		{"email con NUL", wlBody(env.serviceID, day, "Lía", `a@mail.com\u0000`), 400, domain.MsgWaitlistInvalidChars},
 		{"email inválido", wlBody(env.serviceID, day, "Lía", "no-es"), 400, "Email inválido"},
+		// Verificador independiente (LOW): CR/LF o un espacio ADENTRO del email o un
+		// salto de línea en el nombre o el teléfono se guardaban (el mailer los
+		// rechazaba al enviar y la fila gastaba sus 3 intentos).
+		{"email con salto de línea", wlBody(env.serviceID, day, "Lía", `a@mail.com\nBcc: otro@mail.com`), 400, "Email inválido"},
+		{"email con CRLF", wlBody(env.serviceID, day, "Lía", `a@mail.com\r\nBcc: otro@mail.com`), 400, "Email inválido"},
+		{"email con espacio adentro", wlBody(env.serviceID, day, "Lía", "a@mail.com b@mail.com"), 400, "Email inválido"},
+		{"nombre con salto de línea", wlBody(env.serviceID, day, `Lía\nBcc: x`, "a@mail.com"), 400, domain.MsgWaitlistInvalidChars},
+		{"teléfono con salto de línea", wlBody(env.serviceID, day, "Lía", "a@mail.com", "phone", `55\n1234`), 400, domain.MsgWaitlistInvalidChars},
 		{"servicio inexistente", wlBody("no-existe", day, "Lía", "a@mail.com"), 400, domain.MsgWaitlistServiceInvalid},
 		{"profesional ajena", wlBody(env.serviceID, day, "Lía", "a@mail.com", "professional_id", "u-nadie"), 400, domain.MsgWaitlistProfessionalInvalid},
 		{"fecha mal formada", wlBody(env.serviceID, "24/12/2026", "Lía", "a@mail.com"), 400, domain.MsgWaitlistDate},

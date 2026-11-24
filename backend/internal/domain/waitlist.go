@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -119,6 +120,14 @@ func NewWaitlistContact(name, email, phone string) (WaitlistContact, error) {
 		}
 	}
 	name = strings.TrimSpace(name)
+	phone = strings.TrimSpace(phone)
+	// Un salto de línea (u otro carácter de control) adentro del nombre o del
+	// teléfono no es texto de una persona: se rechaza con el mismo 400 que NUL.
+	for _, field := range []string{name, phone} {
+		if strings.IndexFunc(field, unicode.IsControl) >= 0 {
+			return WaitlistContact{}, NewMessage(ErrValidation, MsgWaitlistInvalidChars)
+		}
+	}
 	if name == "" {
 		return WaitlistContact{}, NewMessage(ErrValidation, MsgWaitlistNameRequired)
 	}
@@ -132,10 +141,13 @@ func NewWaitlistContact(name, email, phone string) (WaitlistContact, error) {
 	if err != nil {
 		return WaitlistContact{}, err
 	}
-	if len(normalized) > MaxWaitlistEmailLen {
+	// Un email con espacios o saltos de línea adentro no es una dirección: el
+	// mailer lo rechaza al enviar (header To) y la entrada gastaría sus 3
+	// intentos para nada.
+	if len(normalized) > MaxWaitlistEmailLen ||
+		strings.IndexFunc(normalized, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
 		return WaitlistContact{}, NewMessage(ErrValidation, "Email inválido")
 	}
-	phone = strings.TrimSpace(phone)
 	if utf8.RuneCountInString(phone) > MaxWaitlistPhoneRunes {
 		return WaitlistContact{}, NewMessage(ErrValidation, MsgWaitlistPhoneTooLong)
 	}
