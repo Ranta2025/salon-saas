@@ -14,6 +14,11 @@ export type Service = {
    * `serviceResourceTypeId` of `lib/equipment.ts`.
    */
   resource_type_id?: string | null
+  /**
+   * F16 (D2): text of the service shown on the public page; `null` when the salon
+   * wrote none. Optional because an API without the field leaves it undefined.
+   */
+  description?: string | null
 }
 
 /** Body accepted by POST services. The server assigns id, salon_id and active=true. */
@@ -29,6 +34,11 @@ export type ServiceInput = {
    * Omitted when absent so an older server sees the body of always.
    */
   resource_type_id?: string | null
+  /**
+   * F16 (D2): public description (<= 300). Optional on the server: absent keeps
+   * what is stored, so it is sent as text, or `null` to clear it.
+   */
+  description?: string | null
 }
 
 /** Body accepted by PUT services; `active` absent means "keep active". */

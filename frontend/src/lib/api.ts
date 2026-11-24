@@ -306,15 +306,20 @@ export async function fetchStaff(salonId: string): Promise<StaffMember[]> {
   return normalizeStaff(payload)
 }
 
-/** Public catalogue; no Authorization header because the endpoint is anonymous. */
+/**
+ * Public salon (F16, D4): identity, contact, services, team, gallery, packages and
+ * hours. No Authorization header because the endpoint is anonymous. A payload with
+ * no salon name is not a usable salon: the landing shows its error state.
+ */
 export async function fetchPublicSalon(slug: string): Promise<PublicSalon> {
   const salon = normalizePublicSalon(
     await request<unknown>(`/api/v1/public/salons/${encodeURIComponent(slug)}`, {
       auth: 'none',
     }),
+    API_BASE,
   )
-  if (!salon) {
-    throw new ApiError(200, 'La API no devolvió los servicios del salón.')
+  if (!salon || salon.salon.name === '') {
+    throw new ApiError(200, 'La API no devolvió los datos del salón.')
   }
   return salon
 }
@@ -608,6 +613,47 @@ export async function deleteClientPhoto(
     ),
     { method: 'DELETE' },
   )
+}
+
+/**
+ * Multipart POST (a file upload). Same session and error handling as `request`,
+ * but the browser sets the `Content-Type` with the boundary, so it is never set
+ * here. Returns the parsed JSON body (`undefined` for an empty one).
+ */
+export async function requestMultipart<T>(path: string, form: FormData): Promise<T> {
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  const token = getToken()
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}${path}`, { method: 'POST', headers, body: form })
+  } catch {
+    throw new NetworkError(
+      'No pudimos conectar con el servidor. Revisa tu conexión o la URL de la API.',
+    )
+  }
+  if (response.status === 401) {
+    clearToken()
+    signalUnauthorized()
+  }
+  if (!response.ok) {
+    const detail = await errorDetail(response)
+    if (detail.offline) {
+      throw new NetworkError(detail.message)
+    }
+    throw new ApiError(response.status, detail.message)
+  }
+  const body = await response.text()
+  if (body.trim() === '') {
+    return undefined as T
+  }
+  try {
+    return JSON.parse(body) as T
+  } catch {
+    throw new ApiError(response.status, 'El servidor devolvió una respuesta ilegible.')
+  }
 }
 
 // --- offline queue transport ---
