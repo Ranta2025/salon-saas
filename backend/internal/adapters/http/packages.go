@@ -129,6 +129,10 @@ func (h PackageHandler) CreateCatalog(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if err := h.Packages.RequireManager(actor, salonID); err != nil {
+		respondErr(c, err)
+		return
+	}
 	var in struct {
 		Name         *string `json:"name"`
 		ServiceID    *string `json:"service_id"`
@@ -163,6 +167,10 @@ func (h PackageHandler) UpdateCatalog(c *gin.Context) {
 	salonID := c.Param("id")
 	actor, ok := h.loadActor(c, salonID)
 	if !ok {
+		return
+	}
+	if err := h.Packages.RequireManager(actor, salonID); err != nil {
+		respondErr(c, err)
 		return
 	}
 	var in struct {
@@ -212,6 +220,10 @@ func (h PackageHandler) Purchase(c *gin.Context) {
 	salonID := c.Param("id")
 	actor, ok := h.loadActor(c, salonID)
 	if !ok {
+		return
+	}
+	if err := h.Packages.RequireSeller(actor, salonID); err != nil {
+		respondErr(c, err)
 		return
 	}
 	var in struct {
@@ -268,6 +280,10 @@ func (h PackageHandler) Redeem(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if err := h.Packages.RequireSeller(actor, salonID); err != nil {
+		respondErr(c, err)
+		return
+	}
 	var in struct {
 		ProfessionalID string `json:"professional_id"`
 		Note           string `json:"note"`
@@ -292,6 +308,10 @@ func (h PackageHandler) Adjust(c *gin.Context) {
 	salonID := c.Param("id")
 	actor, ok := h.loadActor(c, salonID)
 	if !ok {
+		return
+	}
+	if err := h.Packages.RequireManager(actor, salonID); err != nil {
+		respondErr(c, err)
 		return
 	}
 	var in struct {

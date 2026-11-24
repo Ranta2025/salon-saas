@@ -485,6 +485,25 @@ func (s PackageService) member(actor domain.Membership, salonID string) (domain.
 	return m, nil
 }
 
+// RequireManager y RequireSeller son el permiso SOLO (sin tocar datos): el handler
+// los llama ANTES de leer el cuerpo, así quien no puede hacer la acción recibe 403
+// aunque el cuerpo esté mal formado (verificador independiente, MEDIUM).
+func (s PackageService) RequireManager(actor domain.Membership, salonID string) error {
+	_, err := s.manager(actor, salonID)
+	return err
+}
+
+func (s PackageService) RequireSeller(actor domain.Membership, salonID string) error {
+	m, err := s.member(actor, salonID)
+	if err != nil {
+		return err
+	}
+	if !puedeVender(m) {
+		return domain.ErrForbidden
+	}
+	return nil
+}
+
 // manager exige membership activa y permiso de configuración del salón.
 func (s PackageService) manager(actor domain.Membership, salonID string) (domain.Membership, error) {
 	m, err := s.member(actor, salonID)
