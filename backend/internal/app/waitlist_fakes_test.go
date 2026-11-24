@@ -67,24 +67,24 @@ func (f *fakeWaitlist) Create(e domain.WaitlistEntry) error {
 	return nil
 }
 
-func (f *fakeWaitlist) CountActiveByEmail(salonID, email string) (int, error) {
+func (f *fakeWaitlist) CountActiveByEmail(salonID, email, fromDay string) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n := 0
 	for _, e := range f.entries {
-		if e.Active() && e.SalonID == salonID && strings.EqualFold(e.Email, email) {
+		if e.Active() && e.SalonID == salonID && strings.EqualFold(e.Email, email) && e.Day >= fromDay {
 			n++
 		}
 	}
 	return n, nil
 }
 
-func (f *fakeWaitlist) CountActiveBySalon(salonID string) (int, error) {
+func (f *fakeWaitlist) CountActiveBySalon(salonID, fromDay string) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n := 0
 	for _, e := range f.entries {
-		if e.Active() && e.SalonID == salonID {
+		if e.Active() && e.SalonID == salonID && e.Day >= fromDay {
 			n++
 		}
 	}

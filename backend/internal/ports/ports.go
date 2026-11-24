@@ -870,11 +870,14 @@ type WaitlistRepository interface {
 	// como idempotente releyendo la que ganó.
 	Create(e domain.WaitlistEntry) error
 	// CountActiveByEmail cuenta los avisos activos (sin left_at) de ese email en
-	// el salón: el tope de D4 son 3.
-	CountActiveByEmail(salonID, email string) (int, error)
-	// CountActiveBySalon cuenta los avisos activos del salón: el tope de D4 son
-	// 500.
-	CountActiveBySalon(salonID string) (int, error)
+	// el salón con día >= fromDay: el tope de D4 son 3. fromDay es HOY en la zona
+	// del salón ("YYYY-MM-DD"): un aviso cuyo día ya pasó no ocupa cupo (no hay
+	// purga, y sin este filtro tres avisos viejos bloquearían al email para
+	// siempre).
+	CountActiveByEmail(salonID, email, fromDay string) (int, error)
+	// CountActiveBySalon cuenta los avisos activos del salón con día >= fromDay:
+	// el tope de D4 son 500. Mismo criterio de fromDay.
+	CountActiveBySalon(salonID, fromDay string) (int, error)
 	// FindByTokenHash es la ÚNICA query sin salon_id: el hash del token es la
 	// capability que resuelve la entrada antes de saber de qué salón es (quien
 	// abre el enlace no tiene sesión). Sin fila es ErrNotFound.

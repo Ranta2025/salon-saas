@@ -176,8 +176,9 @@ func (e WaitlistEntry) Status() string {
 	}
 }
 
-// Active dice si la entrada sigue en la lista (sin baja). Es lo que cuentan los
-// topes de D4 y lo que lista el personal (D8).
+// Active dice si la entrada sigue en la lista (sin baja). Es la base de lo que
+// cuentan los topes de D4 (que además exigen día >= hoy: un aviso de un día
+// pasado no ocupa cupo) y de lo que lista el personal (D8).
 func (e WaitlistEntry) Active() bool { return e.LeftAt == nil }
 
 // NewWaitlistEntry arma la entrada con el día YA validado (WaitlistDay). Nace

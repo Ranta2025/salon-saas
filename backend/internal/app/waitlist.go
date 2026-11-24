@@ -152,7 +152,8 @@ func (s WaitlistService) Join(slug string, in WaitlistJoinInput) (WaitlistJoinRe
 		return none, waitlistSlotsAvailable()
 	}
 
-	if err := s.checkCaps(salon.ID, contact.Email); err != nil {
+	// Los topes cuentan solo los avisos de HOY en adelante en la zona del salón.
+	if err := s.checkCaps(salon.ID, contact.Email, s.now().In(loc).Format("2006-01-02")); err != nil {
 		return none, err
 	}
 
@@ -407,15 +408,17 @@ func (s WaitlistService) ensureDoes(salonID, serviceID, userID string) error {
 }
 
 // checkCaps aplica los topes de D4: 3 avisos activos por email y 500 por salón.
-func (s WaitlistService) checkCaps(salonID, email string) error {
-	mine, err := s.Waitlist.CountActiveByEmail(salonID, email)
+// fromDay es hoy en la zona del salón: los avisos de días pasados no cuentan
+// (revisión nativa R4-001).
+func (s WaitlistService) checkCaps(salonID, email, fromDay string) error {
+	mine, err := s.Waitlist.CountActiveByEmail(salonID, email, fromDay)
 	if err != nil {
 		return err
 	}
 	if mine >= domain.MaxWaitlistActivePerEmail {
 		return domain.NewMessage(domain.ErrAlreadyExists, domain.MsgWaitlistEmailLimit)
 	}
-	total, err := s.Waitlist.CountActiveBySalon(salonID)
+	total, err := s.Waitlist.CountActiveBySalon(salonID, fromDay)
 	if err != nil {
 		return err
 	}
