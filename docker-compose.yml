@@ -46,6 +46,8 @@ services:
       SMTP_TLS: ${SMTP_TLS:-none}
       # Cada cuánto mira la cola de recordatorios (duración de Go).
       REMINDER_INTERVAL: ${REMINDER_INTERVAL:-60s}
+      # Lista de espera (F7): cada cuánto se barre y se avisa. 0 la deshabilita.
+      WAITLIST_INTERVAL: ${WAITLIST_INTERVAL:-60s}
       # Base pública del frontend: el enlace de la invitación de equipo se arma
       # como "<APP_URL>/invitacion#<token>" (F2g1). Con el compose, la web está
       # en WEB_PORT (8081).
