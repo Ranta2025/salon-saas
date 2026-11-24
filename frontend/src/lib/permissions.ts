@@ -73,6 +73,16 @@ export function canManageInventory(role: Role | null | undefined): boolean {
 }
 
 /**
+ * Waiting list (contract F7, D8): owner, admin and reception read the avisos and
+ * can remove one. A professional gets 403 from the server, so the page shows a
+ * `ManagerOnlyNotice`-style explanation instead of the table, and the menu entry
+ * stays hidden.
+ */
+export function canViewWaitlist(role: Role | null | undefined): boolean {
+  return isManager(role) || role === 'reception'
+}
+
+/**
  * Home of `/panel` for a role. A professional has no dashboard (the API answers
  * 403) and lands on their own agenda (S-F2b-4). `null` means the dashboard is
  * the right page: owner/admin keep it, with a "Mi agenda" card when they attend.

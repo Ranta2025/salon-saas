@@ -23,6 +23,8 @@ import { RequireAuth } from './app/RequireAuth'
 import { ServicesPage } from './app/ServicesPage'
 import { SettingsPage } from './app/SettingsPage'
 import { TeamPage } from './app/TeamPage'
+import { WaitlistLeavePage } from './app/WaitlistLeavePage'
+import { WaitlistPage } from './app/WaitlistPage'
 import { LandingPage } from './landing/LandingPage'
 import { UNAUTHORIZED_EVENT } from './lib/api'
 import { purgeOfflineApiCache } from './lib/pwa'
@@ -78,6 +80,8 @@ export function App() {
         <Route path="/invitacion" element={<InvitationPage />} />
         {/* Public, no session, no menu entry: single-use booking link (F1). */}
         <Route path="/turno" element={<BookingLinkPage />} />
+        {/* Public, no session: the baja link of the waiting list (F7, D5). */}
+        <Route path="/lista-de-espera" element={<WaitlistLeavePage />} />
 
         <Route
           path="/panel"
@@ -104,6 +108,7 @@ export function App() {
           <Route path="exportar" element={<ExportsPage />} />
           <Route path="nomina/liquidaciones/:rid" element={<PayrollRunDetailPage />} />
           <Route path="mis-comisiones" element={<MyCommissionsPage />} />
+          <Route path="lista-de-espera" element={<WaitlistPage />} />
           <Route path="ajustes" element={<SettingsPage />} />
         </Route>
 

@@ -4,7 +4,7 @@ import { SALON } from '../landing/content'
 import { fetchStaff } from '../lib/api'
 import { canOpenMyAgenda } from '../lib/myAgenda'
 import { canViewOwnCommissions } from '../lib/payroll'
-import { activeRole, canViewInventory, isManager } from '../lib/permissions'
+import { activeRole, canViewInventory, canViewWaitlist, isManager } from '../lib/permissions'
 import type { StaffMember } from '../lib/staff'
 import { purgeOfflineApiCache } from '../lib/pwa'
 import { clearSalonId, clearToken, clearUserId } from '../lib/session'
@@ -33,6 +33,11 @@ type NavEntry = {
    * professional does not see the entry and gets `ManagerOnlyNotice` on the page.
    */
   inventoryOnly?: boolean
+  /**
+   * Waiting list (contract F7, D8): owner, admin and reception read the avisos;
+   * a professional does not see the entry and gets the notice on the page.
+   */
+  waitlistOnly?: boolean
 }
 
 const NAV: readonly NavEntry[] = [
@@ -47,6 +52,10 @@ const NAV: readonly NavEntry[] = [
   { to: '/panel/equipamiento', label: 'Puestos', end: false, managerOnly: true },
   { to: '/panel/clientes', label: 'Clientes', end: false },
   { to: '/panel/avisos', label: 'Avisos', end: false },
+  // F7: the notices with personal data are read by owner, admin and reception.
+  // Short label on purpose: the three columns at 390 px keep every entry in two
+  // rows without clipping (S-F2e-5); the page is titled «Lista de espera».
+  { to: '/panel/lista-de-espera', label: 'Espera', end: false, waitlistOnly: true },
   { to: '/panel/equipo', label: 'Equipo', end: false, managerOnly: true },
   { to: '/panel/nomina', label: 'Nómina', end: false, managerOnly: true },
   // F3b: expenses and net profit are money, so only owner/admin see them.
@@ -166,6 +175,9 @@ function ShellChrome() {
     // While `/me` is unknown the entry stays visible (role === null) and the page
     // explains the 403 instead of hiding the section from a real reader.
     if (item.inventoryOnly && role !== null && !canViewInventory(role)) {
+      return false
+    }
+    if (item.waitlistOnly && role !== null && !canViewWaitlist(role)) {
       return false
     }
     return !item.agendaOnly || canOpenMine

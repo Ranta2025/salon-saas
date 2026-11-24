@@ -23,6 +23,7 @@ import {
 } from '../../lib/publicBooking'
 import { weekSummary, type SalonDay } from '../../lib/weeklyHours'
 import { PUBLIC_HOURS_FALLBACK, SALON, type LandingService } from '../content'
+import { WaitlistForm } from './WaitlistForm'
 
 /** `2025-03-14` → `viernes, 14 de marzo de 2025` without shifting the day. */
 function longDate(dateValue: string): string {
@@ -464,10 +465,26 @@ export function BookingCta({ slug, services, preselected, hours }: BookingCtaPro
                     </div>
                   ) : null}
                   {!slotsLoading && !slotsError && date !== '' && groups.length === 0 ? (
-                    <p className="booking__slots-empty">
-                      No quedan horarios libres ese día. Prueba con otra fecha o escríbenos por
-                      WhatsApp.
-                    </p>
+                    <>
+                      <p className="booking__slots-empty">
+                        No quedan horarios libres ese día. Prueba con otra fecha o escríbenos por
+                        WhatsApp.
+                      </p>
+                      {/*
+                       * F7 (D9a): only when the day has no slots at all. The form
+                       * reuses the service and the day already chosen and never
+                       * reserves anything: the aviso is by email when a slot frees up.
+                       */}
+                      {service !== null ? (
+                        <WaitlistForm
+                          key={`${service.id}-${date}`}
+                          slug={slug}
+                          serviceId={service.id}
+                          serviceName={service.name}
+                          date={date}
+                        />
+                      ) : null}
+                    </>
                   ) : null}
                   {groups.length > 0 ? (
                     <ul className="slot-grid" aria-label="Horarios disponibles">

@@ -2541,3 +2541,129 @@ producto lo decide el servidor y el dispositivo no lo guarda.
     de las superficies de esta entrega: queda anotado para el dueño del archivo.
   - La fila deshabilitada de un producto sin stock usa `opacity: .55` en línea,
     el mismo valor que `.btn:disabled`, porque no hubo CSS nuevo disponible.
+
+## 29. Fase 6 — F7: lista de espera (frontend)
+
+Cierre del frente de «Contrato F7 (lista de espera: aviso por email cuando se
+libera un hueco)»: las formas congeladas de D4 (unión pública), D5 (baja por
+enlace) y D8 (lista del personal) y el frontend de D9. Sin dependencias nuevas y
+sin CSS nuevo: las tres pantallas reusan `panel-card`, `table table--stack`,
+`team-confirm`, `empty-state`, `notice`, `pill`, `field`, `invite`/`invite__card`,
+`booking__step`/`booking__fields` y `btn`. El backend de F7 corre en paralelo, así
+que todo se probó con `fetch` simulado y con una API simulada en el navegador.
+No hay dinero en la función: ningún módulo, pantalla ni prueba de esta entrega
+toca centavos ni un flotante.
+
+### 29.1 Rutas, menú y permisos
+
+- Rutas nuevas en `App.tsx`: `/lista-de-espera` (pública, sin sesión, al lado de
+  `/turno`, sin entrada de menú) y `/panel/lista-de-espera` dentro del panel.
+- Menú: la entrada «Espera» aparece para owner, admin y recepción. La regla vive
+  en `lib/permissions.ts` (`canViewWaitlist`) y la aplica el servidor: el
+  profesional recibe 403 en `GET /salons/:id/waitlist`.
+- El profesional no ve la entrada y, si entra por URL, ve `WaitlistNotice`
+  (mismo patrón que `ManagerOnlyNotice`) y no la tabla. La etiqueta del menú es
+  corta a propósito: la rejilla de tres columnas a 390 px recortaba «Lista de
+  espera», el título de la página sí lo dice completo.
+
+### 29.2 Lógica pura (`src/lib/waitlist.ts`)
+
+- Copy del contrato verbatim: «Avisame si se libera un turno», «Listo, te
+  avisamos por email si se libera un turno.» y el botón «Dejar de recibir
+  avisos».
+- `validateWaitlistDraft`: nombre 1..120 sin NUL, email obligatorio (es el ÚNICO
+  canal del aviso, a diferencia de la reserva donde es opcional) con el mismo
+  validador de `lib/email.ts`, y teléfono opcional con `lib/phone.ts`; una fecha
+  tiene que ser un día real (`2026-02-31` no pasa). `waitlistPayload` manda solo
+  las claves del contrato: sin profesional la clave `professional_id` NO viaja
+  (queda «cualquiera») y sin teléfono tampoco `phone`.
+- Cliente de las cuatro rutas con sus URLs y cuerpos congelados; la unión y la
+  baja van sin sesión (`auth: 'none'`) y el token viaja solo en el cuerpo.
+- `describeWaitlistError`: los tres 409 y el 404 se muestran verbatim, el 429 usa
+  la frase que ya existe en el flujo público de reserva (`RATE_LIMIT_MESSAGE`) y
+  una caída de red conserva el mensaje del cliente.
+- `normalizeWaitlistEntries` lee la forma de D8 (una fila sin `id` no se muestra
+  porque no se podría quitar) y `sortWaitlist` ordena por día y después por
+  `created_at`, el mismo orden del servidor.
+- El token del fragmento se lee con `readBookingLinkHash` de F1 (`/turno#<token>`
+  y `/lista-de-espera#<token>` comparten mecanismo: 32 bytes en base64url).
+
+### 29.3 Landing: «Avisame si se libera un turno»
+
+- `BookingCta` gana el formulario (`WaitlistForm.tsx`) DEBAJO del mensaje «No
+  quedan horarios libres ese día…», y solo ahí: con horarios, cargando, con error
+  de disponibilidad o sin fecha no aparece. Usa el servicio y la fecha ya
+  elegidos y no cambia nada del flujo de reserva.
+- Estados: enviando, éxito verbatim, los 409 del servidor verbatim («Todavía hay
+  horarios libres ese día», «Ya tenés el máximo de avisos activos», «La lista de
+  espera de este salón está completa»), el 429 con la frase existente y el 400
+  «Email inválido» junto al campo.
+- El bloque NO es un `<form>`: vive dentro del formulario de la reserva y HTML
+  prohíbe anidar formularios. Medido en el navegador antes de corregirlo: el
+  submit nativo navegaba con `?name=…&email=…&phone=…` y el aviso nunca llegaba.
+  Queda como `role="group"` con botón `type="button"` y Enter manejado a mano
+  (el `Enter` del selector de país del teléfono sigue siendo suyo).
+
+### 29.4 Página pública `/lista-de-espera`
+
+- El token se lee del fragmento y se borra de la barra de direcciones con
+  `history.replaceState` ANTES de cualquier pedido; vive solo en memoria (nunca
+  storage, nunca query, nunca ruta, nunca consola) y viaja solo en el cuerpo.
+- Se lee UNA vez por documento (estado de módulo, no `useRef`): en `npm run dev`
+  React 18 remonta el componente y el segundo pase encontraba la URL ya limpia,
+  de modo que con un token válido se veía «El enlace no trae el código del aviso».
+  Medido y corregido con esa memoria por documento.
+- Con token ofrece «Dejar de recibir avisos» y la baja es idempotente; el éxito
+  no promete nada más y aclara que el horario sigue libre. El 404 «Aviso no
+  encontrado» se muestra verbatim, y sin token hay una explicación con enlace al
+  sitio (el `#` se pierde al reenviar el correo).
+
+### 29.5 Panel: «Lista de espera»
+
+- Tabla con servicio, profesional (o «Cualquiera»), día, nombre, correo,
+  teléfono, estado («Esperando»/«Avisada») y «Quitar». El día se imprime con la
+  fecha que mandó el salón (UTC mediodía), así ninguna zona horaria corre la fila
+  un día.
+- «Quitar» pide confirmación (`team-confirm`) y dice qué deja de pasar. Después
+  del DELETE la lista se vuelve a pedir al servidor: no hay quita optimista, y un
+  404 (otra persona ya lo quitó) también refresca. Estados de carga, error con
+  «Reintentar», vacío honesto y «N avisos».
+
+### 29.6 Pruebas
+
+- TDD con `node --test` y `fetch` simulado: primero en rojo (`waitlist.ts` no
+  existía), después en verde. 35 tests nuevos en `waitlist.test.ts`: la copy
+  verbatim del contrato, la validación (nombre vacío/121/NUL, email obligatorio e
+  inválido, teléfono opcional y mal formado, día real), el cuerpo exacto de la
+  unión con y sin profesional/teléfono, las URLs y los métodos de las cuatro
+  rutas (`auth` ausente en las públicas, `Bearer` en las del panel), los tres 409
+  verbatim, el 429 con la frase existente, el 404 «Aviso no encontrado» de la
+  baja y del DELETE, la idempotencia de la baja, los normalizadores, el orden por
+  día y creación, las etiquetas («Cualquiera», «Esperando»/«Avisada», el día sin
+  corrimiento) y la matriz de roles de `canViewWaitlist`.
+- `npx tsc --noEmit` limpio, `npm test` 627/627 (592 previos sin tocar) y
+  `npm run build` correcto.
+- Revisión visual con el bundle de `vite build`, `vite preview` y una API
+  simulada en `/tmp/f7f` (Chromium del caché de Playwright por protocolo
+  DevTools) a **1280 y 390 px**: landing con el formulario bajo el mensaje, el
+  409 verbatim en pantalla, el éxito verbatim (enviado con Enter desde el campo
+  de correo, sin navegar), `/lista-de-espera` antes y después de la baja, panel
+  con tres avisos, la confirmación de «Quitar», la quita real (3 → 2 filas con el
+  aviso de éxito), la lista vacía y el profesional con el aviso en lugar de la
+  tabla. `document.documentElement.scrollWidth === innerWidth` en las diez
+  capturas.
+- **Desviaciones conscientes:**
+  - El runner no tiene entorno DOM: las reglas viven en funciones puras con
+    tests y lo que es DOM (estados, Enter, confirmación, 44 px, desborde) se
+    verificó en el navegador. No hay `.test.tsx`: `npm test` es
+    `node --test src/**/*.test.ts` y Node no carga `.tsx`
+    (`ERR_UNKNOWN_FILE_EXTENSION` medido).
+  - La entrada del menú se llama «Espera» por el ancho de la rejilla a 390 px; el
+    CSS del panel (`src/styles/app.css`) quedó fuera de las superficies.
+  - El aviso del rol sin acceso es `WaitlistNotice` (nuevo, en
+    `components/Waitlist*.tsx`) y no `ManagerOnlyNotice`, porque el copy
+    compartido habla de «la nómina ni las comisiones del equipo».
+  - Hallazgo fuera de las superficies de esta entrega: `/turno` (F1) e
+    `/invitacion` (F2g1) leen su token con un `useRef` del montaje y en
+    `npm run dev` (StrictMode remonta) pierden el token igual que perdía esta
+    página; quedan como están y se anotan para su dueño.
