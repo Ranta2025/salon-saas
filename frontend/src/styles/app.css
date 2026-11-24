@@ -4061,3 +4061,149 @@
     max-width: none;
   }
 }
+
+
+/* ---------- F16: «Mi salón» (profile, gallery, preview) ---------- */
+
+.salon-profile {
+  display: grid;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.salon-profile__main {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.salon-preview {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.salon-preview__hero {
+  position: relative;
+  display: grid;
+  gap: 0.5rem;
+  padding: 1.25rem;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--plum);
+  color: var(--cream);
+  isolation: isolate;
+}
+
+.salon-preview__photo {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.salon-preview__hero:has(.salon-preview__photo)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: rgba(42, 20, 36, 0.78);
+}
+
+.salon-preview__name {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.salon-preview__lede {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--cream-soft);
+  overflow-wrap: anywhere;
+}
+
+.salon-preview__lede--hidden {
+  font-style: italic;
+  color: var(--cream-muted);
+}
+
+.salon-preview__rows {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.salon-preview__rows > div {
+  display: grid;
+  gap: 0.1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.salon-preview__rows dt {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.salon-preview__rows dd {
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.salon-preview__rows > div[data-hidden='true'] dd {
+  color: var(--ink-muted);
+  font-style: italic;
+}
+
+.salon-preview__thumbs {
+  display: grid;
+  gap: 0.4rem;
+  grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+}
+
+.salon-preview__thumbs img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--radius-xs);
+  background: var(--rose-tint);
+}
+
+.gallery-admin__grid {
+  margin-top: var(--space-3);
+}
+
+.gallery-admin__item {
+  min-width: 0;
+}
+
+.gallery-admin__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.gallery-admin__actions .btn {
+  min-height: 44px;
+}
+
+.photo-confirm .btn {
+  min-height: 44px;
+}
+
+@media (min-width: 1080px) {
+  .salon-profile {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  }
+
+  .salon-preview {
+    position: sticky;
+    top: var(--space-4);
+  }
+}

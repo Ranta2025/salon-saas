@@ -21,6 +21,7 @@ import { PayrollRunDetailPage } from './app/PayrollRunDetailPage'
 import { PosPage } from './app/PosPage'
 import { ProfitPage } from './app/ProfitPage'
 import { RequireAuth } from './app/RequireAuth'
+import { SalonProfilePage } from './app/SalonProfilePage'
 import { ServicesPage } from './app/ServicesPage'
 import { SettingsPage } from './app/SettingsPage'
 import { TeamPage } from './app/TeamPage'
@@ -111,6 +112,7 @@ export function App() {
           <Route path="nomina/liquidaciones/:rid" element={<PayrollRunDetailPage />} />
           <Route path="mis-comisiones" element={<MyCommissionsPage />} />
           <Route path="lista-de-espera" element={<WaitlistPage />} />
+          <Route path="mi-salon" element={<SalonProfilePage />} />
           <Route path="ajustes" element={<SettingsPage />} />
         </Route>
 

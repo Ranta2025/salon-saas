@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { SALON } from '../landing/content'
 import { fetchStaff } from '../lib/api'
 import { canOpenMyAgenda } from '../lib/myAgenda'
 import { canViewOwnCommissions } from '../lib/payroll'
@@ -8,6 +7,7 @@ import {
   activeRole,
   canViewInventory,
   canViewPackages,
+  canViewSalonProfile,
   canViewWaitlist,
   isManager,
 } from '../lib/permissions'
@@ -49,6 +49,11 @@ type NavEntry = {
    * catalog; a professional does not see the entry and gets the notice on the page.
    */
   packagesOnly?: boolean
+  /**
+   * «Mi salón» (contract F16, D7): owner, admin and reception see the entry; a
+   * professional does not and gets the notice on the page.
+   */
+  salonProfileOnly?: boolean
 }
 
 const NAV: readonly NavEntry[] = [
@@ -64,6 +69,11 @@ const NAV: readonly NavEntry[] = [
   // The label is short on purpose: five columns at 375 px keep every entry in
   // two rows (S-F2e-5). The page itself is titled «Equipamiento del salón».
   { to: '/panel/equipamiento', label: 'Puestos', end: false, managerOnly: true },
+  // F16: «Mi salón» is the profile and gallery of the public page. Owner/admin
+  // edit it and reception reads it; a professional does not see the entry. The
+  // label is short on purpose (three columns at 390 px); the page is titled
+  // «Mi salón».
+  { to: '/panel/mi-salon', label: 'Mi salón', end: false, salonProfileOnly: true },
   { to: '/panel/clientes', label: 'Clientes', end: false },
   { to: '/panel/avisos', label: 'Avisos', end: false },
   // F7: the notices with personal data are read by owner, admin and reception.
@@ -141,6 +151,8 @@ function ShellChrome() {
   const navigate = useNavigate()
   const { salonId, salons, user } = useSalon()
   const role = activeRole(salons, salonId)
+  // The brand of the panel is the ACTIVE salon (F16: no salon name is hard-coded).
+  const brandName = salons.find((salon) => salon.id === salonId)?.name ?? 'Salón'
   // «Mi agenda» is shown only to whoever appears in /staff (the bookable team of
   // F2a); the list is re-read on every salon switch, so the entry follows it.
   const [staff, setStaff] = useState<StaffMember[]>([])
@@ -197,6 +209,9 @@ function ShellChrome() {
     if (item.packagesOnly && role !== null && !canViewPackages(role)) {
       return false
     }
+    if (item.salonProfileOnly && role !== null && !canViewSalonProfile(role)) {
+      return false
+    }
     return !item.agendaOnly || canOpenMine
   })
 
@@ -220,7 +235,7 @@ function ShellChrome() {
 
       <aside className="shell__sidebar">
         <div className="shell__brand">
-          <span className="shell__brand-name">{SALON.name}</span>
+          <span className="shell__brand-name">{brandName}</span>
           <span className="shell__brand-kicker">Panel del salón</span>
         </div>
 

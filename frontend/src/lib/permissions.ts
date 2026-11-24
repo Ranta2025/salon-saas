@@ -165,3 +165,17 @@ export function assignableRoles(actorRole: Role | null | undefined): Role[] {
     canAssignRole(actorRole, role),
   )
 }
+
+/**
+ * «Mi salón» (contract F16, D7): owner, admin and reception read the profile of the
+ * salon and its gallery; a professional gets 403 from the server on the profile, so
+ * the page shows a notice and the menu entry stays hidden.
+ */
+export function canViewSalonProfile(role: Role | null | undefined): boolean {
+  return isManager(role) || role === 'reception'
+}
+
+/** Editing the profile and managing the gallery: owner and admin only (D1, D3). */
+export function canEditSalonProfile(role: Role | null | undefined): boolean {
+  return isManager(role)
+}

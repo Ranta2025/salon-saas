@@ -8,7 +8,12 @@ import {
 import { formatCents, parseAmountToCents } from '../../lib/money'
 import { normalizeServiceIds } from '../../lib/tradeServices'
 import type { SalonMember } from '../../lib/members'
+import {
+  serviceDescriptionBody,
+  validateServiceDescription,
+} from '../../lib/salonProfile'
 import type { Service, ServiceInput, ServiceUpdateInput } from '../../types'
+import { SalonServiceDescription } from './SalonServiceDescription'
 
 type ServiceFormProps = {
   /** Absent = create mode. */
@@ -36,6 +41,7 @@ export function ServiceForm({
   )
   const [commission, setCommission] = useState(String(service?.commission_pct ?? 0))
   const [active, setActive] = useState(service?.active ?? true)
+  const [description, setDescription] = useState(service?.description ?? '')
   const [professionalIds, setProfessionalIds] = useState<string[]>([])
   const [resourceTypeId, setResourceTypeId] = useState(serviceResourceTypeId(service ?? {}) ?? '')
   const [error, setError] = useState<string | null>(null)
@@ -66,6 +72,12 @@ export function ServiceForm({
       return
     }
 
+    const descriptionCheck = validateServiceDescription(description)
+    if (!descriptionCheck.ok) {
+      setError(descriptionCheck.message)
+      return
+    }
+
     const input: ServiceInput = {
       name: name.trim(),
       duration_min: durationMin,
@@ -73,6 +85,8 @@ export function ServiceForm({
       commission_pct: commissionPct,
       // S-F2e-3: a type id, or `null` when the service uses no equipment.
       resource_type_id: resourceTypeId === '' ? null : resourceTypeId,
+      // F16 (D2): the text of the public page; omitted when empty on create.
+      ...serviceDescriptionBody(descriptionCheck.description, editing ? 'edit' : 'create'),
     }
 
     setPending(true)
@@ -162,6 +176,7 @@ export function ServiceForm({
             required
           />
         </div>
+        <SalonServiceDescription value={description} onChange={setDescription} />
         <div className="field service-form__wide">
           <label htmlFor="service-equipment">Equipo que usa</label>
           <select

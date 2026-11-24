@@ -2824,3 +2824,145 @@ con `formatCents`.
     depende de ellas porque vuelve a pedir la lista.
   - Los días del vencimiento («Vence el 2027-02-01») pueden partirse en dos
     líneas en la tabla de 1280 px: el CSS quedó fuera de las superficies.
+
+## 31. Fase 6 — F16: web pública fiel al panel (frontend)
+
+Contrato: `odd/tasks/fase6-roadmap.md`, «Contrato F16», partes D5, D6 y D7 (el
+backend, D1-D4, lo construye otro tramo). Regla de cierre: para cada sección
+pública hay UNA fuente de verdad en el panel, y si el dueño cambia algo, la
+página pública lo muestra en la siguiente carga.
+
+### 31.1 Landing 100% desde la API (D5)
+
+- `GET /api/v1/public/salons/:slug` ahora se lee completo: `salon{id, slug,
+  name, description, address, phone, email, instagram, timezone}`,
+  `services[…, description]`, `team[{name, trade}]`, `gallery[{id, url, caption}]`,
+  `packages[…]` y `hours`. `normalizePublicSalon(raw, apiBase)` (lib/publicSalon.ts)
+  devuelve los campos opcionales del salón **solo si vienen con texto** (los
+  `null` desaparecen) y resuelve la ruta de cada foto contra el origen de la API.
+  Un salón sin servicios es válido; solo es `null` un payload que no es un salón.
+- `buildLanding(salon)` es la ÚNICA función que decide qué se dibuja: secciones
+  (`services`, `team`, `packages`, `gallery`), enlaces del menú, teléfono /
+  `tel:` / WhatsApp, Instagram, foto de portada (la primera de la galería) y
+  `canBook`. Una sección sin datos NO se renderiza (galería, equipo, paquetes,
+  dirección, redes); el menú solo enlaza las que existen.
+- El enlace de WhatsApp (`whatsappUrl`) se arma solo del teléfono del salón y solo
+  si tiene entre 8 y 15 dígitos (el máximo de E.164); sin teléfono usable no hay
+  botón ni texto de WhatsApp (el teléfono, si hay, se muestra como texto).
+- Se **eliminaron** de `landing/content.ts` y de los componentes: nombre, eslogan,
+  barrio, dirección, teléfono, correo, Instagram, las 8 fotos de stock y sus
+  créditos, el catálogo estático de 8 servicios (y la etiqueta «Más pedido»), las
+  estadísticas inventadas, los 3 testimonios, «Especialistas certificadas», «No
+  cobramos anticipo», el bloque «Por qué elegirnos», la franja de «puntos de
+  confianza» (diagnóstico, productos, medios de pago) y la descripción asociada
+  por nombre de servicio. La descripción del servicio sale de la API y la línea se
+  oculta si no hay. `content.ts` solo conserva el texto genérico
+  `PUBLIC_HOURS_FALLBACK`.
+- Estados: cargando → `ready` | error | no encontrado. Error de red/API o payload
+  sin nombre: «No pudimos cargar los datos del salón. Probá de nuevo en un
+  momento.» con botón «Reintentar»; 404 del slug: «No encontramos este salón.»
+  (`landingFailure` decide por el `status`). NUNCA se dibuja un catálogo de
+  respaldo. Sin servicios: la página se dibuja sin la sección y la reserva dice
+  «Por ahora este salón no tiene servicios disponibles para reservar en línea.»
+- El día «hoy» del horario usa la zona del salón (`salon.timezone`, que D4 agrega);
+  sin ella, la del visitante. `document.title` es el nombre del salón.
+- Se mantiene intacto el flujo de reserva, la lista de espera y el resto de lo
+  funcional. En el panel, la marca de la barra lateral es el nombre del salón
+  activo (ya no una constante).
+- `/` muestra el slug de `VITE_SALON_SLUG` (o `aurelia` si no está definido): es
+  un ajuste de despliegue, no un dato impreso; todo lo que se ve sale de la API.
+
+### 31.2 Sin precios viejos (D6)
+
+- `public/sw.js` (versión `salon-v4`, que borra las cachés anteriores con los
+  precios viejos): **ningún** `GET /api/v1/public/…` pasa por el worker (no hay
+  `respondWith`): va directo a la red y no se guarda nada, ni la ficha, ni la
+  disponibilidad ni las imágenes de la galería. La API privada y el shell
+  conservan su comportamiento.
+- Sin conexión la landing muestra «Sin conexión: los datos pueden no estar al
+  día.» (franja fija abajo, `role="status"`) en vez de datos viejos en silencio; al
+  volver la red se vuelve a pedir la ficha. Con el estado de error y sin red, el
+  aviso se muestra encima del error.
+- Se eliminó la precarga de la foto de portada (`main.tsx` y la landing): era la
+  foto de stock del salón fijo. `lib/landingPreload.ts` queda sin uso (código
+  muerto con sus tests, sin tocar).
+
+### 31.3 Panel «Mi salón» (D7)
+
+- Ruta `/panel/mi-salon`, entrada de menú «Mi salón» (corta a propósito: cabe en
+  la grilla de 390 px, 69 px de ancho y 44 de alto). `canViewSalonProfile`: dueño,
+  administración y recepción; `canEditSalonProfile`: dueño y administración. Un
+  profesional no ve la entrada y la página le muestra el aviso «Esta sección es de
+  la administración».
+- Formulario de perfil (`SalonProfileForm`): nombre, teléfono/WhatsApp, dirección,
+  email, Instagram y descripción. Validación antes de enviar con los límites del
+  servidor (nombre 1..120, descripción ≤500, dirección ≤200, teléfono ≤40, email
+  ≤254, Instagram ≤60; largo en caracteres, no en unidades UTF-16), sin NUL ni
+  saltos de línea, email con el texto del servidor «Email inválido», y Instagram
+  «solo el usuario» (se quita una `@` inicial; enlaces o espacios se rechazan).
+  `buildProfilePayload` arma SIEMPRE las seis claves (vacío → `null`, nunca se
+  omite una) y nunca envía `slug`. Los errores del servidor se muestran tal cual
+  (p. ej. «Faltan datos del salón: nombre, descripción, dirección, teléfono, email e
+  instagram»); «Email inválido» va junto al campo. Recepción ve el formulario de
+  solo lectura, sin botón de guardar ni galería (sus rutas son de dueño/admin).
+- Galería (`SalonGalleryManager`): subida con el mismo `PhotoUploader` de las fotos
+  de clientas (tipo JPG/PNG/WebP y 8 MB comprobados antes de enviar, campo
+  multipart `file`), contador `x/12`, al llegar a 12 el aviso «La galería ya tiene
+  12 fotos» y la subida deshabilitada, leyenda editable (≤120, vacía = sin leyenda,
+  la clave siempre viaja), borrar con confirmación («¿Eliminar esta foto?…»). Si el
+  servidor responde 409 (otra persona llenó la galería) se muestra su texto
+  verbatim y la lista se vuelve a pedir.
+- Vista previa (`SalonPreview`, `previewLanding`): pasa el borrador por
+  `buildLanding`, el MISMO constructor de la landing, así que un campo vacío oculta
+  su bloque aquí igual que allá. Encabezada con «Esto es lo que ve el cliente en
+  tu página pública». Servicios, equipo, paquetes y horarios se editan en sus
+  pantallas y se publican solos.
+- Formulario de servicios: campo «Descripción (opcional)» (≤300, sin saltos de
+  línea) con el aviso de que es lo que ve el cliente. Al crear, una descripción
+  vacía se omite (la clave es opcional); al editar viaja como `""` para que
+  vaciarla la borre de verdad (un `null` podría leerse como «ausente, conservar»).
+- Clientes tipados en `lib/salonProfile.ts` (`fetchProfile`, `saveProfile`,
+  `fetchGallery`, `uploadGalleryPhoto`, `saveCaption`, `deleteGalleryPhoto`);
+  `api.ts` suma `requestMultipart` (misma sesión y manejo de errores que
+  `request`, sin fijar `Content-Type`).
+
+### 31.4 Pruebas
+
+- TDD con `node --test`. RED: `publicSalon.test.ts` y `salonProfile.test.ts` se
+  escribieron antes y fallaron por la razón correcta (`SyntaxError: … does not
+  provide an export named 'LANDING_ERROR_MESSAGE'` y `ERR_MODULE_NOT_FOUND:
+  salonProfile.ts`); la regla del worker se probó en rojo contra el `sw.js` de
+  `HEAD` (el test «deja `GET /api/v1/public/` a la red» falló y las otras 21 pasaron).
+  GREEN después de implementar. Tests nuevos: normalización del payload D4 (nulos,
+  filas inválidas, payload viejo sin `team`/`gallery`/`packages`, cero servicios),
+  WhatsApp/`tel:`/Instagram, `buildLanding` con datos completos, con secciones
+  vacías, sin servicios y sin teléfono usable, la ausencia de constantes de salón
+  en el modelo, `landingFailure`, los textos verbatim, el payload de las seis
+  claves, límites en el borde y uno más, NUL/saltos, Instagram, caracteres
+  vs. UTF-16, la matriz de roles, la vista previa, los seis clientes HTTP con sus
+  URLs/métodos/cuerpos (incluido el multipart con el campo `file` y el 409 verbatim)
+  y el worker cargado en un sandbox `vm` (la API pública no se intercepta; la
+  privada, el shell y los métodos no-GET conservan su comportamiento).
+- Tests preexistentes modificados (solo donde afirmaban contenido fijo eliminado),
+  ambos en `publicSalon.test.ts`: «toLandingServices keeps the API name and price
+  and reuses the static copy» (afirmaba la descripción estática asociada por nombre
+  y el `SERVICES` de `content.ts`) y «toLandingServices falls back to the static
+  catalogue when the API sends nothing» (afirmaba el catálogo de respaldo); además
+  se quitó el import de `SERVICES`. Ningún otro test se tocó.
+- Sin runner de componentes: la lógica vive en `lib/` y el DOM se verificó en el
+  navegador (Chromium por DevTools, API simulada en `/tmp/f16f`, `vite dev`) a
+  **390 y 1280 px**: landing con todos los datos, con secciones opcionales vacías,
+  error con reintento, 404, aviso sin conexión (con datos y sobre el error), «Mi
+  salón» como dueña (errores de validación, error del servidor verbatim, guardar,
+  vista previa, subir GIF y 9 MB rechazados antes de enviar, subir, leyenda, borrar
+  con confirmación, 409 verbatim, 12/12) y como recepción (solo lectura), el aviso
+  del profesional y el campo de descripción del servicio (cuerpos de POST/PUT
+  capturados). Sin desborde horizontal en ninguna.
+- **Desviaciones conscientes:**
+  - Los archivos `TestimonialsSection.tsx` y `WhyUsSection.tsx` quedaron como módulos
+    vacíos (`export {}`): no se pueden borrar desde este tramo; conviene `git rm`.
+    Las imágenes de stock de `public/img/` quedan sin uso por la misma razón.
+  - El CSS de las franjas de estadísticas, confianza, testimonios y «por qué
+    elegirnos» (`landing.css`) quedó sin uso.
+  - Las cuadrículas de servicios pasaron a tarjetas separadas (`auto-fill`): la de
+    1 px sobre fondo gris dejaba un bloque gris al no haber 8 servicios.

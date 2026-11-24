@@ -72,7 +72,7 @@ export function LoginPage() {
           <br /> en una sola pantalla
         </h1>
         <p className="login__tagline">
-          Agenda, punto de venta y catálogo de servicios de Aurelia. Ingresa con la cuenta que te
+          Agenda, punto de venta y catálogo de servicios de tu salón. Ingresa con la cuenta que te
           dio la administración del salón.
         </p>
         <ul className="login__list">
