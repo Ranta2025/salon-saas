@@ -74,6 +74,12 @@ export type SaleInput = {
    * POS picker chose one; the server validates it belongs to the salon.
    */
   client_id?: string
+  /**
+   * F6 (D5): product lines of the sale. Only `{product_id, qty}` travels — the price
+   * is read by the server from its own catalogue — and the key is absent unless the
+   * cart has at least one product, so a sale of services keeps the body of today.
+   */
+  products?: { product_id: string; qty: number }[]
 }
 
 /** Body accepted by POST bookings. */

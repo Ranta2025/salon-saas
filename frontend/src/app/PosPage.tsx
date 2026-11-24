@@ -16,6 +16,14 @@ import { newClientOpId, type QueuedOperation } from '../lib/offlineQueue'
 import type { StaffMember } from '../lib/staff'
 import { addItem, type Cart } from '../lib/posCart'
 import {
+  addProduct,
+  canAddProduct,
+  emptyProductCart,
+  sellableProducts,
+  type ProductCart,
+} from '../lib/productCart'
+import { fetchProducts, type Product } from '../lib/products'
+import {
   SALE_METHODS,
   type Sale,
   type SaleInput,
@@ -43,6 +51,22 @@ function pendingSaleItems(operation: QueuedOperation): number {
   return pendingSalePayload(operation).items.reduce((count, item) => count + item.qty, 0)
 }
 
+/** Product units of a queued sale (contract F6: `products: [{product_id, qty}]`). */
+function pendingSaleProducts(operation: QueuedOperation): number {
+  return (pendingSalePayload(operation).products ?? []).reduce(
+    (count, line) => count + line.qty,
+    0,
+  )
+}
+
+/**
+ * A queued sale's payload never carries a product price (the catalogue price is the
+ * server's), so the row can only sum the services and says the products are there.
+ */
+function pendingSaleHasProducts(operation: QueuedOperation): boolean {
+  return (pendingSalePayload(operation).products ?? []).length > 0
+}
+
 export function PosPage() {
   const { salonId } = useSalon()
   const { online, pending, dropped, enqueueSale, syncedTotal } = useOffline()
@@ -56,6 +80,11 @@ export function PosPage() {
   const [clientsError, setClientsError] = useState<string | null>(null)
   const [clientsLoading, setClientsLoading] = useState(true)
   const [cart, setCart] = useState<Cart>([])
+  // F6: products of the inventory, with their own request. A failure here must not
+  // hide the catalogue, the sales nor the checkout of services.
+  const [products, setProducts] = useState<Product[]>([])
+  const [productsError, setProductsError] = useState<string | null>(null)
+  const [productCart, setProductCart] = useState<ProductCart>(emptyProductCart())
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -73,6 +102,7 @@ export function PosPage() {
     setError(null)
     setStaffError(null)
     setClientsError(null)
+    setProductsError(null)
     setClientsLoading(true)
     const { from, to } = dayRange(new Date())
     // The team comes from its own endpoint: a failure here must not hide the
@@ -106,6 +136,19 @@ export function PosPage() {
       .finally(() => {
         if (active) {
           setClientsLoading(false)
+        }
+      })
+    fetchProducts(salonId)
+      .then((list) => {
+        if (active) {
+          setProducts(list)
+        }
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setProductsError(
+            err instanceof Error ? err.message : 'No pudimos cargar los productos.',
+          )
         }
       })
     Promise.all([fetchServices(salonId), fetchSales(salonId, from, to)])
@@ -199,6 +242,10 @@ export function PosPage() {
     (operation) => operation.kind === 'sale' && operation.salon_id === salonId,
   )
 
+  // The products section lists only active products, with the stock the server
+  // reported. `sellable` keeps its name for the services of the catalogue.
+  const sellableProductList = sellableProducts(products)
+
   return (
     <>
       <PageHeader
@@ -258,11 +305,61 @@ export function PosPage() {
                 ))}
               </ul>
             )}
+
+            {/* F6: only active products, with the stock the server reported. The
+                button stops at that stock; the server still decides the sale. */}
+            <div className="pos-catalog__head">
+              <h2 id="pos-products-title">Productos</h2>
+            </div>
+            {productsError ? (
+              <p className="notice notice--error" role="alert">
+                No pudimos cargar los productos: {productsError}
+              </p>
+            ) : null}
+            {!productsError && sellableProductList.length === 0 ? (
+              <p className="muted">No hay productos cargados en el inventario.</p>
+            ) : null}
+            {sellableProductList.length > 0 ? (
+              <ul className="pos-services" aria-labelledby="pos-products-title">
+                {sellableProductList.map((product) => {
+                  const canAdd = canAddProduct(productCart, product)
+                  return (
+                    <li key={product.id}>
+                      <button
+                        type="button"
+                        className="pos-service"
+                        disabled={!canAdd}
+                        // The page styles `.btn:disabled`; a row of the catalogue
+                        // says the same thing with the same opacity.
+                        style={canAdd ? undefined : { opacity: 0.55, cursor: 'not-allowed' }}
+                        aria-label={`Agregar ${product.name} a la venta`}
+                        onClick={() => setProductCart((current) => addProduct(current, product))}
+                      >
+                        <span className="pos-service__name">{product.name}</span>
+                        <span className="pos-service__meta">
+                          {product.stock === 0 ? 'Sin stock' : `${product.stock} en stock`}
+                        </span>
+                        <span className="pos-service__price">
+                          {formatCents(product.price_cents)}
+                        </span>
+                        <span className="pos-service__add" aria-hidden="true">
+                          +
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : null}
           </section>
 
           <aside className="pos-checkout" aria-label="Cobro de la venta">
             <POSPanel
               cart={cart}
+              productCart={productCart}
+              products={sellableProductList}
+              onProductCartChange={setProductCart}
+              onStockConflict={reload}
               staff={staff}
               staffError={staffError}
               clients={clients}
@@ -311,8 +408,13 @@ export function PosPage() {
                             </span>
                           </td>
                           <td>{SALE_METHODS[payload.method] ?? payload.method}</td>
-                          <td>{pendingSaleItems(operation)}</td>
-                          <td className="table__num">{formatCents(pendingSaleTotal(operation))}</td>
+                          <td>{pendingSaleItems(operation) + pendingSaleProducts(operation)}</td>
+                          <td className="table__num">
+                            {formatCents(pendingSaleTotal(operation))}
+                            {pendingSaleHasProducts(operation) ? (
+                              <span className="muted"> + productos</span>
+                            ) : null}
+                          </td>
                           <td>
                             <span className="pill pill--pending">Pendiente de sincronizar</span>
                           </td>

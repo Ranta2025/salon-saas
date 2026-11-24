@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { formatCents } from '../../lib/money'
 import { dropReasonLabel, findDropped, type DroppedOperation } from '../../lib/offlineQueue'
 import type { StaffMember } from '../../lib/staff'
@@ -12,6 +12,19 @@ import {
   type Cart,
   type PosPickedClient,
 } from '../../lib/posCart'
+import {
+  changeProductQty,
+  productCartQty,
+  productCartTotalCents,
+  productLineSubtotal,
+  productQtyCap,
+  removeProduct,
+  saleWithProducts,
+  stockAvailable,
+  type PosProduct,
+  type ProductCart,
+} from '../../lib/productCart'
+import { isInsufficientStockMessage } from '../../lib/products'
 import type { PickableClient } from '../../lib/clientRecord'
 import { ClientPicker } from './ClientPicker'
 import {
@@ -42,6 +55,20 @@ type POSPanelProps = {
   /** Message of the failed /clients request, shown next to the picker. */
   clientsError?: string | null
   clientsLoading?: boolean
+  /**
+   * Product lines of this same sale (contract F6). Absent means the panel behaves
+   * exactly as before: services only, and no `products` key in the body.
+   */
+  productCart?: ProductCart
+  /** Active products with the stock the server last reported, to cap the cart. */
+  products?: readonly PosProduct[]
+  /** Parent that owns the product cart. */
+  onProductCartChange?: (cart: ProductCart) => void
+  /**
+   * Called when the API answered the 409 of insufficient stock, so the POS asks the
+   * server for the catalogue again: the client never fixes its own stock figure.
+   */
+  onStockConflict?: () => void
 }
 
 /**
@@ -67,6 +94,10 @@ export function POSPanel({
   clients = [],
   clientsError = null,
   clientsLoading = false,
+  productCart,
+  products = [],
+  onProductCartChange,
+  onStockConflict,
 }: POSPanelProps) {
   const [clientName, setClientName] = useState('')
   // F5: the client file is optional. Picking one fills the name and sends
@@ -77,6 +108,12 @@ export function POSPanel({
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [receipt, setReceipt] = useState<{ outcome: SaleOutcome; uiTotal: number } | null>(null)
+  // The 409 of insufficient stock, printed verbatim and with a retry. The cart is
+  // kept whole: the sale is not lost, the person fixes the quantity and retries.
+  const [stockConflict, setStockConflict] = useState<string | null>(null)
+  // React state alone is not enough to stop a double click: both presses can read
+  // the same render, so the guard is synchronous.
+  const submitting = useRef(false)
   // A sale that the server rejected never syncs: saying "se enviará sola" would
   // be a lie, so the receipt repeats the reason the API gave.
   const droppedReceipt =
@@ -84,14 +121,21 @@ export function POSPanel({
       ? findDropped(dropped, receipt.outcome.client_op_id)
       : null
 
-  const uiTotal = totalCents(cart)
+  const productLines = productCart ?? []
+  const knownStock = (productId: string): number => stockAvailable(products, productId)
+  const uiTotal = totalCents(cart) + productCartTotalCents(productLines)
+  const productCount = productCartQty(productLines)
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const runSale = async (): Promise<void> => {
     setError(null)
     setReceipt(null)
-    if (cart.length === 0) {
-      setError('Agrega al menos un servicio a la venta.')
+    setStockConflict(null)
+    if (cart.length === 0 && productLines.length === 0) {
+      setError(
+        productCart === undefined
+          ? 'Agrega al menos un servicio a la venta.'
+          : 'Agrega al menos un servicio o un producto a la venta.',
+      )
       return
     }
     if (professionalId.trim() === '' || !staff.some((member) => member.id === professionalId)) {
@@ -102,42 +146,71 @@ export function POSPanel({
       setError('Escribe el nombre del cliente para el ticket.')
       return
     }
+    if (submitting.current) {
+      return
+    }
     const picked: PosPickedClient | null = pickedClient
-    const input: SaleInput = saleWithClient(
-      {
-        professional_id: professionalId.trim(),
-        client_name: clientName.trim(),
-        method,
-        items: cart.map((line) => ({
-          service_id: line.service_id,
-          qty: line.qty,
-          unit_price_cents: line.unit_price_cents,
-        })),
-      },
-      picked,
+    // F6: the product lines travel as `{product_id, qty}` only, and without any of
+    // them the body is EXACTLY the one of today (no `products` key).
+    const input: SaleInput = saleWithProducts(
+      saleWithClient(
+        {
+          professional_id: professionalId.trim(),
+          client_name: clientName.trim(),
+          method,
+          items: cart.map((line) => ({
+            service_id: line.service_id,
+            qty: line.qty,
+            unit_price_cents: line.unit_price_cents,
+          })),
+        },
+        picked,
+      ),
+      productLines,
     )
+    submitting.current = true
     setPending(true)
     try {
       const outcome = await onSubmit(input)
       setReceipt({ outcome, uiTotal })
       onCartChange([])
+      onProductCartChange?.([])
       setClientName('')
       setPickedClient(null)
       onCompleted()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No pudimos registrar la venta.')
+      const message = err instanceof Error ? err.message : 'No pudimos registrar la venta.'
+      if (isInsufficientStockMessage(message)) {
+        setStockConflict(message)
+        // The stock the panel knew is stale: the catalogue is read again.
+        onStockConflict?.()
+      } else {
+        setError(message)
+      }
     } finally {
+      submitting.current = false
       setPending(false)
     }
+  }
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault()
+    void runSale()
   }
 
   return (
     <form className="pos-panel" onSubmit={handleSubmit} noValidate>
       <h2 className="pos-panel__title">Venta actual</h2>
 
-      {cart.length === 0 ? (
-        <p className="pos-panel__empty">Elige servicios del catálogo para armar la venta.</p>
-      ) : (
+      {cart.length === 0 && productLines.length === 0 ? (
+        <p className="pos-panel__empty">
+          {productCart === undefined
+            ? 'Elige servicios del catálogo para armar la venta.'
+            : 'Elige servicios o productos del catálogo para armar la venta.'}
+        </p>
+      ) : null}
+
+      {cart.length > 0 ? (
         <ul className="pos-lines">
           {cart.map((line) => (
             <li className="pos-line" key={line.service_id}>
@@ -177,13 +250,91 @@ export function POSPanel({
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
+
+      {/* F6: the product lines of the same sale. The quantity is never above the
+          stock the server last reported. */}
+      {productLines.length > 0 ? (
+        <>
+          <h3 style={{ fontSize: 'var(--step-0)' }}>Productos</h3>
+          <ul className="pos-lines">
+            {productLines.map((line) => {
+              const cap = productQtyCap(knownStock(line.product_id))
+              return (
+                <li className="pos-line" key={line.product_id}>
+                  <div className="pos-line__info">
+                    <p className="pos-line__name">{line.name}</p>
+                    <p className="pos-line__price">
+                      {formatCents(line.unit_price_cents)} × {line.qty} ={' '}
+                      <strong>{formatCents(productLineSubtotal(line))}</strong>
+                    </p>
+                  </div>
+                  <div className="pos-line__qty">
+                    <button
+                      type="button"
+                      className="btn btn--quiet"
+                      aria-label={`Quitar una unidad de ${line.name}`}
+                      onClick={() =>
+                        onProductCartChange?.(
+                          changeProductQty(productLines, line.product_id, line.qty - 1, cap),
+                        )
+                      }
+                    >
+                      −
+                    </button>
+                    <span aria-live="polite">{line.qty}</span>
+                    <button
+                      type="button"
+                      className="btn btn--quiet"
+                      aria-label={`Agregar una unidad de ${line.name}`}
+                      disabled={line.qty >= cap}
+                      onClick={() =>
+                        onProductCartChange?.(
+                          changeProductQty(productLines, line.product_id, line.qty + 1, cap),
+                        )
+                      }
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--quiet"
+                      onClick={() =>
+                        onProductCartChange?.(removeProduct(productLines, line.product_id))
+                      }
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                  {line.qty >= cap ? (
+                    <p className="field__hint">
+                      Es todo el stock conocido de {line.name}: {cap}.
+                    </p>
+                  ) : null}
+                </li>
+              )
+            })}
+          </ul>
+        </>
+      ) : null}
 
       <dl className="pos-total">
         <div>
           <dt>Artículos</dt>
-          <dd>{itemCount(cart)}</dd>
+          <dd>{itemCount(cart) + productCount}</dd>
         </div>
+        {productLines.length > 0 ? (
+          <div>
+            <dt>Servicios</dt>
+            <dd>{formatCents(totalCents(cart))}</dd>
+          </div>
+        ) : null}
+        {productLines.length > 0 ? (
+          <div>
+            <dt>Productos</dt>
+            <dd>{formatCents(productCartTotalCents(productLines))}</dd>
+          </div>
+        ) : null}
         <div className="pos-total__grand">
           <dt>Total a cobrar</dt>
           <dd>{formatCents(uiTotal)}</dd>
@@ -266,6 +417,24 @@ export function POSPanel({
         <p className="notice notice--error" role="alert">
           {error}
         </p>
+      ) : null}
+
+      {stockConflict ? (
+        <>
+          <p className="notice notice--error" role="alert">
+            {stockConflict} La venta no se registró y el carrito quedó como estaba.
+          </p>
+          <div className="page-head__actions">
+            <button
+              type="button"
+              className="btn btn--wine"
+              disabled={pending}
+              onClick={() => void runSale()}
+            >
+              Reintentar la venta
+            </button>
+          </div>
+        </>
       ) : null}
 
       {receipt ? (

@@ -8,6 +8,7 @@ import { ClientsPage } from './app/ClientsPage'
 import { EquipmentPage } from './app/EquipmentPage'
 import { ExpensesPage } from './app/ExpensesPage'
 import { ExportsPage } from './app/ExportsPage'
+import { InventoryPage } from './app/InventoryPage'
 import { InvitationPage } from './app/InvitationPage'
 import { LoginPage } from './app/LoginPage'
 import { MyAgendaPage } from './app/MyAgendaPage'
@@ -91,6 +92,7 @@ export function App() {
           <Route path="calendario" element={<CalendarPage />} />
           <Route path="pos" element={<PosPage />} />
           <Route path="servicios" element={<ServicesPage />} />
+          <Route path="inventario" element={<InventoryPage />} />
           <Route path="clientes" element={<ClientsPage />} />
           <Route path="clientes/:clientId" element={<ClientDetailPage />} />
           <Route path="avisos" element={<NotificationsPage />} />

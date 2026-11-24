@@ -4,7 +4,7 @@ import { SALON } from '../landing/content'
 import { fetchStaff } from '../lib/api'
 import { canOpenMyAgenda } from '../lib/myAgenda'
 import { canViewOwnCommissions } from '../lib/payroll'
-import { activeRole, isManager } from '../lib/permissions'
+import { activeRole, canViewInventory, isManager } from '../lib/permissions'
 import type { StaffMember } from '../lib/staff'
 import { purgeOfflineApiCache } from '../lib/pwa'
 import { clearSalonId, clearToken, clearUserId } from '../lib/session'
@@ -28,6 +28,11 @@ type NavEntry = {
    * does not, and the page itself also guards the role.
    */
   commissionsOnly?: boolean
+  /**
+   * Inventory (contract F6, D7): owner, admin and reception read the stock; a
+   * professional does not see the entry and gets `ManagerOnlyNotice` on the page.
+   */
+  inventoryOnly?: boolean
 }
 
 const NAV: readonly NavEntry[] = [
@@ -36,6 +41,7 @@ const NAV: readonly NavEntry[] = [
   { to: '/panel/calendario', label: 'Calendario', end: false },
   { to: '/panel/pos', label: 'Ventas', end: false },
   { to: '/panel/servicios', label: 'Servicios', end: false },
+  { to: '/panel/inventario', label: 'Inventario', end: false, inventoryOnly: true },
   // The label is short on purpose: five columns at 375 px keep every entry in
   // two rows (S-F2e-5). The page itself is titled «Equipamiento del salón».
   { to: '/panel/equipamiento', label: 'Puestos', end: false, managerOnly: true },
@@ -155,6 +161,11 @@ function ShellChrome() {
       return false
     }
     if (item.commissionsOnly && role !== null && !canViewOwnCommissions(role)) {
+      return false
+    }
+    // While `/me` is unknown the entry stays visible (role === null) and the page
+    // explains the 403 instead of hiding the section from a real reader.
+    if (item.inventoryOnly && role !== null && !canViewInventory(role)) {
       return false
     }
     return !item.agendaOnly || canOpenMine

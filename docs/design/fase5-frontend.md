@@ -2426,3 +2426,118 @@ probó con `fetch` simulado sobre las formas congeladas.
   - `describeApiError` sigue reemplazando el 403 en las CARGA de la página
     (convención del panel); las escrituras de la ficha usan `clientApiMessage`
     porque el contrato F5 congela el 403 `sin permiso`.
+
+## 28. Fase 6 — F6: productos e inventario en el POS (frontend)
+
+Cierre del frente de «Contrato F6 (productos e inventario en el POS: stock y
+alerta de stock bajo)». Sin dependencias nuevas y sin CSS nuevo: la pantalla y
+el POS reusan `panel-card`, `table table--stack`, `service-form`,
+`page-head__actions`, `pos-services`/`pos-service`, `notice`, `pill` y
+`service-count`. El backend de F6 corre en paralelo, así que todo se probó con
+`fetch` simulado y con una API simulada en el navegador.
+
+### 28.1 Rutas, menú y permisos
+
+- Ruta nueva `/panel/inventario` (`App.tsx`) con la entrada «Inventario» en el
+  menú (`shell__nav`): visible para owner, admin y recepción; el profesional NO
+  ve la entrada y, si entra por URL, ve `ManagerOnlyNotice`. La regla vive en
+  `lib/permissions.ts` (`canViewInventory`, `canManageInventory`) y la aplica el
+  servidor: `GET /products` responde 403 al profesional.
+- Recepción ve el listado con precio, stock y la marca «Stock bajo», sin un solo
+  control de escritura: ni alta, ni edición, ni ajuste, ni movimientos (D7).
+
+### 28.2 Lógica pura (`src/lib/products.ts`, `src/lib/productCart.ts`)
+
+- `products.ts`: precio tipado → centavos con el MISMO parser entero de los
+  gastos (`parseExpenseAmountToCents`), así que `12`, `12,5` y `12.50` dan 1200,
+  1250 y 1250 y nunca pasa por un float; stock y umbral como unidades enteras;
+  validación del formulario con las frases del contrato verbatim (nombre
+  obligatorio, 120 caracteres, precio 0..10000000, stock y umbral 0..1000000,
+  NUL, «Faltan datos del producto…»); `productUpdateBody` manda las CUATRO claves
+  del `PUT` y NUNCA `stock`; `validateAdjustDraft` con el signo por motivo
+  (`restock` > 0, `loss` < 0, `correction` cualquiera), cero, ±1000000 y nota de
+  200; `lowStockMark` marca solo con el `low` que devuelve el servidor;
+  `insufficientStockMessage`/`isInsufficientStockMessage` para el 409 de stock; y
+  el cliente de las cinco rutas (URLs y cuerpos congelados).
+- `productCart.ts`: carrito de productos con clave `product_id`, cantidad entera
+  acotada por el stock conocido y por 1000 (`addProduct` recorta en el tope en
+  vez de armar una venta que el servidor rechazaría), totales en centavos y
+  `saleWithProducts`, que agrega `products: [{product_id, qty}]` SOLO cuando hay
+  líneas de producto (sin precio) y deja el cuerpo idéntico cuando no las hay.
+- `createInventoryGate` + `writeProduct`: un `guardado` a la vez (el doble clic
+  no manda dos `POST/PUT`), la frase del servidor llega tal cual y el resultado
+  no se pinta como verdad: la lista se vuelve a pedir.
+
+### 28.3 Pantalla `/panel/inventario`
+
+- Listado por nombre con precio (`formatCents`), stock, umbral («Sin alerta»
+  cuando es 0), estado y la marca «Stock bajo» del campo `low`. Un producto no se
+  borra: se desactiva.
+- Owner/admin: «Nuevo producto» (`ProductForm`: nombre, precio, stock inicial
+  opcional, umbral y, al editar, el interruptor de activo), «Ajustar stock»
+  (`ProductAdjustForm`: motivo, unidades con signo y nota) y «Movimientos»
+  (`ProductMovements`: motivo, cambio con signo, nota, venta y fecha en la zona
+  del salón vía `formatHistoryInstant`, con `limit` 20/50/100).
+- Sin stock optimista: después de CADA escritura (aceptada o rechazada) se pide
+  `GET /products` de nuevo; verificado en el navegador: el `POST /adjust` va
+  seguido inmediatamente del `GET` y el listado muestra lo que devolvió el
+  servidor, nunca una suma local.
+
+### 28.4 POS: sección «Productos»
+
+- `PosPage` pide `GET /products` en su propio pedido: si falla, se avisa en la
+  sección y el catálogo, las ventas y el cobro siguen funcionando. La sección
+  lista SOLO los activos con su stock («N en stock» / «Sin stock»); el botón se
+  apaga al llegar al stock conocido.
+- `POSPanel` gana props OPCIONALES (`productCart`, `products`,
+  `onProductCartChange`, `onStockConflict`): las líneas de producto se editan en
+  el mismo carrito (44 px), el total de la interfaz suma servicios + productos y
+  el `POST /sales` lleva `products: [{product_id, qty}]` sin precios. Verificado
+  en el navegador: una venta solo de servicios manda exactamente el cuerpo de
+  hoy (sin la clave `products`) y una mixta agrega `products` sin
+  `unit_price_cents`.
+- El 409 `No hay stock suficiente de «…»` se muestra verbatim, el carrito queda
+  intacto, se recarga el catálogo y aparece «Reintentar la venta». El doble clic
+  en «Cobrar» está frenado por un guardián síncrono, no solo por el estado de
+  React.
+
+### 28.5 Cola offline (sin cambios)
+
+La cola no se toca: un 4xx definitivo se descarta como `server_rejected` y el
+POS sigue mostrando «Esta venta no se registró.» con el motivo del servidor. Una
+venta de productos encolada sin conexión y rechazada después por falta de stock
+termina con la frase existente más la del contrato; el cuerpo encolado lleva las
+líneas de producto sin precios, igual que el confirmado. La fila «pendiente de
+sincronizar» suma las unidades de producto y avisa «+ productos»: el precio del
+producto lo decide el servidor y el dispositivo no lo guarda.
+
+### 28.6 Pruebas
+
+- TDD con `node --test` y `fetch` simulado: primero en rojo (los dos módulos no
+  existían), después en verde. 54 tests nuevos — `products.test.ts` (41) y
+  `productCart.test.ts` (13): las cinco URLs y sus cuerpos exactos, el `PUT` con
+  las cuatro claves y sin `stock`, el ajuste con signo y nota, el `limit` del
+  listado, los cuerpos de la venta (solo servicios, mixta y solo productos) sin
+  precios, el recorte por stock y por 1000, los 400/403/404/409 verbatim, el
+  doble clic en alta/edición/ajuste (un solo pedido), la frase del 409 de stock y
+  el descarte de la cola, la marca «Stock bajo» nacida del `low` del servidor y
+  la matriz de roles de inventario.
+- `npx tsc --noEmit` limpio, `npm test` 592/592 (538 previos sin tocar) y
+  `npm run build` correcto.
+- Revisión visual con el bundle de `vite build`, `vite preview` y una API
+  simulada en `/tmp/f6f` (Chromium del caché de Playwright por protocolo
+  DevTools) a **1280 y 390 px**: dueña con dos productos en stock bajo, los
+  movimientos, el formulario de ajuste, recepción sin controles, profesional con
+  `ManagerOnlyNotice`, POS con la sección «Productos» y el 409 con el carrito
+  intacto. `document.documentElement.scrollWidth === innerWidth` en las cinco
+  pantallas medidas (sin desborde horizontal).
+- **Desviaciones conscientes:**
+  - El runner no tiene entorno DOM: las reglas viven en funciones puras con
+    tests y lo que es DOM (44 px, desborde, teclado, guardado real) se verificó
+    en el navegador. El guardián del doble clic sí está probado como función.
+  - El aviso para el profesional es `ManagerOnlyNotice` (como pide el contrato),
+    pero su texto compartido habla de «la nómina ni las comisiones del equipo».
+    Copiarlo bien exige tocar `components/ManagerOnlyNotice.tsx`, que quedó fuera
+    de las superficies de esta entrega: queda anotado para el dueño del archivo.
+  - La fila deshabilitada de un producto sin stock usa `opacity: .55` en línea,
+    el mismo valor que `.btn:disabled`, porque no hubo CSS nuevo disponible.

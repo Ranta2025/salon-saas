@@ -55,6 +55,24 @@ export function canSeeClientMoney(role: Role | null | undefined): boolean {
 }
 
 /**
+ * Inventory of the salon (contract F6, D7): owner, admin and reception read the
+ * list, the price and the stock. A professional gets 403 from the server, so the
+ * page shows `ManagerOnlyNotice` instead of the list.
+ */
+export function canViewInventory(role: Role | null | undefined): boolean {
+  return isManager(role) || role === 'reception'
+}
+
+/**
+ * Creating and editing products, adjusting the stock and reading the movements of
+ * a product are only for owner and admin (contract F6, D7). Reception sees the
+ * list without a single write control.
+ */
+export function canManageInventory(role: Role | null | undefined): boolean {
+  return isManager(role)
+}
+
+/**
  * Home of `/panel` for a role. A professional has no dashboard (the API answers
  * 403) and lands on their own agenda (S-F2b-4). `null` means the dashboard is
  * the right page: owner/admin keep it, with a "Mi agenda" card when they attend.
