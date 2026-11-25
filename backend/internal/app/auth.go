@@ -14,6 +14,9 @@ type AuthService struct {
 	Users  ports.UserRepository
 	Hasher ports.PasswordHasher
 	Tokens ports.TokenIssuer
+	// TwoFactor (F10b): si la cuenta tiene 2FA activo, el login devuelve un
+	// desafío en vez de un token. nil = sin 2FA (el login de siempre).
+	TwoFactor ports.TwoFactorLoginGate
 }
 
 // Register crea el usuario si el email no existe.
@@ -62,4 +65,41 @@ func (s AuthService) Login(email, plain string) (string, error) {
 		return "", domain.ErrUnauthorized
 	}
 	return s.Tokens.Issue(u.ID)
+}
+
+// LoginResult es el resultado de Authenticate: o un token de sesión, o (cuenta
+// con 2FA activo) un desafío y NINGÚN token.
+type LoginResult struct {
+	Token             string
+	Challenge         string
+	TwoFactorRequired bool
+}
+
+// Authenticate es el login con 2FA opcional (F10, D8): mismas credenciales y
+// mismos errores que Login. Con 2FA activo devuelve el desafío y NO emite sesión;
+// sin fila en user_totp o con enabled=false emite el token como siempre. Si no
+// se puede saber si la cuenta tiene 2FA, falla cerrado (no emite sesión).
+func (s AuthService) Authenticate(email, plain string) (LoginResult, error) {
+	u, err := s.Users.FindByEmail(domain.NormalizeEmail(email))
+	if err != nil {
+		s.Hasher.DummyCompare(plain)
+		return LoginResult{}, domain.ErrUnauthorized
+	}
+	if !s.Hasher.Compare(u.PasswordHash, plain) {
+		return LoginResult{}, domain.ErrUnauthorized
+	}
+	if s.TwoFactor != nil {
+		challenge, required, err := s.TwoFactor.ChallengeFor(u.ID)
+		if err != nil {
+			return LoginResult{}, err
+		}
+		if required {
+			return LoginResult{Challenge: challenge, TwoFactorRequired: true}, nil
+		}
+	}
+	tok, err := s.Tokens.Issue(u.ID)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	return LoginResult{Token: tok}, nil
 }
