@@ -24,6 +24,9 @@ type mgallery struct {
 	salons *ms
 	byID   map[string]domain.SalonPhoto
 	seq    int
+	// lookups cuenta las consultas por id/slug: una referencia inválida no debe
+	// llegar a la base (Postgres responde 22021 con NUL o UTF-8 roto y eso era un 500).
+	lookups int
 }
 
 func (f *mgallery) Add(p domain.SalonPhoto, max int) error {
@@ -66,6 +69,7 @@ func (f *mgallery) List(salonID string) ([]domain.SalonPhoto, error) {
 }
 
 func (f *mgallery) Find(salonID, id string) (domain.SalonPhoto, error) {
+	f.lookups++
 	if p, ok := f.byID[id]; ok && p.SalonID == salonID {
 		return p, nil
 	}
@@ -73,6 +77,7 @@ func (f *mgallery) Find(salonID, id string) (domain.SalonPhoto, error) {
 }
 
 func (f *mgallery) FindPublic(slug, id string) (domain.SalonPhoto, error) {
+	f.lookups++
 	p, ok := f.byID[id]
 	if !ok {
 		return domain.SalonPhoto{}, domain.ErrNotFound

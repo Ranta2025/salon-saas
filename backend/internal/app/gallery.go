@@ -6,6 +6,7 @@ package app
 import (
 	"errors"
 	"strings"
+	"unicode/utf8"
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
@@ -129,6 +130,9 @@ func (s GalleryService) SetCaption(actor domain.Membership, salonID, photoID str
 	if _, err := s.manager(actor, salonID); err != nil {
 		return GalleryPhoto{}, err
 	}
+	if !validRef(photoID) {
+		return GalleryPhoto{}, photoNotFound()
+	}
 	photo, err := s.Gallery.Find(salonID, photoID)
 	if err != nil {
 		return GalleryPhoto{}, photoErr(err)
@@ -154,6 +158,9 @@ func (s GalleryService) Delete(actor domain.Membership, salonID, photoID string)
 	if _, err := s.manager(actor, salonID); err != nil {
 		return err
 	}
+	if !validRef(photoID) {
+		return photoNotFound()
+	}
 	photo, err := s.Gallery.Find(salonID, photoID)
 	if err != nil {
 		return photoErr(err)
@@ -167,6 +174,14 @@ func (s GalleryService) Delete(actor domain.Membership, salonID, photoID string)
 
 // photoErr traduce la falta de la foto al texto del contrato: una foto de otro
 // salón es «Foto no encontrada» (404), nunca un 403 que confirme que existe.
+// validRef dice si un id o slug de la URL puede llegar a la base: UTF-8 válido, sin
+// NUL y de largo razonable. Postgres rechaza un NUL o un UTF-8 roto con 22021 y eso
+// salía como 500 en una ruta sin sesión; se contesta el 404 uniforme antes de
+// consultar (verificador independiente, MEDIUM).
+func validRef(s string) bool {
+	return s != "" && len(s) <= 128 && utf8.ValidString(s) && !strings.ContainsRune(s, 0)
+}
+
 func photoErr(err error) error {
 	if errors.Is(err, domain.ErrNotFound) {
 		return photoNotFound()
@@ -179,6 +194,9 @@ func photoErr(err error) error {
 // perdió es el MISMO 404 (no se distingue). Solo mira salon_photos: una foto de
 // clienta no se sirve por acá.
 func (s GalleryService) PublicPhoto(slug, photoID string) (domain.SalonPhoto, []byte, error) {
+	if !validRef(slug) || !validRef(photoID) {
+		return domain.SalonPhoto{}, nil, photoNotFound()
+	}
 	photo, err := s.Gallery.FindPublic(slug, photoID)
 	if err != nil {
 		return domain.SalonPhoto{}, nil, photoErr(err)
