@@ -8,6 +8,7 @@ import {
   LANDING_ERROR_MESSAGE,
   LANDING_NOT_FOUND_MESSAGE,
   LANDING_OFFLINE_NOTICE,
+  loyaltySentence,
   normalizePublicSalon,
   telHref,
   toLandingServices,
@@ -242,7 +243,13 @@ test('buildLanding with full data renders every section from the API and nothing
   assert.equal(model.email, 'hola@luna.test')
   assert.deepEqual(model.instagram, { handle: 'luna.studio', url: 'https://instagram.com/luna.studio' })
   assert.equal(model.timezone, 'America/Havana')
-  assert.deepEqual(model.sections, { services: true, team: true, packages: true, gallery: true })
+  assert.deepEqual(model.sections, {
+    services: true,
+    team: true,
+    packages: true,
+    loyalty: false,
+    gallery: true,
+  })
   assert.equal(model.canBook, true)
   assert.equal(model.heroPhoto?.id, 'p1')
   assert.deepEqual(
@@ -273,7 +280,13 @@ test('buildLanding with empty optional data hides every section that has no data
   assert.equal(model.instagram, null)
   assert.equal(model.heroPhoto, null)
   assert.equal(model.timezone, null)
-  assert.deepEqual(model.sections, { services: true, team: false, packages: false, gallery: false })
+  assert.deepEqual(model.sections, {
+    services: true,
+    team: false,
+    packages: false,
+    loyalty: false,
+    gallery: false,
+  })
   assert.deepEqual(
     model.nav.map((link) => link.label),
     ['Servicios'],
@@ -386,4 +399,78 @@ test('a failed reload keeps the salon already on screen unless it is a 404', () 
   assert.equal(landingStateAfterFailure('loading', 'error'), 'error')
   assert.equal(landingStateAfterFailure('error', 'error'), 'error')
   assert.equal(landingStateAfterFailure('loading', 'not_found'), 'not_found')
+})
+
+// ---------- F9 (D8): public loyalty program ----------
+
+test('loyaltySentence is the verbatim public sentence «Cada N visitas, <servicio> de regalo»', () => {
+  assert.equal(loyaltySentence(10, 'Corte'), 'Cada 10 visitas, Corte de regalo')
+  assert.equal(loyaltySentence(2, 'Manicura semipermanente'), 'Cada 2 visitas, Manicura semipermanente de regalo')
+})
+
+test('normalizePublicSalon reads `loyalty` {visits_required, reward_service_name}', () => {
+  const salon = parsed({ ...full, loyalty: { visits_required: 10, reward_service_name: ' Corte ' } })
+  assert.deepEqual(salon.loyalty, { visitsRequired: 10, rewardServiceName: 'Corte' })
+})
+
+test('normalizePublicSalon leaves `loyalty` null when it is null, missing or unusable (never invented)', () => {
+  assert.equal(parsed({ ...full, loyalty: null }).loyalty, null)
+  assert.equal(parsed(full).loyalty, null)
+  assert.equal(parsed(payload).loyalty, null)
+  for (const bad of [
+    'nope',
+    [],
+    {},
+    { visits_required: 10 },
+    { visits_required: 10, reward_service_name: '' },
+    { visits_required: 10, reward_service_name: '   ' },
+    { visits_required: 10, reward_service_name: 5 },
+    { visits_required: 1, reward_service_name: 'Corte' },
+    { visits_required: 51, reward_service_name: 'Corte' },
+    { visits_required: 2.5, reward_service_name: 'Corte' },
+    { visits_required: '10', reward_service_name: 'Corte' },
+    { visits_required: null, reward_service_name: 'Corte' },
+  ]) {
+    assert.equal(parsed({ ...full, loyalty: bad }).loyalty, null, JSON.stringify(bad))
+  }
+  // The borders of the contract (2..50) are valid.
+  assert.equal(parsed({ ...full, loyalty: { visits_required: 2, reward_service_name: 'A' } }).loyalty?.visitsRequired, 2)
+  assert.equal(parsed({ ...full, loyalty: { visits_required: 50, reward_service_name: 'A' } }).loyalty?.visitsRequired, 50)
+})
+
+test('buildLanding shows the loyalty section ONLY from the payload `loyalty`, wired into sections and nav', () => {
+  const model = buildLanding(parsed({ ...full, loyalty: { visits_required: 10, reward_service_name: 'Corte' } }))
+  assert.equal(model.sections.loyalty, true)
+  assert.deepEqual(model.loyalty, {
+    visitsRequired: 10,
+    rewardServiceName: 'Corte',
+    sentence: 'Cada 10 visitas, Corte de regalo',
+  })
+  assert.deepEqual(
+    model.nav.map((link) => link.label),
+    ['Servicios', 'Equipo', 'Paquetes', 'Fidelidad', 'Galería'],
+  )
+  assert.deepEqual(model.nav.find((link) => link.label === 'Fidelidad'), {
+    href: '#fidelidad',
+    label: 'Fidelidad',
+  })
+})
+
+test('buildLanding without `loyalty` renders no loyalty section and no nav link', () => {
+  for (const raw of [full, { ...full, loyalty: null }]) {
+    const model = buildLanding(parsed(raw))
+    assert.equal(model.sections.loyalty, false)
+    assert.equal(model.loyalty, null)
+    assert.equal(model.nav.some((link) => link.href === '#fidelidad'), false)
+    assert.equal(JSON.stringify(model).includes('de regalo'), false)
+  }
+})
+
+test('the loyalty section does not depend on any other section (a salon with only a program)', () => {
+  const model = buildLanding(
+    parsed({ salon: full.salon, services: [], loyalty: { visits_required: 5, reward_service_name: 'Peinado' } }),
+  )
+  assert.equal(model.sections.services, false)
+  assert.equal(model.sections.loyalty, true)
+  assert.deepEqual(model.nav.map((link) => link.href), ['#fidelidad'])
 })

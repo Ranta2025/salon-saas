@@ -11,6 +11,7 @@ import { ExportsPage } from './app/ExportsPage'
 import { InventoryPage } from './app/InventoryPage'
 import { InvitationPage } from './app/InvitationPage'
 import { LoginPage } from './app/LoginPage'
+import { LoyaltyPage } from './app/LoyaltyPage'
 import { MyAgendaPage } from './app/MyAgendaPage'
 import { MyCommissionsPage } from './app/MyCommissionsPage'
 import { NotificationsPage } from './app/NotificationsPage'
@@ -100,6 +101,7 @@ export function App() {
           <Route path="servicios" element={<ServicesPage />} />
           <Route path="inventario" element={<InventoryPage />} />
           <Route path="paquetes" element={<PackagesPage />} />
+          <Route path="fidelidad" element={<LoyaltyPage />} />
           <Route path="clientes" element={<ClientsPage />} />
           <Route path="clientes/:clientId" element={<ClientDetailPage />} />
           <Route path="avisos" element={<NotificationsPage />} />

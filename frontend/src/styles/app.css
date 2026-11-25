@@ -4228,3 +4228,136 @@
     top: var(--space-4);
   }
 }
+
+/* ---------- F9: fidelidad (panel «Fidelidad» y ficha de la clienta) ---------- */
+
+.loyalty-layout {
+  display: grid;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.loyalty-layout > * {
+  min-width: 0;
+}
+
+.loyalty-preview {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+  padding: var(--space-4);
+  background: var(--cream);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.loyalty-preview__title {
+  font-family: var(--font-sans);
+  font-size: var(--step--1);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+
+.loyalty-preview__sentence {
+  font-family: var(--font-display);
+  font-size: var(--step-2);
+  line-height: 1.2;
+  color: var(--wine);
+  overflow-wrap: anywhere;
+}
+
+.loyalty-preview__empty {
+  font-size: var(--step--1);
+  color: var(--ink-muted);
+}
+
+.loyalty-status {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.loyalty-progress {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.loyalty-progress__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+  font-size: var(--step-0);
+}
+
+.loyalty-progress__missing {
+  font-size: var(--step--1);
+  color: var(--ink-muted);
+}
+
+.loyalty-progress__bar {
+  height: 0.75rem;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: rgba(30, 20, 24, 0.1);
+  box-shadow: var(--shadow-inset-line);
+}
+
+.loyalty-progress__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--wine);
+}
+
+.loyalty-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.loyalty-stats > div {
+  display: grid;
+  gap: 0.15rem;
+  padding: var(--space-3);
+  background: var(--cream);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.loyalty-stats dt {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+.loyalty-stats dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.loyalty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.loyalty-actions .btn {
+  min-height: 44px;
+}
+
+@media (min-width: 1080px) {
+  .loyalty-layout {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  }
+}
+
+/* One column: the form sits beside the preview, so two columns would be cramped
+   and the select would stretch to the height of the field next to it. */
+.service-form .loyalty-form__grid {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}

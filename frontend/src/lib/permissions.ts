@@ -179,3 +179,18 @@ export function canViewSalonProfile(role: Role | null | undefined): boolean {
 export function canEditSalonProfile(role: Role | null | undefined): boolean {
   return isManager(role)
 }
+
+/**
+ * Loyalty (contract F9, D4-D7): owner, admin and reception read the status of a
+ * client, deliver a reward and use it. A professional gets 403 on the client
+ * routes (they carry spending data), so the page shows a notice and the menu
+ * entry stays hidden.
+ */
+export function canViewLoyalty(role: Role | null | undefined): boolean {
+  return isManager(role) || role === 'reception'
+}
+
+/** Editing the program (`PUT /loyalty-program`): owner and admin only (D4). */
+export function canEditLoyaltyProgram(role: Role | null | undefined): boolean {
+  return isManager(role)
+}

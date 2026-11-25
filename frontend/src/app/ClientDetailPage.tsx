@@ -21,6 +21,7 @@ import type { ClientPhoto } from '../types'
 import { useSalon } from './SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
 import { ClientHistorySection } from './components/ClientHistorySection'
+import { ClientLoyaltySection } from './components/ClientLoyaltySection'
 import { ClientPackagesSection } from './components/ClientPackagesSection'
 import { ClientRecordAllergies } from './components/ClientRecordAllergies'
 import { ClientRecordForm } from './components/ClientRecordForm'
@@ -260,6 +261,9 @@ export function ClientDetailPage() {
 
       {/* F8: prepaid packages. Its own requests: a failure here never hides the file. */}
       <ClientPackagesSection clientId={clientId} refreshKey={reloadKey} onSold={reload} />
+
+      {/* F9: loyalty vouchers. Its own requests: a failure here never hides the file. */}
+      <ClientLoyaltySection clientId={clientId} refreshKey={reloadKey} />
 
       {record && canEdit ? (
         <ClientRecordForm

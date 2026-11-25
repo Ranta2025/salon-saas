@@ -2966,3 +2966,170 @@ página pública lo muestra en la siguiente carga.
     elegirnos» (`landing.css`) quedó sin uso.
   - Las cuadrículas de servicios pasaron a tarjetas separadas (`auto-fill`): la de
     1 px sobre fondo gris dejaba un bloque gris al no haber 8 servicios.
+
+## 32. Fase 6 — F9: fidelidad, cada N visitas un servicio de regalo (frontend)
+
+Contrato: `odd/tasks/fase6-roadmap.md`, «Contrato F9», partes D4 a D8 (formas de la
+API) y D9 (esta parte). El backend de F9 se construye en paralelo en otro tramo, así
+que todo se probó con `fetch` simulado y con una API simulada en el navegador. Sin
+dependencias nuevas. El premio es un VALE, no un descuento ni una venta (D1): no hay
+dinero nuevo en este frente y ningún monto pasa por esta lógica. Las visitas las
+CALCULA el servidor (D2); la pantalla solo pinta lo que dice `GET .../loyalty` y lo
+vuelve a pedir después de cada acción (no hay estado optimista).
+
+### 32.1 Rutas, menú y permisos
+
+- Ruta nueva `/panel/fidelidad` (`App.tsx`) y entrada «Fidelidad» en `AppShell.tsx`
+  (etiqueta corta: la rejilla de tres columnas a 390 px la mantiene sin recorte, 70 px
+  de ancho y 44 de alto; el título de la página es «Programa de fidelidad»). Visible
+  mientras el rol es desconocido (`role === null`), como las demás.
+- `lib/permissions.ts` gana dos funciones sin tocar las existentes: `canViewLoyalty`
+  (owner, admin y recepción: leer el estado de una clienta, entregar y usar premios)
+  y `canEditLoyaltyProgram` (owner y admin: `PUT /loyalty-program`). Un profesional
+  no ve la entrada y, si entra por URL o abre la ficha, ve `LoyaltyNotice` (nuevo,
+  aviso propio: el texto compartido habla de nómina y comisiones). Decisión: aunque
+  el servidor deja leer el PROGRAMA a cualquier miembro (D4), la página es de
+  dueño, administración y recepción; el profesional no tiene nada que hacer ahí y la
+  ficha de la clienta (con datos de consumo) le da 403.
+
+### 32.2 Lógica pura (`src/lib/loyalty.ts`)
+
+- Tipos y normalizadores del programa (`LoyaltyProgram`: «nunca guardado» es
+  `enabled:false` y el resto `null`), del estado de una clienta (`ClientLoyalty`) y
+  del vale (`LoyaltyReward`). Los contadores deben ser enteros no negativos o la
+  respuesta entera se descarta (un contador malformado nunca se muestra como «0
+  visitas»); un vale sin id, sin número o con un estado desconocido se descarta;
+  `state` lo decide el servidor (el cliente no compara fechas con el reloj).
+- `validateLoyaltyDraft`: visitas 2..50 como entero, servicio obligatorio, vigencia
+  1..3650 días o «Sin vencimiento». El cuerpo del PUT lleva SIEMPRE las cuatro claves
+  y `reward_validity_days: null` explícito para «sin vencimiento» (D4). Como el
+  servidor las pide también con el programa apagado, visitas y servicio son
+  obligatorios en ambos casos. `loyaltyServiceOptions` arma el selector con los
+  servicios activos y, para no esconder lo guardado, el servicio actual aunque esté
+  inactivo (marcado «(inactivo)»; si se guarda, el servidor responde «Servicio
+  inválido» y se muestra tal cual).
+- Frase pública: `loyaltySentence` (en `publicSalon.ts`, para que la use la landing
+  sin ciclos de importación) y `previewSentence` (la del borrador del formulario).
+- Presentación: `loyaltyProgress` («2 de 5 visitas» = visitas MÓDULO N, con porcentaje
+  entero; un ciclo completo vuelve a 0 y los premios ganados se cuentan aparte),
+  «1 premio disponible» / «Sin premios disponibles», «Faltan 3 visitas para el
+  próximo premio», estados «Disponible / Usado / Vencido» y los días en la zona del
+  salón («Vence el 2027-01-31»: el vencimiento es el fin de ese día local, en UTC cae
+  al día siguiente).
+- Textos del servidor impresos tal cual (`LOYALTY_MESSAGES`): `Faltan datos del
+  programa: activado, visitas, servicio y vigencia`, `Las visitas necesarias deben
+  ser entre 2 y 50`, `Servicio inválido`, `La vigencia debe ser entre 1 y 3650 días`,
+  `No hay premios disponibles`, `La fidelidad no está activada`, `Premio no
+  encontrado`, `Ese premio ya se usó`, `El premio venció`. Un `ApiError` se muestra
+  verbatim, el 403 de las escrituras también.
+
+### 32.3 Solo en línea y `client_op_id`
+
+- Nada de este módulo toca la cola offline (D9-d: la cola descarta los 4xx y a la
+  clienta ya se le habría dicho que el premio se entregó). `writeLoyalty` no envía
+  nada sin conexión (estado `offline`, con el aviso «no se envió ni quedó en cola»),
+  y ante un error de red devuelve `network`; también el guardado del programa. La
+  ficha y la página muestran además un aviso y deshabilitan las acciones sin
+  conexión. Se verificó en el navegador (modo sin red) que `salon.offline_queue`
+  sigue con `operations: []`.
+- Un `client_op_id` por intento (`createOpAttempt`, el mismo de F8). El reintento del
+  MISMO intento lo reutiliza (se capturaron los cuerpos de los dos pedidos: mismo id)
+  y el servidor devuelve el vale original en vez de entregar otro. La huella de
+  «Entregar» incluye CUÁNTOS vales llevaba entregados la clienta al pulsar
+  (`grantFingerprint(clientId, rewards_granted)`): como la ficha se vuelve a pedir
+  después de cada acción, si el primer intento sí llegó a guardarse el contador sube,
+  la siguiente pulsación es otra operación con otro id y la idempotencia del primero
+  no se traga un segundo vale. Un éxito, un 4xx (rechazo definitivo) o cerrar la
+  confirmación abren un intento nuevo; un error de red, la falta de conexión o un
+  5xx (resultado desconocido) lo conservan. Un guardián síncrono (el de F8) hace que
+  dos pulsaciones del mismo render envíen UN pedido.
+
+### 32.4 Pantalla `/panel/fidelidad` (D9-a)
+
+- Formulario (`LoyaltyProgramForm`): «Programa activado», «Visitas necesarias»,
+  «Servicio de regalo» (selector) y «Vigencia del premio en días» con la casilla «Sin
+  vencimiento». Debajo, una vista previa con el texto «Esto es lo que ve el cliente en
+  tu página pública» y la frase «Cada N visitas, <servicio> de regalo»; apagado, la
+  vista previa avisa que no se muestra. Se explica la regla de D2: se cuenta una
+  visita por venta con al menos un servicio, desde el día en que se guardó por primera
+  vez (se imprime ese día en la zona del salón), y si el POS no eligió a la clienta esa
+  venta no suma (limitación conocida).
+- Owner y admin editan; recepción ve el formulario con todos los controles
+  deshabilitados, sin botón de guardar y con una línea que lo explica.
+- Un guardado correcto vuelve a pedir el programa y el formulario muestra lo que
+  guardó el servidor; un rechazo (400/403/409) se muestra verbatim y CONSERVA lo que
+  se escribió. El guardado de la dueña no encola: sin conexión el botón queda
+  deshabilitado con el aviso.
+
+### 32.5 Sección «Fidelidad» de la ficha (D5-D7, D9-b)
+
+- `ClientLoyaltySection` (nuevo) dentro de `ClientDetailPage`, con sus propios
+  pedidos: un fallo ahí no oculta la ficha. Progreso «2 de 5 visitas» con una barra
+  (`role="progressbar"` con valor, máximo y texto), cuántos premios hay para entregar,
+  visitas en total y premios ganados.
+- «Entregar premio»: deshabilitado sin premio disponible (con la razón al lado), sin
+  programa activo o sin conexión. No lleva confirmación (el contrato la pide solo para
+  usar) y es idempotente por `client_op_id`.
+- Lista de vales (`table--stack`): servicio y número, día de entrega, vencimiento o
+  «Usado el …», estado y «Usar premio» solo en los disponibles y con el programa
+  activo. «Usar premio» abre una confirmación explícita («¿Usar el premio «Corte» (n.º
+  3)?», aclara que no se puede deshacer y que no es una venta), con profesional y nota
+  opcionales, «Sí, usar el premio» / «Cancelar». El 409 («Ese premio ya se usó», «El
+  premio venció») sale verbatim dentro de la confirmación.
+- Programa apagado o nunca guardado: aviso «La fidelidad no está activada en este
+  salón…» (con enlace a «Fidelidad» para owner/admin) y los vales ya entregados se
+  siguen listando, sin «Usar» (D4: se conservan). Después de CADA acción, también la
+  rechazada, el estado se vuelve a pedir al servidor.
+
+### 32.6 Landing: «Programa de fidelidad» (D8, D9-c)
+
+- `normalizePublicSalon` lee `loyalty` = `{visits_required, reward_service_name}` y lo
+  deja en `null` si falta, es `null` o no es utilizable (visitas fuera de 2..50 o
+  nombre vacío): la landing nunca inventa un programa. En `PublicSalon` el campo es
+  opcional para que quien arma un payload a mano (la vista previa de «Mi salón») no
+  cambie.
+- `buildLanding` suma `sections.loyalty`, `model.loyalty` (con la frase ya armada) y
+  el enlace `#fidelidad` («Fidelidad») entre Paquetes y Galería, en el menú y en el
+  pie. `LoyaltySection` (nuevo) muestra «Programa de fidelidad» y «Cada N visitas,
+  <servicio> de regalo» SOLO con ese dato; sin progreso (el público no tiene
+  identidad). No depende de las otras secciones.
+
+### 32.7 Pruebas
+
+- TDD con `node --test`. RED: `loyalty.test.ts` y los tests nuevos de
+  `publicSalon.test.ts` se escribieron antes y fallaron por la razón correcta
+  (`ERR_MODULE_NOT_FOUND: …/loyalty.ts` y `SyntaxError: … does not provide an export
+  named 'loyaltySentence'`); después GREEN. (`rewardGrantedDay` se agregó con su test
+  en el mismo paso, sin corrida roja aparte.) 36 tests nuevos en `loyalty.test.ts`
+  (frases verbatim, normalizadores con contadores malos, borrador y validación en los
+  bordes 1/2/50/51 y 0/1/3650/3651, cuerpo con las cuatro claves, selector con el
+  servicio inactivo, progreso módulo N, etiquetas, día local del vencimiento, cuerpos
+  que omiten lo vacío, errores del servidor frente a red, `client_op_id` estable en
+  el reintento y huella de «Entregar», las cinco URLs y métodos, nada enviado y nada
+  en cola sin conexión, 4xx definitivo y 5xx no definitivo, doble clic con un solo
+  pedido, matriz de roles y que los permisos existentes responden lo mismo) y 6 en
+  `publicSalon.test.ts` (frase, `loyalty` normal, nula/faltante/inútil/bordes, sección y
+  menú con dato, ninguna sin dato, sección sin depender de las demás).
+- Tests preexistentes modificados (solo donde afirmaban la forma de `sections` que el
+  campo aditivo `loyalty` extiende), ambos en `publicSalon.test.ts`: «buildLanding
+  with full data renders every section from the API and nothing else» y «buildLanding
+  with empty optional data hides every section that has no data» (el `deepEqual` de
+  `model.sections` ganó `loyalty: false`). Ningún otro test se tocó.
+- `npx tsc --noEmit` limpio, `npm test` 760/760 (718 previos) y `npm run build`
+  correcto.
+- Revisión visual con `vite dev` y una API simulada en `/tmp/f9f` (Chromium por
+  DevTools) a **390 y 1280 px**: landing con y sin la sección, programa como dueña
+  (validación, 400 verbatim con el formulario conservado, guardado con el cuerpo de
+  cuatro claves y `reward_validity_days: null`) y como recepción (solo lectura), aviso
+  del profesional, ficha con progreso, premio disponible, entrega, confirmación, 409
+  verbatim, uso, reintento tras un corte (mismo `client_op_id`), sin premios, apagado,
+  nunca guardado y sin conexión (cola vacía). `scrollWidth === innerWidth` en todas.
+- **Desviaciones conscientes:**
+  - El runner no tiene entorno DOM: las reglas viven en funciones puras con tests y lo
+    que es DOM se verificó en el navegador. No hay `.test.tsx`.
+  - La forma de las respuestas de escritura (`{reward}`) está en D6/D7; la pantalla no
+    depende de ella porque vuelve a pedir el estado.
+  - El corte de red se simuló destruyendo el socket detrás del proxy de Vite, que lo
+    devuelve como un 500: el flujo (intento abierto, mismo id al reintentar) es el de
+    un 5xx; la rama `NetworkError` pura está cubierta por los tests con `fetch`
+    simulado.

@@ -51,12 +51,28 @@ export type PublicPackage = {
   validityDays: number | null
 }
 
+/**
+ * Loyalty program of the salon (F9, D8): present only when the owner switched it on
+ * and its reward service is still active. The public has no identity, so there is
+ * no progress here: only the rule.
+ */
+export type PublicLoyalty = {
+  visitsRequired: number
+  rewardServiceName: string
+}
+
 export type PublicSalon = {
   salon: PublicSalonInfo
   services: PublicService[]
   team: PublicTeamMember[]
   gallery: PublicPhoto[]
   packages: PublicPackage[]
+  /**
+   * `loyalty` (F9, D8): `null` when the API sends none, `null` or something unusable.
+   * Optional so code that builds a payload by hand (the profile preview) needs no
+   * change; a missing field and `null` mean the same.
+   */
+  loyalty?: PublicLoyalty | null
   /**
    * `hours` of the public salon (F2d1): the open days only, already expanded by
    * the server. `null` means the API did not send a usable field, so the landing
@@ -152,6 +168,28 @@ function normalizePackage(value: unknown): PublicPackage | null {
   }
 }
 
+/** Visits of a loyalty program (D4: 2..50). */
+const MIN_LOYALTY_VISITS = 2
+const MAX_LOYALTY_VISITS = 50
+
+/** Verbatim public sentence of the program (D8): «Cada N visitas, <servicio> de regalo». */
+export function loyaltySentence(visitsRequired: number, serviceName: string): string {
+  return `Cada ${visitsRequired} visitas, ${serviceName} de regalo`
+}
+
+/** `loyalty` of the public payload; anything that is not a usable rule is `null`. */
+function normalizeLoyalty(value: unknown): PublicLoyalty | null {
+  if (!isRecord(value)) {
+    return null
+  }
+  const visits = integer(value['visits_required'])
+  const name = text(value['reward_service_name'])
+  if (visits === null || visits < MIN_LOYALTY_VISITS || visits > MAX_LOYALTY_VISITS || name === '') {
+    return null
+  }
+  return { visitsRequired: visits, rewardServiceName: name }
+}
+
 function rowsOf<T>(raw: unknown, read: (row: unknown) => T | null): T[] {
   const out: T[] = []
   for (const row of Array.isArray(raw) ? raw : []) {
@@ -205,6 +243,7 @@ export function normalizePublicSalon(raw: unknown, apiBase = ''): PublicSalon | 
     team: rowsOf(raw['team'], normalizeTeamMember),
     gallery: rowsOf(raw['gallery'], (row) => normalizePhoto(row, apiBase)),
     packages: rowsOf(raw['packages'], normalizePackage),
+    loyalty: normalizeLoyalty(raw['loyalty']),
     hours: hours.length > 0 ? hours : null,
   }
 }
@@ -273,6 +312,14 @@ export type LandingPackage = {
   detail: string
 }
 
+/** Section «Programa de fidelidad» of the landing (D8). */
+export type LandingLoyalty = {
+  visitsRequired: number
+  rewardServiceName: string
+  /** `Cada 10 visitas, Corte de regalo`. */
+  sentence: string
+}
+
 export type NavLink = { href: string; label: string }
 
 export type LandingModel = {
@@ -289,9 +336,17 @@ export type LandingModel = {
   team: { name: string; trade: string | null }[]
   gallery: PublicPhoto[]
   packages: LandingPackage[]
+  /** `null` = the salon has no active program: the section is not rendered. */
+  loyalty: LandingLoyalty | null
   /** First gallery photo, used behind the hero; null = a hero without photo. */
   heroPhoto: PublicPhoto | null
-  sections: { services: boolean; team: boolean; packages: boolean; gallery: boolean }
+  sections: {
+    services: boolean
+    team: boolean
+    packages: boolean
+    loyalty: boolean
+    gallery: boolean
+  }
   /** The booking form needs at least one service. */
   canBook: boolean
   nav: NavLink[]
@@ -312,10 +367,12 @@ export function buildLanding(data: PublicSalon): LandingModel {
   const { salon } = data
   const services = toLandingServices(data.services)
   const gallery = data.gallery
+  const program = data.loyalty ?? null
   const sections = {
     services: services.length > 0,
     team: data.team.length > 0,
     packages: data.packages.length > 0,
+    loyalty: program !== null,
     gallery: gallery.length > 0,
   }
   const nav: NavLink[] = []
@@ -327,6 +384,9 @@ export function buildLanding(data: PublicSalon): LandingModel {
   }
   if (sections.packages) {
     nav.push({ href: '#paquetes', label: 'Paquetes' })
+  }
+  if (sections.loyalty) {
+    nav.push({ href: '#fidelidad', label: 'Fidelidad' })
   }
   if (sections.gallery) {
     nav.push({ href: '#galeria', label: 'Galería' })
@@ -355,6 +415,14 @@ export function buildLanding(data: PublicSalon): LandingModel {
       priceCents: pkg.priceCents,
       detail: packageDetail(pkg),
     })),
+    loyalty:
+      program === null
+        ? null
+        : {
+            visitsRequired: program.visitsRequired,
+            rewardServiceName: program.rewardServiceName,
+            sentence: loyaltySentence(program.visitsRequired, program.rewardServiceName),
+          },
     heroPhoto: gallery[0] ?? null,
     sections,
     canBook: services.length > 0,

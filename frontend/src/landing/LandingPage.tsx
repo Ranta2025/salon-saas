@@ -15,6 +15,7 @@ import {
 import { BookingCta } from './components/BookingCta'
 import { GallerySection } from './components/GallerySection'
 import { Hero } from './components/Hero'
+import { LoyaltySection } from './components/LoyaltySection'
 import { PackagesSection } from './components/PackagesSection'
 import { ServicesSection } from './components/ServicesSection'
 import { SiteFooter } from './components/SiteFooter'
@@ -162,6 +163,7 @@ export function LandingPage() {
         ) : null}
         {model.sections.team ? <TeamSection team={model.team} /> : null}
         {model.sections.packages ? <PackagesSection packages={model.packages} /> : null}
+        {model.loyalty !== null ? <LoyaltySection loyalty={model.loyalty} /> : null}
         {model.sections.gallery ? (
           <GallerySection photos={model.gallery} salonName={model.name} />
         ) : null}
