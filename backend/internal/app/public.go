@@ -158,7 +158,9 @@ func (s PublicSalonService) Public(slug string) (PublicSalon, error) {
 		case errors.Is(err, domain.ErrNotFound):
 			// Nunca guardado: sin sección.
 		default:
-			return PublicSalon{}, err
+			// Additive section: a failing loyalty query (e.g. migration 033 not yet
+			// applied during a rolling deploy) degrades to `loyalty: null` and never
+			// takes the whole public page down.
 		}
 	}
 	return out, nil
