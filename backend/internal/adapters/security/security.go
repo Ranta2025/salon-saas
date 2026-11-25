@@ -9,6 +9,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
+	"salon-saas/internal/domain"
 )
 
 // BcryptHasher: costo Default (10). Seguro y portable; no inventamos crypto.
@@ -81,17 +82,38 @@ func (j JWTIssuer) Issue(userID string) (string, error) {
 //   - WithValidMethods: solo HS256. Sin esto el parser acepta cualquier alg
 //     declarado en el token, incluido "none" (token sin firma).
 //   - WithExpirationRequired: un token sin exp no vence nunca.
+//   - Tipo (F10, D8): solo es una SESIÓN un token sin claim `typ` (los ya
+//     emitidos) o con typ:"session". Un desafío de 2FA (typ:"2fa") o cualquier
+//     otro tipo se rechaza: este Parse lo usan AuthMiddleware y el hub de tiempo
+//     real, así que un desafío nunca autentica nada.
 func (j JWTIssuer) Parse(token string) (string, error) {
-	if j.Secret == "" {
-		return "", ErrMissingSecret
+	claims, err := j.parseClaims(token)
+	if err != nil {
+		return "", err
 	}
-	t, err := jwt.Parse(token, func(*jwt.Token) (interface{}, error) {
+	if typ, present := claims["typ"]; present && typ != tokenTypeSession {
+		return "", domain.ErrUnauthorized
+	}
+	return subjectOf(claims)
+}
+
+// parseClaims valida método, firma y expiración (sin mirar el tipo).
+func (j JWTIssuer) parseClaims(token string) (jwt.MapClaims, error) {
+	if j.Secret == "" {
+		return nil, ErrMissingSecret
+	}
+	claims := jwt.MapClaims{}
+	t, err := jwt.ParseWithClaims(token, claims, func(*jwt.Token) (interface{}, error) {
 		return []byte(j.Secret), nil
 	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
 	if err != nil || !t.Valid {
-		return "", errOrUnauthorized(err)
+		return nil, errOrUnauthorized(err)
 	}
-	sub, err := t.Claims.GetSubject()
+	return claims, nil
+}
+
+func subjectOf(claims jwt.MapClaims) (string, error) {
+	sub, err := claims.GetSubject()
 	if err != nil || sub == "" {
 		return "", errOrUnauthorized(err)
 	}

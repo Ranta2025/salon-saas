@@ -63,6 +63,11 @@ type Deps struct {
 	// configurado el middleware no hace nada (los routers de los tests unitarios
 	// siguen igual). La autorización de la lectura vive en el caso de uso.
 	Audit AuditHandler
+	// TwoFactor es el 2FA TOTP opcional (F10, parte B): el segundo paso del login
+	// (`POST /auth/login/2fa`, público y bajo el límite por IP de /auth/) y las
+	// cuatro rutas de la cuenta propia (`/me/2fa`). Sin 2FA activo el login es el
+	// de siempre.
+	TwoFactor TwoFactorHandler
 	// Profile es el perfil público del salón (F16, D1) y Gallery su galería de
 	// fotos (F16, D3): la autorización vive en el caso de uso.
 	Profile SalonProfileHandler
@@ -105,6 +110,9 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	v1 := r.Group("/api/v1")
 	v1.POST("/auth/register", d.Auth.Register)
 	v1.POST("/auth/login", d.Auth.Login)
+	// F10b: segundo paso del login con 2FA. Cuelga de /api/v1/auth/, así que el
+	// límite por IP de ese prefijo ya lo cubre.
+	v1.POST("/auth/login/2fa", d.TwoFactor.Login)
 
 	// Vidriera pública del salón: la landing no tiene login.
 	v1.GET("/public/salons/:slug", d.Public.GetSalon)
@@ -167,6 +175,11 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	audit := d.Audit.Audit
 	// Quién soy y en qué salones estoy (el frontend elige el salón activo).
 	authed.GET("/me", d.Me.Get)
+	// F10b: 2FA del propio usuario (no dependen del salón).
+	authed.GET("/me/2fa", d.TwoFactor.Status)
+	authed.POST("/me/2fa/setup", d.TwoFactor.Setup)
+	authed.POST("/me/2fa/enable", d.TwoFactor.Enable)
+	authed.POST("/me/2fa/disable", d.TwoFactor.Disable)
 	authed.POST("/salons", d.Tenants.CreateSalon)
 
 	// Agenda

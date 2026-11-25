@@ -44,12 +44,19 @@ func (h AuthHandler) Login(c *gin.Context) {
 		badBody(c)
 		return
 	}
-	tok, err := h.Auth.Login(in.Email, in.Password)
+	res, err := h.Auth.Authenticate(in.Email, in.Password)
 	if err != nil {
 		respondErr(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"token": tok})
+	// F10: con 2FA activo la respuesta es el desafío y NO lleva `token`. Sin 2FA
+	// (el caso de todas las cuentas hasta que lo activan) queda `{"token":...}`
+	// exactamente como siempre.
+	if res.TwoFactorRequired {
+		c.JSON(http.StatusOK, gin.H{"two_factor_required": true, "challenge": res.Challenge})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"token": res.Token})
 }
 
 // --- Tenants ---

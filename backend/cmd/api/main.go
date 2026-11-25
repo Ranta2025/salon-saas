@@ -282,6 +282,20 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F10: auditoría. Escribir (middleware, tras un 2xx) resuelve el nombre del
 	// actor con el repositorio de usuarios; leer el registro es solo owner/admin.
 	auditSvc := app.AuditService{Events: auditRepo, Users: users, Memberships: mems}
+	// F10b: 2FA TOTP opcional (migración 035). El secreto se guarda cifrado con una
+	// clave derivada de JWT_SECRET (rotarlo obliga a re-enrolar el 2FA). Un usuario
+	// sin 2FA activo entra por el login de siempre; con 2FA, el login devuelve un
+	// desafío (typ:"2fa", 5 min) que NO es una sesión. Enrolar y desactivar
+	// escriben `auth.2fa_enabled` / `auth.2fa_disabled` en la auditoría.
+	totpBox, err := domain.NewTOTPSecretBox(cfg.JWTSecret)
+	if err != nil {
+		log.Fatalf("2fa: %v", err)
+	}
+	twoFactorSvc := app.TwoFactorService{
+		Repo: pgstore.TwoFactor{Pool: pool}, Users: users, Hasher: hasher, Tokens: tokens,
+		Challenges: tokens, Box: totpBox, Memberships: mems, Audit: auditSvc,
+	}
+	authSvc.TwoFactor = twoFactorSvc
 	// Tx: el cierre corre en una transacción con advisory lock por salón (B-09).
 	// Settings: la ventana del cierre es el día LOCAL del salón (su zona), no UTC.
 	cashCloseSvc := app.CashCloseService{
@@ -471,6 +485,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 
 	deps := httpapi.Deps{
 		Auth:          httpapi.AuthHandler{Auth: authSvc},
+		TwoFactor:     httpapi.TwoFactorHandler{Service: twoFactorSvc},
 		Tenants:       httpapi.TenantsHandler{Tenants: tenSvc, Memberships: mems},
 		Bookings:      httpapi.BookingHandler{Bookings: bookSvc, Memberships: mems},
 		Services:      httpapi.ServiceHandler{Services: svcSvc, Memberships: mems},

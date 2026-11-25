@@ -3293,7 +3293,7 @@ Un **registro de quién hizo qué, sobre qué id y cuándo** para las acciones s
 del salón. Guarda solo eso: **sin valores antes/después y sin datos personales**
 (solo el id de la cosa tocada y una foto del nombre de quien actuó). La parte B del
 contrato (2FA, que además escribe `auth.2fa_enabled` y `auth.2fa_disabled`) es un
-tramo aparte y **no está** en este apartado.
+tramo aparte y está en el apartado siguiente («F10: verificación en dos pasos»).
 
 ### Cómo se registra (D2)
 
@@ -3415,3 +3415,193 @@ tocar la base: quien no puede ver recibe `403` aunque el límite o el cursor est
   el md5 de `users`, `memberships` y `sales` es idéntico antes y después, también sobre
   datos previos.
 - No hay variables de entorno nuevas.
+
+## Fase 6 — F10: verificación en dos pasos (parte B, 2FA TOTP)
+
+**2FA opcional por usuario** (RFC 6238: HMAC-SHA1, 6 dígitos, paso de 30 s, ventana de
+±1 paso, secreto de 20 bytes aleatorios en base32 sin relleno; solo la stdlib, sin
+dependencias nuevas). Cada persona lo activa o desactiva para **su** cuenta; no depende
+del salón ni de un rol. **Una cuenta sin 2FA activo entra exactamente como siempre.**
+
+### Rutas
+
+| Método y ruta | Auth | Para qué |
+| --- | --- | --- |
+| `GET /api/v1/me/2fa` | sesión | ¿está activado? |
+| `POST /api/v1/me/2fa/setup` | sesión | genera el secreto (pendiente) |
+| `POST /api/v1/me/2fa/enable` | sesión | confirma con un código y devuelve los códigos de recuperación |
+| `POST /api/v1/me/2fa/disable` | sesión | desactiva (contraseña + código) |
+| `POST /api/v1/auth/login/2fa` | pública | segundo paso del login |
+
+`POST /auth/login/2fa` cuelga de `/api/v1/auth/`, así que **el límite por IP de `/auth/`
+(20 por minuto por IP) ya la cubre** sin tocar nada. Los cuerpos con campos de tipo
+equivocado, JSON roto, cuerpo vacío o un NUL (`\u0000`) dentro de una cadena responden
+**`400 {"error":"body invalido"}`** (sin tilde, tal cual el contrato; ojo: el resto de
+la API usa `body inválido`). Un `500` responde `{"error":"error interno"}`.
+
+### Estado — `GET /me/2fa`
+
+```json
+{"enabled": false}
+```
+
+Un enrolamiento **pendiente** (hubo `setup` pero falta confirmar) sigue siendo `false`.
+
+### Activar, paso 1 — `POST /me/2fa/setup` (sin cuerpo)
+
+```json
+{"secret":"JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+ "otpauth_url":"otpauth://totp/Salon:ana@mail.com?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Salon"}
+```
+
+- **Es la única respuesta de toda la API donde el secreto sale en claro**; no se vuelve
+  a poder leer. En el `otpauth_url` el email va escapado como ruta (un `+` va como `%2B`).
+- Un `setup` con un enrolamiento pendiente lo **reemplaza** (el secreto anterior deja de
+  servir). Ya activado → `409 {"error":"La verificacion en dos pasos ya esta activada"}`
+  y no se pisa nada.
+
+### Activar, paso 2 — `POST /me/2fa/enable`
+
+```json
+{"code":"123456"}
+```
+```json
+{"recovery_codes":["WPD6W-CXQKX","CML55-XXVKS","QQ7U5-LPBAF","MCCTI-IRML3",
+                   "ODXPX-YA4XT","CKHV5-TCRNS","HZ3DC-XNLSO","V3VXX-WT2VD"]}
+```
+
+| Caso | Respuesta |
+| --- | --- |
+| código TOTP bueno del secreto pendiente | `200` con los **8** códigos y `enabled=true` |
+| código malo, vacío, ausente o con otro formato | `400 {"error":"Codigo incorrecto"}` (no activa) |
+| sin `setup` previo | `409 {"error":"Primero genera el codigo con la configuracion"}` |
+| ya activado | `409 {"error":"La verificacion en dos pasos ya esta activada"}` (no entrega códigos nuevos) |
+
+- Los **códigos de recuperación** son 8, de la forma `XXXXX-XXXXX` (10 caracteres
+  base32 aleatorios), se muestran **una sola vez** y cada uno sirve **una vez**. En la
+  base queda solo su SHA-256.
+- Activar es **una transacción**: marca `enabled=true` e inserta los 8 hashes; si algo
+  falla no queda nada a medias. El código con el que se activa **no** sirve después
+  para entrar (anti-replay).
+- Activar no cuenta intentos fallidos (solo quien ya tiene sesión puede probar códigos
+  de **su propio** secreto pendiente, sin ganar nada con adivinarlos).
+
+### Desactivar — `POST /me/2fa/disable`
+
+```json
+{"password":"la-clave","code":"123456"}
+```
+
+`204` sin cuerpo. El `code` puede ser un TOTP **o un código de recuperación**.
+
+| Caso | Respuesta |
+| --- | --- |
+| contraseña mala o ausente (**se mira primero**) | `401 {"error":"Credenciales invalidas"}` |
+| código TOTP o de recuperación malo, vacío o ya usado | `400 {"error":"Codigo incorrecto"}` |
+| el usuario está bloqueado por fuerza bruta | `429` (ver D9) |
+| el 2FA no estaba activado (extensión: el contrato no lo fija) | `409 {"error":"La verificacion en dos pasos no esta activada"}` |
+
+Desactivar **borra el secreto y los códigos de recuperación en una sola transacción**.
+Un `401` de contraseña **no** cuenta como intento fallido de código.
+
+### Login con 2FA (D8)
+
+`POST /auth/login` con credenciales correctas:
+
+- **Sin 2FA activo** (no hay fila en `user_totp`, o `enabled=false`): `200 {"token":"..."}`
+  idéntico a siempre (mismos errores, misma ruta de código).
+- **Con 2FA activo**: `200 {"two_factor_required":true,"challenge":"<jwt>"}` y **sin**
+  campo `token`. Una contraseña mala da el mismo `401 {"error":"no autenticado"}` de
+  siempre (no delata que la cuenta tiene 2FA).
+
+`POST /auth/login/2fa`:
+
+```json
+{"challenge":"<jwt del paso anterior>","code":"123456"}
+```
+```json
+{"token":"<jwt de sesión>"}
+```
+
+- `code` es un TOTP de 6 dígitos (se aceptan espacios: `123 456`) **o un código de
+  recuperación** (sin importar mayúsculas ni el guion).
+- Error **uniforme**: `401 {"error":"Codigo incorrecto o desafio vencido"}` para
+  desafío inválido, vencido, de otra clase, usuario sin 2FA activo, código malo,
+  código ya usado o replay. Un `challenge` o `code` ausente es lo mismo (no `500`).
+
+**Tipos de token.** El desafío es un JWT HS256 con claim `typ:"2fa"` y **5 minutos** de
+vida. **Nunca sirve como sesión ni al revés:** `Parse` (el que usan `AuthMiddleware` y el
+hub de tiempo real del websocket) **rechaza** cualquier token con `typ` distinto de
+`"session"` o ausente, y el parser del desafío exige `typ` exactamente `"2fa"`. Los
+tokens de sesión ya emitidos (sin `typ`) siguen funcionando. Con un desafío como
+`Authorization: Bearer` cualquier ruta protegida da `401 {"error":"token inválido"}`
+y `GET /ws?token=<desafío>` da `401` antes del upgrade.
+
+### Fuerza bruta por usuario (D9)
+
+Además del límite por IP: tras **5 códigos fallidos seguidos** el usuario queda
+bloqueado **15 minutos**.
+
+- `429 {"error":"Demasiados intentos. Proba de nuevo en unos minutos"}` en
+  `POST /auth/login/2fa` y en `POST /me/2fa/disable`, **aun con el código correcto**.
+  La contraseña buena en `POST /auth/login` sigue devolviendo el desafío (el bloqueo es
+  del segundo paso).
+- Un acierto (TOTP o código de recuperación) **reinicia** el contador; un bloqueo
+  vencido también arranca de cero.
+- **Atómico:** cada intento se reserva con **un solo `UPDATE ... RETURNING`** que
+  incrementa `failed_count`, fija `locked_until = now() + 15 min` al llegar a 5 y **no
+  actualiza nada si ya está bloqueado**; el bloqueo se mira **antes** de comparar el
+  código. Con 30 intentos paralelos con códigos malos hay como máximo **5**
+  verificaciones, `failed_count` queda en 5 y los demás reciben `429`.
+- **Anti-replay:** el paso TOTP aceptado se guarda en `last_step` con
+  `UPDATE ... WHERE last_step < paso`: el mismo código usado dos veces (aun a la vez)
+  tiene **un** acierto; el replay cuenta como fallo.
+- **Código de recuperación:** `UPDATE ... WHERE used_at IS NULL`: 30 usos simultáneos
+  del mismo código dan **un** acierto.
+- Los códigos se comparan en tiempo constante.
+
+### Auditoría (D4)
+
+Al activar y al desactivar se escribe `auth.2fa_enabled` / `auth.2fa_disabled` en el
+registro de auditoría de **cada salón donde el usuario tiene una membresía activa** (sin
+`entity_id`). Es de **mejor esfuerzo**: si escribir falla se loguea y la petición sale
+igual. Un usuario sin salones no genera eventos. Los bloqueos (`429`) **no** se
+auditan (no hay salón).
+
+### Secretos y `JWT_SECRET`
+
+- El secreto TOTP se guarda **cifrado con AES-256-GCM** (nonce aleatorio de 12 bytes al
+  principio del `BYTEA`; el id del usuario va como dato autenticado, así que el texto
+  cifrado de una fila no abre en otra). La clave sale de `JWT_SECRET` con
+  `HMAC-SHA256(JWT_SECRET, "salon-saas/totp/v1")`. Un texto cifrado manipulado **falla
+  cerrado** (error, no pánico: el login con 2FA no se completa).
+- **Rotar `JWT_SECRET` invalida los 2FA ya enrolados**: hay que re-enrolar (y esa
+  persona no podrá entrar hasta que alguien borre su fila de `user_totp`). Es una
+  limitación aceptada de v1 (no hay rotación de clave ni reset por soporte).
+- Ni el secreto ni los códigos se loguean ni vuelven a salir de la API (solo `setup`
+  devuelve el secreto, y `enable` los códigos de recuperación, cada uno una vez).
+
+### Migración `035_two_factor.sql`
+
+- `user_totp(user_id TEXT PK FK users ON DELETE CASCADE, secret_enc BYTEA NOT NULL CHECK
+  (octet_length > 0), enabled BOOLEAN NOT NULL DEFAULT false, last_step BIGINT NOT NULL
+  DEFAULT 0 CHECK (>= 0), failed_count INTEGER NOT NULL DEFAULT 0 CHECK (>= 0),
+  locked_until TIMESTAMPTZ NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  enabled_at TIMESTAMPTZ NULL, CHECK (NOT enabled OR enabled_at IS NOT NULL))`.
+- `user_recovery_codes(id TEXT PK, user_id TEXT NOT NULL FK users ON DELETE CASCADE,
+  code_hash TEXT NOT NULL CHECK (char_length = 64), used_at TIMESTAMPTZ NULL, created_at
+  TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE (user_id, code_hash))`.
+- **No toca ninguna tabla existente.** Idempotente (guardas con `current_schema()`): una
+  segunda pasada no cambia nada; el md5 de `users`, `memberships`, `sales` y
+  `audit_events` es idéntico antes y después, también sobre datos previos.
+- No hay variables de entorno nuevas (la clave sale de `JWT_SECRET`).
+
+### Límites conocidos de v1 (D10)
+
+- El 2FA **no es obligatorio** para owner/admin.
+- Activar el 2FA **no revoca** los tokens de sesión ya emitidos (no hay tabla de
+  sesiones): quien ya tenía un token sigue entrando hasta que vence (24 h).
+- El alta por invitación (`POST /public/invitations/accept`) emite el token de una
+  cuenta **nueva** (sin 2FA); no pasa por el segundo paso.
+- Sin WebAuthn, sin rotación de la clave del secreto, sin reset de 2FA por soporte, sin
+  aviso por email.
