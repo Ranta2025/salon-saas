@@ -210,7 +210,24 @@
     position: sticky;
     top: 0;
     height: 100vh;
+    /* El pie (Salir, enlace público) nunca se sale: solo la lista de pestañas
+       hace scroll cuando hay más entradas que alto de pantalla. */
+    overflow: hidden;
     padding: var(--space-5) var(--space-4);
+  }
+
+  .shell__nav {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+  }
+
+  .shell__brand,
+  .shell__sidebar-foot {
+    flex-shrink: 0;
   }
 
   .shell__brand {
@@ -1987,6 +2004,10 @@
 
   .shell__nav {
     grid-area: nav;
+    /* Si hay muchas pestañas, la lista hace scroll en vez de empujar el contenido. */
+    max-height: 40vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   /* Every entry keeps its whole label: five columns on phones so the tenth
