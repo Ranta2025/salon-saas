@@ -9,6 +9,7 @@ import { ClientsPage } from './app/ClientsPage'
 import { EquipmentPage } from './app/EquipmentPage'
 import { ExpensesPage } from './app/ExpensesPage'
 import { ExportsPage } from './app/ExportsPage'
+import { ForgotPasswordPage } from './app/ForgotPasswordPage'
 import { InventoryPage } from './app/InventoryPage'
 import { InvitationPage } from './app/InvitationPage'
 import { LoginPage } from './app/LoginPage'
@@ -23,16 +24,19 @@ import { PayrollRunDetailPage } from './app/PayrollRunDetailPage'
 import { PosPage } from './app/PosPage'
 import { ProfitPage } from './app/ProfitPage'
 import { RequireAuth } from './app/RequireAuth'
+import { ResetPasswordPage } from './app/ResetPasswordPage'
 import { SalonProfilePage } from './app/SalonProfilePage'
 import { SecurityPage } from './app/SecurityPage'
 import { ServicesPage } from './app/ServicesPage'
 import { SettingsPage } from './app/SettingsPage'
 import { TeamPage } from './app/TeamPage'
+import { VerifyEmailPage } from './app/VerifyEmailPage'
 import { WaitlistLeavePage } from './app/WaitlistLeavePage'
 import { WaitlistPage } from './app/WaitlistPage'
 import { LandingPage } from './landing/LandingPage'
 import { UNAUTHORIZED_EVENT } from './lib/api'
 import { purgeOfflineApiCache } from './lib/pwa'
+import { isRecoveryPath } from './lib/recovery'
 
 /** A 401 anywhere in the app sends the user back to /login. */
 function UnauthorizedRedirect() {
@@ -43,6 +47,10 @@ function UnauthorizedRedirect() {
       // The invitation page logs in with its own form: a wrong password must not
       // navigate away and lose the token it keeps only in memory (S-F2g1-6).
       if (pathname === '/invitacion') {
+        return
+      }
+      // Recovery pages are public (F15, D11): they have no session to lose.
+      if (isRecoveryPath(pathname)) {
         return
       }
       // Another account must never read cached salon responses of this session.
@@ -83,6 +91,10 @@ export function App() {
         <Route path="/login" element={<LoginPage />} />
         {/* Public, no session: the token of the link lives in the fragment. */}
         <Route path="/invitacion" element={<InvitationPage />} />
+        {/* Public, no session: password recovery and email verification (F15). */}
+        <Route path="/recuperar" element={<ForgotPasswordPage />} />
+        <Route path="/restablecer" element={<ResetPasswordPage />} />
+        <Route path="/verificar-email" element={<VerifyEmailPage />} />
         {/* Public, no session, no menu entry: single-use booking link (F1). */}
         <Route path="/turno" element={<BookingLinkPage />} />
         {/* Public, no session: the baja link of the waiting list (F7, D5). */}

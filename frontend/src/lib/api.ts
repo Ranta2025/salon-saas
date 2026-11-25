@@ -334,12 +334,32 @@ export async function login(email: string, password: string): Promise<LoginResul
 
 // --- identity and directory ---
 
-export async function fetchMe(): Promise<Me> {
-  const me = normalizeMe(await request<unknown>('/api/v1/me'))
+/**
+ * `Me` plus the additive `email_verified` flag of `GET /me` (contract F15, D7).
+ * It is a supertype-compatible extension: every caller that only knows `Me`
+ * keeps working.
+ */
+export type SessionMe = Me & {
+  /** `false` only when the API says so; a missing or odd field counts as verified. */
+  email_verified: boolean
+}
+
+/**
+ * Reads `email_verified` defensively (F15, D12): only an explicit `false` means
+ * "not verified". An older API without the field, a `null` or any other type is
+ * treated as verified so the «Verifica tu email» banner never shows by mistake.
+ */
+export function readEmailVerified(raw: unknown): boolean {
+  return !(isRecord(raw) && raw['email_verified'] === false)
+}
+
+export async function fetchMe(): Promise<SessionMe> {
+  const raw = await request<unknown>('/api/v1/me')
+  const me = normalizeMe(raw)
   if (!me) {
     throw new ApiError(200, 'La API no devolvió los datos de tu cuenta.')
   }
-  return me
+  return { ...me, email_verified: readEmailVerified(raw) }
 }
 
 /** Team of the salon; the POS uses these ids instead of a free-text field. */

@@ -3255,3 +3255,123 @@ librería de QR). Todo es solo en línea: nada de esto pasa por la cola sin cone
 - `public/sw.js` guarda en caché los GET de `/api/v1/` (también `/me/2fa` y
   `/salons/:id/audit-log`): sin conexión pueden verse datos guardados. No se tocó el
   service worker (fuera de este frente); las escrituras de 2FA no se envían sin conexión.
+
+## 34. Fase 6 — F15: recuperar contraseña y verificar email (frontend)
+
+Contrato: `odd/tasks/fase6-roadmap.md`, «Contrato F15», partes D2 (`POST /auth/forgot`),
+D3 (`POST /auth/reset`), D7 (`POST /auth/verify-email`, `POST /me/verify-email/resend`,
+`email_verified` en `GET /me`) y, de esta parte, D11 y D12. El backend se construye en
+paralelo, así que todo se probó con `fetch` simulado y con una API simulada en el
+navegador. Sin dependencias nuevas. Todo es solo en línea: nada de esto pasa por la cola
+sin conexión.
+
+### 34.1 Rutas públicas y login (D11)
+
+- Tres rutas nuevas en `App.tsx`, fuera de `RequireAuth`: `/recuperar`
+  (`ForgotPasswordPage`), `/restablecer` (`ResetPasswordPage`) y `/verificar-email`
+  (`VerifyEmailPage`). `UnauthorizedRedirect` no las redirige a `/login` (igual que
+  `/invitacion`): `isRecoveryPath` de `lib/recovery.ts` decide, así que la regla tiene su
+  test.
+- `LoginPage`: el texto fijo «¿Olvidaste tu contraseña? Pídele a la administración…» se
+  reemplaza por el enlace «Olvidé mi contraseña» a `/recuperar` (objetivo de 44 px). El
+  segundo paso del 2FA (F10) no cambió: se comprobó en el navegador que un desafío sigue
+  mostrando «Código de verificación».
+- Aviso del login tras restablecer: `ResetPasswordPage` deja la frase en una clave de
+  `sessionStorage` (`salon.notice.reset`) y `LoginPage` la lee UNA vez en un efecto y la
+  borra (`takeResetNotice`). Solo se acepta la frase exacta; si el almacenamiento falla
+  no se muestra y no se rompe nada. El efecto nunca pisa el estado con `null`: la segunda
+  ejecución de React StrictMode (que ya no encuentra la clave) no borra el aviso. Un
+  `F5` posterior no lo repite (comprobado).
+
+### 34.2 `/recuperar` (D2)
+
+- Formulario de correo (normalizado a minúsculas y sin espacios, como el resto del
+  front). Con un 202 SIEMPRE muestra «Si el correo esta registrado, te enviamos un enlace.
+  Revisa tu bandeja.», exista o no el correo: la página no lee el cuerpo ni distingue
+  nada (comprobado con un correo conocido y uno desconocido: misma frase). Un 400 se
+  muestra tal cual («Email inválido»). Botones: «Probar con otro correo» y «Volver a
+  iniciar sesión».
+- La llamada no manda `Authorization` (`auth: 'none'`).
+
+### 34.3 `/restablecer` (D3)
+
+- El token viaja en el FRAGMENTO del enlace (`/restablecer#<token>`). `useFragmentToken`
+  (`components/RecoveryToken.tsx`) lo lee con una función pura, lo guarda solo en el
+  estado de React y borra el fragmento de la barra con `history.replaceState` en un efecto
+  que corre antes que cualquier pedido. Nunca va a `localStorage`, `sessionStorage`, la
+  consola, un mensaje, la ruta ni el query; viaja solo en el cuerpo (`{token,password}`).
+- Contraseña nueva y confirmación, 8 a 72 BYTES (`validateNewPassword`, la misma regla de
+  bytes de `validateSignup` de las invitaciones: una «é» cuenta 2; la clave no se recorta).
+  La confirmación debe coincidir. Errores del cliente en la página, sin pedido.
+- 204 → `/login` con el aviso «Contrasena actualizada. Inicia sesion.». NO se guarda ningún
+  token de sesión (el cliente ni lee la respuesta; hay un test que devuelve un `token` de
+  más y comprueba que no se guarda). Un 400 se muestra tal cual («Enlace invalido o
+  vencido» o la regla de la contraseña) con un enlace a `/recuperar`; el botón se vuelve a
+  habilitar.
+- Sin token en el fragmento (o con un fragmento que no tiene forma de token): mensaje claro
+  «Este enlace está incompleto o ya se usó. Pedí uno nuevo para continuar.» y enlace a
+  `/recuperar`. Un token en el query se ignora.
+
+### 34.4 `/verificar-email` (D7)
+
+- Lee el fragmento igual que arriba y llama a `POST /auth/verify-email {token}` UNA sola
+  vez: el token es de un solo uso y React StrictMode corre los efectos dos veces en
+  desarrollo, así que una referencia (`startedRef`) lo impide y otra (`mountedRef`) evita
+  escribir estado tras desmontar. Se comprobó en el navegador contra un servidor simulado
+  que cuenta los pedidos: exactamente 1 con StrictMode activo.
+- Muestra «Email verificado» o la frase del servidor tal cual; con sesión ofrece «Ir al
+  panel», sin sesión «Iniciar sesión» (y «Recuperar contraseña» ante un error).
+
+### 34.5 Banner «Verifica tu email» (D12)
+
+- `components/EmailVerificationBanner.tsx` dentro de `AppShell`, entre la barra superior y
+  el contenido. Lee `GET /me` y se muestra SOLO si `email_verified === false`
+  (`shouldShowVerifyBanner`); si el campo falta, es `null` o tiene otro tipo, cuenta como
+  verificado y no aparece (`readEmailVerified`). Un fallo al leer `/me` tampoco lo muestra.
+- «Reenviar correo» → `POST /me/verify-email/resend`: 202 «Te enviamos un nuevo correo.»;
+  409 («El email ya esta verificado») y 429 («Espera un minuto antes de pedir otro
+  correo») tal cual. Tras el 409 desaparece el botón (ya no hace falta) y el banner se
+  oculta en la próxima carga, cuando `/me` ya diga `true`. Sin conexión no se envía y no
+  queda en cola (`resendVerification` nunca lanza: devuelve el resultado que se imprime).
+- No bloquea nada y no mueve el menú: vive en la columna del contenido; medido a 390 y
+  1280 px, el menú, el pie y la marca quedan en las mismas coordenadas con y sin banner.
+
+### 34.6 `fetchMe` y el modelo de usuario
+
+- `GET /me` agrega `email_verified: boolean` (aditivo). `fetchMe()` de `lib/api.ts` ahora
+  devuelve `SessionMe = Me & { email_verified: boolean }`: es un supertipo-compatible, así
+  que ningún llamador existente cambia. `me.ts`, `types.ts` y `SalonContext` no se
+  tocaron (fuera de las superficies de este trabajo): el banner lee `/me` por su cuenta, un
+  pedido más al montar el panel. `normalizeMe` sigue descartando el campo.
+
+### 34.7 Pruebas
+
+- `lib/recovery.test.ts` (27), con `fetch` simulado: frases exactas, rutas públicas, lectura
+  del fragmento (token, basura, query), validación del correo y de la contraseña (bytes),
+  los cuatro clientes (ruta, método, cuerpo, sin `Authorization`, errores tal cual, sin
+  sesión guardada), reenvío (202/409/429/401/sin conexión/red), regla del banner, `fetchMe`
+  con y sin el campo y el aviso de una sola vez (almacenamiento roto y valor ajeno).
+- Ningún test existente cambió: ninguno afirmaba la forma completa de `fetchMe`/`user`.
+- Verificado en el navegador (Chromium con Playwright, servidor simulado con Vite en
+  desarrollo = StrictMode, 390 y 1280 px, 90 comprobaciones): login con el enlace, `/recuperar`
+  (antes, 400, 202, correo desconocido), `/restablecer` (sin token, formulario, validación,
+  no coincide, error del servidor, éxito con el aviso una sola vez y sin token guardado),
+  `/verificar-email` (ok, error, sin token, un solo pedido), el banner (visible, 429, 202,
+  409, oculto con `email_verified: true`, oculto sin el campo), sin desborde horizontal,
+  objetivos de 44 px y sin errores de consola.
+
+### 34.8 Riesgos y decisiones
+
+- Las frases del contrato van TAL CUAL, sin acentos («Contrasena actualizada. Inicia
+  sesion.»), y las propias con acentos como el resto de la app: conviven en la misma
+  pantalla del login.
+- `public/sw.js` guarda en caché los GET de `/api/v1/` (también `/me`): sin conexión el
+  banner puede salir de una copia vieja (verificado o no). El reenvío solo se envía en
+  línea. No se tocó el service worker.
+- Si la persona verifica en otra pestaña, el banner sigue hasta recargar o hasta el 409 del
+  reenvío; no hay sondeo.
+- El banner aparece cuando termina `/me` y empuja el contenido hacia abajo ese instante
+  (no el menú). Reservar el alto evitaría el salto a costa de un hueco para quien ya está
+  verificado, que es la mayoría.
+- Un enlace del correo se abre siempre con carga completa; abrir `/restablecer#<token>`
+  estando ya en `/restablecer` (solo cambia el fragmento) no vuelve a leerlo.

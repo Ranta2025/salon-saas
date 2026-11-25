@@ -1,7 +1,8 @@
-import { useRef, useState, type FormEvent } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { fetchMe, login } from '../lib/api'
 import { pickSalonId } from '../lib/me'
+import { takeResetNotice } from '../lib/recovery'
 import { challengeFailure, completeLogin2fa, validateVerificationCode } from '../lib/twofa'
 import {
   clearSalonId,
@@ -31,6 +32,16 @@ export function LoginPage() {
   // not a session, so no token is stored until the second call succeeds.
   const [challenge, setChallenge] = useState<string | null>(null)
   const [code, setCode] = useState('')
+  // One-shot notice after a password reset (F15, D11). It is read in an effect and
+  // never overwritten with null, so React StrictMode's second run (which finds the
+  // key already cleared) keeps what the first run read.
+  const [notice, setNotice] = useState<string | null>(null)
+  useEffect(() => {
+    const taken = takeResetNotice()
+    if (taken !== null) {
+      setNotice(taken)
+    }
+  }, [])
 
   if (getToken()) {
     return <Navigate to={from} replace />
@@ -184,6 +195,12 @@ export function LoginPage() {
               />
             </div>
 
+            {notice ? (
+              <p className="notice notice--success" role="status">
+                {notice}
+              </p>
+            ) : null}
+
             {error ? (
               <p className="notice notice--error" role="alert">
                 {error}
@@ -193,9 +210,9 @@ export function LoginPage() {
             <button type="submit" className="btn btn--wine" disabled={pending}>
               {pending ? 'Entrando…' : 'Entrar al panel'}
             </button>
-            <p className="field__hint">
-              ¿Olvidaste tu contraseña? Pídele a la administración que la restablezca.
-            </p>
+            <Link className="login__forgot" to="/recuperar">
+              Olvidé mi contraseña
+            </Link>
             <a className="login__back" href="/">
               ← Volver al sitio del salón
             </a>

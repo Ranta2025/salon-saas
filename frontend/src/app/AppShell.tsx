@@ -15,6 +15,7 @@ import {
 import type { StaffMember } from '../lib/staff'
 import { purgeOfflineApiCache } from '../lib/pwa'
 import { clearSalonId, clearToken, clearUserId } from '../lib/session'
+import { EmailVerificationBanner } from './components/EmailVerificationBanner'
 import { NotificationCenter } from './components/NotificationCenter'
 import { OfflineBanner, SyncStatusChip } from './components/SyncStatus'
 import { NotificationsProvider } from './NotificationsContext'
@@ -291,6 +292,7 @@ function ShellChrome() {
             <NotificationCenter />
           </div>
         </header>
+        <EmailVerificationBanner />
         <OfflineBanner />
         <main className="shell__content" id="contenido-panel">
           <Outlet />

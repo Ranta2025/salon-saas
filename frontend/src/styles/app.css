@@ -4545,3 +4545,134 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+
+/* ---------- F15: recuperar contraseña y verificar email ---------- */
+
+/* Forgot-password link of the login: a 44px target, quiet like «Volver». */
+.login__forgot {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 0.875rem;
+  color: var(--wine);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+/* Public pages: one card on the cream background, same tokens as /invitacion. */
+.recovery {
+  display: grid;
+  place-items: start center;
+  align-content: start;
+  min-height: 100vh;
+  padding: clamp(1.25rem, 5vw, 3rem) clamp(1rem, 4vw, 2rem);
+  background: radial-gradient(circle at 12% 0%, var(--rose-tint) 0%, var(--cream) 45%, var(--shell-bg) 100%);
+}
+
+.recovery__card {
+  display: grid;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 30rem;
+  min-width: 0;
+  padding: clamp(1.25rem, 4vw, 2rem);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.recovery__card h1 {
+  font-size: var(--step-3);
+  /* the display serif draws its accents above the line box: give it room */
+  line-height: 1.3;
+  margin-top: 0.15rem;
+  overflow-wrap: anywhere;
+}
+
+.recovery__card p {
+  font-size: 0.9375rem;
+  color: var(--ink-soft);
+}
+
+.recovery__card .notice {
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.recovery__card .notice p {
+  font-size: inherit;
+  color: inherit;
+}
+
+.recovery__form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.recovery__form .btn {
+  width: 100%;
+  min-height: 44px;
+}
+
+.recovery__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.recovery__actions .btn,
+.recovery__form .recovery__actions .btn {
+  width: auto;
+  min-height: 44px;
+}
+
+.recovery__card .notice a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: inherit;
+  text-decoration: underline;
+}
+
+/* «Verifica tu email» of the panel: a strip of the CONTENT column (the sidebar and
+   its footer do not move), wraps at 390px and never blocks anything. */
+.verify-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  min-width: 0;
+  padding: 0.6rem clamp(1rem, 3vw, 2.25rem);
+  border-bottom: 1px solid rgba(201, 162, 39, 0.65);
+  background: var(--gold-tint);
+  color: #4d3a00;
+  font-size: var(--step--1);
+}
+
+.verify-banner__text {
+  display: grid;
+  flex: 1 1 16rem;
+  gap: 0.1rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.verify-banner__action {
+  min-height: 44px;
+  flex: 0 0 auto;
+}
+
+.verify-banner__feedback {
+  flex: 1 1 100%;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.verify-banner__feedback--error {
+  color: #6d1526;
+}
+
+.verify-banner__feedback--success {
+  color: #1f5138;
+}
