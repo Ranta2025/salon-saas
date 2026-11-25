@@ -3098,6 +3098,8 @@ Una foto inexistente **o de otro salón** es `404 {"error":"Foto no encontrada"}
 - `services`, `team`, `gallery` y `packages` son **siempre arrays** (vacíos si no
   hay datos). Slug inexistente → `404 {"error":"no encontrado"}`.
 - La reserva pública, la disponibilidad y la lista de espera **no cambian**.
+- F9 suma una clave más, `loyalty` (`null` o `{"visits_required","reward_service_name"}`):
+  ver «Fase 6 — F9».
 
 ### Migración `032_salon_profile.sql`
 
@@ -3114,4 +3116,173 @@ Una foto inexistente **o de otro salón** es `404 {"error":"Foto no encontrada"}
 - Idempotente (guardas con `current_schema()`): una segunda pasada no cambia
   ninguna fila; el md5 de `salons`, `services` y `client_photos` es idéntico
   antes y después, también sobre datos previos.
+- No hay variables de entorno nuevas.
+
+## Fase 6 — F9: fidelidad (cada N visitas, un servicio de regalo)
+
+Cuando una clienta junta **N visitas** gana **un vale** de «un servicio de regalo»
+(el servicio lo elige el dueño). Usar el vale **no es una venta** y no mueve dinero:
+`POST /sales`, `Sale`, la nómina, la caja, el panel, la ganancia y las exportaciones
+**no cambian** (no hay comisión por un vale en v1). Las visitas **no se guardan: se
+calculan**.
+
+### Visitas (D2)
+
+`visitas` = cantidad de ventas de la clienta (`sales.client_id`) con `created_at >=
+counting_from` y **al menos una línea de servicio** en `sale_items`. Se calcula con
+una consulta de **solo lectura**; el flujo de ventas no se toca.
+
+| Venta de la clienta | ¿Cuenta? |
+| --- | --- |
+| Con una o más líneas de servicio (dos servicios en una venta = **una** visita) | sí |
+| Mixta (servicio + producto) | sí |
+| Solo productos | no |
+| Compra de un paquete F8 (`packages_cents > 0`, sin líneas) | no |
+| Consumir una sesión de un paquete (no es una venta) | no (v1) |
+| De otra clienta, o sin clienta elegida en el POS | no |
+| Anterior a `counting_from` (se cuenta desde el instante exacto, inclusive) | no |
+
+`counting_from` es el momento en que el programa se guardó **por primera vez**: el
+historial anterior no cuenta, así que activarlo no regala vales de golpe y los
+guardados siguientes lo conservan. **Limitación conocida:** depende del vínculo
+`client_id` del POS; si no se eligió la clienta, esa venta no suma.
+
+### Rutas
+
+| Método | Ruta | Quién |
+| --- | --- | --- |
+| GET | `/api/v1/salons/:id/loyalty-program` | cualquier miembro activo |
+| PUT | `/api/v1/salons/:id/loyalty-program` | owner/admin |
+| GET | `/api/v1/salons/:id/clients/:cid/loyalty` | owner/admin/recepción |
+| POST | `/api/v1/salons/:id/clients/:cid/loyalty/grant` | owner/admin/recepción |
+| POST | `/api/v1/salons/:id/clients/:cid/loyalty/rewards/:rid/redeem` | owner/admin/recepción |
+
+Profesional, cliente del salón, miembro dado de baja y gente de otro salón reciben
+`403` en las rutas de la clienta (la ficha lleva datos de consumo); sin sesión
+`401`. En las tres escrituras el **permiso se evalúa antes de leer el cuerpo**: quien
+no puede recibe `403` aunque el cuerpo esté mal formado. Toda consulta lleva
+`salon_id`: una clienta o un vale de otro salón es `404`.
+
+### Programa — `GET` y `PUT /salons/:id/loyalty-program`
+
+```json
+{"enabled":true,"visits_required":5,"reward_service_id":"sv_...",
+ "reward_service_name":"Corte","reward_validity_days":30,
+ "counting_from":"2026-03-10T11:30:00Z"}
+```
+
+Un salón que **nunca** guardó el programa recibe `enabled:false` y el resto en
+`null`. `reward_validity_days` es `null` si el vale no vence.
+
+`PUT` **reemplaza** y **exige las cuatro claves** `enabled`, `visits_required`,
+`reward_service_id` y `reward_validity_days` (`null` explícito = sin vencimiento;
+una clave ausente, o `enabled`/`visits_required`/`reward_service_id` en `null`, **no
+se rellena en silencio**). Respuesta `200` con la misma forma. Errores (`400`,
+`{"error": ...}`), en este orden y sin escribir nada:
+
+- falta una clave: `Faltan datos del programa: activado, visitas, servicio y vigencia`;
+- visitas fuera de 2..50: `Las visitas necesarias deben ser entre 2 y 50`;
+- servicio inexistente, inactivo o de otro salón (también un id con NUL o UTF-8
+  inválido): `Servicio inválido`;
+- vigencia fuera de 1..3650: `La vigencia debe ser entre 1 y 3650 días`;
+- JSON roto o con un tipo equivocado (`"enabled":"si"`, `2.5` visitas): `body inválido`.
+
+El primer guardado fija `counting_from = ahora`; los siguientes lo conservan. Con
+`enabled:false` **no se entregan ni se usan vales**, pero los ya entregados se
+conservan y vuelven a servir al reactivar el programa.
+
+### Ver a una clienta — `GET /salons/:id/clients/:cid/loyalty`
+
+```json
+{"enabled":true,"visits":12,"visits_required":5,"rewards_earned":2,
+ "rewards_granted":1,"rewards_available":1,"next_in":3,
+ "rewards":[{"id":"...","reward_number":1,"service_id":"sv_...",
+             "service_name":"Corte","granted_at":"2026-03-10T11:30:00Z",
+             "expires_at":null,"redeemed_at":null,"state":"available"}]}
+```
+
+- `rewards_earned = floor(visits / visits_required)`;
+- `rewards_available = max(0, rewards_earned - rewards_granted)` (los vales ya
+  entregados y no usados se listan aparte, en `rewards`);
+- `next_in = visits_required - visits % visits_required`;
+- `rewards`: más nuevos primero, **tope 100**; `state` ∈ `available|redeemed|expired`
+  (usado gana sobre vencido; un vale vence **exacto** en `expires_at`);
+  `expires_at` y `redeemed_at` son `null` si no aplican.
+- `enabled` es el interruptor: con el programa apagado las cuentas se siguen
+  calculando (solo lectura) pero **no se puede entregar ni usar**. Programa nunca
+  guardado: `enabled:false`, `visits:0`, `visits_required:null`, `next_in:null`,
+  ceros y `rewards:[]`.
+- Clienta de otro salón o inexistente (o un id con NUL/UTF-8 inválido):
+  `404 {"error":"Ficha no encontrada"}`.
+
+### Entregar — `POST .../clients/:cid/loyalty/grant`
+
+Cuerpo `{client_op_id?}` (opcional; vacío vale como `{}`) → `201 {"reward":{...}}`
+con la forma del vale de arriba.
+
+Todo corre en **una transacción** bajo `pg_advisory_xact_lock(hashtext('loyalty:<salón>:<clienta>'))`:
+recalcula las visitas y los entregados y, si `rewards_available >= 1`, inserta el
+vale número `rewards_granted + 1` con el servicio y su nombre **del programa de hoy**
+(foto: renombrar el servicio después no cambia el vale) y `expires_at` = **fin del
+día local** (zona del salón) de hoy + `reward_validity_days` (sin vigencia no
+vence). `UNIQUE (client_id, reward_number)` es la guarda final: **un vale por hito
+pase lo que pase**; treinta pedidos simultáneos con un solo premio disponible dan
+un `201` y veintinueve `409`, y queda una fila.
+
+- sin premio disponible: `409 {"error":"No hay premios disponibles"}`;
+- programa apagado o nunca guardado: `409 {"error":"La fidelidad no está activada"}`;
+- **idempotente por `client_op_id`** (índice único parcial): el repetido devuelve
+  **el mismo vale** (`201`) sin entregar otro; el mismo id usado para otra clienta
+  → `409 {"error":"Esa operación ya se usó en otro pedido"}`; un id con NUL o de
+  más de 200 caracteres → `400 {"error":"El identificador de la operación no es válido"}`.
+
+### Usar — `POST .../clients/:cid/loyalty/rewards/:rid/redeem`
+
+Cuerpo `{professional_id?, note?, client_op_id?}` (todo opcional) → `200
+{"reward":{...}}` con `state:"redeemed"` y `redeemed_at`.
+
+Es **un** `UPDATE loyalty_rewards SET redeemed_at=… WHERE id=… AND salon_id=… AND
+client_id=… AND redeemed_at IS NULL AND (expires_at IS NULL OR expires_at > ahora)`:
+dos usos simultáneos del mismo vale → **uno** gana. Sin filas afectadas se
+distingue, en la misma transacción y con `FOR UPDATE`:
+
+- inexistente, de otra clienta o de otro salón (o id con NUL/UTF-8 inválido):
+  `404 {"error":"Premio no encontrado"}`;
+- ya usado: `409 {"error":"Ese premio ya se usó"}`;
+- vencido: `409 {"error":"El premio venció"}` (usado gana sobre vencido).
+
+Con el programa apagado o nunca guardado: `409 {"error":"La fidelidad no está
+activada"}` y el vale queda intacto. **Idempotente por `client_op_id`:** el
+repetido devuelve el estado actual (`200`) **sin usar otra vez**; el mismo id en
+otro vale u otra clienta → `409 {"error":"Esa operación ya se usó en otro pedido"}`.
+`professional_id`, si viene, debe atender en el salón (igual que en el POS: `400`
+si no); `note` (≤ 200, sin saltos de línea ni NUL) → `400` si no cumple.
+
+### Público (D8) — `GET /public/salons/:slug`
+
+Se **agrega** una clave, sin quitar ni cambiar nada:
+
+```json
+"loyalty": {"visits_required": 5, "reward_service_name": "Corte"}
+```
+
+`loyalty` es `null` salvo que el programa esté **activado** y su servicio de regalo
+siga **activo**. No lleva progreso: el público no tiene identidad de clienta.
+
+### Migración `033_loyalty.sql`
+
+- `loyalty_programs(salon_id PK FK CASCADE, enabled, visits_required CHECK 2..50,
+  reward_service_id FK services RESTRICT, reward_validity_days NULL o 1..3650,
+  counting_from NOT NULL, updated_at)`.
+- `loyalty_rewards(id, salon_id FK CASCADE, client_id FK clients RESTRICT,
+  reward_number CHECK >= 1, service_id FK RESTRICT, service_name (foto),
+  granted_at, expires_at NULL, redeemed_at NULL, redeemed_by NULL,
+  redeemed_professional_id NULL, redeem_note NULL ≤ 200 sin saltos de línea,
+  grant_op_id NULL, redeem_op_id NULL)` con `UNIQUE (client_id, reward_number)`,
+  índices únicos parciales `(salon_id, grant_op_id)` y `(salon_id, redeem_op_id)`
+  `WHERE … IS NOT NULL`, y `CHECK (redeemed_at IS NULL OR redeemed_by IS NOT NULL)`.
+- **No toca ninguna tabla existente** (ni columnas ni índices de `sales`,
+  `sale_items`, `clients` o `client_packages`). Idempotente (guardas con
+  `current_schema()`): una segunda pasada no cambia nada; el md5 de esas cuatro
+  tablas es idéntico antes y después, también sobre datos previos.
 - No hay variables de entorno nuevas.

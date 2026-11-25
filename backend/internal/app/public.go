@@ -4,6 +4,8 @@
 package app
 
 import (
+	"errors"
+
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -26,6 +28,16 @@ type PublicSalon struct {
 	Gallery []GalleryPhoto
 	// Packages: el catálogo F8 ACTIVO cuyo servicio sigue activo.
 	Packages []domain.ServicePackage
+	// Loyalty (F9, D8): el programa de fidelidad SOLO si está activado y su
+	// servicio de regalo sigue activo; nil en cualquier otro caso.
+	Loyalty *PublicLoyalty
+}
+
+// PublicLoyalty es lo único del programa de fidelidad que ve el público: cada
+// cuántas visitas y qué servicio se regala. Ni progreso ni clientas (D8).
+type PublicLoyalty struct {
+	VisitsRequired    int
+	RewardServiceName string
 }
 
 type PublicSalonService struct {
@@ -45,6 +57,8 @@ type PublicSalonService struct {
 	Professionals ports.ProfessionalServiceRepository
 	Gallery       ports.SalonGalleryRepository
 	Packages      ports.PackageRepository
+	// Loyalty (F9, D8) es opcional: nil = el payload lleva `loyalty: null`.
+	Loyalty ports.LoyaltyProgramRepository
 }
 
 // Public resuelve el salón por slug y devuelve su vidriera. Es la única query
@@ -125,6 +139,26 @@ func (s PublicSalonService) Public(slug string) (PublicSalon, error) {
 			if p.Active && activeIDs[p.ServiceID] {
 				out.Packages = append(out.Packages, p)
 			}
+		}
+	}
+	if s.Loyalty != nil {
+		prog, err := s.Loyalty.Find(salon.ID)
+		switch {
+		case err == nil:
+			// D8: solo con el programa ACTIVADO y su servicio de regalo ACTIVO
+			// (el mismo conjunto de servicios activos de la carta).
+			if prog.Enabled {
+				for _, svc := range active {
+					if svc.ID == prog.RewardServiceID {
+						out.Loyalty = &PublicLoyalty{VisitsRequired: prog.VisitsRequired, RewardServiceName: svc.Name}
+						break
+					}
+				}
+			}
+		case errors.Is(err, domain.ErrNotFound):
+			// Nunca guardado: sin sección.
+		default:
+			return PublicSalon{}, err
 		}
 	}
 	return out, nil

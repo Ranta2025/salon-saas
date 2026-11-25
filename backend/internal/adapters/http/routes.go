@@ -54,6 +54,10 @@ type Deps struct {
 	// por clienta, comprar, ver el saldo, descontar una sesión y ajustarlo. La
 	// autorización vive en el caso de uso.
 	Packages PackageHandler
+	// Loyalty es la fidelidad «cada N visitas, un servicio de regalo» (F9): el
+	// programa del salón y, por clienta, la ficha, entregar y usar un vale. La
+	// autorización vive en el caso de uso.
+	Loyalty LoyaltyHandler
 	// Profile es el perfil público del salón (F16, D1) y Gallery su galería de
 	// fotos (F16, D3): la autorización vive en el caso de uso.
 	Profile SalonProfileHandler
@@ -252,6 +256,12 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.GET("/salons/:id/clients/:cid/packages/:cpid/movements", d.Packages.Movements)
 	authed.POST("/salons/:id/clients/:cid/packages/:cpid/redeem", d.Packages.Redeem)
 	authed.POST("/salons/:id/clients/:cid/packages/:cpid/adjust", d.Packages.Adjust)
+	// F9: fidelidad (programa del salón; ficha, entrega y uso por clienta).
+	authed.GET("/salons/:id/loyalty-program", d.Loyalty.GetProgram)
+	authed.PUT("/salons/:id/loyalty-program", d.Loyalty.PutProgram)
+	authed.GET("/salons/:id/clients/:cid/loyalty", d.Loyalty.GetClient)
+	authed.POST("/salons/:id/clients/:cid/loyalty/grant", d.Loyalty.Grant)
+	authed.POST("/salons/:id/clients/:cid/loyalty/rewards/:rid/redeem", d.Loyalty.Redeem)
 
 	// F7: lista de espera del salón (D8). Owner, administración y recepción; la
 	// autorización vive en el caso de uso y toda consulta lleva salon_id.

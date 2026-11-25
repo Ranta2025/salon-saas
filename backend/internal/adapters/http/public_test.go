@@ -48,7 +48,7 @@ func TestPublicPayload_exactShape(t *testing.T) {
 	_ = w.packages.Create(pkg)
 
 	got := publicGet(t, w, "f16-uno")
-	if strings.Join(keysOf(got), ",") != "gallery,hours,packages,salon,services,team" {
+	if strings.Join(keysOf(got), ",") != "gallery,hours,loyalty,packages,salon,services,team" {
 		t.Fatalf("claves de primer nivel: %v", keysOf(got))
 	}
 	salon := got["salon"].(map[string]any)

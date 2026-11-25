@@ -21,7 +21,8 @@ type PublicHandler struct {
 // GetSalon: GET /api/v1/public/salons/:slug. La vidriera del salón (F16, D4):
 // perfil, la carta de servicios activos que alguien hace (con precio, duración y
 // descripción), el equipo que atiende (solo nombre y oficio), la galería, los
-// paquetes activos y el horario de los días abiertos (F2d1). Todo sale de lo que
+// paquetes activos, el horario de los días abiertos (F2d1) y el programa de
+// fidelidad si está activado (F9, D8: `loyalty`, null si no). Todo sale de lo que
 // el dueño edita en el panel; las secciones vacías son listas vacías.
 func (h PublicHandler) GetSalon(c *gin.Context) {
 	p, err := h.Public.Public(c.Param("slug"))
@@ -70,6 +71,12 @@ func (h PublicHandler) GetSalon(c *gin.Context) {
 	for _, d := range p.Hours {
 		hours = append(hours, gin.H{"weekday": d.Weekday, "open": d.Open, "close": d.Close})
 	}
+	// loyalty (F9, D8): null salvo programa activado con su servicio activo.
+	// Solo cuántas visitas y qué servicio: ni progreso ni clientas.
+	var loyalty any
+	if p.Loyalty != nil {
+		loyalty = gin.H{"visits_required": p.Loyalty.VisitsRequired, "reward_service_name": p.Loyalty.RewardServiceName}
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"salon": gin.H{
 			"id":          p.Salon.ID,
@@ -87,6 +94,7 @@ func (h PublicHandler) GetSalon(c *gin.Context) {
 		"gallery":  gallery,
 		"packages": packages,
 		"hours":    hours,
+		"loyalty":  loyalty,
 	})
 }
 

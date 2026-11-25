@@ -184,6 +184,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// transacción; consumir es un UPDATE condicional más su movimiento.
 	packagesRepo := pgstore.Packages{Pool: pool}
 	clientPackagesRepo := pgstore.ClientPackages{Pool: pool}
+	// F9: fidelidad (programa del salón y vales entregados; migración 033).
+	loyaltyProgramsRepo := pgstore.LoyaltyPrograms{Pool: pool}
+	loyaltyRewardsRepo := pgstore.LoyaltyRewards{Pool: pool}
 	closesRepo := pgstore.CashCloses{Pool: pool}
 	servicesRepo := pgstore.Services{Pool: pool}
 	// F2c: qué servicios hace cada quien (disponibilidad, reserva pública y
@@ -266,6 +269,13 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Packages: packagesRepo, ClientPackages: clientPackagesRepo, Services: servicesRepo,
 		Clients: clientsRepo, Memberships: mems, Settings: salons, Events: hub,
 	}
+	// F9: fidelidad «cada N visitas, un servicio de regalo». Usar un vale NO es una
+	// venta: el POS, la caja y la nómina no se tocan. Leer el programa: cualquier
+	// miembro; guardarlo: owner/admin; ficha, entregar y usar: owner/admin/recepción.
+	loyaltySvc := app.LoyaltyService{
+		Programs: loyaltyProgramsRepo, Rewards: loyaltyRewardsRepo, Services: servicesRepo,
+		Clients: clientsRepo, Memberships: mems, Settings: salons,
+	}
 	// Tx: el cierre corre en una transacción con advisory lock por salón (B-09).
 	// Settings: la ventana del cierre es el día LOCAL del salón (su zona), no UTC.
 	cashCloseSvc := app.CashCloseService{
@@ -302,7 +312,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	publicSvc := app.PublicSalonService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Hours: weeklyHours,
 		Profiles: salonProfileRepo, Staff: mems, Professionals: professionals,
-		Gallery: salonGalleryRepo, Packages: packagesRepo,
+		Gallery: salonGalleryRepo, Packages: packagesRepo, Loyalty: loyaltyProgramsRepo,
 	}
 	settingsSvc := app.SettingsService{Settings: salons, Memberships: mems}
 	salonHoursSvc := app.SalonHoursService{Hours: weeklyHours, Settings: salons, Memberships: mems}
@@ -489,6 +499,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Products: httpapi.ProductHandler{Products: productSvc, Memberships: mems},
 		// F8: paquetes y bonos prepagos (ocho rutas: catálogo y por clienta).
 		Packages: httpapi.PackageHandler{Packages: packageSvc, Memberships: mems},
+		// F9: fidelidad (cinco rutas: programa del salón; ficha, entrega y uso por clienta).
+		Loyalty: httpapi.LoyaltyHandler{Loyalty: loyaltySvc, Memberships: mems},
 		// F16: perfil público del salón y su galería de fotos.
 		Profile: httpapi.SalonProfileHandler{Profile: salonProfileSvc, Memberships: mems},
 		Gallery: httpapi.GalleryHandler{Gallery: gallerySvc, Memberships: mems},
