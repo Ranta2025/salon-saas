@@ -187,6 +187,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F9: fidelidad (programa del salón y vales entregados; migración 033).
 	loyaltyProgramsRepo := pgstore.LoyaltyPrograms{Pool: pool}
 	loyaltyRewardsRepo := pgstore.LoyaltyRewards{Pool: pool}
+	// F10: registro de auditoría (migración 034). Lo escribe el middleware
+	// `Audit(action)` de las rutas sensibles; es append-only y de mejor esfuerzo.
+	auditRepo := pgstore.Audit{Pool: pool}
 	closesRepo := pgstore.CashCloses{Pool: pool}
 	servicesRepo := pgstore.Services{Pool: pool}
 	// F2c: qué servicios hace cada quien (disponibilidad, reserva pública y
@@ -276,6 +279,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Programs: loyaltyProgramsRepo, Rewards: loyaltyRewardsRepo, Services: servicesRepo,
 		Clients: clientsRepo, Memberships: mems, Settings: salons,
 	}
+	// F10: auditoría. Escribir (middleware, tras un 2xx) resuelve el nombre del
+	// actor con el repositorio de usuarios; leer el registro es solo owner/admin.
+	auditSvc := app.AuditService{Events: auditRepo, Users: users, Memberships: mems}
 	// Tx: el cierre corre en una transacción con advisory lock por salón (B-09).
 	// Settings: la ventana del cierre es el día LOCAL del salón (su zona), no UTC.
 	cashCloseSvc := app.CashCloseService{
@@ -501,6 +507,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Packages: httpapi.PackageHandler{Packages: packageSvc, Memberships: mems},
 		// F9: fidelidad (cinco rutas: programa del salón; ficha, entrega y uso por clienta).
 		Loyalty: httpapi.LoyaltyHandler{Loyalty: loyaltySvc, Memberships: mems},
+		// F10: auditoría (el middleware de las rutas de D2 y GET audit-log).
+		Audit: httpapi.AuditHandler{Service: auditSvc, Memberships: mems},
 		// F16: perfil público del salón y su galería de fotos.
 		Profile: httpapi.SalonProfileHandler{Profile: salonProfileSvc, Memberships: mems},
 		Gallery: httpapi.GalleryHandler{Gallery: gallerySvc, Memberships: mems},

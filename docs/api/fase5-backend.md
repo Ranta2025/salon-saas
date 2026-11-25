@@ -3286,3 +3286,132 @@ siga **activo**. No lleva progreso: el público no tiene identidad de clienta.
   `current_schema()`): una segunda pasada no cambia nada; el md5 de esas cuatro
   tablas es idéntico antes y después, también sobre datos previos.
 - No hay variables de entorno nuevas.
+
+## Fase 6 — F10: registro de auditoría (parte A)
+
+Un **registro de quién hizo qué, sobre qué id y cuándo** para las acciones sensibles
+del salón. Guarda solo eso: **sin valores antes/después y sin datos personales**
+(solo el id de la cosa tocada y una foto del nombre de quien actuó). La parte B del
+contrato (2FA, que además escribe `auth.2fa_enabled` y `auth.2fa_disabled`) es un
+tramo aparte y **no está** en este apartado.
+
+### Cómo se registra (D2)
+
+Un **middleware** `Audit("<acción>")` cuelga de las rutas de la tabla de abajo en
+`routes.go`. Corre la ruta (`c.Next()`) y **después**, solo si respondió **2xx**, escribe
+el evento. No toca ningún servicio ni handler existente y **no cambia nada de la
+respuesta**: ni el status, ni el cuerpo, ni las cabeceras (solo observa el status que
+la ruta ya escribió). Un `4xx`/`5xx` no deja ningún evento.
+
+- **Mejor esfuerzo, no transaccional (limitación conocida).** Si escribir el evento
+  falla (la base caída, un valor inválido, hasta un pánico) el error se **loguea** y se
+  **traga**: la petición ya respondió bien y sale igual. Puede haber una acción hecha
+  sin su evento; nunca al revés. La escritura corre en el camino de la petición con un
+  tope de 3 s, así que una base lenta no demora la respuesta más que eso.
+- **Quién:** `actor_user_id` es el usuario autenticado; `actor_name` es una **foto** de
+  su nombre al momento (se resuelve con el repositorio de usuarios; si no se puede,
+  queda vacío y el evento se escribe igual). Renombrar después no cambia lo ya escrito.
+- **Sobre qué:** `entity_id` es el parámetro de ruta **propio** de la acción (columna
+  «entidad»). Las altas no tienen id en la ruta: `entity_id` queda `null`. En las rutas
+  con dos ids (`payroll_run.adjust` lleva `:rid` y `:uid`) es el de la **corrida**
+  (`:rid`), no el de la línea.
+- Las **ventas del POS NO se auditan** (ya son el registro) y leer el registro tampoco.
+  Sin repositorio de auditoría configurado el middleware no hace nada.
+
+| Acción | Ruta | Entidad (`entity_id`) |
+| --- | --- | --- |
+| `member.add` | `POST /salons/:id/members` | — (`null`) |
+| `member.update` | `PATCH /salons/:id/members/:uid` | `:uid` |
+| `member.remove` | `DELETE /salons/:id/members/:uid` | `:uid` |
+| `member.reactivate` | `POST /salons/:id/members/:uid/reactivate` | `:uid` |
+| `member.services` | `PUT /salons/:id/members/:uid/services` | `:uid` |
+| `member.pay_model` | `PUT /salons/:id/members/:uid/pay-model` | `:uid` |
+| `invitation.create` | `POST /salons/:id/invitations` | — |
+| `invitation.revoke` | `DELETE /salons/:id/invitations/:iid` | `:iid` |
+| `payroll_run.create` | `POST /salons/:id/payroll/runs` | — |
+| `payroll_run.adjust` | `PATCH /salons/:id/payroll/runs/:rid/lines/:uid` | `:rid` |
+| `payroll_run.pay` | `POST /salons/:id/payroll/runs/:rid/pay` | `:rid` |
+| `payroll_run.delete` | `DELETE /salons/:id/payroll/runs/:rid` | `:rid` |
+| `cash_close.create` | `POST /salons/:id/cash-closes` | — |
+| `expense.create` | `POST /salons/:id/expenses` | — |
+| `expense.update` | `PUT /salons/:id/expenses/:eid` | `:eid` |
+| `expense.delete` | `DELETE /salons/:id/expenses/:eid` | `:eid` |
+| `export.sales` | `GET /salons/:id/export/sales.csv` | — |
+| `export.clients` | `GET /salons/:id/export/clients.csv` | — |
+| `settings.update` | `PUT /salons/:id/settings` | — |
+| `profile.update` | `PUT /salons/:id/profile` | — |
+| `loyalty.program` | `PUT /salons/:id/loyalty-program` | — |
+| `product.adjust` | `POST /salons/:id/products/:pid/adjust` | `:pid` |
+
+Los nombres de acción son exactos (`<área>.<verbo>`, 1 a 60 caracteres). Las
+exportaciones son lecturas `GET` y se auditan igual. **Diferencias con el contrato:**
+`export.expenses` figura en D2 pero **no existe** una exportación CSV de gastos, así
+que no hay ruta que envolver (la exportación de cierres de caja y el CSV de la
+liquidación tampoco están en la lista cerrada y no se auditan); y el contrato llama
+`:mid`/`:rid` a los ids de ruta, que en el código son `:uid` (miembro), `:iid`
+(invitación) y `:rid` (corrida).
+
+### Leer — `GET /salons/:id/audit-log?limit=&before=&action=` (D3)
+
+Solo **owner/admin**. El permiso se evalúa **antes** de mirar los parámetros y de
+tocar la base: quien no puede ver recibe `403` aunque el límite o el cursor estén mal.
+
+| Quién | Respuesta |
+| --- | --- |
+| owner / admin del salón | `200` |
+| recepción, profesional, cliente del salón | `403 {"error":"sin permiso"}` |
+| miembro dado de baja, gente de otro salón | `403 {"error":"sin acceso al salón"}` |
+| sin sesión | `401` |
+
+```json
+{"events":[
+  {"id":"6f1c...","action":"member.update","entity_id":"3a9e...",
+   "actor_user_id":"b7d2...","actor_name":"Ana Dueña",
+   "created_at":"2026-06-01T12:00:00Z"},
+  {"id":"0c44...","action":"settings.update","entity_id":null,
+   "actor_user_id":"b7d2...","actor_name":"Ana Dueña",
+   "created_at":"2026-06-01T11:58:00Z"}
+ ],
+ "next_cursor":"MjAyNi0wNi0wMVQxMTo1ODowMFp8MGM0NC4uLg"}
+```
+
+- **Orden:** del más nuevo al más viejo (`created_at` y, en empate, `id` descendente).
+  Un salón sin eventos recibe `{"events":[],"next_cursor":null}`. `entity_id` es `null`
+  cuando la acción no tiene id propio; `actor_name` es `""` si no se pudo resolver.
+- **`limit`:** por defecto **50**, máximo **100**. Cualquier otro valor (`0`, `101`,
+  negativo, no numérico, decimal) → `400 {"error":"El limite debe ser entre 1 y 100"}`.
+- **`before`:** el cursor **opaco** que devolvió `next_cursor` (base64url de la fecha y
+  el id del último evento; no se interpreta del lado del cliente). Trae los eventos
+  **estrictamente anteriores**: sin saltos ni repetidos aunque varios compartan fecha.
+  Un cursor inventado o alterado → `400 {"error":"Cursor invalido"}`.
+  `next_cursor` es **`null` en la última página**; si el total es múltiplo exacto del
+  `limit`, la última página llena también trae `null` (no hay una página vacía de más).
+- **`action`:** filtra por la acción **completa** (`member.add`) o por un **prefijo hasta
+  un punto** (`member` trae `member.add`, `member.update`... pero no `memberx.add`;
+  `mem` y `member.` no traen nada). El `_` y el `%` no son comodines. Con NUL, un salto
+  de línea o un carácter de control, o de más de 60 caracteres → `400
+  {"error":"Accion invalida"}` (el contrato no fija este texto). Un `action=` vacío
+  vale como ausente (igual que `limit=` y `before=` vacíos).
+- Orden de las validaciones (todas `400`, sin tocar la base): `limit`, `before`, `action`.
+- **Aislamiento por salón estricto:** toda consulta lleva `salon_id`; un cursor de otro
+  salón no filtra eventos ajenos. Un `500` responde `{"error":"error interno"}`.
+
+### Migración `034_audit_events.sql`
+
+- `audit_events(id TEXT PK, salon_id FK salons ON DELETE CASCADE, actor_user_id TEXT
+  NOT NULL, actor_name TEXT NULL, action TEXT NOT NULL CHECK (1..60), entity_id TEXT
+  NULL CHECK (<= 100), created_at TIMESTAMPTZ NOT NULL DEFAULT now())`.
+  `actor_user_id` **no tiene FK** a propósito (el registro conserva quién fue).
+- Índice `(salon_id, created_at DESC, id DESC)`: el orden y el cursor de la lectura.
+- **Append-only:** un trigger `BEFORE UPDATE OR DELETE` rechaza todo `UPDATE` y todo
+  `DELETE` con `restrict_violation` (`23001`, «audit_events es de solo escritura»).
+  **Borrar un salón sí funciona**: el borrado en cascada se reconoce porque corre dentro
+  del trigger de integridad referencial (`pg_trigger_depth() > 1`) **y** el salón ya no
+  existe; un `DELETE` directo, o de los eventos de un salón que sigue existiendo, falla.
+  Límite conocido: `TRUNCATE` y quien sea superusuario pueden saltearse un trigger de
+  filas (no hay protección contra eso en v1).
+- **No toca ninguna tabla existente.** Idempotente (guardas con `current_schema()`,
+  `pg_indexes`, `CREATE OR REPLACE` y `pg_trigger`): una segunda pasada no cambia nada;
+  el md5 de `users`, `memberships` y `sales` es idéntico antes y después, también sobre
+  datos previos.
+- No hay variables de entorno nuevas.

@@ -58,6 +58,11 @@ type Deps struct {
 	// programa del salón y, por clienta, la ficha, entregar y usar un vale. La
 	// autorización vive en el caso de uso.
 	Loyalty LoyaltyHandler
+	// Audit es el registro de auditoría (F10): el middleware `Audit(action)` que
+	// cuelga de las rutas sensibles y `GET /salons/:id/audit-log`. Sin servicio
+	// configurado el middleware no hace nada (los routers de los tests unitarios
+	// siguen igual). La autorización de la lectura vive en el caso de uso.
+	Audit AuditHandler
 	// Profile es el perfil público del salón (F16, D1) y Gallery su galería de
 	// fotos (F16, D3): la autorización vive en el caso de uso.
 	Profile SalonProfileHandler
@@ -156,6 +161,10 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	v1.POST("/public/booking-links/reschedule", publicLink(d.BookingLinks.Reschedule)...)
 
 	authed := v1.Group("", AuthMiddleware(d.TokenIssuer))
+	// F10: `audit("<acción>")` registra la acción DESPUÉS de que la ruta responda
+	// 2xx (nunca cambia status, cuerpo ni errores de la ruta). Solo las rutas de
+	// la lista cerrada de D2 lo llevan; la ruta de POS (ventas) NO se audita.
+	audit := d.Audit.Audit
 	// Quién soy y en qué salones estoy (el frontend elige el salón activo).
 	authed.GET("/me", d.Me.Get)
 	authed.POST("/salons", d.Tenants.CreateSalon)
@@ -167,26 +176,26 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 
 	// Configuración operativa del salón (zona horaria, horario, paso)
 	authed.GET("/salons/:id/settings", d.Settings.Get)
-	authed.PUT("/salons/:id/settings", d.Settings.Update)
+	authed.PUT("/salons/:id/settings", audit("settings.update"), d.Settings.Update)
 
 	// Equipo del salón (alta/baja de miembros, solo owner/admin)
 	authed.GET("/salons/:id/members", d.Members.List)
-	authed.POST("/salons/:id/members", d.Members.Add)
-	authed.DELETE("/salons/:id/members/:uid", d.Members.Remove)
+	authed.POST("/salons/:id/members", audit("member.add"), d.Members.Add)
+	authed.DELETE("/salons/:id/members/:uid", audit("member.remove"), d.Members.Remove)
 	// F2g2: `DELETE` da de baja (ended_at, no borra la fila) y esta ruta deshace
 	// la baja conservando rol, marca, oficio y servicios.
-	authed.POST("/salons/:id/members/:uid/reactivate", d.Members.Reactivate)
+	authed.POST("/salons/:id/members/:uid/reactivate", audit("member.reactivate"), d.Members.Reactivate)
 	// F2a/F2c: "atiende clientes" y oficio del miembro (el dueño-barbero), y
 	// qué servicios hace (PUT, lista completa).
-	authed.PATCH("/salons/:id/members/:uid", d.Members.Update)
-	authed.PUT("/salons/:id/members/:uid/services", d.Members.SetServices)
+	authed.PATCH("/salons/:id/members/:uid", audit("member.update"), d.Members.Update)
+	authed.PUT("/salons/:id/members/:uid/services", audit("member.services"), d.Members.SetServices)
 
 	// F2g1: invitaciones de equipo (alta, listado y revocación). Solo
 	// dueño/administración; la regla de qué rol puede invitar cada quien vive en
 	// el caso de uso (la misma de `POST /members`).
-	authed.POST("/salons/:id/invitations", d.Invitations.Create)
+	authed.POST("/salons/:id/invitations", audit("invitation.create"), d.Invitations.Create)
 	authed.GET("/salons/:id/invitations", d.Invitations.List)
-	authed.DELETE("/salons/:id/invitations/:iid", d.Invitations.Revoke)
+	authed.DELETE("/salons/:id/invitations/:iid", audit("invitation.revoke"), d.Invitations.Revoke)
 	// Canje para una cuenta que YA existe: la sesión es la del login, la ruta no
 	// es pública y la invitación tiene que ser de SU email.
 	authed.POST("/invitations/accept", d.Invitations.AcceptAs)
@@ -227,7 +236,7 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	// ruta completa (RouteGalleryUpload) y el mismo AuthMiddleware: es el string
 	// que usa MaxJSONBodyExceptGalleryUpload para dejarla pasar con su tope propio.
 	authed.GET("/salons/:id/profile", d.Profile.Get)
-	authed.PUT("/salons/:id/profile", d.Profile.Update)
+	authed.PUT("/salons/:id/profile", audit("profile.update"), d.Profile.Update)
 	r.POST(RouteGalleryUpload, AuthMiddleware(d.TokenIssuer), d.Gallery.Add)
 	authed.GET("/salons/:id/gallery", d.Gallery.List)
 	authed.PUT("/salons/:id/gallery/:pid", d.Gallery.SetCaption)
@@ -242,7 +251,7 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.GET("/salons/:id/products", d.Products.List)
 	authed.POST("/salons/:id/products", d.Products.Create)
 	authed.PUT("/salons/:id/products/:pid", d.Products.Update)
-	authed.POST("/salons/:id/products/:pid/adjust", d.Products.Adjust)
+	authed.POST("/salons/:id/products/:pid/adjust", audit("product.adjust"), d.Products.Adjust)
 	authed.GET("/salons/:id/products/:pid/movements", d.Products.Movements)
 
 	// F8: paquetes y bonos prepagos con saldo por clienta. Comprar es una venta;
@@ -258,7 +267,7 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.POST("/salons/:id/clients/:cid/packages/:cpid/adjust", d.Packages.Adjust)
 	// F9: fidelidad (programa del salón; ficha, entrega y uso por clienta).
 	authed.GET("/salons/:id/loyalty-program", d.Loyalty.GetProgram)
-	authed.PUT("/salons/:id/loyalty-program", d.Loyalty.PutProgram)
+	authed.PUT("/salons/:id/loyalty-program", audit("loyalty.program"), d.Loyalty.PutProgram)
 	authed.GET("/salons/:id/clients/:cid/loyalty", d.Loyalty.GetClient)
 	authed.POST("/salons/:id/clients/:cid/loyalty/grant", d.Loyalty.Grant)
 	authed.POST("/salons/:id/clients/:cid/loyalty/rewards/:rid/redeem", d.Loyalty.Redeem)
@@ -271,7 +280,7 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	// POS: ventas, cierre de caja y panel del día
 	authed.POST("/salons/:id/sales", d.Sales.Create)
 	authed.GET("/salons/:id/sales", d.Sales.List)
-	authed.POST("/salons/:id/cash-closes", d.CashCloses.Create)
+	authed.POST("/salons/:id/cash-closes", audit("cash_close.create"), d.CashCloses.Create)
 	authed.GET("/salons/:id/cash-closes", d.CashCloses.List)
 	authed.GET("/salons/:id/dashboard", d.Dashboard.Get)
 
@@ -279,36 +288,40 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	// dueño/administración; «Mis comisiones» es la única que ve un profesional
 	// (y solo lo suyo). La autorización de cada rol vive en el caso de uso.
 	authed.GET("/salons/:id/pay-models", d.Payroll.ListPayModels)
-	authed.PUT("/salons/:id/members/:uid/pay-model", d.Payroll.UpdatePayModel)
+	authed.PUT("/salons/:id/members/:uid/pay-model", audit("member.pay_model"), d.Payroll.UpdatePayModel)
 	authed.POST("/salons/:id/payroll/preview", d.Payroll.Preview)
 	authed.GET("/salons/:id/payroll/me", d.Payroll.Me)
 
 	// F3.3: liquidaciones de nómina. Todas owner/admin (la autorización vive en
 	// el caso de uso); el CSV baja con fetch autenticado, no con un enlace.
-	authed.POST("/salons/:id/payroll/runs", d.PayrollRuns.Create)
+	authed.POST("/salons/:id/payroll/runs", audit("payroll_run.create"), d.PayrollRuns.Create)
 	authed.GET("/salons/:id/payroll/runs", d.PayrollRuns.List)
 	authed.GET("/salons/:id/payroll/runs/:rid", d.PayrollRuns.Get)
-	authed.PATCH("/salons/:id/payroll/runs/:rid/lines/:uid", d.PayrollRuns.AdjustLine)
-	authed.POST("/salons/:id/payroll/runs/:rid/pay", d.PayrollRuns.Pay)
-	authed.DELETE("/salons/:id/payroll/runs/:rid", d.PayrollRuns.Delete)
+	authed.PATCH("/salons/:id/payroll/runs/:rid/lines/:uid", audit("payroll_run.adjust"), d.PayrollRuns.AdjustLine)
+	authed.POST("/salons/:id/payroll/runs/:rid/pay", audit("payroll_run.pay"), d.PayrollRuns.Pay)
+	authed.DELETE("/salons/:id/payroll/runs/:rid", audit("payroll_run.delete"), d.PayrollRuns.Delete)
 	authed.GET("/salons/:id/payroll/runs/:rid/export.csv", d.PayrollRuns.ExportCSV)
 
 	// F3b: gastos y ganancia neta. Solo owner/administración en TODAS las rutas
 	// (la autorización vive en el caso de uso); toda consulta lleva salon_id, así
 	// que el gasto de otro salón es 404.
-	authed.POST("/salons/:id/expenses", d.Expenses.Create)
+	authed.POST("/salons/:id/expenses", audit("expense.create"), d.Expenses.Create)
 	authed.GET("/salons/:id/expenses", d.Expenses.List)
-	authed.PUT("/salons/:id/expenses/:eid", d.Expenses.Update)
-	authed.DELETE("/salons/:id/expenses/:eid", d.Expenses.Delete)
+	authed.PUT("/salons/:id/expenses/:eid", audit("expense.update"), d.Expenses.Update)
+	authed.DELETE("/salons/:id/expenses/:eid", audit("expense.delete"), d.Expenses.Delete)
 	authed.GET("/salons/:id/profit", d.Profit.Get)
 
 	// F4: exportación CSV de ventas, cierres de caja y clientes. Salida MASIVA de
 	// datos personales y de dinero: solo dueño/administración (la autorización
 	// vive en el caso de uso). El CSV baja con fetch autenticado (Bearer), no con
 	// un enlace directo, y no se cachea.
-	authed.GET("/salons/:id/export/sales.csv", d.Exports.Sales)
+	authed.GET("/salons/:id/export/sales.csv", audit("export.sales"), d.Exports.Sales)
 	authed.GET("/salons/:id/export/cash-closes.csv", d.Exports.CashCloses)
-	authed.GET("/salons/:id/export/clients.csv", d.Exports.Clients)
+	authed.GET("/salons/:id/export/clients.csv", audit("export.clients"), d.Exports.Clients)
+
+	// F10: el registro de auditoría. Solo owner/admin (el permiso va ANTES de los
+	// parámetros, en el caso de uso). Leerlo NO se audita.
+	authed.GET("/salons/:id/audit-log", d.Audit.List)
 
 	// Bandeja de avisos. Listar va por salón; marcar leída no (el aviso ya sabe
 	// de qué salón es y el alcance sale de las memberships del usuario).
