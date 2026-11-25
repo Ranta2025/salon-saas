@@ -5,6 +5,7 @@ import { isBrowserOnline, subscribeOnlineStatus } from '../lib/connectivity'
 import {
   buildLanding,
   landingFailure,
+  landingStateAfterFailure,
   LANDING_ERROR_MESSAGE,
   LANDING_NOT_FOUND_MESSAGE,
   LANDING_OFFLINE_NOTICE,
@@ -81,7 +82,10 @@ export function LandingPage() {
         // The data on screen (if any) is kept only when it is not a 404: a salon
         // that stopped existing must not keep showing.
         if (active) {
-          setState({ kind: landingFailure(error) })
+          setState((previous) => {
+            const kind = landingStateAfterFailure(previous.kind, landingFailure(error))
+            return kind === 'ready' ? previous : { kind }
+          })
         }
       })
     return () => {

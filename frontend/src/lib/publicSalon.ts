@@ -362,6 +362,18 @@ export function buildLanding(data: PublicSalon): LandingModel {
   }
 }
 
+/**
+ * State after a failed (re)load. A salon already on screen is KEPT on a transient
+ * failure (for example the automatic reload when the connection comes back): only a
+ * 404 replaces it, because a salon that stopped existing must not keep showing.
+ */
+export function landingStateAfterFailure(
+  previous: 'loading' | 'ready' | 'not_found' | 'error',
+  failure: 'not_found' | 'error',
+): 'loading' | 'ready' | 'not_found' | 'error' {
+  return previous === 'ready' && failure === 'error' ? 'ready' : failure
+}
+
 /** A 404 is «No encontramos este salón.»; every other failure is the retryable error. */
 export function landingFailure(error: unknown): 'not_found' | 'error' {
   return isRecord(error) && error['status'] === 404 ? 'not_found' : 'error'

@@ -59,6 +59,9 @@ export function SalonProfilePage() {
     let active = true
     setLoading(true)
     setError(null)
+    // Another salon: never keep showing the previous salon's form while this loads.
+    setLoaded(false)
+    setDraft(EMPTY_DRAFT)
     fetchProfile(salonId)
       .then((profile) => {
         if (active) {
@@ -88,6 +91,7 @@ export function SalonProfilePage() {
     }
     let active = true
     setGalleryError(null)
+    setPhotos([])
     fetchGallery(salonId)
       .then((list) => {
         if (active) {

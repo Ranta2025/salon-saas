@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { describeApiError } from '../../lib/api'
 import {
   GALLERY_FULL_MESSAGE,
@@ -33,6 +33,10 @@ type CardProps = {
 
 function GalleryCard({ salonId, photo, index, onDeleted, onCaption }: CardProps) {
   const [caption, setCaption] = useState(photo.caption)
+  // After a reload the server's caption wins: the input must not keep a stale value.
+  useEffect(() => {
+    setCaption(photo.caption)
+  }, [photo.caption])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)

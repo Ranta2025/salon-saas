@@ -4,6 +4,7 @@ import {
   buildLanding,
   instagramUrl,
   landingFailure,
+  landingStateAfterFailure,
   LANDING_ERROR_MESSAGE,
   LANDING_NOT_FOUND_MESSAGE,
   LANDING_OFFLINE_NOTICE,
@@ -374,4 +375,15 @@ test('the service worker keeps its network-first cache for the private API and t
   assert.equal(intercepted(worker, 'https://salon.test/api/v1/ws'), false)
   assert.equal(intercepted(worker, 'https://salon.test/api/v1/salons/s1/services', 'POST'), false)
   assert.equal(intercepted(worker, 'https://salon.test/assets/app.js'), true)
+})
+
+test('a failed reload keeps the salon already on screen unless it is a 404', () => {
+  // Transient failure on reconnect: the page that works stays.
+  assert.equal(landingStateAfterFailure('ready', 'error'), 'ready')
+  // A salon that stopped existing must not keep showing.
+  assert.equal(landingStateAfterFailure('ready', 'not_found'), 'not_found')
+  // Nothing to keep when the first load fails or after pressing retry.
+  assert.equal(landingStateAfterFailure('loading', 'error'), 'error')
+  assert.equal(landingStateAfterFailure('error', 'error'), 'error')
+  assert.equal(landingStateAfterFailure('loading', 'not_found'), 'not_found')
 })
