@@ -15,6 +15,7 @@ import {
   type InvitationLookup,
 } from '../lib/invitations'
 import { pickSalonId, type SalonRole } from '../lib/me'
+import { TWO_FACTOR_MESSAGES } from '../lib/twofa'
 import {
   clearSalonId,
   clearToken,
@@ -180,7 +181,14 @@ export function InvitationPage() {
     setPending(true)
     setFormError(null)
     try {
-      const jwt = await login(email, loginPassword)
+      const result = await login(email, loginPassword)
+      if (result.kind !== 'token') {
+        // An account with 2FA answers with a challenge, not a session. This page
+        // has no second step: nothing is stored and the person is told what to do.
+        setFormError(TWO_FACTOR_MESSAGES.invitationNeedsSignIn)
+        return
+      }
+      const jwt = result.token
       setToken(jwt)
       setHasSession(true)
       await acceptInvitationSignedIn(token)

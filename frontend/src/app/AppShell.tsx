@@ -100,6 +100,13 @@ const NAV: readonly NavEntry[] = [
   // 375/390 px (S-F2e-5, S-F3.2-5 and S-F3b). The page is titled «Mis comisiones».
   { to: '/panel/mis-comisiones', label: 'Comisiones', end: false, commissionsOnly: true },
   { to: '/panel/ajustes', label: 'Ajustes', end: false, managerOnly: true },
+  // F10: the audit log says who did what (names and money actions), so only
+  // owner/admin see it; the page itself also guards the role and the server 403s.
+  // Short label on purpose (three columns at 390 px).
+  { to: '/panel/actividad', label: 'Actividad', end: false, managerOnly: true },
+  // F10: the two-step verification belongs to the person, so EVERY member sees
+  // «Seguridad» whatever the role. Short label on purpose (three columns at 390 px).
+  { to: '/panel/seguridad', label: 'Seguridad', end: false },
 ]
 
 function SalonSwitcher() {

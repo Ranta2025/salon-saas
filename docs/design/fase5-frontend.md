@@ -3133,3 +3133,125 @@ vuelve a pedir después de cada acción (no hay estado optimista).
     devuelve como un 500: el flujo (intento abierto, mismo id al reintentar) es el de
     un 5xx; la rama `NetworkError` pura está cubierta por los tests con `fetch`
     simulado.
+
+## 33. Fase 6 — F10: actividad del salón y verificación en dos pasos (frontend)
+
+Contrato: `odd/tasks/fase6-roadmap.md`, «Contrato F10», partes D3 (registro de
+auditoría), D7 (rutas `/me/2fa`), D8 (desafío del login) y D11 a D13 (esta parte).
+El backend se construye en paralelo en otros tramos, así que todo se probó con `fetch`
+simulado y con una API simulada en el navegador. Sin dependencias nuevas (tampoco una
+librería de QR). Todo es solo en línea: nada de esto pasa por la cola sin conexión.
+
+### 33.1 Rutas, menú y permisos
+
+- Dos rutas nuevas en `App.tsx`: `/panel/seguridad` (cualquier miembro) y
+  `/panel/actividad` (dueña y administración). Entradas «Seguridad» y «Actividad» en
+  `AppShell.tsx`, con etiquetas cortas a propósito (como «Fidelidad» o «Comisiones»):
+  se midió que ningún enlace del menú se recorta ni desborda a 390 px ni a 1280 px.
+  «Actividad» usa `managerOnly`; «Seguridad» no lleva filtro de rol porque el 2FA es de
+  la persona, no del salón (la página ni siquiera necesita un salón activo).
+- `lib/permissions.ts` gana `canViewAuditLog` (owner y admin). Los demás roles ven
+  `ActivityNotice` (aviso propio, mismo patrón que `LoyaltyNotice`) y la página no manda
+  ningún pedido: se comprobó en el navegador que a recepción no le sale ni una llamada a
+  `/audit-log`.
+
+### 33.2 Login en dos pasos (D8, D11)
+
+- `login()` de `lib/api.ts` cambia su tipo de retorno: ya no devuelve un `string` sino
+  `LoginResult = {kind:'token', token} | {kind:'challenge', challenge}`.
+  `narrowLoginResponse` decide: `two_factor_required: true` con `challenge` es el segundo
+  paso y GANA sobre un `token` perdido en la respuesta (un desafío nunca se vuelve sesión);
+  un `token` no vacío es sesión, igual que antes; cualquier otra cosa es error («La
+  respuesta de inicio de sesión no incluyó un token.», la frase de siempre). `login()` no
+  guarda nada: guardar el token es decisión de la pantalla.
+- `LoginPage`: con un desafío muestra el paso «Código de verificación»
+  (`components/TwoFactorStep.tsx`): un campo que acepta los 6 dígitos o un código de
+  recuperación (`normalizeVerificationCode`: quita TODOS los espacios, también los de un
+  «123 456» pegado, y pasa a mayúsculas, que es como se emiten los de recuperación),
+  «Verificar y entrar» y «Volver». El desafío vive solo en el estado de React: no hay
+  token guardado hasta que `POST /auth/login/2fa {challenge, code}` responde 200
+  (comprobado en el navegador: `localStorage` sin token en el paso 2).
+- «Volver» descarta el desafío y el código, conserva el correo y BORRA la contraseña.
+- Errores (`challengeFailure`): un 401 (la frase del servidor es uniforme: código malo,
+  desafío inválido o vencido) devuelve al primer paso con esa frase tal cual; un 429
+  (bloqueo de 15 minutos de D9), un 400 o una falla de red dejan al usuario en el paso 2
+  con la frase del servidor para no perder lo escrito.
+- El 401 del segundo paso NO es una sesión vencida: `request()` gana la opción
+  `keepSessionOn401` (por defecto apagada, así que el resto de las llamadas se comporta
+  igual) y `completeLogin2fa` la usa, para que el panel no purgue la caché ni navegue.
+  Por la misma razón `LoginPage` guarda en una referencia el destino `from`.
+- `InvitationPage` (el segundo llamador de `login()`): conserva su comportamiento con
+  cuentas sin 2FA (la creada recién no la tiene). Si alguna vez recibe un desafío no guarda
+  nada y muestra «Esta cuenta tiene la verificación en dos pasos activada. Iniciá sesión
+  desde la pantalla de acceso y después volvé a abrir el enlace de la invitación.» (el
+  enlace sigue siendo válido: no se canjea).
+
+### 33.3 Página «Seguridad» (D7, D12)
+
+- Estado desde `GET /me/2fa`; si falla se muestra el error con «Reintentar», nunca como
+  «desactivada». `securityReducer` (puro, con tests) modela el flujo
+  `inactive → setup → codes → active ⇄ disabling`; su invariante: los códigos de
+  recuperación se muestran UNA vez y ningún evento (un refresco del estado, cancelar un
+  alta, abrir «Desactivar») los oculta; solo `codes_acknowledged`.
+- «Activar» → `POST /me/2fa/setup`: muestra el secreto y la dirección `otpauth://` como
+  texto copiable (selección de un clic, corte en cualquier carácter para no desbordar a
+  390 px, botón «Copiar» con respaldo cuando `navigator.clipboard` no existe) y el campo
+  del código (6 dígitos, validado antes de enviar). Éxito en `POST /me/2fa/enable` → los
+  8 códigos con el aviso, «Copiar los códigos» y el botón «Ya los guardé», que es lo único
+  que los esconde. Mientras se ven, `beforeunload` pide confirmación al recargar o cerrar.
+- «Desactivar» pide contraseña y código (TOTP o de recuperación) → `POST /me/2fa/disable`
+  (204). Un 401 «Credenciales invalidas» (contraseña mala) NO cierra la sesión
+  (`keepSessionOn401`) y se muestra en el formulario; la contraseña se envía tal cual, sin
+  recortar.
+- Solo en línea: sin conexión no se envía nada (`runSecurityAction`), se avisa que no
+  quedó nada en cola, y un segundo clic mientras hay uno en curso se descarta con una
+  compuerta síncrona (la misma de paquetes y fidelidad). Las frases del servidor
+  («Codigo incorrecto», «La verificacion en dos pasos ya esta activada»…) se muestran
+  textuales.
+
+### 33.4 Página «Actividad» (D3, D13)
+
+- `lib/audit.ts`: `AUDIT_ACTIONS` lista las 25 acciones de D2 y D4 con su frase en español
+  (un test fija que sean exactamente esas, distintas entre sí y distintas del nombre
+  crudo); una acción desconocida se muestra con su nombre crudo. El filtro es un selector
+  con «Todas» (sin `action`) y cada acción conocida.
+- `normalizeAuditPage` devuelve `null` ante un cuerpo que no es el documentado (error, no
+  una lista vacía); descarta filas sin id, acción o fecha válida y trata un `entity_id` que
+  no es texto como ausente. `mergeAuditEvents` agrega la página siguiente sin repetir ids
+  (un evento escrito entre dos pedidos puede mover el borde), conserva el orden del
+  servidor y no muta las entradas.
+- Cada fila: frase de la acción, nombre del actor (la foto guardada en el evento; vacío =
+  «Persona sin nombre»), fecha y hora en la zona del salón (`/settings`, con las ayudas de
+  `datetime.ts`; zona inválida = la de respaldo) y el id del registro afectado, chico.
+- «Cargar más» usa `next_cursor`; una generación por consulta descarta las respuestas
+  tardías al cambiar el filtro o el salón, y una referencia impide dos pedidos por doble
+  clic. Vacío: «Todavía no hay actividad registrada.» o, con filtro, «No hay actividad de
+  «…». Probá con «Todas».».
+
+### 33.5 Pruebas
+
+- `lib/twofa.test.ts` (23) y `lib/audit.test.ts` (14), con `fetch` simulado: estrechamiento
+  de la respuesta del login, el nuevo `login()`, normalizador del código, rutas, métodos y
+  cuerpos de cada cliente, 401 que no cierra sesión, compuerta y modo sin conexión, el
+  reductor y su invariante, etiquetas, normalización, mezcla por cursor y fechas con zona.
+- Ningún test existente cambió: ninguno afirmaba la forma de retorno de `login()`.
+- Verificado en el navegador (Chromium con Playwright, API simulada, 390 y 1280 px, 70
+  comprobaciones): paso 2 del login (foco, sin token, 401 → paso 1 con el mensaje, 429, «Volver»,
+  éxito con «123 456»), Seguridad (inactiva, configuración, error de código, códigos,
+  desactivar con contraseña mala sin perder la sesión, sin conexión), Actividad (50 + 50 +
+  20 filas sin duplicados, filtro, vacío, zona horaria, acción desconocida, aviso de un rol
+  sin permiso y sin ningún pedido), sin desborde horizontal y sin errores de consola.
+
+### 33.6 Riesgos y decisiones
+
+- Un 401 del segundo paso se ve igual si el código estaba mal o el desafío venció (el
+  servidor es uniforme a propósito). Por pedido, cualquier 401 vuelve al primer paso: un
+  error de tipeo cuesta volver a escribir la contraseña. Alternativa descartada: quedarse
+  en el paso 2 hasta que pasen 5 minutos locales.
+- Salir de «Seguridad» con el menú mientras se ven los códigos los pierde (el navegador
+  solo avisa al recargar o cerrar; con `BrowserRouter` no hay bloqueo de navegación). El
+  aviso de la tarjeta lo dice; no se guardan en memoria global para no dejarlos a la vista
+  de otra cuenta en la misma pestaña.
+- `public/sw.js` guarda en caché los GET de `/api/v1/` (también `/me/2fa` y
+  `/salons/:id/audit-log`): sin conexión pueden verse datos guardados. No se tocó el
+  service worker (fuera de este frente); las escrituras de 2FA no se envían sin conexión.

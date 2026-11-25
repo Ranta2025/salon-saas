@@ -4361,3 +4361,187 @@
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
 }
+
+/* ---------- two-step verification and activity log (F10) ---------- */
+
+.login__code {
+  font-family: var(--font-mono);
+  font-size: 1.125rem;
+  letter-spacing: 0.12em;
+}
+
+.notice--warning {
+  border-color: rgba(201, 162, 39, 0.65);
+  background: var(--gold-tint);
+  color: #4d3a00;
+  font-weight: 600;
+}
+
+.security-steps {
+  display: grid;
+  gap: var(--space-2);
+  padding-left: 1.25rem;
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+  list-style: decimal;
+}
+
+.security-secret {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  min-width: 0;
+}
+
+.security-secret__label {
+  font-size: var(--step--1);
+  font-weight: 700;
+  color: var(--ink-muted);
+}
+
+/* The secret and the otpauth address are long unbroken strings: they wrap anywhere
+   and stay selectable with one click so nothing overflows at 390 px. */
+.security-secret__value {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  padding: 0.6rem 0.75rem;
+  background: var(--cream);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  user-select: all;
+}
+
+.security-copy {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.security-copy .btn {
+  min-height: 44px;
+}
+
+.security-copy__status {
+  font-size: var(--step--1);
+  color: var(--ink-muted);
+}
+
+.security-form {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 26rem;
+}
+
+.security-form__code {
+  font-family: var(--font-mono);
+  letter-spacing: 0.1em;
+}
+
+.security-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.security-actions .btn {
+  min-height: 44px;
+}
+
+.security-codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.security-codes li {
+  padding: 0.6rem 0.5rem;
+  text-align: center;
+  background: var(--cream);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+}
+
+.security-codes code {
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  letter-spacing: 0.06em;
+  user-select: all;
+}
+
+.activity-filter {
+  min-width: 0;
+  width: min(100%, 22rem);
+}
+
+.activity-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem var(--space-4);
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.activity-row:last-child {
+  border-bottom: 0;
+}
+
+.activity-row__main {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.activity-row__action {
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.activity-row__meta {
+  font-size: var(--step--1);
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-row__entity {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 0.6875rem;
+  color: var(--ink-muted);
+}
+
+.activity-row__entity code {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.activity-more {
+  display: flex;
+  justify-content: center;
+}
+
+.activity-more .btn {
+  min-height: 44px;
+}
+
+@media (min-width: 720px) {
+  .security-codes {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

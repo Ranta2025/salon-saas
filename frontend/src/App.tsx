@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { ActivityPage } from './app/ActivityPage'
 import { AppShell } from './app/AppShell'
 import { BookingLinkPage } from './app/BookingLinkPage'
 import { CalendarPage } from './app/CalendarPage'
@@ -23,6 +24,7 @@ import { PosPage } from './app/PosPage'
 import { ProfitPage } from './app/ProfitPage'
 import { RequireAuth } from './app/RequireAuth'
 import { SalonProfilePage } from './app/SalonProfilePage'
+import { SecurityPage } from './app/SecurityPage'
 import { ServicesPage } from './app/ServicesPage'
 import { SettingsPage } from './app/SettingsPage'
 import { TeamPage } from './app/TeamPage'
@@ -116,6 +118,8 @@ export function App() {
           <Route path="lista-de-espera" element={<WaitlistPage />} />
           <Route path="mi-salon" element={<SalonProfilePage />} />
           <Route path="ajustes" element={<SettingsPage />} />
+          <Route path="actividad" element={<ActivityPage />} />
+          <Route path="seguridad" element={<SecurityPage />} />
         </Route>
 
         {/* Old shell routes from the scaffold keep working. */}

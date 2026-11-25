@@ -194,3 +194,12 @@ export function canViewLoyalty(role: Role | null | undefined): boolean {
 export function canEditLoyaltyProgram(role: Role | null | undefined): boolean {
   return isManager(role)
 }
+
+/**
+ * Activity log (contract F10, D3/D13): the audit log of the salon is read by owner
+ * and admin only. Everyone else gets 403 `sin permiso` from the server, so the page
+ * shows a notice and the menu entry stays hidden.
+ */
+export function canViewAuditLog(role: Role | null | undefined): boolean {
+  return isManager(role)
+}

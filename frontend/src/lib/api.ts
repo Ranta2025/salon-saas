@@ -81,6 +81,12 @@ export type RequestOptions = {
   timeoutMs?: number
   /** `none` sends the request without the Authorization header (public endpoints). */
   auth?: 'auto' | 'none'
+  /**
+   * A 401 of this call is NOT an expired session (a wrong password or code, F10): the
+   * stored token is kept and the app does not send the person to /login. The error
+   * still reaches the caller with the server sentence.
+   */
+  keepSessionOn401?: boolean
   /** Fetch implementation (tests inject a stub; production keeps the global one). */
   fetchImpl?: typeof fetch
 }
@@ -228,7 +234,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   }
   cleanup()
 
-  if (response.status === 401) {
+  if (response.status === 401 && !options.keepSessionOn401) {
     clearToken()
     signalUnauthorized()
   }
@@ -279,15 +285,51 @@ function normalizeResourceTypeId(value: unknown): string | null | undefined {
 
 // --- auth ---
 
-export async function login(email: string, password: string): Promise<string> {
-  const payload = await request<{ token?: string }>('/api/v1/auth/login', {
+/**
+ * What `POST /auth/login` can answer (contract F10, D8): a session token (the
+ * answer of every account without 2FA, byte for byte as before) or, for an
+ * account with 2FA, a short-lived challenge that is NOT a session.
+ */
+export type LoginResult =
+  | { kind: 'token'; token: string }
+  | { kind: 'challenge'; challenge: string }
+
+/**
+ * Narrows a login answer. `two_factor_required` wins over a stray `token`: a
+ * pending challenge must never become a stored session. Anything else that is
+ * neither a token nor a challenge is `null` (the caller reports an error).
+ */
+export function narrowLoginResponse(raw: unknown): LoginResult | null {
+  if (!isRecord(raw)) {
+    return null
+  }
+  if (raw['two_factor_required'] === true) {
+    const challenge = raw['challenge']
+    return typeof challenge === 'string' && challenge !== ''
+      ? { kind: 'challenge', challenge }
+      : null
+  }
+  const token = raw['token']
+  return typeof token === 'string' && token !== '' ? { kind: 'token', token } : null
+}
+
+/** Message of a login answer that carried neither a token nor a challenge. */
+export const LOGIN_NO_TOKEN_MESSAGE = 'La respuesta de inicio de sesión no incluyó un token.'
+
+/**
+ * Logs in. The caller decides what to do with the result: it stores a token, or
+ * moves to the second step with the challenge. Nothing is stored here.
+ */
+export async function login(email: string, password: string): Promise<LoginResult> {
+  const payload = await request<unknown>('/api/v1/auth/login', {
     method: 'POST',
     body: { email, password },
   })
-  if (!payload || typeof payload.token !== 'string' || payload.token === '') {
-    throw new ApiError(200, 'La respuesta de inicio de sesión no incluyó un token.')
+  const result = narrowLoginResponse(payload)
+  if (!result) {
+    throw new ApiError(200, LOGIN_NO_TOKEN_MESSAGE)
   }
-  return payload.token
+  return result
 }
 
 // --- identity and directory ---
