@@ -4,7 +4,7 @@
 # Sin Docker: levantar postgres/redis, exportar DATABASE_URL y `make api`.
 # Todos los targets corren desde la raíz del repo.
 
-.PHONY: up down logs dev api test test-it lint web-build
+.PHONY: up down logs dev demo seed api test test-it lint web-build
 
 # ─── Docker Compose ──────────────────────────────────────────────────────────
 up:
@@ -18,6 +18,18 @@ logs:
 
 # Alias histórico: mismo stack completo en segundo plano.
 dev: up
+
+# Todo junto para probar: reconstruye las imagenes (para no ver una version vieja),
+# levanta el stack y carga un salon de demo. Web en http://localhost:8081
+demo:
+	docker compose up -d --build
+	@echo "Esperando a la API..."
+	@for i in $$(seq 1 60); do curl -fsS http://localhost:8080/health >/dev/null 2>&1 && break; sleep 2; done
+	bash scripts/seed-demo.sh
+
+# Solo cargar (o recargar) los datos de demo en una API que ya corre.
+seed:
+	bash scripts/seed-demo.sh
 
 # ─── Desarrollo sin Docker ───────────────────────────────────────────────────
 # Necesita DATABASE_URL (por defecto postgres local) y JWT_SECRET exportados.
