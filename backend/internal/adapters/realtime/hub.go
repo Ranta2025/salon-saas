@@ -16,6 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -48,7 +49,10 @@ const (
 
 // Hub mantiene las conexiones agrupadas por salon_id.
 type Hub struct {
-	tokens         ports.TokenIssuer
+	tokens ports.TokenIssuer
+	// gate es la compuerta de revocación de sesiones de F15 (D4). nil = sin
+	// compuerta (comportamiento de siempre: solo firma y vencimiento).
+	gate           ports.SessionGate
 	salons         ports.MembershipLister
 	allowedOrigins []string
 	upgrader       websocket.Upgrader
@@ -87,6 +91,14 @@ func originAllowed(origin string, allowed []string) bool {
 		}
 	}
 	return false
+}
+
+// HubSessionGate cablea la compuerta de revocación de sesiones (F15, D4). El
+// socket la aplica ANTES del upgrade: un token emitido antes del último cambio de
+// contraseña no abre un websocket (401, el mismo del middleware de la API). Sin
+// esta opción el hub valida solo la firma y el vencimiento, como antes.
+func HubSessionGate(gate ports.SessionGate) Option {
+	return func(h *Hub) { h.gate = gate }
 }
 
 // client es una conexión suscripta. Solo el writeLoop la escribe.
@@ -176,7 +188,7 @@ func (h *Hub) ServeWS(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "falta token"})
 		return
 	}
-	userID, err := h.tokens.Parse(token)
+	userID, err := app.AuthenticateSession(h.tokens, h.gate, token)
 	if err != nil || userID == "" {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token inválido"})
 		return

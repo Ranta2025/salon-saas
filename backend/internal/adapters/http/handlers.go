@@ -15,6 +15,10 @@ import (
 
 type AuthHandler struct {
 	Auth app.AuthService
+	// Verification (F15, D7): manda el correo de verificación de una cuenta
+	// recién creada. El envío es asíncrono y best effort (nunca demora ni cambia
+	// la respuesta del registro, D6). nil = sin correo configurado.
+	Verification ports.VerificationSender
 }
 
 func (h AuthHandler) Register(c *gin.Context) {
@@ -31,6 +35,11 @@ func (h AuthHandler) Register(c *gin.Context) {
 	if err != nil {
 		respondErr(c, err)
 		return
+	}
+	// F15/D7: el correo sale por el runner asíncrono (el token va en el enlace y
+	// nunca en la respuesta). No cambia el status, el cuerpo ni el mensaje.
+	if h.Verification != nil {
+		h.Verification.SendVerification(u)
 	}
 	c.JSON(http.StatusCreated, gin.H{"id": u.ID, "name": u.Name, "email": u.Email})
 }

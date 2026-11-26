@@ -80,6 +80,10 @@ type Deps struct {
 	// las dos rutas del personal (listar y quitar). La autorización vive en el
 	// caso de uso.
 	Waitlist WaitlistHandler
+	// Recovery es F15: recuperar contraseña (olvidé / canjear) y verificar el email
+	// (canjear el enlace y reenviarlo). El anti-enumeración y la seguridad del
+	// token viven en el caso de uso.
+	Recovery AccountRecoveryHandler
 	// PublicWaitlistLeaveLimit limita por IP la baja de la lista (D5): tiene SU
 	// PROPIO cubo, con el mismo valor que /auth, como el de los enlaces de turno
 	// (nil = sin límite, como en los tests unitarios del router).
@@ -100,6 +104,10 @@ type Deps struct {
 	// el composition root monta el adaptador concreto.
 	WS          gin.HandlerFunc
 	TokenIssuer ports.TokenIssuer
+	// SessionGate es la compuerta de revocación de sesiones de F15 (D4): con ella,
+	// un token emitido antes del último cambio de contraseña da 401. nil = sin
+	// compuerta (los routers de las pruebas que no la cablean no cambian).
+	SessionGate ports.SessionGate
 }
 
 // RegisterRoutes monta /api/v1. Las protegidas cuelgan del middleware.
@@ -113,6 +121,12 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	// F10b: segundo paso del login con 2FA. Cuelga de /api/v1/auth/, así que el
 	// límite por IP de ese prefijo ya lo cubre.
 	v1.POST("/auth/login/2fa", d.TwoFactor.Login)
+	// F15: recuperar contraseña y verificar email. Las tres son públicas y cuelgan
+	// de /api/v1/auth/, así que el límite por IP de ese prefijo ya las cubre. El
+	// token viaja SIEMPRE en el cuerpo, nunca en la ruta ni en el query.
+	v1.POST("/auth/forgot", d.Recovery.Forgot)
+	v1.POST("/auth/reset", d.Recovery.Reset)
+	v1.POST("/auth/verify-email", d.Recovery.VerifyEmail)
 
 	// Vidriera pública del salón: la landing no tiene login.
 	v1.GET("/public/salons/:slug", d.Public.GetSalon)
@@ -168,13 +182,16 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	v1.POST("/public/booking-links/cancel", publicLink(d.BookingLinks.Cancel)...)
 	v1.POST("/public/booking-links/reschedule", publicLink(d.BookingLinks.Reschedule)...)
 
-	authed := v1.Group("", AuthMiddleware(d.TokenIssuer))
+	authed := v1.Group("", AuthMiddleware(d.TokenIssuer, d.SessionGate))
 	// F10: `audit("<acción>")` registra la acción DESPUÉS de que la ruta responda
 	// 2xx (nunca cambia status, cuerpo ni errores de la ruta). Solo las rutas de
 	// la lista cerrada de D2 lo llevan; la ruta de POS (ventas) NO se audita.
 	audit := d.Audit.Audit
 	// Quién soy y en qué salones estoy (el frontend elige el salón activo).
 	authed.GET("/me", d.Me.Get)
+	// F15/D7: reenvío del correo de verificación (202; 409 si ya está verificado;
+	// 429 si pidió otro hace menos de un minuto).
+	authed.POST("/me/verify-email/resend", d.Recovery.ResendVerification)
 	// F10b: 2FA del propio usuario (no dependen del salón).
 	authed.GET("/me/2fa", d.TwoFactor.Status)
 	authed.POST("/me/2fa/setup", d.TwoFactor.Setup)
@@ -250,7 +267,7 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	// que usa MaxJSONBodyExceptGalleryUpload para dejarla pasar con su tope propio.
 	authed.GET("/salons/:id/profile", d.Profile.Get)
 	authed.PUT("/salons/:id/profile", audit("profile.update"), d.Profile.Update)
-	r.POST(RouteGalleryUpload, AuthMiddleware(d.TokenIssuer), d.Gallery.Add)
+	r.POST(RouteGalleryUpload, AuthMiddleware(d.TokenIssuer, d.SessionGate), d.Gallery.Add)
 	authed.GET("/salons/:id/gallery", d.Gallery.List)
 	authed.PUT("/salons/:id/gallery/:pid", d.Gallery.SetCaption)
 	authed.DELETE("/salons/:id/gallery/:pid", d.Gallery.Delete)
@@ -353,7 +370,7 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.GET("/salons/:id/clients/:cid", d.Clients.Get)
 	authed.PUT("/salons/:id/clients/:cid", d.Clients.Update)
 	authed.GET("/salons/:id/clients/:cid/history", d.Clients.ClientHistory)
-	r.POST(routePhotoUpload, AuthMiddleware(d.TokenIssuer), d.Clients.AddPhoto)
+	r.POST(routePhotoUpload, AuthMiddleware(d.TokenIssuer, d.SessionGate), d.Clients.AddPhoto)
 	authed.GET("/salons/:id/clients/:cid/photos", d.Clients.ListPhotos)
 	authed.DELETE("/salons/:id/clients/:cid/photos/:pid", d.Clients.DeletePhoto)
 

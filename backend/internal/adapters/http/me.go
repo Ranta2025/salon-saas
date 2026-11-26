@@ -27,7 +27,13 @@ func (h MeHandler) Get(c *gin.Context) {
 		salons = append(salons, gin.H{"id": s.ID, "slug": s.Slug, "name": s.Name, "role": string(s.Role)})
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"user":   gin.H{"id": me.User.ID, "name": me.User.Name, "email": me.User.Email},
+		"user": gin.H{
+			"id": me.User.ID, "name": me.User.Name, "email": me.User.Email,
+			// F15/D7 (aditivo): el panel muestra el aviso de verificar el email y
+			// ofrece reenviar el correo. `false` = el registro abierto todavía no lo
+			// demostró (o nunca lo demostró). Nada del resto de la respuesta cambia.
+			"email_verified": me.User.EmailVerifiedAt != nil,
+		},
 		"salons": salons,
 	})
 }

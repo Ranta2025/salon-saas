@@ -3605,3 +3605,174 @@ auditan (no hay salón).
   cuenta **nueva** (sin 2FA); no pasa por el segundo paso.
 - Sin WebAuthn, sin rotación de la clave del secreto, sin reset de 2FA por soporte, sin
   aviso por email.
+
+## Fase 6 — F15: recuperar la contraseña y verificar el email
+
+**Restablecer la contraseña por email y demostrar que el correo es propio**, más la
+revocación de las sesiones que existían antes del cambio. El token de los enlaces es de
+**32 bytes aleatorios** (`crypto/rand`, base64url sin relleno: 43 caracteres); se guarda
+**solo su SHA-256** y viaja **siempre en el fragmento** de la URL (`…#<token>`), que el
+navegador no manda al servidor, así que no queda en ningún log. El token nunca se
+devuelve en una respuesta de la API.
+
+### Rutas
+
+| Método y ruta | Auth | Para qué |
+| --- | --- | --- |
+| `POST /api/v1/auth/forgot` | pública | pedir el enlace de restablecer |
+| `POST /api/v1/auth/reset` | pública | canjear el enlace con la contraseña nueva |
+| `POST /api/v1/auth/verify-email` | pública | canjear el enlace de verificación |
+| `POST /api/v1/me/verify-email/resend` | sesión | reenviar el correo de verificación |
+
+Las tres públicas cuelgan de `/api/v1/auth/`, así que **el límite por IP de `/auth/`
+(20 por minuto por IP) ya las cubre** sin agregar nada. Los cuerpos con un campo de tipo
+equivocado, JSON roto o un NUL (`\u0000`) dentro de una cadena responden **`400
+{"error":"body inválido"}`** (un token con NUL o con forma inválida responde el 400 del
+enlace, no el del cuerpo). Un `500` responde `{"error":"error interno"}`.
+
+### Pedir el enlace — `POST /auth/forgot`
+
+```json
+{"email":"ana@mail.com"}
+```
+```json
+{"ok":true}
+```
+
+- **Siempre `202 {"ok":true}`** para un email bien formado, **exista o no la cuenta**:
+  mismo status, mismo cuerpo y mismas cabeceras en los dos casos (no se puede averiguar
+  quién tiene cuenta por acá).
+- **Todo el trabajo ocurre DESPUÉS de responder**, en una goroutine con timeout y
+  `recover`: buscar la cuenta, emitir el token y mandar el correo. El tiempo de la
+  respuesta no depende de si el email existe. En los tests el runner es inyectable y
+  corre en línea o diferido.
+- Email mal formado (`""`, sin `@`, con espacios, >254) → `400` con el mensaje de
+  `ValidateEmail`; **no** se emite token ni se manda nada.
+- Token: 32 bytes aleatorios, **vence a los 60 minutos**, **uno vigente por usuario**
+  (emitir otro invalida el anterior sin usar) y **throttle por usuario** dentro del
+  trabajo: si el último se creó hace menos de **60 s** o ya hay **5 en la última hora**,
+  no se emite ni se envía nada (silencioso, la respuesta sigue siendo `202`).
+- Correo en español, asunto `Restablece tu contrasena`, enlace
+  `<APP_URL>/restablecer#<token>`, HTML escapado. Sin `SMTP_HOST` no se envía, no se
+  emite token y **la dirección nunca se loguea**.
+
+### Canjear — `POST /auth/reset`
+
+```json
+{"token":"<43 caracteres base64url>","password":"nuevaClave1"}
+```
+
+`204` **sin cuerpo y sin sesión**: hay que iniciar sesión de nuevo. El orden importa:
+
+| Caso | Respuesta |
+| --- | --- |
+| token con forma inválida, desconocido, vencido o ya usado | `400 {"error":"Enlace invalido o vencido"}` (uniforme) |
+| contraseña fuera de 8–72 bytes | `400` con el mensaje de `ValidatePassword` **y el token NO se consume** |
+| todo bien | `204` |
+
+El canje es **una sola transacción** con **un solo valor del reloj de la base**:
+`used_at` del pedido, `password_changed_at` del usuario y `email_verified_at` (si era
+`NULL`: quien lee el correo demostró que es dueño) quedan con el **mismo instante**; los
+demás pedidos de reinicio del usuario quedan invalidados. De **30 canjes paralelos del
+mismo token gana exactamente uno** (`UPDATE … WHERE used_at IS NULL AND expires_at >
+now()`); los otros 29 reciben el 400 uniforme y no cambian la contraseña.
+
+El reinicio **no toca** `user_totp` ni `user_recovery_codes`, no reinicia
+`failed_count`/`locked_until`, no quita el 2FA y **no emite sesión**.
+
+### Sesiones anteriores (D4)
+
+`Issue` agrega el claim **`ia`** (milisegundos Unix del instante de emisión). Un token
+vale solo si `users.password_changed_at IS NULL` **o** el token trae `ia` y `ia >`
+`password_changed_at` (comparados en milisegundos). Consecuencias:
+
+- un token emitido **antes** del cambio de contraseña da `401 {"error":"token
+  inválido"}` en **todas** las rutas autenticadas, incluido `GET /ws`;
+- un token **sin `ia`** (emitido antes de esta versión) **sigue valiendo mientras la
+  contraseña nunca se cambie**: nadie queda afuera por actualizar;
+- la compuerta hace **una consulta por petición autenticada** (`SELECT
+  password_changed_at FROM users WHERE id=$1`) y un fallo de esa consulta **falla
+  cerrado (401)**, igual que un usuario inexistente;
+- el **desafío de 2FA** (`typ:"2fa"`) nunca es una sesión: no autentica ni en `/me` ni
+  en `/ws`.
+
+### Verificar el email
+
+**`POST /auth/verify-email`**
+
+```json
+{"token":"<43 caracteres base64url>"}
+```
+
+| Caso | Respuesta |
+| --- | --- |
+| token válido | `204` (marca `email_verified_at` y consume el pedido) |
+| token ya usado y la cuenta **ya** verificada | `204` (idempotente) |
+| token desconocido, vencido, con forma inválida o de un correo que ya no es el de la cuenta | `400 {"error":"Enlace invalido o vencido"}` |
+
+**`POST /me/verify-email/resend`** (sesión, sin cuerpo)
+
+| Caso | Respuesta |
+| --- | --- |
+| se emitió un correo nuevo | `202 {"ok":true}` |
+| la cuenta ya está verificada | `409 {"error":"El email ya esta verificado"}` |
+| pidió otro hace menos de un minuto | `429 {"error":"Espera un minuto antes de pedir otro correo"}` |
+
+**`GET /me` agrega `email_verified`** (aditivo; el resto de la respuesta no cambia):
+
+```json
+{"user":{"id":"…","name":"Ana","email":"ana@mail.com","email_verified":false},"salons":[…]}
+```
+
+- El **registro abierto** (`POST /auth/register`) crea la cuenta **sin verificar** y
+  dispara el correo `Verifica tu email` con `<APP_URL>/verificar-email#<token>`, que
+  **vence a las 24 h**, por el runner asíncrono: la respuesta del registro **no cambia**
+  (mismos status, cuerpo y mensajes; sigue diciendo `ya existe`).
+- El **alta por invitación** (`POST /public/invitations/accept`) crea la cuenta **ya
+  verificada**: el token llegó a ese correo.
+- La verificación **no bloquea nada** en esta versión (D9): iniciar sesión, crear un
+  salón y el resto siguen igual; solo informa.
+
+### Cuenta ocupada por un correo ajeno (D8)
+
+Si alguien registra el correo de otra persona, queda un **cascarón**: una cuenta sin
+verificar y sin ninguna membresía. Si después llega una **invitación a ese correo**,
+`POST /public/invitations/accept` la toma **en la misma transacción del canje**: fija el
+nombre y la contraseña nuevos, marca la cuenta verificada, pone `password_changed_at`
+(las sesiones del impostor mueren) y crea la membresía de la invitación.
+
+Solo en ese caso exacto (sin verificar **y** con **cero** membresías activas). Si la
+cuenta está verificada, si tiene alguna membresía activa o si la invitación es para otro
+correo, la respuesta es la de siempre: `409 {"error":"Ya tenés cuenta: iniciá sesión
+para aceptar la invitación"}`.
+
+### Migración `036_account_recovery.sql`
+
+- `users.password_changed_at TIMESTAMPTZ NULL` y `users.email_verified_at TIMESTAMPTZ
+  NULL`.
+- `password_resets(id TEXT PK, user_id TEXT NOT NULL FK users ON DELETE CASCADE,
+  token_hash TEXT NOT NULL CHECK (char_length = 64) UNIQUE, created_at TIMESTAMPTZ NOT
+  NULL DEFAULT now(), expires_at TIMESTAMPTZ NOT NULL, used_at TIMESTAMPTZ NULL)` con
+  índice `(user_id, created_at DESC)`.
+- `email_verifications(id, user_id FK ON DELETE CASCADE, email TEXT NOT NULL,
+  token_hash TEXT NOT NULL CHECK (char_length = 64) UNIQUE, created_at, expires_at,
+  used_at)` con el mismo índice.
+- **Relleno (una sola vez, al crear la columna):** **todos** los usuarios que ya
+  existían quedan con `email_verified_at = created_at`. No se puede demostrar otra cosa
+  y no hay que romper cuentas reales; una **segunda pasada no re-verifica** a quien se
+  registró después (el relleno va dentro del `IF NOT EXISTS` de la columna).
+- **No toca nada más**: el md5 de las columnas previas de `users`, de `memberships`,
+  `sales`, `audit_events` y `user_totp` es idéntico antes y después, también sobre datos
+  previos. Idempotente con guardas de `current_schema()`.
+- Variables de entorno: **ninguna nueva**; los enlaces usan `APP_URL` (la misma de las
+  invitaciones) y el correo el `SMTP_*` de siempre.
+
+### Límites conocidos de v1 (D10)
+
+- No se puede cambiar la contraseña estando logueado (solo por el enlace del correo).
+- El registro **sigue revelando** `ya existe` (contrato consumido por el frontend).
+- La verificación del email **no es obligatoria** para nada.
+- No se avisa por correo que la contraseña cambió.
+- Activar o desactivar el 2FA no cierra las sesiones abiertas (el reinicio de contraseña
+  sí).
+- Sin bloqueo por cuenta en el login por contraseña.

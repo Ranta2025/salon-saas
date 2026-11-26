@@ -36,22 +36,30 @@ func (r Users) Save(u domain.User) error { return saveUser(r.Pool, u) }
 
 // saveUser es la ÚNICA forma de escribir una cuenta: la usan el registro y el
 // canje de una invitación (F2g1), que crea la cuenta dentro de su transacción.
+//
+// F15/D1: `email_verified_at` se guarda en el INSERT. El alta por invitación crea
+// la cuenta YA verificada (el token llegó a ese correo, D7) y el registro abierto
+// la deja NULL. El ON CONFLICT NO re-verifica a nadie: una cuenta que se vuelve a
+// guardar por id conserva su marca.
 func saveUser(q querier, u domain.User) error {
 	_, err := q.Exec(context.Background(),
-		`INSERT INTO users(id,name,email,pass_hash,created_at)
-		 VALUES($1,$2,$3,$4,$5)
+		`INSERT INTO users(id,name,email,pass_hash,created_at,email_verified_at)
+		 VALUES($1,$2,$3,$4,$5,$6)
 		 ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name`,
-		u.ID, u.Name, u.Email, u.PasswordHash, u.CreatedAt)
+		u.ID, u.Name, u.Email, u.PasswordHash, u.CreatedAt, u.EmailVerifiedAt)
 	// Email duplicado (23505) es un 409, no un 500: el índice único decide.
 	return pgError(err)
 }
 
 // FindByID resuelve el usuario del token (GET /me).
+//
+// F15/D7: trae `email_verified_at` (nil = sin verificar), que es lo que alimenta
+// `email_verified` en GET /me y la decisión de reenviar el correo.
 func (r Users) FindByID(id string) (domain.User, error) {
 	var u domain.User
 	err := r.Pool.QueryRow(context.Background(),
-		`SELECT id,name,email,pass_hash,created_at FROM users WHERE id=$1`, id,
-	).Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.CreatedAt)
+		`SELECT id,name,email,pass_hash,created_at,email_verified_at FROM users WHERE id=$1`, id,
+	).Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.CreatedAt, &u.EmailVerifiedAt)
 	if err != nil {
 		return domain.User{}, notFound(err)
 	}
@@ -61,8 +69,8 @@ func (r Users) FindByID(id string) (domain.User, error) {
 func (r Users) FindByEmail(email string) (domain.User, error) {
 	var u domain.User
 	err := r.Pool.QueryRow(context.Background(),
-		`SELECT id,name,email,pass_hash,created_at FROM users WHERE email=$1`, email,
-	).Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.CreatedAt)
+		`SELECT id,name,email,pass_hash,created_at,email_verified_at FROM users WHERE email=$1`, email,
+	).Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.CreatedAt, &u.EmailVerifiedAt)
 	if err != nil {
 		return domain.User{}, notFound(err)
 	}

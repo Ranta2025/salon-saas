@@ -171,6 +171,12 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	tokens := security.JWTIssuer{Secret: cfg.JWTSecret, TTL: 0}
 
 	authSvc := app.AuthService{Users: users, Hasher: hasher, Tokens: tokens}
+	// F15: compuerta de revocación de sesiones (D4). Una consulta por petición
+	// autenticada (`SELECT password_changed_at FROM users WHERE id=$1`); un fallo
+	// falla CERRADO (401). Los repositorios de restablecer/verificar email guardan
+	// SOLO el SHA-256 del token (migración 036).
+	recoveryRepo := pgstore.AccountRecovery{Pool: pool}
+	sessionGate := pgstore.SessionGate{Pool: pool}
 	tenSvc := app.TenantService{Salons: salons, Memberships: mems}
 	bookings := pgstore.Bookings{Pool: pool}
 	salesRepo := pgstore.Sales{Pool: pool}
@@ -225,7 +231,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// Realtime: el hub es el EventPublisher de los casos de uso (no saben que
 	// hay websockets). Autentica el JWT del query param, valida el Origin con la
 	// MISMA allowlist de CORS (B-01) y arma una room por salón.
-	hub := realtime.NewHub(tokens, mems, realtime.HubOrigins(cfg.CORSOrigins...))
+	hub := realtime.NewHub(tokens, mems, realtime.HubOrigins(cfg.CORSOrigins...), realtime.HubSessionGate(sessionGate))
 	notifications := pgstore.Notifications{Pool: pool}
 	notifSvc := app.NotificationService{Notifications: notifications, Salons: mems, Events: hub}
 
@@ -411,6 +417,18 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	if mailSender.Enabled() {
 		mailer = mailSender
 	}
+	// F15: recuperar contraseña (D2/D3) y verificar el email (D7). TODO el trabajo
+	// de un pedido de restablecer corre DESPUÉS de responder, en el runner
+	// asíncrono de producción (goroutine con timeout y recover): el tiempo de la
+	// respuesta no revela si el email existe. Con el mailer nil (sin SMTP_HOST) no
+	// se emite token ni se envía nada.
+	recoverySvc := app.AccountRecoveryService{
+		Users: users, Resets: recoveryRepo, Hasher: hasher,
+		Mailer: mailer, AppURL: cfg.AppURL,
+	}
+	verificationSvc := app.EmailVerificationService{
+		Users: users, Verifs: recoveryRepo, Mailer: mailer, AppURL: cfg.AppURL,
+	}
 	// La cola de recordatorios vive en su propia tabla (014).
 	bookingEmails := pgstore.BookingEmails{Pool: pool}
 	// F2g1: invitaciones de equipo (el alta manda el correo y devuelve el enlace
@@ -484,7 +502,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	})
 
 	deps := httpapi.Deps{
-		Auth:          httpapi.AuthHandler{Auth: authSvc},
+		Auth:          httpapi.AuthHandler{Auth: authSvc, Verification: verificationSvc},
 		TwoFactor:     httpapi.TwoFactorHandler{Service: twoFactorSvc},
 		Tenants:       httpapi.TenantsHandler{Tenants: tenSvc, Memberships: mems},
 		Bookings:      httpapi.BookingHandler{Bookings: bookSvc, Memberships: mems},
@@ -531,6 +549,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		// personal). El barrido periódico se arranca en main con el mismo
 		// servicio (deps.Waitlist.Service).
 		Waitlist: httpapi.WaitlistHandler{Service: waitlistSvc, Memberships: mems},
+		// F15: recuperar contraseña y verificar email (tres rutas públicas bajo
+		// /auth/ y el reenvío autenticado).
+		Recovery: httpapi.AccountRecoveryHandler{Recovery: recoverySvc, Verif: verificationSvc},
 		// La reserva pública es la única escritura sin auth: rate limit por IP
 		// como en /auth (el GET de disponibilidad no pasa por acá).
 		PublicBookingLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/salons/"),
@@ -547,6 +568,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		PublicBookingLinkLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/booking-links/"),
 		WS:                     hub.ServeWS,
 		TokenIssuer:            tokens,
+		SessionGate:            sessionGate,
 	}
 	httpapi.RegisterRoutes(router, deps)
 	return router, deps, reminders
