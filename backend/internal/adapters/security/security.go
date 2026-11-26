@@ -9,7 +9,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
-	"salon-saas/internal/domain"
 )
 
 // BcryptHasher: costo Default (10). Seguro y portable; no inventamos crypto.
@@ -68,12 +67,16 @@ func (j JWTIssuer) ttl() time.Duration {
 	return j.TTL
 }
 
-// Issue firma {sub: userID, exp}.
+// Issue firma {sub: userID, exp, ia}. `ia` (F15, D4) son los milisegundos Unix
+// del instante de emisión: la compuerta de revocación lo compara con
+// users.password_changed_at para matar las sesiones anteriores a un cambio de
+// contraseña. Es el MISMO instante `now` que da el `exp`.
 func (j JWTIssuer) Issue(userID string) (string, error) {
 	if j.Secret == "" {
 		return "", ErrMissingSecret
 	}
-	claims := jwt.MapClaims{"sub": userID, "exp": time.Now().Add(j.ttl()).Unix()}
+	now := time.Now()
+	claims := jwt.MapClaims{"sub": userID, "exp": now.Add(j.ttl()).Unix(), "ia": now.UnixMilli()}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(j.Secret))
 }
 
@@ -87,14 +90,11 @@ func (j JWTIssuer) Issue(userID string) (string, error) {
 //     otro tipo se rechaza: este Parse lo usan AuthMiddleware y el hub de tiempo
 //     real, así que un desafío nunca autentica nada.
 func (j JWTIssuer) Parse(token string) (string, error) {
-	claims, err := j.parseClaims(token)
+	c, err := j.ParseSession(token)
 	if err != nil {
 		return "", err
 	}
-	if typ, present := claims["typ"]; present && typ != tokenTypeSession {
-		return "", domain.ErrUnauthorized
-	}
-	return subjectOf(claims)
+	return c.UserID, nil
 }
 
 // parseClaims valida método, firma y expiración (sin mirar el tipo).

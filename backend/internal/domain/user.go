@@ -15,6 +15,10 @@ type User struct {
 	Email        string
 	PasswordHash string
 	CreatedAt    time.Time
+	// EmailVerifiedAt (F15, D1): cuándo se demostró que la persona lee ese
+	// correo. nil = sin verificar (el registro abierto). Las cuentas anteriores a
+	// la migración 036 quedan con created_at (no se puede demostrar otra cosa).
+	EmailVerifiedAt *time.Time
 }
 
 // NewUser valida y crea un User. El hash ya viene calculado (SRP: hashear es
