@@ -237,8 +237,9 @@ func TestForgot_throttlePerUser(t *testing.T) {
 // de la dirección; el resultado sigue siendo el mismo (nil).
 func TestForgot_smtpDisabledDoesNothing(t *testing.T) {
 	var buf bytes.Buffer
+	prev := log.Writer()
 	log.SetOutput(&buf)
-	defer log.SetOutput(log.Writer())
+	defer log.SetOutput(prev)
 	f := newRecFix()
 	f.svc.Mailer = nil
 	f.st.addUser("u-ana", "Ana", "ana@mail.com", true)
