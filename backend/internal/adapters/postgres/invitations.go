@@ -2,7 +2,6 @@ package pgstore
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -181,51 +180,6 @@ func (t invitationTx) Revoke(salonID, id string, now time.Time) error {
 // Users.Save: un solo lugar decide cómo nace una cuenta).
 func (t invitationTx) SaveUser(u domain.User) error { return saveUser(t.tx, u) }
 
-// TakeOverShell es la toma del cascarón de F15 (D8) DENTRO de la transacción del
-// canje: la invitación llegó a ese correo, así que quien la abre demuestra que es
-// el dueño de la dirección.
-//
-// Condiciones (las tres, o no se toma nada): la cuenta existe, NO está
-// verificada y no tiene ninguna membresía ACTIVA (una membresía dada de baja no
-// cuenta: es el caso de quien registró el correo ajeno y nunca entró a ningún
-// salón). Se hace con `SELECT ... FOR UPDATE` sobre la fila del usuario para que
-// dos canjes simultáneos del mismo correo no se pisen, y el UPDATE escribe el
-// MISMO instante en `password_changed_at` y `email_verified_at`.
-//
-// false = ya no es un cascarón (nada cambió): el caso de uso responde el 409 de
-// siempre.
-func (t invitationTx) TakeOverShell(userID, name, passHash string) (bool, error) {
-	ctx := context.Background()
-	var id string
-	err := t.tx.QueryRow(ctx,
-		`SELECT id FROM users WHERE id=$1 AND email_verified_at IS NULL FOR UPDATE`, userID).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	var active bool
-	if err := t.tx.QueryRow(ctx,
-		`SELECT EXISTS (SELECT 1 FROM memberships WHERE user_id=$1 AND ended_at IS NULL)`, userID).Scan(&active); err != nil {
-		return false, err
-	}
-	if active {
-		return false, nil
-	}
-	var at time.Time
-	if err := t.tx.QueryRow(ctx, `SELECT now()`).Scan(&at); err != nil {
-		return false, err
-	}
-	tag, err := t.tx.Exec(ctx,
-		`UPDATE users SET name=$2, pass_hash=$3, password_changed_at=$4, email_verified_at=$4 WHERE id=$1`,
-		userID, name, passHash, at)
-	if err != nil {
-		return false, pgError(err)
-	}
-	return tag.RowsAffected() == 1, nil
-}
-
 // MembershipExists dice si la persona ya es parte ACTIVA del salón. Una baja no
 // cuenta: canjear una invitación a quien estaba dado de baja lo REACTIVA con el
 // rol de la invitación (el upsert de SaveMembership limpia ended_at), que es lo
@@ -251,7 +205,4 @@ var (
 	_ ports.InvitationRepository = Invitations{}
 	_ ports.InvitationTxRunner   = Invitations{}
 	_ ports.InvitationTx         = invitationTx{}
-	// F15/D8: la toma del cascarón es OPCIONAL en la transacción (los fakes de
-	// las pruebas existentes no la implementan y el caso de uso cae al 409).
-	_ ports.ShellTakeoverTx = invitationTx{}
 )

@@ -81,16 +81,6 @@ func (s InvitationPublicService) Lookup(token string) (InvitationLookup, error) 
 // AcceptNew crea la cuenta de quien acepta y la une al salón. Devuelve el JWT de
 // la sesión nueva (el mismo emisor y la misma forma que el login).
 //
-// F15 (D7/D8), dos ramas nuevas y ninguna más:
-//   - la cuenta que se crea acá nace YA VERIFICADA: el enlace de la invitación
-//     llegó a ese correo, así que quien lo abre demuestra que es suyo;
-//   - si el email ya tiene una cuenta SIN verificar y SIN membresías activas (el
-//     cascarón que dejó quien registró el correo ajeno), la invitación demuestra
-//     la propiedad: se fija el nombre y la contraseña nuevos, la cuenta queda
-//     verificada y con `password_changed_at` (las sesiones del impostor mueren por
-//     D4) DENTRO de la misma transacción del canje. Una cuenta verificada, con
-//     membresías activas o de otro correo sigue recibiendo el 409 de siempre.
-//
 // El orden importa: la política de contraseña corre ANTES del hash (B-06) y el
 // hash antes de abrir la transacción (bcrypt es caro a propósito: no se sostiene
 // una transacción durante ~100 ms de CPU).
@@ -99,16 +89,11 @@ func (s InvitationPublicService) AcceptNew(token, name, password string) (string
 	if err != nil {
 		return "", err
 	}
-	existing, hasAccount, err := s.accountFor(inv.Email)
-	if err != nil {
+	if has, err := s.hasAccount(inv.Email); err != nil {
 		return "", err
-	}
-	if hasAccount {
-		// La rama del 409 de siempre: una cuenta verificada no se toca.
-		if existing.EmailVerifiedAt != nil {
-			return "", alreadyHasAccount()
-		}
-		return s.acceptShell(inv, existing.ID, name, password)
+	} else if has {
+		return "", domain.NewMessage(domain.ErrAlreadyExists,
+			"Ya tenés cuenta: iniciá sesión para aceptar la invitación")
 	}
 	if err := domain.ValidatePassword(password); err != nil {
 		return "", err
@@ -127,10 +112,6 @@ func (s InvitationPublicService) AcceptNew(token, name, password string) (string
 	if err != nil {
 		return "", err
 	}
-	// F15/D7: la cuenta creada por invitación nace verificada (el token llegó a
-	// ese correo).
-	verifiedAt := s.now()
-	user.EmailVerifiedAt = &verifiedAt
 	// El canje: reclamar la invitación + crear la cuenta + crear la membresía, en
 	// una sola transacción. Si la membresía falla, la cuenta no queda.
 	if _, err := s.claimByID(inv.ID, user.ID, func(tx ports.InvitationTx) error {
@@ -139,7 +120,8 @@ func (s InvitationPublicService) AcceptNew(token, name, password string) (string
 			// otro salón) creó la cuenta con este email entre el chequeo de arriba
 			// y este INSERT. Mismo mensaje que cuando la cuenta ya existía de antes.
 			if errors.Is(err, domain.ErrAlreadyExists) {
-				return alreadyHasAccount()
+				return domain.NewMessage(domain.ErrAlreadyExists,
+					"Ya tenés cuenta: iniciá sesión para aceptar la invitación")
 			}
 			return err
 		}
@@ -150,75 +132,6 @@ func (s InvitationPublicService) AcceptNew(token, name, password string) (string
 	// La sesión se emite después del commit: nunca hay un JWT de una cuenta que
 	// no quedó guardada.
 	return s.Tokens.Issue(user.ID)
-}
-
-// alreadyHasAccount es el 409 de siempre (texto EXACTO del contrato F2g1).
-func alreadyHasAccount() error {
-	return domain.NewMessage(domain.ErrAlreadyExists,
-		"Ya tenés cuenta: iniciá sesión para aceptar la invitación")
-}
-
-// accountFor busca la cuenta del email de la invitación (nil si no hay).
-func (s InvitationPublicService) accountFor(email string) (domain.User, bool, error) {
-	u, err := s.Users.FindByEmail(email)
-	switch {
-	case err == nil:
-		return u, true, nil
-	case errors.Is(err, domain.ErrNotFound):
-		return domain.User{}, false, nil
-	default:
-		return domain.User{}, false, err
-	}
-}
-
-// acceptShell toma el cascarón de D8 dentro de la transacción del canje: reclama
-// la invitación (el row lock del UPDATE serializa dos canjes simultáneos), toma la
-// cuenta (solo si sigue sin verificar y sin membresías activas), le pone la
-// membresía de la invitación y emite la sesión DESPUÉS del commit.
-//
-// Un repositorio de invitaciones sin ShellTakeoverTx (los fakes de las pruebas
-// existentes) cae al 409 de siempre: la rama nueva es opcional por diseño.
-func (s InvitationPublicService) acceptShell(inv domain.Invitation, userID, name, password string) (string, error) {
-	// Las mismas validaciones de la rama nueva, antes del hash.
-	if err := domain.ValidatePassword(password); err != nil {
-		return "", err
-	}
-	if err := validateNewUserName(name); err != nil {
-		return "", err
-	}
-	hash, err := s.Hasher.Hash(password)
-	if err != nil {
-		return "", err
-	}
-	err = s.Tx.InInvitationTx(func(tx ports.InvitationTx) error {
-		claimed, err := tx.Claim(inv.ID, userID)
-		if err != nil {
-			return err
-		}
-		taker, ok := tx.(ports.ShellTakeoverTx)
-		if !ok {
-			return alreadyHasAccount()
-		}
-		taken, err := taker.TakeOverShell(userID, name, hash)
-		if err != nil {
-			return err
-		}
-		if !taken {
-			return alreadyHasAccount()
-		}
-		membership, err := claimed.Membership(userID)
-		if err != nil {
-			return err
-		}
-		return tx.SaveMembership(membership)
-	})
-	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			return "", invitationInvalid()
-		}
-		return "", err
-	}
-	return s.Tokens.Issue(userID)
 }
 
 // AcceptExisting une a una cuenta que YA existe al salón de la invitación. Solo

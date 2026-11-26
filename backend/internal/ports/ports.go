@@ -1203,14 +1203,4 @@ type SessionGate interface {
 	PasswordChangedAt(userID string) (*time.Time, error)
 }
 
-// ShellTakeoverTx es la interfaz OPCIONAL de InvitationTx para D8 (una
-// InvitationTx sin ella no toma cuentas ocupadas: queda el 409 de siempre).
-type ShellTakeoverTx interface {
-	// TakeOverShell toma el cascarón DENTRO de la transacción del canje: bloquea
-	// la fila del usuario y, solo si sigue sin verificar y sin membresías
-	// activas, fija nombre y contraseña nuevos, lo marca verificado y pone
-	// password_changed_at. false = ya no es un cascarón (nada cambió).
-	TakeOverShell(userID, name, passHash string) (bool, error)
-}
-
 // ===== F15 (fin) =====

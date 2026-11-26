@@ -1,5 +1,5 @@
 // Verificar el email (F15, parte B, D7). Verificar NO bloquea nada (D9): solo
-// informa, alimenta la toma de un cascarón en AcceptNew (D8) y se muestra en el
+// informa y se muestra en el
 // panel. Mismas reglas de token que el restablecer: 32 bytes base64url, solo el
 // SHA-256 guardado, enlace en el fragmento, un solo uso por UPDATE condicional, y
 // el correo sale por el runner asíncrono sin loguear direcciones ni tokens.

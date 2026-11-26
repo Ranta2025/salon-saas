@@ -3733,18 +3733,22 @@ vale solo si `users.password_changed_at IS NULL` **o** el token trae `ia` y `ia 
 - La verificación **no bloquea nada** en esta versión (D9): iniciar sesión, crear un
   salón y el resto siguen igual; solo informa.
 
-### Cuenta ocupada por un correo ajeno (D8)
+### Cuenta ocupada por un correo ajeno (D8 — retirada)
 
 Si alguien registra el correo de otra persona, queda un **cascarón**: una cuenta sin
-verificar y sin ninguna membresía. Si después llega una **invitación a ese correo**,
-`POST /public/invitations/accept` la toma **en la misma transacción del canje**: fija el
-nombre y la contraseña nuevos, marca la cuenta verificada, pone `password_changed_at`
-(las sesiones del impostor mueren) y crea la membresía de la invitación.
+verificar y sin ninguna membresía. **La invitación NO toma esa cuenta**: el enlace de la
+invitación lo recibe **quien invita** (`POST /salons/:id/invitations` devuelve el
+`link`), así que tener el token no prueba ser el dueño de la dirección; aceptarlo
+cambiando la contraseña de una cuenta existente sería una toma de cuenta.
 
-Solo en ese caso exacto (sin verificar **y** con **cero** membresías activas). Si la
-cuenta está verificada, si tiene alguna membresía activa o si la invitación es para otro
-correo, la respuesta es la de siempre: `409 {"error":"Ya tenés cuenta: iniciá sesión
-para aceptar la invitación"}`.
+Por eso `POST /public/invitations/accept` responde **siempre** lo mismo cuando el email
+ya tiene una cuenta —verificada o no, con o sin membresías—:
+`409 {"error":"Ya tenés cuenta: iniciá sesión para aceptar la invitación"}`, sin tocar
+la cuenta y sin gastar la invitación. Quien es dueño de la dirección recupera su cuenta
+con `POST /auth/forgot` + `POST /auth/reset` (el reinicio mata las sesiones del
+impostor, ver *Revocación de sesiones*); una cuenta nacida de una invitación ya está
+verificada, y **una cuenta creada por la invitación sigue naciendo verificada** (el
+token llegó a ese correo).
 
 ### Migración `036_account_recovery.sql`
 

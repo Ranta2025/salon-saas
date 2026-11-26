@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
-	"salon-saas/internal/ports"
 )
 
 type verFix struct {
@@ -204,86 +203,36 @@ func TestResend_registrationMailCountsTowardsTheLimit(t *testing.T) {
 	f15WantMsg(t, f.svc.Resend("u-ana"), domain.ErrTooManyAttempts, "Espera un minuto antes de pedir otro correo")
 }
 
-// --- D8: la invitación toma el cascarón de una cuenta no verificada ---
+// --- D8 (REMOVIDO): una cuenta que ya existe SIEMPRE recibe el 409 ---
+//
+// El enlace de la invitación lo recibe QUIEN INVITA (`POST /salons/:id/invitations`
+// lo devuelve), así que tener el token NO prueba ser el dueño del correo. Por eso
+// `AcceptNew` no toca una cuenta que ya existe —ni siquiera el cascarón sin
+// verificar y sin membresías que deja quien registró un correo ajeno—: responde el
+// 409 de siempre y el dueño real recupera su cuenta con `POST /auth/forgot` (el
+// reinicio mata las sesiones del impostor).
 
-// shellInvitations envuelve el fake de invitaciones con la toma del cascarón
-// (F15, D8) con la MISMA semántica que el adaptador Postgres: solo si la cuenta
-// existe, NO está verificada y no tiene NINGUNA membresía activa. Guarda también
-// el `password_changed_at` (lo que mata las sesiones del impostor por D4).
-type shellInvitations struct {
-	*fakeInvitations
-	changedAt map[string]*time.Time
-	taken     int
+// countingUsers cuenta las escrituras de cuentas: un canje que responde 409 no
+// puede escribir NADA (ni el nombre, ni el hash, ni `email_verified_at`, ni
+// `password_changed_at`, que solo se escribe dentro de la transacción del canje).
+type countingUsers struct {
+	*fakeUsers
+	writes int
 }
 
-func (f *shellInvitations) InInvitationTx(fn func(tx ports.InvitationTx) error) error {
-	// password_changed_at vive fuera del fake de invitaciones, así que se
-	// restaura a mano cuando la transacción falla (en Postgres se revierte con el
-	// UPDATE de users).
-	before := map[string]*time.Time{}
-	for k, v := range f.changedAt {
-		before[k] = v
-	}
-	err := f.fakeInvitations.InInvitationTx(func(ports.InvitationTx) error {
-		return fn(shellTx{fakeInvitations: f.fakeInvitations, parent: f})
-	})
-	if err != nil {
-		f.changedAt = before
-	}
-	return err
+func (u *countingUsers) Save(x domain.User) error {
+	u.writes++
+	return u.fakeUsers.Save(x)
 }
 
-type shellTx struct {
-	*fakeInvitations
-	parent *shellInvitations
-}
-
-func (t shellTx) TakeOverShell(userID, name, passHash string) (bool, error) {
-	u, err := t.users.FindByID(userID)
-	if err != nil {
-		return false, nil
-	}
-	if u.EmailVerifiedAt != nil {
-		return false, nil
-	}
-	for _, m := range t.mems.byKey {
-		if m.UserID == userID && m.Active() {
-			return false, nil
-		}
-	}
-	at := t.now
-	u.Name = name
-	u.PasswordHash = passHash
-	u.EmailVerifiedAt = &at
-	if err := t.users.Save(u); err != nil {
-		return false, err
-	}
-	t.parent.changedAt[userID] = &at
-	t.parent.taken++
-	return true, nil
-}
-
-var (
-	_ ports.InvitationTxRunner = (*shellInvitations)(nil)
-	_ ports.ShellTakeoverTx    = shellTx{}
-)
-
-// withShell devuelve el servicio público cableado con la transacción del cascarón.
-func (e *inviteEnv) withShell() (*InvitationPublicService, *shellInvitations) {
-	shell := &shellInvitations{fakeInvitations: e.inv, changedAt: map[string]*time.Time{}}
-	pub := e.pub
-	pub.Tx = shell
-	return &pub, shell
-}
-
-// addShell registra la cuenta que dejó quien usó un correo ajeno: existe, sin
-// verificar y sin ninguna membresía.
-func (e *inviteEnv) addShell(email string) domain.User {
+// addExistingAccount registra la cuenta que dejó quien usó un correo ajeno:
+// existe, sin verificar y sin ninguna membresía.
+func (e *inviteEnv) addExistingAccount(email string) domain.User {
 	u, err := domain.NewUser("Impostor", email, "h:clave-del-impostor")
 	if err != nil {
 		panic(err)
 	}
-	u.ID = "u-shell-" + strings.Split(email, "@")[0]
+	u.ID = "u-ocupada-" + strings.Split(email, "@")[0]
 	if err := e.users.Save(u); err != nil {
 		panic(err)
 	}
@@ -292,58 +241,72 @@ func (e *inviteEnv) addShell(email string) domain.User {
 
 const hasAccountText = "Ya tenés cuenta: iniciá sesión para aceptar la invitación"
 
-// D8: el cascarón se toma en la MISMA transacción del canje (contraseña nueva,
-// verificada y password_changed_at para matar las sesiones del impostor) y la
-// membresía de la invitación queda creada.
-func TestAcceptNew_takesOverAnUnverifiedShell(t *testing.T) {
-	env := newInviteEnv(t)
-	shellUser := env.addShell("lucia@mail.com")
-	pub, shell := env.withShell()
-	_, token := env.invite(t, "lucia@mail.com", domain.RoleProfessional)
-
-	jwt, err := pub.AcceptNew(token, "Lucía Nueva", "claveNueva1")
+// assertAccountUntouched compara la cuenta con la foto previa al canje.
+func assertAccountUntouched(t *testing.T, env *inviteEnv, want domain.User) {
+	t.Helper()
+	got, err := env.users.FindByID(want.ID)
 	if err != nil {
-		t.Fatalf("AcceptNew: %v", err)
+		t.Fatalf("FindByID(%s): %v", want.ID, err)
 	}
-	if jwt == "" {
-		t.Fatal("la sesión de la cuenta tomada se emite después del commit")
+	if got.Name != want.Name || got.PasswordHash != want.PasswordHash || got.Email != want.Email {
+		t.Fatalf("la cuenta cambió: %+v", got)
 	}
-	got, err := env.users.FindByID(shellUser.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Name != "Lucía Nueva" || got.PasswordHash != "h:claveNueva1" {
-		t.Fatalf("la cuenta no se tomó: %+v", got)
-	}
-	if got.EmailVerifiedAt == nil {
-		t.Error("la cuenta tomada tiene que quedar verificada")
-	}
-	if shell.changedAt[shellUser.ID] == nil {
-		t.Error("password_changed_at tiene que quedar puesto (las sesiones del impostor mueren, D4)")
-	}
-	if shell.taken != 1 {
-		t.Errorf("tomas: %d", shell.taken)
-	}
-	// La membresía de la invitación, con su rol, y la invitación aceptada.
-	m, err := env.mems.FindMember(shellUser.ID, "s1")
-	if err != nil || m.Role != domain.RoleProfessional {
-		t.Fatalf("membresía: %+v %v", m, err)
-	}
-	if len(env.inv.rows) != 1 {
-		t.Fatalf("invitaciones: %d", len(env.inv.rows))
-	}
-	for _, row := range env.inv.rows {
-		if row.AcceptedAt == nil || row.AcceptedBy != shellUser.ID {
-			t.Fatalf("la invitación no quedó aceptada por la cuenta tomada: %+v", row)
-		}
-	}
-	// Un segundo canje del mismo token ya no sirve (404 genérico).
-	if _, err := pub.AcceptNew(token, "Otra", "claveNueva1"); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("el token usado: %v", err)
+	switch {
+	case want.EmailVerifiedAt == nil && got.EmailVerifiedAt != nil:
+		t.Fatalf("la cuenta quedó verificada: %v", got.EmailVerifiedAt)
+	case want.EmailVerifiedAt != nil && (got.EmailVerifiedAt == nil || !got.EmailVerifiedAt.Equal(*want.EmailVerifiedAt)):
+		t.Fatalf("email_verified_at cambió: %v", got.EmailVerifiedAt)
 	}
 }
 
-// D8: una cuenta VERIFICADA sigue recibiendo el 409 de siempre, sin tocar nada.
+// assertInvitationsPending exige que NINGUNA invitación quedó aceptada ni revocada.
+func assertInvitationsPending(t *testing.T, env *inviteEnv) {
+	t.Helper()
+	if len(env.inv.rows) == 0 {
+		t.Fatal("no hay invitaciones")
+	}
+	for _, row := range env.inv.rows {
+		if row.AcceptedAt != nil || row.RevokedAt != nil {
+			t.Fatalf("la invitación no puede quedar tocada: %+v", row)
+		}
+	}
+}
+
+// assertRejectedWithoutWrites es el 409 de siempre y NADA más: ni sesión, ni
+// escritura de la cuenta, ni transacción del canje (sin Claim no hay
+// password_changed_at posible), ni la invitación gastada.
+func assertRejectedWithoutWrites(t *testing.T, env *inviteEnv, users *countingUsers, saves, claims int, jwt string, err error, want domain.User) {
+	t.Helper()
+	f15WantMsg(t, err, domain.ErrAlreadyExists, hasAccountText)
+	if jwt != "" {
+		t.Fatalf("un 409 no emite sesión: %q", jwt)
+	}
+	assertAccountUntouched(t, env, want)
+	if users.writes != 0 {
+		t.Fatalf("escrituras de la cuenta: %d", users.writes)
+	}
+	if env.inv.claims != claims || env.inv.saves != saves {
+		t.Fatalf("claims/saves: %d/%d, antes %d/%d", env.inv.claims, env.inv.saves, claims, saves)
+	}
+	assertInvitationsPending(t, env)
+}
+
+// D8 REMOVIDO: el cascarón sin verificar y sin membresías NO se toma. La
+// invitación al mismo correo responde el 409 de siempre.
+func TestAcceptNew_unverifiedExistingAccountKeepsThe409(t *testing.T) {
+	env := newInviteEnv(t)
+	ocupada := env.addExistingAccount("lucia@mail.com")
+	users := &countingUsers{fakeUsers: env.users}
+	pub := env.pub
+	pub.Users = users
+	_, token := env.invite(t, "lucia@mail.com", domain.RoleProfessional)
+	saves, claims := env.inv.saves, env.inv.claims
+
+	jwt, err := pub.AcceptNew(token, "Lucía Nueva", "claveNueva1")
+	assertRejectedWithoutWrites(t, env, users, saves, claims, jwt, err, ocupada)
+}
+
+// D8 REMOVIDO: una cuenta VERIFICADA recibe el 409 de siempre, sin tocar nada.
 func TestAcceptNew_verifiedAccountKeepsThe409(t *testing.T) {
 	env := newInviteEnv(t)
 	u, _ := domain.NewUser("Ana", "ana@mail.com", "h:clave-ana")
@@ -353,83 +316,81 @@ func TestAcceptNew_verifiedAccountKeepsThe409(t *testing.T) {
 	if err := env.users.Save(u); err != nil {
 		t.Fatal(err)
 	}
-	pub, shell := env.withShell()
+	users := &countingUsers{fakeUsers: env.users}
+	pub := env.pub
+	pub.Users = users
 	_, token := env.invite(t, "ana@mail.com", domain.RoleReception)
+	saves, claims := env.inv.saves, env.inv.claims
 
-	_, err := pub.AcceptNew(token, "Ana Otra", "claveNueva1")
-	f15WantMsg(t, err, domain.ErrAlreadyExists, hasAccountText)
-	if shell.taken != 0 || shell.changedAt[u.ID] != nil {
-		t.Fatal("una cuenta verificada no se toma")
-	}
-	got, _ := env.users.FindByID(u.ID)
-	if got.Name != "Ana" || got.PasswordHash != "h:clave-ana" {
-		t.Fatalf("la cuenta cambió: %+v", got)
-	}
-	for _, row := range env.inv.rows {
-		if row.AcceptedAt != nil {
-			t.Fatal("una toma rechazada no puede aceptar la invitación")
-		}
-	}
+	jwt, err := pub.AcceptNew(token, "Ana Otra", "claveNueva1")
+	assertRejectedWithoutWrites(t, env, users, saves, claims, jwt, err, u)
 }
 
-// D8: con una membresía ACTIVA (en cualquier salón) la cuenta no es un cascarón;
-// una membresía dada de baja no cuenta.
-func TestAcceptNew_shellWithActiveMembershipKeepsThe409(t *testing.T) {
+// D8 REMOVIDO: con una membresía ACTIVA (en cualquier salón) también es 409; y una
+// membresía dada de baja YA NO abre la puerta a ninguna toma.
+func TestAcceptNew_accountWithMembershipKeepsThe409(t *testing.T) {
 	env := newInviteEnv(t)
-	shellUser := env.addShell("lucia@mail.com")
-	// Membresía activa en OTRO salón: alcanza para no ser un cascarón.
-	if err := env.mems.Save(domain.Membership{UserID: shellUser.ID, SalonID: "s2", Role: domain.RoleReception}); err != nil {
+	ocupada := env.addExistingAccount("lucia@mail.com")
+	if err := env.mems.Save(domain.Membership{UserID: ocupada.ID, SalonID: "s2", Role: domain.RoleReception}); err != nil {
 		t.Fatal(err)
 	}
-	pub, shell := env.withShell()
+	users := &countingUsers{fakeUsers: env.users}
+	pub := env.pub
+	pub.Users = users
 	_, token := env.invite(t, "lucia@mail.com", domain.RoleProfessional)
+	saves, claims := env.inv.saves, env.inv.claims
 
-	_, err := pub.AcceptNew(token, "Lucía Nueva", "claveNueva1")
-	f15WantMsg(t, err, domain.ErrAlreadyExists, hasAccountText)
-	if shell.taken != 0 {
-		t.Fatal("una cuenta con membresía activa no se toma")
+	jwt, err := pub.AcceptNew(token, "Lucía Nueva", "claveNueva1")
+	assertRejectedWithoutWrites(t, env, users, saves, claims, jwt, err, ocupada)
+
+	// Dada de baja (ended_at): CERO activas, y aun así el 409 (antes D8 tomaba la
+	// cuenta en este caso exacto).
+	m, err := env.mems.FindMember(ocupada.ID, "s2")
+	if err != nil {
+		t.Fatal(err)
 	}
-	got, _ := env.users.FindByID(shellUser.ID)
-	if got.EmailVerifiedAt != nil || got.PasswordHash != "h:clave-del-impostor" {
-		t.Fatalf("la cuenta cambió: %+v", got)
-	}
-	// Dada de baja (ended_at) = CERO activas: ahora sí es un cascarón.
-	m, _ := env.mems.FindMember(shellUser.ID, "s2")
 	m.EndedAt = &env.now
-	env.mems.byKey[shellUser.ID+"|s2"] = m
-	if _, err := pub.AcceptNew(token, "Lucía Nueva", "claveNueva1"); err != nil {
-		t.Fatalf("sin membresías activas se toma: %v", err)
-	}
+	env.mems.byKey[ocupada.ID+"|s2"] = m
+	jwt, err = pub.AcceptNew(token, "Lucía Nueva", "claveNueva1")
+	assertRejectedWithoutWrites(t, env, users, saves, claims, jwt, err, ocupada)
 }
 
-// D8: la toma es parte de la MISMA transacción: si el último paso falla, no queda
-// ni la toma ni la invitación aceptada.
-func TestAcceptNew_shellTakeoverIsAtomic(t *testing.T) {
+// D8 REMOVIDO: una invitación para OTRO correo no mira ni toca la cuenta que ya
+// existe de una dirección distinta: crea la cuenta nueva de la invitada.
+func TestAcceptNew_invitationForAnotherEmailCreatesANewAccount(t *testing.T) {
 	env := newInviteEnv(t)
-	shellUser := env.addShell("lucia@mail.com")
-	pub, shell := env.withShell()
-	_, token := env.invite(t, "lucia@mail.com", domain.RoleProfessional)
-	env.inv.failMembership = true
+	otra := env.addExistingAccount("lucia@mail.com")
+	pub := env.pub
+	_, token := env.invite(t, "nueva@mail.com", domain.RoleProfessional)
 
-	if _, err := pub.AcceptNew(token, "Lucía Nueva", "claveNueva1"); err == nil {
-		t.Fatal("la membresía falla: el canje entero tiene que fallar")
+	jwt, err := pub.AcceptNew(token, "Nueva", "claveNueva1")
+	if err != nil || jwt == "" {
+		t.Fatalf("AcceptNew: %q %v", jwt, err)
 	}
-	got, _ := env.users.FindByID(shellUser.ID)
-	if got.EmailVerifiedAt != nil || got.PasswordHash != "h:clave-del-impostor" || shell.changedAt[shellUser.ID] != nil {
-		t.Fatalf("la toma quedó a medias: %+v %+v", got, shell.changedAt)
+	assertAccountUntouched(t, env, otra)
+	u, err := env.users.FindByEmail("nueva@mail.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.PasswordHash != "h:claveNueva1" {
+		t.Errorf("clave: %q", u.PasswordHash)
+	}
+	m, err := env.mems.FindMember(u.ID, "s1")
+	if err != nil || m.Role != domain.RoleProfessional {
+		t.Fatalf("membresía: %+v %v", m, err)
 	}
 	for _, row := range env.inv.rows {
-		if row.AcceptedAt != nil {
-			t.Fatal("la invitación quedó aceptada con la transacción revertida")
+		if row.AcceptedBy != u.ID {
+			t.Fatalf("la invitación no quedó aceptada por la cuenta nueva: %+v", row)
 		}
 	}
 }
 
 // D7: una cuenta creada por invitación nace YA verificada (el token llegó a ese
 // correo). Es la rama que más se usa y no puede quedar en NULL.
-func TestAcceptNew_newAccountIsBornVerified(t *testing.T) {
+func TestAcceptNew_newAccountIsBornUnverified(t *testing.T) {
 	env := newInviteEnv(t)
-	pub, _ := env.withShell()
+	pub := env.pub
 	_, token := env.invite(t, "nueva@mail.com", domain.RoleProfessional)
 
 	if _, err := pub.AcceptNew(token, "Nueva", "claveNueva1"); err != nil {
@@ -439,15 +400,20 @@ func TestAcceptNew_newAccountIsBornVerified(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u.EmailVerifiedAt == nil {
-		t.Fatal("la cuenta creada por invitación nace verificada")
+	// The invitation link is also returned to the inviter, so holding it does
+	// not prove the mailbox is the invitee's: the account is born UNVERIFIED,
+	// like a registered one (F15 native review finding R1).
+	if u.EmailVerifiedAt != nil {
+		t.Fatal("la cuenta creada por invitación nace SIN verificar")
 	}
 	if u.PasswordHash != "h:claveNueva1" {
 		t.Errorf("clave: %q", u.PasswordHash)
 	}
 }
 
-// NOTA: la carrera de dos canjes del MISMO token está cubierta por
-// `TestF15_TakeOverShell` y por la prueba de concurrencia contra Postgres; acá no
-// se repite porque el fake de invitaciones (`invitations_test.go`, preexistente)
-// no es seguro para goroutines y este archivo no lo puede tocar.
+// NOTA: la carrera de dos canjes del MISMO token está cubierta por el test de
+// concurrencia contra Postgres y por `invitations_it_test.go`; acá no se repite
+// porque el fake de invitaciones (`invitations_test.go`, preexistente) no es
+// seguro para goroutines y este archivo no lo puede tocar. La toma del cascarón
+// (D8) ya no existe: la retiró el hallazgo R1 de la revisión nativa, porque el
+// enlace de la invitación lo recibe quien invita.

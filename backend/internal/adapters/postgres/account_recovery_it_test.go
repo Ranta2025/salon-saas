@@ -18,7 +18,6 @@ import (
 	"salon-saas/internal/adapters/security"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
-	"salon-saas/internal/ports"
 )
 
 const (
@@ -684,60 +683,4 @@ func f15ClosedPool(t *testing.T) *pgxpool.Pool {
 	p := itPool(t)
 	p.Close()
 	return p
-}
-
-// --- D8: TakeOverShell ---
-
-func TestF15_TakeOverShell(t *testing.T) {
-	f := f15Fixtures(t)
-	inv := Invitations{Pool: f.pool}
-	take := func(user string) bool {
-		t.Helper()
-		var got bool
-		err := inv.InInvitationTx(func(tx ports.InvitationTx) error {
-			var e error
-			got, e = tx.(interface {
-				TakeOverShell(string, string, string) (bool, error)
-			}).TakeOverShell(user, "Nombre Nuevo", "h-takeover")
-			return e
-		})
-		if err != nil {
-			t.Fatalf("TakeOverShell: %v", err)
-		}
-		return got
-	}
-	// Verificada: no es un cascarón.
-	f.exec(t, `UPDATE users SET email_verified_at=now() WHERE id=$1`, f15Ana)
-	if take(f15Ana) {
-		t.Fatal("una cuenta verificada no se toma")
-	}
-	// Sin verificar pero con una membresía ACTIVA: no se toma.
-	f.exec(t, `UPDATE users SET email_verified_at=NULL WHERE id=ANY($1)`, []string{f15Ana, f15Bea})
-	f.exec(t, `INSERT INTO memberships(user_id,salon_id,role) VALUES($1,$2,'professional')`, f15Ana, f15Salon)
-	if take(f15Ana) {
-		t.Fatal("una cuenta con membresía activa no se toma")
-	}
-	if f.count(t, `SELECT count(*) FROM users WHERE id=$1 AND pass_hash='h-vieja-ana' AND password_changed_at IS NULL AND email_verified_at IS NULL`, f15Ana) != 1 {
-		t.Fatal("un TakeOverShell rechazado modificó datos")
-	}
-	// Con la membresía dada de baja (ended_at) cuenta como CERO activas.
-	f.exec(t, `UPDATE memberships SET ended_at=now() WHERE user_id=$1`, f15Ana)
-	if !take(f15Ana) {
-		t.Fatal("un cascarón (sin verificar y sin membresías activas) se toma")
-	}
-	var name, hash string
-	var changed, verified *time.Time
-	f.pool.QueryRow(f.ctx, `SELECT name, pass_hash, password_changed_at, email_verified_at FROM users WHERE id=$1`, f15Ana).
-		Scan(&name, &hash, &changed, &verified)
-	if name != "Nombre Nuevo" || hash != "h-takeover" || changed == nil || verified == nil || !changed.Equal(*verified) {
-		t.Fatalf("tras la toma: %q %q %v %v", name, hash, changed, verified)
-	}
-	// Bea (sin membresías): segunda toma sobre una ya tomada = false.
-	if !take(f15Bea) || take(f15Bea) {
-		t.Fatal("la segunda toma de la misma cuenta ya no es un cascarón")
-	}
-	// Usuario inexistente: false, sin error.
-	if take("u-f15-no-existe") {
-		t.Fatal("inexistente")
-	}
 }
