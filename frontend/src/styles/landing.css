@@ -1364,3 +1364,102 @@
   color: var(--wine);
   overflow-wrap: anywhere;
 }
+
+/* ---------- F11: seña del salón (only when the payload has `deposit`) ---------- */
+
+.deposit {
+  background: var(--cream);
+}
+
+.deposit .section-head {
+  margin-bottom: clamp(1rem, 2.5vw, 1.75rem);
+}
+
+.deposit-block {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 40rem;
+  padding: clamp(1.1rem, 2.2vw, 1.5rem);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.deposit-block__sentence {
+  font-family: var(--font-display);
+  font-size: var(--step-3);
+  line-height: 1.15;
+  color: var(--wine);
+  overflow-wrap: anywhere;
+}
+
+.deposit-block__facts {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.9375rem;
+  color: var(--ink-soft);
+}
+
+.deposit-block__note {
+  font-size: var(--step--1);
+  color: var(--ink-muted);
+}
+
+.landing-badge {
+  justify-self: start;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-pill);
+  background: var(--gold-tint);
+  color: #4d3a00;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The deposit amount of each service comes from `deposit_cents` (D11). */
+.services__item {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.services__deposit {
+  padding: 0 0.15rem;
+  font-size: var(--step--1);
+  font-weight: 700;
+  color: var(--wine);
+}
+
+/* Deposit block of the confirmation screen (D13-b): only with a `payment`. */
+.booking__deposit {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem;
+  background: var(--gold-tint);
+  border: 1px solid rgba(201, 162, 39, 0.6);
+  border-radius: var(--radius-sm);
+}
+
+.booking__deposit h4 {
+  font-size: var(--step-1);
+}
+
+.booking__deposit-notice {
+  justify-self: start;
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-pill);
+  background: #4d3a00;
+  color: #ffe9a8;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.booking__deposit .btn {
+  justify-self: start;
+  min-height: 44px;
+}

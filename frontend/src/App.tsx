@@ -2,10 +2,12 @@ import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { ActivityPage } from './app/ActivityPage'
 import { AppShell } from './app/AppShell'
+import { BankPage } from './app/BankPage'
 import { BookingLinkPage } from './app/BookingLinkPage'
 import { CalendarPage } from './app/CalendarPage'
 import { ClientDetailPage } from './app/ClientDetailPage'
 import { ClientsPage } from './app/ClientsPage'
+import { DepositsPage } from './app/DepositsPage'
 import { EquipmentPage } from './app/EquipmentPage'
 import { ExpensesPage } from './app/ExpensesPage'
 import { ExportsPage } from './app/ExportsPage'
@@ -19,6 +21,7 @@ import { MyCommissionsPage } from './app/MyCommissionsPage'
 import { NotificationsPage } from './app/NotificationsPage'
 import { PackagesPage } from './app/PackagesPage'
 import { PanelHome } from './app/PanelHome'
+import { PaymentResultPage } from './app/PaymentResultPage'
 import { PayrollPage } from './app/PayrollPage'
 import { PayrollRunDetailPage } from './app/PayrollRunDetailPage'
 import { PosPage } from './app/PosPage'
@@ -37,6 +40,7 @@ import { LandingPage } from './landing/LandingPage'
 import { UNAUTHORIZED_EVENT } from './lib/api'
 import { purgeOfflineApiCache } from './lib/pwa'
 import { isRecoveryPath } from './lib/recovery'
+import { isPaymentPath } from './lib/simbank'
 
 /** A 401 anywhere in the app sends the user back to /login. */
 function UnauthorizedRedirect() {
@@ -51,6 +55,11 @@ function UnauthorizedRedirect() {
       }
       // Recovery pages are public (F15, D11): they have no session to lose.
       if (isRecoveryPath(pathname)) {
+        return
+      }
+      // The two pages of the simulated bank are public too (F11, D13-c): a 401 of
+      // the payment must never wipe what the person is reading and send them away.
+      if (isPaymentPath(pathname)) {
         return
       }
       // Another account must never read cached salon responses of this session.
@@ -99,6 +108,10 @@ export function App() {
         <Route path="/turno" element={<BookingLinkPage />} />
         {/* Public, no session: the baja link of the waiting list (F7, D5). */}
         <Route path="/lista-de-espera" element={<WaitlistLeavePage />} />
+        {/* Public, no session: the simulated bank and the state of the payment
+            (F11, D13-c). The charge id travels in the fragment of both. */}
+        <Route path="/pagar" element={<BankPage />} />
+        <Route path="/pago-resultado" element={<PaymentResultPage />} />
 
         <Route
           path="/panel"
@@ -116,6 +129,7 @@ export function App() {
           <Route path="inventario" element={<InventoryPage />} />
           <Route path="paquetes" element={<PackagesPage />} />
           <Route path="fidelidad" element={<LoyaltyPage />} />
+          <Route path="senas" element={<DepositsPage />} />
           <Route path="clientes" element={<ClientsPage />} />
           <Route path="clientes/:clientId" element={<ClientDetailPage />} />
           <Route path="avisos" element={<NotificationsPage />} />

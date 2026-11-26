@@ -303,3 +303,76 @@ test('visitorTimeZone always returns a usable IANA id', () => {
   assert.equal(typeof zone, 'string')
   assert.ok(zone.length > 0)
 })
+
+// ---------- F11 (D8, D13-b): the additive `payment` of the 201 ----------
+
+const PAYMENT_RAW = {
+  deposit_id: 'd1',
+  amount_cents: 5400,
+  expires_at: '2026-11-02T16:30:00Z',
+  pay_url: 'https://app.test/pagar#charge_abc',
+  simulated: true,
+}
+
+test('createPublicBooking keeps the `payment` of the 201 when the deposit policy is on', async () => {
+  const stub = stubFetch(() =>
+    json(
+      {
+        booking: {
+          id: 'b-1',
+          professional_id: 'u2',
+          starts_at: '2025-03-14T16:00:00Z',
+          ends_at: '2025-03-14T16:45:00Z',
+          status: 'booked',
+        },
+        payment: PAYMENT_RAW,
+      },
+      201,
+    ),
+  )
+  try {
+    const created = await createPublicBooking('aurelia', bookingPayload(bookingInput, 'op-1'))
+    assert.deepEqual(created.payment, {
+      depositId: 'd1',
+      amountCents: 5400,
+      expiresAt: '2026-11-02T16:30:00Z',
+      payUrl: 'https://app.test/pagar#charge_abc',
+      simulated: true,
+    })
+    // The confirmation screen of today is untouched: the booking fields are the same.
+    assert.equal(created.id, 'b-1')
+    assert.equal(created.status, 'booked')
+  } finally {
+    stub.restore()
+  }
+})
+
+test('without `payment` the confirmation screen is exactly as today', async () => {
+  const stub = stubFetch(() =>
+    json({ booking: { id: 'b-1', starts_at: '2025-03-14T16:00:00Z', ends_at: '2025-03-14T16:45:00Z' } }, 201),
+  )
+  try {
+    const created = await createPublicBooking('aurelia', bookingPayload(bookingInput, 'op-2'))
+    assert.equal('payment' in created, false)
+  } finally {
+    stub.restore()
+  }
+})
+
+test('a `payment` the page cannot use is dropped instead of painted', async () => {
+  const stub = stubFetch(() =>
+    json(
+      {
+        booking: { id: 'b-1', starts_at: '2025-03-14T16:00:00Z', ends_at: '2025-03-14T16:45:00Z' },
+        payment: { deposit_id: '', amount_cents: 0 },
+      },
+      201,
+    ),
+  )
+  try {
+    const created = await createPublicBooking('aurelia', bookingPayload(bookingInput, 'op-3'))
+    assert.equal('payment' in created, false)
+  } finally {
+    stub.restore()
+  }
+})

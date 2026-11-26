@@ -3375,3 +3375,233 @@ sin conexión.
   verificado, que es la mayoría.
 - Un enlace del correo se abre siempre con carga completa; abrir `/restablecer#<token>`
   estando ya en `/restablecer` (solo cambia el fragmento) no vuelve a leerlo.
+
+## 35. Fase 6 — F11: seña online con banco simulado (frontend)
+
+Contrato: `odd/tasks/fase6-roadmap.md`, «Contrato F11», partes D3 (rutas y mensajes de la
+política), D4 (monto, para no duplicar la fórmula), D6 (rutas, tarjetas y mensajes del banco
+simulado), D8 (objeto `payment` de la reserva pública y `public/deposits/lookup`), D10
+(listado de señas) y D13 (esta parte). D11 se cubre en el payload público de la landing: el
+aviso y el monto por servicio. El backend se construye en paralelo, así que todo se probó con
+`fetch` simulado y con una API simulada en el navegador. Sin dependencias nuevas. Todo es solo
+en línea: nada de esto pasa por la cola sin conexión.
+
+### 35.1 Rutas, menú y permisos
+
+- Tres rutas nuevas: `/panel/senas` (`DepositsPage`, dentro de `RequireAuth`) y dos públicas,
+  fuera de la sesión: `/pagar` (`BankPage`) y `/pago-resultado` (`PaymentResultPage`). Las dos
+  públicas leen el id del cobro del FRAGMENTO y lo borran con `history.replaceState`.
+- `UnauthorizedRedirect` no manda a `/login` ninguna de las dos: `isPaymentPath` de
+  `lib/simbank.ts` decide (misma regla y mismo test que `isRecoveryPath` de F15). Un 401 del
+  banco no puede tirar abajo lo que la persona está leyendo.
+- `lib/permissions.ts`: `canViewDeposits` (dueña, administración y recepción) y
+  `canEditDepositPolicy` (solo dueña y administración). Menú: entrada «Señas» con
+  `depositsOnly`; a 390 px no se recorta ni desborda (medido), y a recepción le aparece. A un
+  profesional no le aparece la entrada y la página le muestra `DepositNotice` sin mandar
+  ningún pedido (verificado contando las llamadas del servidor simulado).
+
+### 35.2 `lib/deposits.ts`: política, lista y estado del pago
+
+- Política (D3): `normalizeDepositPolicy`, `draftFromPolicy` y `validateDepositPolicy` con las
+  CUATRO frases exactas del contrato («Faltan datos de la sena: activada, porcentaje, espera y
+  devolucion», «El porcentaje debe ser entre 10 y 100», «La espera debe ser entre 5 y 120
+  minutos», «La devolucion debe ser entre 0 y 168 horas») y los bordes fijados en tests: 10 y
+  100 de porcentaje, 5 y 120 de espera, 0 y 168 de devolución. `policyBody` manda siempre las
+  cuatro claves, también con la seña apagada (el servidor las pide igual, como en fidelidad).
+- `depositPreview(percent)` es la frase que ve la clienta: «Sena del 30% - pago simulado»
+  (verbatim). La usan la vista previa del panel y la landing, a través de `depositSentence` de
+  `publicSalon.ts` (el mismo camino que `loyaltySentence` en F9).
+- Lista (D10): `normalizeDepositPage` devuelve `null` ante un cuerpo que no es el documentado
+  (un error, nunca «no hay señas»); descarta filas sin id, sin fecha válida, con monto no
+  entero o negativo. Acepta `deposits` y también `rows` como nombre del arreglo, porque el
+  contrato no lo fija. `mergeDepositRows` agrega la página siguiente sin repetir ids.
+  `depositsPath` lleva `limit`, `before` opaco y `status` solo cuando hay filtro.
+- Chips: `depositStatusLabel` traduce las cinco palabras del contrato (pending = Pendiente,
+  paid = Pagada, expired = Vencida, refunded = Devuelta, forfeited = Perdida); un estado
+  desconocido se muestra crudo en vez de inventar uno de los cinco. `depositStatusTone` elige
+  el color (pagada, pendiente, cerrada).
+- Cuenta regresiva de la retención: `formatCountdown` da `mm:ss` debajo de una hora y
+  `H h MM min` desde ahí; los segundos y los minutos se redondean HACIA ARRIBA para no
+  subestimar el plazo. Una fecha que no es fecha no inventa cuenta: `countdown: null`.
+- `depositPaymentSummary` es el modelo de la vista del bloque de la confirmación: monto con
+  `formatCents`, cuenta regresiva, si venció y el aviso «Pago simulado».
+- `paymentTarget(payUrl, origin)`: un `pay_url` del MISMO origen se convierte en ruta más
+  fragmento para que navegue el router (el id del cobro nunca se va a otro host por una carga
+  completa); otro origen queda como enlace externo; un valor que no es una URL, o del mismo
+  origen pero sin fragmento, es `null` y no se navega.
+- `/pago-resultado`: `normalizePublicDepositLookup`, `depositStatusSentence` (el estado en
+  español), `formatPublicInstant` (fecha local del visitante, nunca «Invalid Date») y la
+  política de sondeo `pollDecision`: solo `pending` se repregunta, como máximo
+  `PAYMENT_POLL_MAX_ATTEMPTS` = 20 veces y nunca pasado el presupuesto de 60 s
+  (`PAYMENT_POLL_INTERVAL_MS` = 3 s, `PAYMENT_POLL_TIMEOUT_MS` = 60 s).
+- Una escritura a la vez: `writeDepositPolicy` usa la compuerta síncrona de paquetes (la misma
+  de fidelidad y 2FA), no envía NADA sin conexión (lo dice con su propia frase y no encola) y
+  devuelve la frase del servidor tal cual (409 sin banco, 400 de rango, 403 de rol).
+
+### 35.3 `lib/simbank.ts`: tarjetas y cobros del banco simulado
+
+- Tarjeta: `cardDigits` (solo dígitos, tope 19), `formatCardNumber` (grupos de cuatro mientras
+  se escribe), `formatExpiry` (inserta la barra y corta el año en dos dígitos) y `parseExpiry`
+  (`MM/AA`, mes 1..12). `validateCardDraft` valida la FORMA antes de enviar (12..19 dígitos, 3
+  o 4 de CVC, nombre de 2..40) y devuelve el número en dígitos: es lo que viaja en el cuerpo.
+- Luhn es SOLO una pista de UX (`luhnValid` + `luhnHint`): un número que no lo pasa se puede
+  enviar igual, porque el banco es el que decide (`400 Datos de tarjeta invalidos`).
+- `TEST_CARDS` son las tres tarjetas del contrato (4242 4242 4242 4242 aprobada, 4000 0000
+  0000 0002 rechazada, 4000 0000 0000 9995 sin fondos) y `SIMULATED_BANNER` el aviso
+  «PAGO SIMULADO - no se cobra dinero real», literal.
+- Clientes: `lookupCharge` (POST `{charge_id}`) y `payCharge` (POST `{charge_id, card}` con el
+  número en dígitos). Los dos van sin sesión y la respuesta se normaliza de forma tolerante
+  (`status` plano, en `result` o en `charge`), sin inventar un resultado. `describeSimbankError`
+  clasifica 409 (vencido / ya aprobado, decidido por la frase del servidor), 429, 400, 404, red
+  y servidor, y conserva la frase recibida (`verbatim`).
+- El número de tarjeta no se guarda, no se loguea y no va en la URL: hay un test que envuelve
+  `localStorage` y la consola y comprueba que nada del número ni del id del cobro aparece ahí,
+  ni en la URL ni en las cabeceras. `createSimbankGate` reexporta la compuerta de paquetes para
+  que un segundo toque en «Pagar» no mande un segundo cobro (verificado en el navegador:
+  tres clics seguidos = 1 sola llamada a `/charges/pay`).
+
+### 35.4 Página «Señas» (D3, D10, D13-a)
+
+- Formulario de política (`components/DepositPolicyForm.tsx`): seña activada, porcentaje
+  (10..100), espera en minutos (5..120) y devolución en horas (0..168), con la ayuda de cada
+  rango. Se valida en el cliente con las mismas frases del contrato y el foco salta al campo
+  que falla; un error del servidor se muestra verbatim. Recepción lo ve en SOLO LECTURA
+  (inputs deshabilitados, sin botón de guardar) con la explicación de quién puede cambiarlo.
+- Vista previa al lado: «Sena del X% - pago simulado», la misma frase de la landing, más el
+  aviso de que el servidor calcula el monto de cada servicio.
+- Lista desde `GET /salons/:id/deposits` con filtro de estado («Todas» + los cinco estados),
+  «Cargar más» por `next_cursor` (una referencia evita dos pedidos por doble clic y una
+  generación por consulta descarta respuestas tardías al cambiar el filtro o el salón), chips
+  en español, montos con `formatCents` y las fechas del turno y del pago en la zona del salón
+  (las mismas ayudas de la auditoría). Un vacío honesto distingue «no hay señas» de «no hay
+  señas con ese estado».
+- Aviso visible y fijo sobre la lista: «Descuenta la sena cobrada al cobrar el turno en caja»
+  (D1: el POS no descuenta la seña solo).
+- Sin conexión: aviso de que lo que se ve puede estar desactualizado y de que nada queda en
+  cola; el botón de guardar se deshabilita. Después de guardar se relee la política del
+  servidor (sin estado optimista) y un rechazo conserva lo escrito.
+
+### 35.5 Landing: aviso y monto por servicio (D11)
+
+- `normalizePublicSalon` lee `deposit: {percent, hold_minutes, refund_hours, simulated}` y lo
+  deja `null` si falta, es `null` o no es una política usable (rangos de D2). Los servicios
+  ganan `depositCents` SOLO cuando `deposit_cents` es un entero ≥ 1 (un cero no es seña y la
+  línea no se muestra).
+- `buildLanding` agrega `deposit` al modelo y `sections.deposit`, y el enlace de navegación
+  «Seña» a `#sena`, con las frases `holdLabel` y `refundLabel` construidas con esos números.
+  Sin `deposit` en el payload no hay sección, no hay enlace y la palabra «seña» no aparece en
+  el modelo (hay test con `JSON.stringify`).
+- `DepositSection` (solo si hay `deposit`): etiqueta «Pago simulado» cuando el payload dice
+  `simulated`, la frase «Sena del X% - pago simulado», la espera, la devolución y la nota de
+  que no se cobra dinero real.
+- `ServicesSection` muestra «Sena: $X» debajo de cada servicio con el `deposit_cents` del
+  servidor: el navegador NUNCA recalcula el porcentaje (D4). El monto por servicio se pinta en
+  la lista de servicios y no dentro de `ServiceCard`, que quedó fuera de las superficies de
+  este trabajo.
+
+### 35.6 Confirmación de la reserva con `payment` (D8, D13-b)
+
+- `normalizePublicBooking` lee el `payment` aditivo y lo deja como campo OPCIONAL: sin
+  `payment` (o con uno inutilizable) el objeto del turno es exactamente el de hoy y la pantalla
+  no cambia. Hay tests de las tres variantes.
+- Con `payment`, la confirmación agrega el bloque `PaymentStep`: monto con `formatCents`,
+  cuenta regresiva calculada con `expires_at` (se refresca cada segundo y al vencer dice que el
+  plazo venció), el aviso «Pago simulado» y el botón «Pagar seña». El botón navega al
+  `pay_url` del mismo origen como ruta más fragmento; si el servidor diera otro origen, se
+  ofrece como enlace externo y nunca se reescribe.
+- El texto de la reserva sin seña (correo, folio, WhatsApp, «Reservar otra cita») queda igual.
+
+### 35.7 `/pagar`: el banco simulado (D6, D13-c)
+
+- `useFragmentToken` (el mismo helper de F15) lee el id del cobro del fragmento y lo borra de
+  la barra de direcciones ANTES de cualquier pedido; el id viaja solo en el cuerpo de
+  `charges/lookup` y `charges/pay`. Sin id, la página dice que el enlace está incompleto.
+- Banner permanente y no descartable «PAGO SIMULADO - no se cobra dinero real», monto,
+  concepto, estado y vencimiento del cobro (fecha local del visitante, no el ISO crudo).
+- Formulario: número con espacios, vencimiento `MM/AA`, CVC y nombre. Los tres botones de las
+  tarjetas de prueba SOLO rellenan el formulario (número, `12/27`, `123` y un nombre de
+  prueba): no pagan por sí solos. La pista de Luhn aparece debajo y no bloquea el envío.
+- Al pagar: se deshabilita el botón, la compuerta impide un segundo envío, la tarjeta se
+  descarta del estado de React apenas el banco contesta y el resultado se muestra con su
+  frase en español y el mensaje del banco verbatim (sin repetirlo si es idéntico al título).
+  Un 409 («El pago vencio», «Este pago ya se aprobo»), un 429 y un 400 («Datos de tarjeta
+  invalidos») se muestran tal cual llegan, y el enlace «Volver al salon» lleva a
+  `/pago-resultado#<id>`. Un cobro que YA tenía resultado al abrir la página no se puede pagar:
+  la página lo dice y no muestra el formulario.
+
+### 35.8 `/pago-resultado` (D8, D13-c)
+
+- Lee el fragmento con el helper de F15 y consulta `POST /api/v1/public/deposits/lookup` con el
+  id en el cuerpo. El 404 `Pago no encontrado` se muestra verbatim.
+- Mientras el estado es `pending` repregunta cada 3 s hasta 60 s (máximo 20 pedidos) y después
+  DEJA de sondear con un mensaje que explica que el salón recibe la confirmación igual. Un
+  sondeo que falla no es un pago fallido: el siguiente vuelve a preguntar.
+- Muestra el estado en español con su chip, el monto de la seña, el turno y el plazo del pago,
+  y «Ir al salón» como salida.
+
+### 35.9 Service worker (D13-d)
+
+- `public/sw.js` excluye ahora `/api/v1/simbank/`, `/api/v1/payments/` y
+  `/api/v1/public/deposits/` de TODA intercepción, con cualquier método: ni una respuesta
+  guardada ni un reintento del banco pueden mentir sobre dinero. La exclusión se evalúa antes
+  del corte de las mutaciones y está en `isNeverCachedApiPath`; `/api/v1/public/` sigue
+  excluida como en F16. El archivo no tiene test propio (el proyecto no corre tests de service
+  worker): la comprobación fue `node --check` y la revisión del camino de `fetch`.
+
+### 35.10 Pruebas
+
+- `lib/deposits.test.ts` (24): normalizador, borrador y validación de la política con las
+  frases exactas y los bordes, `policyBody` con las cuatro claves, la vista previa, los cinco
+  chips y sus tonos, la nota de caja, la página de la lista (formas aceptadas, filas
+  descartadas, cursor, mezcla sin duplicados), la ruta con `limit`/`before`/`status`, los dos
+  clientes de la política y la escritura con compuerta, sin conexión y con las frases del
+  servidor, la cuenta regresiva (con el redondeo hacia arriba), el modelo de la confirmación,
+  `paymentTarget` (mismo origen, otro origen, sin fragmento, basura), el `payment` del 201, la
+  política de sondeo del resultado, el estado público en español y el lookup anónimo con el
+  cuerpo y el 404.
+- `lib/simbank.test.ts` (15): formato del número y del vencimiento, `parseExpiry`, Luhn de las
+  tres tarjetas de prueba y de una alterada, el formulario (campos faltantes y pista de Luhn),
+  la compuerta de un pago a la vez, las rutas públicas, el lookup, el pago con el número solo en
+  el cuerpo, los resultados tolerantes, las cuatro frases del banco verbatim, la clasificación
+  de errores, los textos de resultado y la comprobación de que el número no queda en el
+  almacenamiento, la consola ni la URL.
+- `lib/publicSalon.test.ts` (+7), `lib/publicBooking.test.ts` (+3) y `lib/permissions.test.ts`
+  (+2).
+- Tests existentes que cambiaron (dos, y por la razón que autoriza el pedido): la aserción
+  `deepEqual(model.sections, …)` de «buildLanding with full data…» y la de «…with empty
+  optional data…» ahora incluyen `deposit: false`, porque el campo aditivo `deposit` extiende
+  justamente esa forma. Ningún otro test se tocó.
+- Verificado en el navegador (Chromium con Playwright, API simulada, Vite en desarrollo con
+  StrictMode, 390 y 1280 px, 162 comprobaciones): landing con y sin `deposit` (sección, enlace
+  y monto por servicio desde `deposit_cents`), confirmación de la reserva con y sin `payment`
+  (monto, cuenta regresiva, «Pago simulado», «Pagar seña» y fragmento borrado), `/pagar` en sus
+  seis estados (vacío con las tres tarjetas, aprobada, rechazada, sin fondos, vencida y un
+  cobro ya decidido), `/pago-resultado` (pendiente con sondeo, pagado por sondeo, y el 404
+  verbatim), panel «Señas» en los tres roles (dueña edita, recepción lee con la vista previa,
+  profesional con el aviso y sin un solo pedido), guardar la política (un PUT y una relectura),
+  la frase del contrato con 9 %, «Cargar más» por cursor y el filtro por estado. Sin desborde
+  horizontal en ninguna de las pantallas y sin errores de consola propios.
+
+### 35.11 Riesgos y decisiones
+
+- Las frases que el pedido cita van TAL CUAL, sin acentos («Sena del 30% - pago simulado»,
+  «Descuenta la sena cobrada al cobrar el turno en caja», «PAGO SIMULADO - no se cobra dinero
+  real») y los mensajes de la API se muestran como llegan. La copia PROPIA de las pantallas usa
+  «Seña» con eñe y acentos, como el resto de la aplicación: la página y su entrada de menú se
+  llaman «Señas» y la sección pública «Seña», mientras el contrato escribe «Senas» en el título
+  de la tarea.
+- El monto de la seña por servicio se pinta en la lista de servicios y no dentro de la tarjeta
+  de cada servicio: `landing/components/ServiceCard.tsx` no estaba entre las superficies
+  autorizadas de este trabajo. Queda como candidato si se quiere la línea dentro de la tarjeta.
+- La cuenta regresiva es del NAVEGADOR: un reloj adelantado puede mostrar «Vencido» antes de
+  tiempo. Quien decide es el servidor (la reserva se cancela por el barrido de D9), así que la
+  página solo informa.
+- Las dos páginas públicas muestran las fechas en la zona del VISITANTE (igual que los horarios
+  de la reserva pública) porque el payload del banco no trae la zona del salón; el panel, en
+  cambio, usa la zona del salón.
+- `/pago-resultado` corta a los 60 s aunque el pago pueda tardar más (D13-c): la confirmación
+  llega al salón por el callback, no a esta página, y recargar vuelve a consultar.
+- El service worker no tiene test automatizado (no hay runner para él); la exclusión de los
+  caminos de dinero se validó con `node --check` y leyendo el camino de `fetch`.
+- El POS no descuenta la seña sola (D1, fuera de alcance): la lista lo recuerda en pantalla y
+  el panel no suma las señas a la caja, a la nómina ni a la ganancia.

@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   buildLanding,
+  depositSentence,
+  holdLabel,
   instagramUrl,
   landingFailure,
   landingStateAfterFailure,
@@ -9,6 +11,7 @@ import {
   LANDING_NOT_FOUND_MESSAGE,
   LANDING_OFFLINE_NOTICE,
   loyaltySentence,
+  refundLabel,
   normalizePublicSalon,
   telHref,
   toLandingServices,
@@ -248,6 +251,7 @@ test('buildLanding with full data renders every section from the API and nothing
     team: true,
     packages: true,
     loyalty: false,
+    deposit: false,
     gallery: true,
   })
   assert.equal(model.canBook, true)
@@ -285,6 +289,7 @@ test('buildLanding with empty optional data hides every section that has no data
     team: false,
     packages: false,
     loyalty: false,
+    deposit: false,
     gallery: false,
   })
   assert.deepEqual(
@@ -473,4 +478,109 @@ test('the loyalty section does not depend on any other section (a salon with onl
   assert.equal(model.sections.services, false)
   assert.equal(model.sections.loyalty, true)
   assert.deepEqual(model.nav.map((link) => link.href), ['#fidelidad'])
+})
+
+// ---------- F11 (D11): public deposit (sena) and its notice ----------
+
+test('depositSentence is the verbatim sentence of the preview «Sena del X% - pago simulado»', () => {
+  assert.equal(depositSentence(30), 'Sena del 30% - pago simulado')
+  assert.equal(depositSentence(10), 'Sena del 10% - pago simulado')
+})
+
+test('holdLabel and refundLabel say the policy in plain Spanish', () => {
+  assert.equal(holdLabel(30), 'El turno queda guardado 30 minutos.')
+  assert.equal(holdLabel(1), 'El turno queda guardado 1 minuto.')
+  assert.equal(refundLabel(0), 'Sin devolución.')
+  assert.equal(refundLabel(1), 'Devolución hasta 1 hora antes del turno.')
+  assert.equal(refundLabel(24), 'Devolución hasta 24 horas antes del turno.')
+  assert.equal(refundLabel(168), 'Devolución hasta 168 horas antes del turno.')
+})
+
+test('normalizePublicSalon reads `deposit` {percent, hold_minutes, refund_hours, simulated}', () => {
+  const salon = parsed({
+    ...full,
+    deposit: { percent: 30, hold_minutes: 30, refund_hours: 24, simulated: true },
+  })
+  assert.deepEqual(salon.deposit, {
+    percent: 30,
+    holdMinutes: 30,
+    refundHours: 24,
+    simulated: true,
+  })
+})
+
+test('normalizePublicSalon leaves `deposit` null when it is null, missing or unusable (never invented)', () => {
+  assert.equal(parsed({ ...full, deposit: null }).deposit, null)
+  assert.equal(parsed(full).deposit, null)
+  assert.equal(parsed(payload).deposit, null)
+  for (const bad of [
+    'nope',
+    [],
+    {},
+    { percent: 30, hold_minutes: 30 },
+    { percent: 9, hold_minutes: 30, refund_hours: 24 },
+    { percent: 101, hold_minutes: 30, refund_hours: 24 },
+    { percent: 30.5, hold_minutes: 30, refund_hours: 24 },
+    { percent: 30, hold_minutes: 4, refund_hours: 24 },
+    { percent: 30, hold_minutes: 30, refund_hours: -1 },
+    { percent: '30', hold_minutes: 30, refund_hours: 24 },
+  ]) {
+    assert.equal(parsed({ ...full, deposit: bad }).deposit, null, JSON.stringify(bad))
+  }
+  // The borders of the contract are valid.
+  assert.equal(
+    parsed({ ...full, deposit: { percent: 10, hold_minutes: 5, refund_hours: 0 } }).deposit?.percent,
+    10,
+  )
+  assert.equal(
+    parsed({ ...full, deposit: { percent: 100, hold_minutes: 120, refund_hours: 168 } }).deposit
+      ?.refundHours,
+    168,
+  )
+})
+
+test('normalizePublicSalon reads the per-service `deposit_cents` the server computed', () => {
+  const salon = normalizePublicSalon({
+    ...payload,
+    services: [
+      { id: 'svc-1', name: 'Corte', duration_min: 45, price_cents: 42000, deposit_cents: 12600 },
+      { id: 'svc-2', name: 'Keratina', duration_min: 120, price_cents: 150000 },
+      { id: 'svc-3', name: 'Peinado', duration_min: 60, price_cents: 75000, deposit_cents: 0 },
+    ],
+  })
+  assert.ok(salon)
+  assert.equal(salon.services[0]?.depositCents, 12600)
+  // A service without a deposit says nothing: the card hides the line.
+  assert.equal('depositCents' in (salon.services[1] ?? {}), false)
+  // A zero is not a deposit.
+  assert.equal('depositCents' in (salon.services[2] ?? {}), false)
+  assert.equal(toLandingServices(salon.services)[0]?.depositCents, 12600)
+  assert.equal(toLandingServices(salon.services)[1]?.depositCents, null)
+})
+
+test('buildLanding shows the deposit section ONLY from the payload `deposit`, wired into sections and nav', () => {
+  const model = buildLanding(
+    parsed({ ...full, deposit: { percent: 30, hold_minutes: 30, refund_hours: 24, simulated: true } }),
+  )
+  assert.equal(model.sections.deposit, true)
+  assert.deepEqual(model.deposit, {
+    percent: 30,
+    holdMinutes: 30,
+    refundHours: 24,
+    simulated: true,
+    sentence: 'Sena del 30% - pago simulado',
+    holdLabel: 'El turno queda guardado 30 minutos.',
+    refundLabel: 'Devolución hasta 24 horas antes del turno.',
+  })
+  assert.deepEqual(model.nav.find((link) => link.label === 'Seña'), { href: '#sena', label: 'Seña' })
+})
+
+test('buildLanding without `deposit` renders no deposit section and no nav link', () => {
+  for (const raw of [full, { ...full, deposit: null }]) {
+    const model = buildLanding(parsed(raw))
+    assert.equal(model.sections.deposit, false)
+    assert.equal(model.deposit, null)
+    assert.equal(model.nav.some((link) => link.href === '#sena'), false)
+    assert.equal(JSON.stringify(model).includes('pago simulado'), false)
+  }
 })

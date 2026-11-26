@@ -4,9 +4,11 @@ import {
   activeRole,
   canAssignRole,
   canCreateClient,
+  canEditDepositPolicy,
   canEditSettings,
   canManageBooking,
   canManageMembers,
+  canViewDeposits,
   isManager,
   panelHomePath,
   roleLabel,
@@ -87,4 +89,22 @@ test('client files are created by owner, admin and reception only', () => {
   assert.equal(canCreateClient('reception'), true)
   assert.equal(canCreateClient('professional'), false)
   assert.equal(canCreateClient(null), false)
+})
+
+// ---------- F11 (D3, D10, D13): deposits (senas) ----------
+
+test('deposits are read by owner, admin and reception; a professional never', () => {
+  assert.equal(canViewDeposits('owner'), true)
+  assert.equal(canViewDeposits('admin'), true)
+  assert.equal(canViewDeposits('reception'), true)
+  assert.equal(canViewDeposits('professional'), false)
+  assert.equal(canViewDeposits(null), false)
+})
+
+test('the deposit policy is edited by owner and admin only (reception reads it)', () => {
+  assert.equal(canEditDepositPolicy('owner'), true)
+  assert.equal(canEditDepositPolicy('admin'), true)
+  assert.equal(canEditDepositPolicy('reception'), false)
+  assert.equal(canEditDepositPolicy('professional'), false)
+  assert.equal(canEditDepositPolicy(null), false)
 })

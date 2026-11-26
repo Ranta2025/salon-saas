@@ -17,6 +17,12 @@ export type PublicService = {
   priceCents: number
   /** Present only when the salon wrote one; the page hides the line otherwise. */
   description?: string
+  /**
+   * `deposit_cents` (F11, D11): the deposit the server computed for this service with
+   * the formula of D4. Present only when it is a usable amount: the page prints it and
+   * NEVER recomputes it.
+   */
+  depositCents?: number
 }
 
 /** Salon block. Every field after `name` is present only when the salon filled it. */
@@ -61,12 +67,29 @@ export type PublicLoyalty = {
   rewardServiceName: string
 }
 
+/**
+ * Deposit policy as the public payload sends it (F11, D11): the rule, never an
+ * amount of a service (that travels per service, in `deposit_cents`).
+ */
+export type PublicDeposit = {
+  percent: number
+  holdMinutes: number
+  refundHours: number
+  /** The gateway is the simulated bank: the page says so (D11, D13). */
+  simulated: boolean
+}
+
 export type PublicSalon = {
   salon: PublicSalonInfo
   services: PublicService[]
   team: PublicTeamMember[]
   gallery: PublicPhoto[]
   packages: PublicPackage[]
+  /**
+   * `deposit` (F11, D11): the deposit policy of the salon, present ONLY when it is on.
+   * `null` when the API did not send it: the landing renders nothing about deposits.
+   */
+  deposit?: PublicDeposit | null
   /**
    * `loyalty` (F9, D8): `null` when the API sends none, `null` or something unusable.
    * Optional so code that builds a payload by hand (the profile preview) needs no
@@ -123,6 +146,12 @@ function normalizeService(value: unknown): PublicService | null {
   if (description !== '') {
     service.description = description
   }
+  // The deposit amount comes from the server (D11): a zero or a missing field means
+  // «this service has no deposit» and the card hides the line.
+  const depositCents = integer(value['deposit_cents'])
+  if (depositCents !== null && depositCents >= 1) {
+    service.depositCents = depositCents
+  }
   return service
 }
 
@@ -175,6 +204,56 @@ const MAX_LOYALTY_VISITS = 50
 /** Verbatim public sentence of the program (D8): «Cada N visitas, <servicio> de regalo». */
 export function loyaltySentence(visitsRequired: number, serviceName: string): string {
   return `Cada ${visitsRequired} visitas, ${serviceName} de regalo`
+}
+
+/** Bounds of the deposit policy (F11, D2): percent 10..100, hold 5..120, refund 0..168. */
+const MIN_DEPOSIT_PERCENT = 10
+const MAX_DEPOSIT_PERCENT = 100
+const MIN_HOLD_MINUTES = 5
+const MAX_HOLD_MINUTES = 120
+const MIN_REFUND_HOURS = 0
+const MAX_REFUND_HOURS = 168
+
+/** The sentence of the preview and of the landing (F11, D11/D13), verbatim. */
+export function depositSentence(percent: number): string {
+  return `Sena del ${percent}% - pago simulado`
+}
+
+/** «El turno queda guardado 30 minutos.» */
+export function holdLabel(minutes: number): string {
+  return `El turno queda guardado ${minutes} ${minutes === 1 ? 'minuto' : 'minutos'}.`
+}
+
+/** «Devolución hasta 24 horas antes del turno.» / «Sin devolución.» */
+export function refundLabel(hours: number): string {
+  if (hours <= 0) {
+    return 'Sin devolución.'
+  }
+  return `Devolución hasta ${hours} ${hours === 1 ? 'hora' : 'horas'} antes del turno.`
+}
+
+/** `deposit` of the public payload; anything that is not a usable policy is `null`. */
+function normalizeDeposit(value: unknown): PublicDeposit | null {
+  if (!isRecord(value)) {
+    return null
+  }
+  const percent = integer(value['percent'])
+  const hold = integer(value['hold_minutes'])
+  const refund = integer(value['refund_hours'])
+  if (
+    percent === null ||
+    percent < MIN_DEPOSIT_PERCENT ||
+    percent > MAX_DEPOSIT_PERCENT ||
+    hold === null ||
+    hold < MIN_HOLD_MINUTES ||
+    hold > MAX_HOLD_MINUTES ||
+    refund === null ||
+    refund < MIN_REFUND_HOURS ||
+    refund > MAX_REFUND_HOURS
+  ) {
+    return null
+  }
+  return { percent, holdMinutes: hold, refundHours: refund, simulated: value['simulated'] === true }
 }
 
 /** `loyalty` of the public payload; anything that is not a usable rule is `null`. */
@@ -244,6 +323,7 @@ export function normalizePublicSalon(raw: unknown, apiBase = ''): PublicSalon | 
     gallery: rowsOf(raw['gallery'], (row) => normalizePhoto(row, apiBase)),
     packages: rowsOf(raw['packages'], normalizePackage),
     loyalty: normalizeLoyalty(raw['loyalty']),
+    deposit: normalizeDeposit(raw['deposit']),
     hours: hours.length > 0 ? hours : null,
   }
 }
@@ -292,6 +372,8 @@ export type LandingService = {
   priceCents: number
   /** `null` when the salon wrote none: the card hides the line. */
   description: string | null
+  /** `deposit_cents` of the server (F11, D11); `null` = this service has no deposit. */
+  depositCents: number | null
 }
 
 export function toLandingServices(services: readonly PublicService[]): LandingService[] {
@@ -301,6 +383,7 @@ export function toLandingServices(services: readonly PublicService[]): LandingSe
     durationMin: service.durationMin,
     priceCents: service.priceCents,
     description: service.description ?? null,
+    depositCents: service.depositCents ?? null,
   }))
 }
 
@@ -318,6 +401,23 @@ export type LandingLoyalty = {
   rewardServiceName: string
   /** `Cada 10 visitas, Corte de regalo`. */
   sentence: string
+}
+
+/**
+ * Section «Seña» of the landing (F11, D11). Rendered ONLY when the payload carries
+ * `deposit`; every sentence of the section comes from those four numbers.
+ */
+export type LandingDeposit = {
+  percent: number
+  holdMinutes: number
+  refundHours: number
+  simulated: boolean
+  /** `Sena del 30% - pago simulado`. */
+  sentence: string
+  /** «El turno queda guardado 30 minutos.» */
+  holdLabel: string
+  /** «Devolución hasta 24 horas antes del turno.» */
+  refundLabel: string
 }
 
 export type NavLink = { href: string; label: string }
@@ -338,6 +438,8 @@ export type LandingModel = {
   packages: LandingPackage[]
   /** `null` = the salon has no active program: the section is not rendered. */
   loyalty: LandingLoyalty | null
+  /** `null` = the salon charges no deposit: the section is not rendered (F11, D11). */
+  deposit: LandingDeposit | null
   /** First gallery photo, used behind the hero; null = a hero without photo. */
   heroPhoto: PublicPhoto | null
   sections: {
@@ -345,6 +447,7 @@ export type LandingModel = {
     team: boolean
     packages: boolean
     loyalty: boolean
+    deposit: boolean
     gallery: boolean
   }
   /** The booking form needs at least one service. */
@@ -368,11 +471,13 @@ export function buildLanding(data: PublicSalon): LandingModel {
   const services = toLandingServices(data.services)
   const gallery = data.gallery
   const program = data.loyalty ?? null
+  const policy = data.deposit ?? null
   const sections = {
     services: services.length > 0,
     team: data.team.length > 0,
     packages: data.packages.length > 0,
     loyalty: program !== null,
+    deposit: policy !== null,
     gallery: gallery.length > 0,
   }
   const nav: NavLink[] = []
@@ -387,6 +492,9 @@ export function buildLanding(data: PublicSalon): LandingModel {
   }
   if (sections.loyalty) {
     nav.push({ href: '#fidelidad', label: 'Fidelidad' })
+  }
+  if (sections.deposit) {
+    nav.push({ href: '#sena', label: 'Seña' })
   }
   if (sections.gallery) {
     nav.push({ href: '#galeria', label: 'Galería' })
@@ -422,6 +530,18 @@ export function buildLanding(data: PublicSalon): LandingModel {
             visitsRequired: program.visitsRequired,
             rewardServiceName: program.rewardServiceName,
             sentence: loyaltySentence(program.visitsRequired, program.rewardServiceName),
+          },
+    deposit:
+      policy === null
+        ? null
+        : {
+            percent: policy.percent,
+            holdMinutes: policy.holdMinutes,
+            refundHours: policy.refundHours,
+            simulated: policy.simulated,
+            sentence: depositSentence(policy.percent),
+            holdLabel: holdLabel(policy.holdMinutes),
+            refundLabel: refundLabel(policy.refundHours),
           },
     heroPhoto: gallery[0] ?? null,
     sections,

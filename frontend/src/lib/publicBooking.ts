@@ -10,6 +10,7 @@
 import { ApiError, NetworkError, request } from './api.ts'
 import { normalizeEmail } from './email.ts'
 import { newClientOpId } from './offlineQueue.ts'
+import { normalizeBookingPayment, type BookingPayment } from './deposits.ts'
 
 export type AvailabilitySlot = {
   professionalId: string
@@ -56,6 +57,12 @@ export type PublicBookingCreated = {
   startsAt: string
   endsAt: string
   status: string
+  /**
+   * `payment` of the 201 (F11, D8): present ONLY when the deposit policy is on and the
+   * amount is greater than zero. Without it the confirmation screen is exactly as it
+   * was before F11, so the field is optional.
+   */
+  payment?: BookingPayment
 }
 
 export type BookingFailureKind = 'slot_taken' | 'rate_limited' | 'validation' | 'network' | 'unknown'
@@ -149,13 +156,19 @@ export function normalizePublicBooking(raw: unknown): PublicBookingCreated | nul
   if (id === '') {
     return null
   }
-  return {
+  const booking: PublicBookingCreated = {
     id,
     professionalId: text(source['professional_id']),
     startsAt: text(source['starts_at']),
     endsAt: text(source['ends_at']),
     status: text(source['status']) || 'booked',
   }
+  // F11 (D8): additive, and only when the server sent a payment the page can show.
+  const payment = normalizeBookingPayment(raw['payment'])
+  if (payment) {
+    booking.payment = payment
+  }
+  return booking
 }
 
 /** The visitor's own zone: the slots are shown in local time, not in UTC. */

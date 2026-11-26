@@ -6,6 +6,10 @@
  * - EXCEPT GET /api/v1/public/: the public page (prices, hours, gallery) goes
  *   straight to the network and is never cached, so it can never show old
  *   prices without saying so (F16, D6); the page shows its own offline notice
+ * - EXCEPT the money paths of F11 (D13-d): /api/v1/simbank/ (the simulated bank),
+ *   /api/v1/payments/ (the callback of the gateway) and /api/v1/public/deposits/
+ *   (the state of a payment) are never cached nor answered from a cache, with any
+ *   method: a payment is online only and a stale answer would lie about money
  * - never intercepts or caches non-GET requests: mutations are queued by the app
  *   (`src/lib/offlineQueue.ts`) so the server keeps deduplicating by client_op_id
  * - cache-first for same-origin static assets (JS/CSS/fonts/images)
@@ -13,7 +17,7 @@
 
 // Bump this value on every deploy that changes the worker or the precache list:
 // `activate` deletes every cache that is not part of the current version.
-const VERSION = 'salon-v4'
+const VERSION = 'salon-v5'
 const SHELL_CACHE = `${VERSION}-shell`
 const STATIC_CACHE = `${VERSION}-static`
 const API_CACHE = `${VERSION}-api`
@@ -91,10 +95,6 @@ async function precacheShell() {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event
-  // Mutations always go straight to the network; the offline queue owns retries.
-  if (request.method !== 'GET') {
-    return
-  }
 
   let url
   try {
@@ -105,6 +105,18 @@ self.addEventListener('fetch', (event) => {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     return
   }
+
+  // Money of F11 (D13-d): never intercepted, with ANY method. Neither a cached GET
+  // nor a replay of a payment is acceptable: these pages are online only.
+  if (isNeverCachedApiPath(url.pathname)) {
+    return
+  }
+
+  // Mutations always go straight to the network; the offline queue owns retries.
+  if (request.method !== 'GET') {
+    return
+  }
+
   if (url.pathname === '/api/v1/ws') {
     return
   }
@@ -131,6 +143,20 @@ self.addEventListener('fetch', (event) => {
 /** `GET /api/v1/public/...`: anonymous salon data that must never come from a cache. */
 function isPublicApiPath(pathname) {
   return pathname === '/api/v1/public' || pathname.startsWith('/api/v1/public/')
+}
+
+/**
+ * Money paths (F11, D13-d): the simulated bank, the callback of the payment gateway
+ * and the public state of a deposit. They are never cached, never answered from a
+ * cache and never intercepted, whatever the method (`/api/v1/public/deposits/` is
+ * also covered by `isPublicApiPath`, and it is named here on purpose).
+ */
+function isNeverCachedApiPath(pathname) {
+  return (
+    pathname.startsWith('/api/v1/simbank/') ||
+    pathname.startsWith('/api/v1/payments/') ||
+    pathname.startsWith('/api/v1/public/deposits/')
+  )
 }
 
 async function networkFirstApi(request) {

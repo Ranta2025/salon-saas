@@ -13,6 +13,7 @@ import {
   type PublicSalon,
 } from '../lib/publicSalon'
 import { BookingCta } from './components/BookingCta'
+import { DepositSection } from './components/DepositSection'
 import { GallerySection } from './components/GallerySection'
 import { Hero } from './components/Hero'
 import { LoyaltySection } from './components/LoyaltySection'
@@ -164,6 +165,8 @@ export function LandingPage() {
         {model.sections.team ? <TeamSection team={model.team} /> : null}
         {model.sections.packages ? <PackagesSection packages={model.packages} /> : null}
         {model.loyalty !== null ? <LoyaltySection loyalty={model.loyalty} /> : null}
+        {/* F11 (D11): driven only by the payload `deposit`; null renders nothing. */}
+        {model.deposit !== null ? <DepositSection deposit={model.deposit} /> : null}
         {model.sections.gallery ? (
           <GallerySection photos={model.gallery} salonName={model.name} />
         ) : null}

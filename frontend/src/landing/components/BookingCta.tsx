@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { PhoneInput } from '../../components/PhoneInput'
 import { toDateInputValue } from '../../lib/datetime'
 import {
@@ -21,6 +22,11 @@ import {
   type BookingFailure,
   type PublicBookingCreated,
 } from '../../lib/publicBooking'
+import {
+  depositPaymentSummary,
+  paymentTarget,
+  type BookingPayment,
+} from '../../lib/deposits'
 import { whatsappUrl, type LandingModel, type LandingService } from '../../lib/publicSalon'
 import { weekSummary } from '../../lib/weeklyHours'
 import { PUBLIC_HOURS_FALLBACK } from '../content'
@@ -39,6 +45,74 @@ function longDate(dateValue: string): string {
     month: 'long',
     timeZone: 'UTC',
   }).format(date)
+}
+
+/**
+ * Deposit block of the confirmation screen (F11, D8, D13-b): amount, countdown of the
+ * hold computed from `expires_at`, the notice of the simulated payment and the button
+ * that opens the bank. It renders NOTHING when the 201 carried no `payment`, so the
+ * screen of a salon without deposits is exactly the one of before.
+ */
+function PaymentStep({ payment }: { payment: BookingPayment }) {
+  const navigate = useNavigate()
+  // The countdown ticks while the hold lasts; once it is over the paragraph says so.
+  const [now, setNow] = useState(() => new Date())
+  const summary = depositPaymentSummary(payment, now)
+
+  useEffect(() => {
+    if (summary.expired) {
+      return
+    }
+    const timer = window.setInterval(() => setNow(new Date()), 1_000)
+    return () => window.clearInterval(timer)
+  }, [summary.expired])
+
+  // The server builds an absolute `pay_url`: same origin becomes a path plus fragment
+  // (the SPA navigates and the charge id stays in the fragment), another origin is a
+  // plain external link. Nothing usable means no button.
+  const target = paymentTarget(payment.payUrl, window.location.origin)
+
+  return (
+    <div className="booking__deposit" aria-labelledby="booking-deposit-title">
+      <h4 id="booking-deposit-title">Seña para confirmar el turno</h4>
+      <dl className="booking__summary">
+        <div>
+          <dt>Seña</dt>
+          <dd>{summary.amountLabel}</dd>
+        </div>
+        <div>
+          <dt>Tenés tiempo hasta</dt>
+          <dd>
+            {summary.countdown === null ? (
+              'el plazo que indica el salón'
+            ) : summary.expired ? (
+              'el plazo venció'
+            ) : (
+              <strong aria-live="polite">{summary.countdown}</strong>
+            )}
+          </dd>
+        </div>
+      </dl>
+      {summary.notice !== null ? <p className="booking__deposit-notice">{summary.notice}</p> : null}
+      <p className="booking__note">
+        Si la seña no se paga dentro del plazo, el turno se cancela solo y el horario vuelve a
+        quedar libre.
+      </p>
+      {target === null ? (
+        <p className="booking__note">
+          El salón no nos dio un enlace de pago válido. Escríbenos y lo resolvemos.
+        </p>
+      ) : target.kind === 'path' ? (
+        <button type="button" className="btn btn--gold" onClick={() => navigate(target.path)}>
+          Pagar seña
+        </button>
+      ) : (
+        <a className="btn btn--gold" href={target.href} target="_blank" rel="noreferrer">
+          Pagar seña
+        </a>
+      )}
+    </div>
+  )
 }
 
 type Confirmation = {
@@ -388,6 +462,10 @@ export function BookingCta({ slug, services, preselected, model }: BookingCtaPro
                   <dd className="booking__summary-id">{confirmation.booking.id}</dd>
                 </div>
               </dl>
+              {/* F11 (D13-b): only when the 201 of the booking carried `payment`. */}
+              {confirmation.booking.payment ? (
+                <PaymentStep payment={confirmation.booking.payment} />
+              ) : null}
               {confirmation.email !== '' ? (
                 <p className="booking__note">
                   Te enviamos la confirmación a <strong>{confirmation.email}</strong>. También te

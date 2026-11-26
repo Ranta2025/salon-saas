@@ -203,3 +203,21 @@ export function canEditLoyaltyProgram(role: Role | null | undefined): boolean {
 export function canViewAuditLog(role: Role | null | undefined): boolean {
   return isManager(role)
 }
+
+/**
+ * Deposits of the salon (contract F11, D10, D13): owner, admin and reception read the
+ * list, because reception is the one that discounts the paid deposit at the register.
+ * A professional gets 403 from the server, so the page shows `DepositNotice` and the
+ * menu entry stays hidden.
+ */
+export function canViewDeposits(role: Role | null | undefined): boolean {
+  return isManager(role) || role === 'reception'
+}
+
+/**
+ * The deposit policy (`PUT /deposit-policy`, D3) is written by owner and admin only.
+ * Reception reads it and sees the preview of what the client gets.
+ */
+export function canEditDepositPolicy(role: Role | null | undefined): boolean {
+  return isManager(role)
+}

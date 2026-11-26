@@ -5,6 +5,7 @@ import { canOpenMyAgenda } from '../lib/myAgenda'
 import { canViewOwnCommissions } from '../lib/payroll'
 import {
   activeRole,
+  canViewDeposits,
   canViewInventory,
   canViewLoyalty,
   canViewPackages,
@@ -57,6 +58,11 @@ type NavEntry = {
    */
   loyaltyOnly?: boolean
   /**
+   * Deposits (contract F11, D3/D10): owner, admin and reception see the entry and the
+   * list; a professional gets the notice on the page.
+   */
+  depositsOnly?: boolean
+  /**
    * «Mi salón» (contract F16, D7): owner, admin and reception see the entry; a
    * professional does not and gets the notice on the page.
    */
@@ -76,6 +82,8 @@ const NAV: readonly NavEntry[] = [
   // F9: short label on purpose (three columns at 390 px); the page is titled
   // «Programa de fidelidad».
   { to: '/panel/fidelidad', label: 'Fidelidad', end: false, loyaltyOnly: true },
+  // F11: short label on purpose (three columns at 390 px); the page is titled «Señas».
+  { to: '/panel/senas', label: 'Señas', end: false, depositsOnly: true },
   // The label is short on purpose: five columns at 375 px keep every entry in
   // two rows (S-F2e-5). The page itself is titled «Equipamiento del salón».
   { to: '/panel/equipamiento', label: 'Puestos', end: false, managerOnly: true },
@@ -227,6 +235,9 @@ function ShellChrome() {
       return false
     }
     if (item.loyaltyOnly && role !== null && !canViewLoyalty(role)) {
+      return false
+    }
+    if (item.depositsOnly && role !== null && !canViewDeposits(role)) {
       return false
     }
     if (item.salonProfileOnly && role !== null && !canViewSalonProfile(role)) {
