@@ -941,3 +941,94 @@ func TestDepositService_Sweep_carrera_con_el_callback(t *testing.T) {
 		}
 	}
 }
+
+// F11 review R4-001: if the bank is off or unconfigured when the sweep must
+// refund, the deposit must NOT be closed as refunded (the money never went
+// back and the row would never be retried): it counts as a failure and stays
+// paid until the bank is back.
+func TestDepositService_Sweep_sin_banco_no_marca_devuelta(t *testing.T) {
+	e := newDepEnv(t)
+	e.seedPolicy(true, 30, 120, 24)
+	d := e.deposit(t, "b1", 50000, depClock.Add(48*time.Hour))
+	header, body := e.callback(domain.CallbackApproved, "ev-1", d.ChargeID, d.AmountCents)
+	if err := e.svc.ApplyCallback(header, body); err != nil {
+		t.Fatalf("pagar: %v", err)
+	}
+	e.bookings.setStatus("b1", domain.BookingCancelled)
+
+	e.gateway.mu.Lock()
+	e.gateway.enabled = false
+	e.gateway.mu.Unlock()
+	res, err := e.svc.Sweep(10)
+	if err != nil {
+		t.Fatalf("barrido: %v", err)
+	}
+	if res.Refunded != 0 || res.Failed != 1 {
+		t.Fatalf("barrido = %+v, quiero 0 reembolsadas y 1 fallida", res)
+	}
+	got, _ := e.deposits.FindByCharge(d.ChargeID)
+	if got.Status != domain.DepositPaid || got.SettledAt != nil {
+		t.Fatalf("sena = %+v, quiero paid sin cerrar", got)
+	}
+	if n := e.deposits.countEvents(domain.DepositEventRefunded); n != 0 {
+		t.Fatalf("eventos refunded = %d, quiero 0", n)
+	}
+
+	// Con el banco de vuelta el siguiente tick la devuelve de verdad.
+	e.gateway.mu.Lock()
+	e.gateway.enabled = true
+	e.gateway.mu.Unlock()
+	res, err = e.svc.Sweep(10)
+	if err != nil {
+		t.Fatalf("segundo barrido: %v", err)
+	}
+	if res.Refunded != 1 || e.gateway.refundCount() != 1 {
+		t.Fatalf("barrido = %+v, reembolsos = %d, quiero 1 y 1", res, e.gateway.refundCount())
+	}
+}
+
+// F11 review R4-002: a late payment must cancel the booking BEFORE the deposit
+// is closed as refunded, and a cancellation failure must come back as an error
+// (the bank retries): otherwise a refunded deposit would leave a `booked`
+// booking holding the slot forever and no sweep would ever see it again.
+func TestDepositService_ApplyCallback_pago_tardio_con_cancelacion_fallida_se_reintenta(t *testing.T) {
+	e := newDepEnv(t)
+	d := e.deposit(t, "b1", 50000, depClock.Add(48*time.Hour))
+	// El reloj pasa la espera y el barrido vence la sena, pero la cancelación del
+	// turno falla en ese tick: el turno sigue `booked`.
+	e.svc.Now = func() time.Time { return depClock.Add(time.Hour) }
+	e.policy.Now = e.svc.Now
+	e.bookings.fail = errors.New("la base no responde")
+	if _, err := e.svc.Sweep(10); err != nil {
+		t.Fatalf("barrido: %v", err)
+	}
+	if st := e.bookings.status("b1"); st != domain.BookingBooked {
+		t.Fatalf("precondición: el turno debía seguir booked, es %s", st)
+	}
+
+	header, body := e.callback(domain.CallbackApproved, "ev-late", d.ChargeID, d.AmountCents)
+	if err := e.svc.ApplyCallback(header, body); err == nil {
+		t.Fatal("el pago tardío con la cancelación fallida debe devolver error para que el banco reintente")
+	}
+	got, _ := e.deposits.FindByCharge(d.ChargeID)
+	if got.Status == domain.DepositRefunded {
+		t.Fatalf("la sena no puede cerrarse como devuelta si el turno quedó retenido: %+v", got)
+	}
+
+	// El banco reintenta con la base de vuelta: se cancela el turno, se cierra una
+	// sola vez y el reembolso del banco es idempotente por cargo.
+	e.bookings.fail = nil
+	if err := e.svc.ApplyCallback(header, body); err != nil {
+		t.Fatalf("reintento: %v", err)
+	}
+	if st := e.bookings.status("b1"); st != domain.BookingCancelled {
+		t.Fatalf("estado del turno = %s, quiero cancelled", st)
+	}
+	got, _ = e.deposits.FindByCharge(d.ChargeID)
+	if got.Status != domain.DepositRefunded || got.SettledAt == nil {
+		t.Fatalf("sena = %+v, quiero refunded", got)
+	}
+	if n := e.deposits.countEvents(domain.DepositEventLatePaymentRefunded); n != 1 {
+		t.Fatalf("eventos late_payment_refunded = %d, quiero 1", n)
+	}
+}

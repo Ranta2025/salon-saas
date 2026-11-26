@@ -245,7 +245,14 @@ func (s DepositService) applyApproved(callback domain.DepositCallback, deposit d
 		if err := s.Gateway.Refund(ctx, deposit.ChargeID, deposit.AmountCents, depositReasonLatePayment); err != nil {
 			return err
 		}
-		applied, err := s.Deposits.SettleLateRefund(domain.DepositSettlement{
+		// The booking must not keep holding the slot: cancel it BEFORE closing the
+		// deposit and fail the callback if that cannot be done, so the bank retries
+		// (refund is idempotent per charge, cancelling a closed booking is nil). A
+		// closed deposit would never be looked at again (F11 review R4-002).
+		if err := s.cancelBookingOrFail(deposit, callback.Now); err != nil {
+			return err
+		}
+		_, err := s.Deposits.SettleLateRefund(domain.DepositSettlement{
 			DepositID:   deposit.ID,
 			Status:      domain.DepositRefunded,
 			BankEventID: callback.EventID,
@@ -254,13 +261,6 @@ func (s DepositService) applyApproved(callback domain.DepositCallback, deposit d
 		})
 		if err != nil {
 			return err
-		}
-		if applied {
-			// El pago llegó cuando la sena ya no era pagable: el turno NO revive.
-			// Normalmente el barrido ya lo canceló; si el callback se adelantó al
-			// barrido, el cupo quedaría retenido por un turno `booked` cuya sena se
-			// devolvió, así que se cancela también acá (idempotente).
-			s.cancelBooking(deposit, callback.Now)
 		}
 		return nil
 	}
@@ -274,15 +274,13 @@ func (s DepositService) applyApproved(callback domain.DepositCallback, deposit d
 	return nil
 }
 
-// cancelBooking cancela el turno por el camino existente (D9). Best-effort: la
-// sena ya está devuelta y un fallo se loguea; el barrido lo reintenta.
-func (s DepositService) cancelBooking(deposit domain.BookingDeposit, now time.Time) {
+// cancelBookingOrFail cancels the booking through the existing path and returns
+// the error (nil when there is no canceller wired).
+func (s DepositService) cancelBookingOrFail(deposit domain.BookingDeposit, now time.Time) error {
 	if s.Bookings == nil {
-		return
+		return nil
 	}
-	if err := s.Bookings.CancelBooking(deposit.SalonID, deposit.BookingID, now); err != nil {
-		log.Printf("sena: cancelar el turno %s del salon %s: %v", deposit.BookingID, deposit.SalonID, err)
-	}
+	return s.Bookings.CancelBooking(deposit.SalonID, deposit.BookingID, now)
 }
 
 // sendConfirmation manda la confirmación de la reserva pagada por el MISMO camino
@@ -429,15 +427,21 @@ func (s DepositService) Sweep(limit int) (DepositSweepResult, error) {
 		}
 		status := domain.DepositCancelDecision(d.StartsAt, now, refundHours)
 		if status == domain.DepositRefunded {
-			if s.Gateway != nil && s.Gateway.Enabled() {
-				ctx, cancel := context.WithTimeout(context.Background(), depositGatewayTimeout)
-				err := s.Gateway.Refund(ctx, d.ChargeID, d.AmountCents, depositReasonCancelled)
-				cancel()
-				if err != nil {
-					log.Printf("sena: reembolsar el cargo del turno %s del salon %s: %v", d.BookingID, d.SalonID, err)
-					out.Failed++
-					continue
-				}
+			// Without a working bank the money cannot go back: never close the
+			// deposit as refunded (it would never be retried). It stays `paid` and
+			// counts as a failure until the bank is back (F11 review R4-001).
+			if s.Gateway == nil || !s.Gateway.Enabled() {
+				log.Printf("sena: sin banco para reembolsar el turno %s del salon %s", d.BookingID, d.SalonID)
+				out.Failed++
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), depositGatewayTimeout)
+			err := s.Gateway.Refund(ctx, d.ChargeID, d.AmountCents, depositReasonCancelled)
+			cancel()
+			if err != nil {
+				log.Printf("sena: reembolsar el cargo del turno %s del salon %s: %v", d.BookingID, d.SalonID, err)
+				out.Failed++
+				continue
 			}
 		}
 		detail := depositDetailRefund
