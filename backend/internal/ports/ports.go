@@ -1132,6 +1132,19 @@ type ChallengeIssuer interface {
 	ParseChallenge(token string) (string, error)
 }
 
+// ChallengeClaimsParser es la interfaz OPCIONAL de un ChallengeIssuer que además
+// sabe CUÁNDO se emitió el desafío (claim `ia`, milisegundos Unix, el mismo de
+// las sesiones). El login lo usa para rechazar un desafío emitido antes del
+// último cambio de contraseña (F15, D4). Es opcional a propósito: los fakes de
+// ChallengeIssuer de las pruebas existentes no cambian de firma y un emisor sin
+// ella se trata como «desafío sin `ia`» (vale solo si la contraseña nunca
+// cambió).
+type ChallengeClaimsParser interface {
+	// ParseChallengeClaims valida igual que ParseChallenge y devuelve además el
+	// instante de emisión.
+	ParseChallengeClaims(token string) (domain.SessionClaims, error)
+}
+
 // TwoFactorLoginGate es lo único que el login necesita saber del 2FA: si la
 // cuenta lo exige y, en ese caso, el desafío. required=false => login de
 // siempre (sin fila en user_totp o enabled=false).

@@ -300,6 +300,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	twoFactorSvc := app.TwoFactorService{
 		Repo: pgstore.TwoFactor{Pool: pool}, Users: users, Hasher: hasher, Tokens: tokens,
 		Challenges: tokens, Box: totpBox, Memberships: mems, Audit: auditSvc,
+		// F15 D4: un desafío emitido antes del último cambio de contraseña no se
+		// canjea (el 2FA no se toca, pero el reinicio mata lo que estaba a medias).
+		Gate: sessionGate,
 	}
 	authSvc.TwoFactor = twoFactorSvc
 	// Tx: el cierre corre en una transacción con advisory lock por salón (B-09).

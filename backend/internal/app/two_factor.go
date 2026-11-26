@@ -47,6 +47,11 @@ type TwoFactorService struct {
 	Box        domain.TOTPSecretBox
 	// Memberships da los salones ACTIVOS del usuario para la auditoría (D4).
 	Memberships ports.MembershipLister
+	// Gate es la compuerta de revocación de F15 (D4): cuándo cambió por última
+	// vez la contraseña. nil = sin compuerta (los tests unitarios y los entornos
+	// sin base no cambian). Con compuerta, un desafío emitido ANTES del último
+	// cambio de contraseña no se puede canjear.
+	Gate ports.SessionGate
 	// Audit: el servicio de auditoría existente (Events nil = apagada).
 	Audit AuditService
 	// Now es el reloj (nil = time.Now); solo para el paso TOTP: el bloqueo lo
@@ -217,14 +222,21 @@ func (s TwoFactorService) ChallengeFor(userID string) (string, bool, error) {
 }
 
 // VerifyLogin es el segundo paso del login: desafío + código (TOTP o de
-// recuperación) -> token de sesión. Desafío inválido, vencido o código malo dan
-// el MISMO 401; un usuario bloqueado, 429 aun con el código correcto.
+// recuperación) -> token de sesión. Desafío inválido, vencido, REVOCADO por un
+// reinicio de contraseña o código malo dan el MISMO 401; un usuario bloqueado,
+// 429 aun con el código correcto.
+//
+// El desafío se mira ANTES de verificar el código (F15, D4): un desafío revocado
+// no gasta un intento ni consume un paso TOTP.
 func (s TwoFactorService) VerifyLogin(challenge, code string) (string, error) {
-	userID, err := s.Challenges.ParseChallenge(challenge)
-	if err != nil || userID == "" {
+	claims, err := s.parseChallenge(challenge)
+	if err != nil {
 		return "", errTwoFactorChallenge
 	}
-	if err := s.verifyCode(userID, code); err != nil {
+	if !s.challengeValid(claims) {
+		return "", errTwoFactorChallenge
+	}
+	if err := s.verifyCode(claims.UserID, code); err != nil {
 		switch {
 		case errors.Is(err, errCodeMismatch), errors.Is(err, domain.ErrNotFound):
 			return "", errTwoFactorChallenge
@@ -233,7 +245,44 @@ func (s TwoFactorService) VerifyLogin(challenge, code string) (string, error) {
 		}
 		return "", err
 	}
-	return s.Tokens.Issue(userID)
+	return s.Tokens.Issue(claims.UserID)
+}
+
+// parseChallenge valida el desafío y devuelve su usuario y su instante de
+// emisión. Un emisor sin ParseChallengeClaims (interfaz opcional) se trata como
+// desafío sin `ia`, igual que un token de sesión anterior a F15.
+func (s TwoFactorService) parseChallenge(challenge string) (domain.SessionClaims, error) {
+	if p, ok := s.Challenges.(ports.ChallengeClaimsParser); ok {
+		c, err := p.ParseChallengeClaims(challenge)
+		if err != nil || c.UserID == "" {
+			return domain.SessionClaims{}, errTwoFactorChallenge
+		}
+		return c, nil
+	}
+	uid, err := s.Challenges.ParseChallenge(challenge)
+	if err != nil || uid == "" {
+		return domain.SessionClaims{}, errTwoFactorChallenge
+	}
+	return domain.SessionClaims{UserID: uid}, nil
+}
+
+// challengeValid aplica la compuerta de revocación al desafío: vale solo si la
+// contraseña nunca cambió o si se emitió (ia) DESPUÉS del último cambio. Se usa
+// la MISMA regla que las sesiones (domain.SessionValid).
+//
+// Sin compuerta (gate nil) nada cambia. Un fallo de la consulta FALLA CERRADO
+// (401 uniforme, nunca 500): si no se puede saber si la sesión sigue valiendo, no
+// vale.
+func (s TwoFactorService) challengeValid(c domain.SessionClaims) bool {
+	if s.Gate == nil {
+		return true
+	}
+	changedAt, err := s.Gate.PasswordChangedAt(c.UserID)
+	if err != nil {
+		log.Printf("2fa: la compuerta de revocación falló (%T): se rechaza el desafío", err)
+		return false
+	}
+	return domain.SessionValid(changedAt, c.IssuedAtMs, c.HasIA)
 }
 
 // verifyCode reserva el intento (bloqueo ANTES de comparar) y verifica el código.

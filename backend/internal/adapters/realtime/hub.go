@@ -45,6 +45,11 @@ const (
 	writeWait  = 10 * time.Second
 	pongWait   = 60 * time.Second
 	pingPeriod = 45 * time.Second
+	// sessionCheckPeriod es el intervalo POR DEFECTO de la re-verificación de la
+	// sesión de una conexión abierta (F15, D4). El contrato pide «como mucho
+	// cada 30 s»: un reinicio de contraseña cierra los sockets en ese plazo como
+	// máximo. Los tests lo bajan a milisegundos con HubSessionCheckInterval.
+	sessionCheckPeriod = 30 * time.Second
 )
 
 // Hub mantiene las conexiones agrupadas por salon_id.
@@ -52,7 +57,10 @@ type Hub struct {
 	tokens ports.TokenIssuer
 	// gate es la compuerta de revocación de sesiones de F15 (D4). nil = sin
 	// compuerta (comportamiento de siempre: solo firma y vencimiento).
-	gate           ports.SessionGate
+	gate ports.SessionGate
+	// sessionCheck es cada cuánto se vuelve a validar la sesión de una conexión
+	// ABIERTA (ver HubSessionCheckInterval).
+	sessionCheck   time.Duration
 	salons         ports.MembershipLister
 	allowedOrigins []string
 	upgrader       websocket.Upgrader
@@ -97,8 +105,20 @@ func originAllowed(origin string, allowed []string) bool {
 // socket la aplica ANTES del upgrade: un token emitido antes del último cambio de
 // contraseña no abre un websocket (401, el mismo del middleware de la API). Sin
 // esta opción el hub valida solo la firma y el vencimiento, como antes.
+//
+// Con la compuerta cableada el hub ADEMÁS la vuelve a consultar mientras la
+// conexión está abierta (cada HubSessionCheckInterval): un socket abierto antes
+// del reinicio de contraseña no sigue recibiendo eventos después.
 func HubSessionGate(gate ports.SessionGate) Option {
 	return func(h *Hub) { h.gate = gate }
+}
+
+// HubSessionCheckInterval fija cada cuánto se re-valida la sesión de una conexión
+// abierta (F15, D4). El valor por defecto son 30 s; las pruebas usan unos pocos
+// milisegundos. Un valor <= 0 vuelve al valor por defecto (nunca «nunca»: el
+// contrato pide «como mucho cada 30 s»).
+func HubSessionCheckInterval(d time.Duration) Option {
+	return func(h *Hub) { h.sessionCheck = d }
 }
 
 // client es una conexión suscripta. Solo el writeLoop la escribe.
@@ -114,9 +134,13 @@ func NewHub(tokens ports.TokenIssuer, salons ports.MembershipLister, opts ...Opt
 		salons:         salons,
 		allowedOrigins: ParseOrigins(DefaultWSOrigins),
 		rooms:          map[string]map[*client]struct{}{},
+		sessionCheck:   sessionCheckPeriod,
 	}
 	for _, opt := range opts {
 		opt(h)
+	}
+	if h.sessionCheck <= 0 {
+		h.sessionCheck = sessionCheckPeriod
 	}
 	h.upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
@@ -181,7 +205,9 @@ func (h *Hub) Rooms() map[string]int {
 
 // ServeWS es el handler de GET /api/v1/ws?token=<jwt>.
 // Autentica ANTES del upgrade: sin token válido y sin ningún salón no hay
-// socket (401/403 en JSON, igual que el resto de la API).
+// socket (401/403 en JSON, igual que el resto de la API). Con la compuerta
+// cableada, la sesión se vuelve a validar mientras la conexión está abierta (ver
+// writeLoop): el handshake no es la única defensa.
 func (h *Hub) ServeWS(c *gin.Context) {
 	token := c.Query("token")
 	if token == "" {
@@ -209,7 +235,7 @@ func (h *Hub) ServeWS(c *gin.Context) {
 	}
 	cl := &client{send: make(chan []byte, sendBuffer)}
 	h.join(cl, mems)
-	go h.writeLoop(conn, cl)
+	go h.writeLoop(conn, cl, token)
 	h.readLoop(conn, cl) // bloquea hasta que el cliente se va
 	h.leave(cl, mems)    // fuera de las rooms: ningún Publish puede escribirle
 	close(cl.send)       // ahora sí, el writeLoop termina
@@ -240,13 +266,27 @@ func (h *Hub) leave(cl *client, mems []domain.Membership) {
 }
 
 // writeLoop es el ÚNICO escritor de la conexión (gorilla no soporta escrituras
-// concurrentes). Manda ping para detectar conexiones muertas.
-func (h *Hub) writeLoop(conn *websocket.Conn, cl *client) {
+// concurrentes). Manda ping para detectar conexiones muertas y, si hay compuerta
+// de revocación, vuelve a validar la sesión cada `sessionCheck` (F15, D4): un
+// socket abierto antes del reinicio de contraseña no sigue recibiendo eventos.
+//
+// Los dos tickers se detienen SIEMPRE al salir (defer): la conexión no deja
+// goroutines ni tickers vivos apenas el socket se cierra.
+func (h *Hub) writeLoop(conn *websocket.Conn, cl *client, token string) {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
 		_ = conn.Close()
 	}()
+	// Sin compuerta no hay nada que revocar: ningún ticker extra (el
+	// comportamiento de siempre queda intacto).
+	var recheck *time.Ticker
+	var recheckC <-chan time.Time
+	if h.gate != nil {
+		recheck = time.NewTicker(h.sessionCheck)
+		defer recheck.Stop()
+		recheckC = recheck.C
+	}
 	for {
 		select {
 		case msg, ok := <-cl.send:
@@ -262,8 +302,22 @@ func (h *Hub) writeLoop(conn *websocket.Conn, cl *client) {
 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
+		case <-recheckC:
+			if !h.sessionAlive(token) {
+				return // mismo camino de cierre que un ping fallido
+			}
 		}
 	}
+}
+
+// sessionAlive repite la MISMA autenticación del handshake (app.AuthenticateSession):
+// firma, método, vencimiento, tipo y compuerta de revocación. false = la sesión ya
+// no vale (contraseña cambiada después del `ia`, token sin `ia` con contraseña
+// cambiada, token vencido) o la consulta falló: se cierra la conexión. Falla
+// CERRADO, igual que el handshake.
+func (h *Hub) sessionAlive(token string) bool {
+	userID, err := app.AuthenticateSession(h.tokens, h.gate, token)
+	return err == nil && userID != ""
 }
 
 // readLoop consume lo que manda el cliente. El canal es de ida: no hay comandos

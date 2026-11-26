@@ -3,6 +3,7 @@ package security
 import (
 	"math"
 
+	"github.com/golang-jwt/jwt/v5"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -31,10 +32,21 @@ func (j JWTIssuer) ParseSession(token string) (domain.SessionClaims, error) {
 		return domain.SessionClaims{}, err
 	}
 	out := domain.SessionClaims{UserID: sub}
-	if raw, ok := claims["ia"].(float64); ok && !math.IsNaN(raw) && !math.IsInf(raw, 0) && raw >= 0 && raw < 1<<53 {
-		out.IssuedAtMs, out.HasIA = int64(raw), true
-	}
+	out.IssuedAtMs, out.HasIA = issuedAtMsOf(claims)
 	return out, nil
+}
+
+// issuedAtMsOf lee el claim `ia` (milisegundos Unix) de un token YA validado.
+// Solo cuenta un número finito, no negativo y dentro del rango exacto de un
+// entero de 53 bits; cualquier otra cosa es «sin ia» (vale solo mientras la
+// contraseña nunca cambió). Lo comparten la sesión y el desafío de 2FA: el
+// mismo claim, la misma lectura.
+func issuedAtMsOf(claims jwt.MapClaims) (int64, bool) {
+	raw, ok := claims["ia"].(float64)
+	if !ok || math.IsNaN(raw) || math.IsInf(raw, 0) || raw < 0 || raw >= 1<<53 {
+		return 0, false
+	}
+	return int64(raw), true
 }
 
 var _ ports.SessionTokenParser = JWTIssuer{}

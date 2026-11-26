@@ -116,3 +116,85 @@ func TestParseSession_rejects(t *testing.T) {
 	}
 	_ = domain.ErrUnauthorized
 }
+
+// F15 (D4): el DESAFÍO de 2FA lleva el MISMO `ia` que la sesión (milisegundos
+// Unix del instante de emisión). Sin él no se puede saber si se emitió antes del
+// último cambio de contraseña y el login lo tendría que aceptar siempre.
+func TestChallengeCarriesIssuedAtInMilliseconds(t *testing.T) {
+	j := JWTIssuer{Secret: "test-secret"}
+	before := time.Now().UnixMilli()
+	ch, err := j.IssueChallenge("u1")
+	after := time.Now().UnixMilli()
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := jwt.MapClaims{}
+	if _, err := jwt.ParseWithClaims(ch, claims, func(*jwt.Token) (any, error) { return []byte("test-secret"), nil }); err != nil {
+		t.Fatal(err)
+	}
+	ia, ok := claims["ia"].(float64)
+	if !ok {
+		t.Fatalf("el desafío no trae ia: %v", claims)
+	}
+	if int64(ia) < before || int64(ia) > after {
+		t.Errorf("ia=%d fuera de [%d,%d]: no es el instante de emisión en ms", int64(ia), before, after)
+	}
+	if claims["typ"] != "2fa" || claims["sub"] != "u1" {
+		t.Errorf("el resto de los claims no cambia: %v", claims)
+	}
+	c, err := j.ParseChallengeClaims(ch)
+	if err != nil || c.UserID != "u1" || !c.HasIA || c.IssuedAtMs != int64(ia) {
+		t.Fatalf("ParseChallengeClaims: %+v %v", c, err)
+	}
+	// ParseChallenge (la firma de siempre) sigue devolviendo el sub.
+	if sub, err := j.ParseChallenge(ch); err != nil || sub != "u1" {
+		t.Fatalf("ParseChallenge: %q %v", sub, err)
+	}
+}
+
+// Un desafío emitido por la versión ANTERIOR (sin `ia`) se puede leer: HasIA=false.
+// El login lo acepta solo si la contraseña nunca cambió.
+func TestParseChallengeClaims_withoutIA(t *testing.T) {
+	j := JWTIssuer{Secret: "test-secret"}
+	exp := time.Now().Add(time.Minute).Unix()
+	old := rawToken(t, "test-secret", jwt.MapClaims{"sub": "u1", "typ": "2fa", "exp": exp})
+	c, err := j.ParseChallengeClaims(old)
+	if err != nil || c.UserID != "u1" || c.HasIA || c.IssuedAtMs != 0 {
+		t.Fatalf("desafío sin ia: %+v %v", c, err)
+	}
+	// Un `ia` que no es número tampoco cuenta.
+	weird := rawToken(t, "test-secret", jwt.MapClaims{"sub": "u1", "typ": "2fa", "ia": "123", "exp": exp})
+	if c, err := j.ParseChallengeClaims(weird); err != nil || c.HasIA {
+		t.Fatalf("ia no numérico: %+v %v", c, err)
+	}
+}
+
+// Las MISMAS exigencias que ParseChallenge: firma, método, vencimiento, sub y
+// typ EXACTO "2fa".
+func TestParseChallengeClaims_rejects(t *testing.T) {
+	j := JWTIssuer{Secret: "test-secret"}
+	now := time.Now()
+	sess, _ := j.Issue("u1")
+	cases := map[string]string{
+		"sesión":           sess,
+		"typ session":      rawToken(t, "test-secret", jwt.MapClaims{"sub": "u1", "typ": "session", "exp": now.Add(time.Minute).Unix()}),
+		"sin typ":          rawToken(t, "test-secret", jwt.MapClaims{"sub": "u1", "ia": now.UnixMilli(), "exp": now.Add(time.Minute).Unix()}),
+		"vencido":          rawToken(t, "test-secret", jwt.MapClaims{"sub": "u1", "typ": "2fa", "ia": now.UnixMilli(), "exp": now.Add(-time.Second).Unix()}),
+		"sin exp":          rawToken(t, "test-secret", jwt.MapClaims{"sub": "u1", "typ": "2fa", "ia": now.UnixMilli()}),
+		"sin sub":          rawToken(t, "test-secret", jwt.MapClaims{"typ": "2fa", "ia": now.UnixMilli(), "exp": now.Add(time.Minute).Unix()}),
+		"otra firma":       rawToken(t, "otro-secreto", jwt.MapClaims{"sub": "u1", "typ": "2fa", "ia": now.UnixMilli(), "exp": now.Add(time.Minute).Unix()}),
+		"adulterado":       rawToken(t, "test-secret", jwt.MapClaims{"sub": "u1", "typ": "2fa", "ia": now.UnixMilli(), "exp": now.Add(time.Minute).Unix()}) + "x",
+		"vacío":            "",
+		"typ con espacios": rawToken(t, "test-secret", jwt.MapClaims{"sub": "u1", "typ": " 2fa", "ia": now.UnixMilli(), "exp": now.Add(time.Minute).Unix()}),
+	}
+	for name, tok := range cases {
+		if c, err := j.ParseChallengeClaims(tok); err == nil || c.UserID != "" {
+			t.Errorf("%s: debió fallar (%+v)", name, c)
+		}
+	}
+	// Sin secreto no se valida nada.
+	good, _ := j.IssueChallenge("u1")
+	if _, err := (JWTIssuer{}).ParseChallengeClaims(good); !errors.Is(err, ErrMissingSecret) {
+		t.Errorf("sin secreto: %v", err)
+	}
+}

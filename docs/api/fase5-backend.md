@@ -3693,8 +3693,27 @@ vale solo si `users.password_changed_at IS NULL` **o** el token trae `ia` y `ia 
 - la compuerta hace **una consulta por petición autenticada** (`SELECT
   password_changed_at FROM users WHERE id=$1`) y un fallo de esa consulta **falla
   cerrado (401)**, igual que un usuario inexistente;
+- **un websocket abierto también se revoca**: mientras la conexión está abierta el
+  hub vuelve a validar la sesión **como mucho cada 30 segundos** (el intervalo es la
+  constante `sessionCheckPeriod`; los tests lo bajan a milisegundos) y la cierra en
+  cuanto el token ya no vale o la consulta de la compuerta falla. El cierre usa el
+  mismo camino que un ping fallido y **no agrega ningún frame**: un socket con la
+  sesión válida se comporta igual que antes. Un `token` vencido también cierra la
+  conexión;
+- **un reinicio también anula un desafío de 2FA pendiente**: el desafío
+  (`typ:"2fa"`) lleva el mismo claim `ia` y, al canjearlo en `POST /auth/login/2fa`,
+  se aplica la misma regla (si `ia` no es posterior a `password_changed_at`, no se
+  canjea). La respuesta es el mismo `401 {"error":"Codigo incorrecto o desafio
+  vencido"}` de un desafío vencido o un código equivocado, así que no se puede
+  distinguir una causa de otra; un fallo de la compuerta responde lo mismo (falla
+  cerrado) y un desafío **sin `ia`** (emitido por la versión anterior, de 5 minutos
+  como mucho) vale solo si la contraseña nunca cambió. El desafío se mira **antes** de
+  verificar el código: un desafío revocado no gasta un intento;
 - el **desafío de 2FA** (`typ:"2fa"`) nunca es una sesión: no autentica ni en `/me` ni
   en `/ws`.
+
+El reinicio sigue sin tocar `user_totp` ni `user_recovery_codes` y sin emitir sesión:
+un reinicio **no es** una forma de saltarse el segundo factor.
 
 ### Verificar el email
 
