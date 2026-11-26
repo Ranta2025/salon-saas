@@ -32,7 +32,7 @@ func bookingTimeEnv(t *testing.T) (*BookingService, *fb, *fakeMemberships, *fake
 func TestBookingService_aviso_de_alta_en_hora_del_salon(t *testing.T) {
 	svc, _, mems, events, notifier, rec := bookingTimeEnv(t)
 	// 17:00Z = 11:00 en CDMX: el caso del hallazgo.
-	starts := time.Date(2026, 11, 26, 17, 0, 0, 0, time.UTC)
+	starts := time.Date(2036, 11, 26, 17, 0, 0, 0, time.UTC)
 	b, err := svc.CreateBooking(rec, "s1", "prof1", "Lía", "555", starts, starts.Add(time.Hour))
 	if err != nil {
 		t.Fatalf("reservar: %v", err)
@@ -50,7 +50,7 @@ func TestBookingService_aviso_de_alta_en_hora_del_salon(t *testing.T) {
 		t.Fatalf("esperaba un booking.created, hubo %d", n)
 	}
 	data, _ := ev.Data.(map[string]any)
-	if data["starts_at"] != "2026-11-26T17:00:00Z" {
+	if data["starts_at"] != "2036-11-26T17:00:00Z" {
 		t.Fatalf("starts_at del evento: %+v", data["starts_at"])
 	}
 	if data["id"] != b.ID {
@@ -61,7 +61,7 @@ func TestBookingService_aviso_de_alta_en_hora_del_salon(t *testing.T) {
 
 func TestBookingService_avisos_de_patch_en_hora_del_salon(t *testing.T) {
 	svc, _, _, _, notifier, rec := bookingTimeEnv(t)
-	starts := time.Date(2026, 11, 26, 17, 0, 0, 0, time.UTC)
+	starts := time.Date(2036, 11, 26, 17, 0, 0, 0, time.UTC)
 	b, err := svc.CreateBooking(rec, "s1", "prof1", "Lía", "555", starts, starts.Add(time.Hour))
 	if err != nil {
 		t.Fatalf("reservar: %v", err)
@@ -79,12 +79,12 @@ func TestBookingService_avisos_de_patch_en_hora_del_salon(t *testing.T) {
 
 func TestBookingService_aviso_reprogramado_en_hora_del_salon(t *testing.T) {
 	svc, _, _, _, notifier, rec := bookingTimeEnv(t)
-	starts := time.Date(2026, 11, 26, 17, 0, 0, 0, time.UTC)
+	starts := time.Date(2036, 11, 26, 17, 0, 0, 0, time.UTC)
 	b, err := svc.CreateBooking(rec, "s1", "prof1", "Lía", "555", starts, starts.Add(time.Hour))
 	if err != nil {
 		t.Fatalf("reservar: %v", err)
 	}
-	moved := time.Date(2026, 11, 27, 18, 30, 0, 0, time.UTC) // 12:30 CDMX
+	moved := time.Date(2036, 11, 27, 18, 30, 0, 0, time.UTC) // 12:30 CDMX
 	movedEnd := moved.Add(time.Hour)
 	if _, err := svc.Update(rec, "s1", b.ID, BookingPatch{StartsAt: &moved, EndsAt: &movedEnd}); err != nil {
 		t.Fatalf("reprogramar: %v", err)
