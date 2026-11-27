@@ -41,10 +41,6 @@ func (h PackageHandler) loadActor(c *gin.Context, salonID string) (domain.Member
 	return m, true
 }
 
-// presentInt distingue una clave AUSENTE de una clave en `null` (y de un
-// número). Vive en httpx porque lo usan varios módulos.
-type presentInt = httpx.PresentInt
-
 // servicePackageJSON es la forma única del paquete del catálogo.
 func servicePackageJSON(p domain.ServicePackage) gin.H {
 	var validity any
@@ -93,7 +89,7 @@ func (h PackageHandler) ListCatalog(c *gin.Context) {
 	}
 	list, err := h.Packages.ListCatalog(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -111,7 +107,7 @@ func (h PackageHandler) CreateCatalog(c *gin.Context) {
 		return
 	}
 	if err := h.Packages.RequireManager(actor, salonID); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	var in struct {
@@ -122,19 +118,19 @@ func (h PackageHandler) CreateCatalog(c *gin.Context) {
 		ValidityDays *int    `json:"validity_days"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	// Nombre, servicio, sesiones y precio son obligatorios: ausente, null o en
 	// blanco es 400 y no se escribe nada (no se rellenan con valores por defecto).
 	if in.Name == nil || strings.TrimSpace(*in.Name) == "" || in.ServiceID == nil || strings.TrimSpace(*in.ServiceID) == "" ||
 		in.Sessions == nil || in.PriceCents == nil {
-		respondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgPackageCreateMissing))
+		httpx.RespondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgPackageCreateMissing))
 		return
 	}
 	p, err := h.Packages.CreateCatalog(actor, salonID, *in.Name, *in.ServiceID, *in.Sessions, *in.PriceCents, in.ValidityDays)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, servicePackageJSON(p))
@@ -151,26 +147,26 @@ func (h PackageHandler) UpdateCatalog(c *gin.Context) {
 		return
 	}
 	if err := h.Packages.RequireManager(actor, salonID); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	var in struct {
-		Name         *string    `json:"name"`
-		PriceCents   *int       `json:"price_cents"`
-		ValidityDays presentInt `json:"validity_days"`
-		Active       *bool      `json:"active"`
+		Name         *string          `json:"name"`
+		PriceCents   *int             `json:"price_cents"`
+		ValidityDays httpx.PresentInt `json:"validity_days"`
+		Active       *bool            `json:"active"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if in.Name == nil || in.PriceCents == nil || !in.ValidityDays.Set || in.Active == nil {
-		respondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgPackageUpdateMissing))
+		httpx.RespondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgPackageUpdateMissing))
 		return
 	}
 	p, err := h.Packages.UpdateCatalog(actor, salonID, c.Param("pid"), *in.Name, *in.PriceCents, in.ValidityDays.Value, *in.Active)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, servicePackageJSON(p))
@@ -185,7 +181,7 @@ func (h PackageHandler) ListClient(c *gin.Context) {
 	}
 	list, err := h.Packages.ListClientPackages(actor, salonID, c.Param("cid"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -204,7 +200,7 @@ func (h PackageHandler) Purchase(c *gin.Context) {
 		return
 	}
 	if err := h.Packages.RequireSeller(actor, salonID); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	var in struct {
@@ -214,13 +210,13 @@ func (h PackageHandler) Purchase(c *gin.Context) {
 		ClientOpID     string `json:"client_op_id"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	cp, err := h.Packages.Purchase(actor, salonID, c.Param("cid"), in.PackageID, in.ProfessionalID,
 		domain.PaymentMethod(in.Method), in.ClientOpID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"sale_id": cp.SaleID, "client_package": clientPackageJSON(cp)})
@@ -235,7 +231,7 @@ func (h PackageHandler) Movements(c *gin.Context) {
 	}
 	list, err := h.Packages.Movements(actor, salonID, c.Param("cid"), c.Param("cpid"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -244,8 +240,8 @@ func (h PackageHandler) Movements(c *gin.Context) {
 			"id":              m.ID,
 			"delta":           m.Delta,
 			"reason":          string(m.Reason),
-			"note":            optionalID(m.Note),
-			"professional_id": optionalID(m.ProfessionalID),
+			"note":            httpx.OptionalID(m.Note),
+			"professional_id": httpx.OptionalID(m.ProfessionalID),
 			"created_at":      m.CreatedAt.UTC().Format(time.RFC3339),
 		})
 	}
@@ -262,7 +258,7 @@ func (h PackageHandler) Redeem(c *gin.Context) {
 		return
 	}
 	if err := h.Packages.RequireSeller(actor, salonID); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	var in struct {
@@ -271,12 +267,12 @@ func (h PackageHandler) Redeem(c *gin.Context) {
 		ClientOpID     string `json:"client_op_id"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil && !errors.Is(err, io.EOF) {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	cp, err := h.Packages.Redeem(actor, salonID, c.Param("cid"), c.Param("cpid"), in.ProfessionalID, in.Note, in.ClientOpID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"client_package": clientPackageJSON(cp)})
@@ -292,7 +288,7 @@ func (h PackageHandler) Adjust(c *gin.Context) {
 		return
 	}
 	if err := h.Packages.RequireManager(actor, salonID); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	var in struct {
@@ -300,16 +296,16 @@ func (h PackageHandler) Adjust(c *gin.Context) {
 		Note  string `json:"note"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if in.Delta == nil {
-		respondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgPackageAdjustZero))
+		httpx.RespondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgPackageAdjustZero))
 		return
 	}
 	cp, err := h.Packages.Adjust(actor, salonID, c.Param("cid"), c.Param("cpid"), *in.Delta, in.Note)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"client_package": clientPackageJSON(cp)})

@@ -34,6 +34,7 @@ import (
 	notifsvc "salon-saas/internal/notifications"
 	notifstore "salon-saas/internal/notifications/postgres"
 	"salon-saas/internal/packages"
+	packageshttpapi "salon-saas/internal/packages/httpapi"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/products"
 	productshttpapi "salon-saas/internal/products/httpapi"
@@ -613,7 +614,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		// F6: productos e inventario del POS (cinco rutas + `products` en POST /sales).
 		Products: productshttpapi.ProductHandler{Products: productSvc, Memberships: mems},
 		// F8: paquetes y bonos prepagos (ocho rutas: catálogo y por clienta).
-		Packages: httpapi.PackageHandler{Packages: packageSvc, Memberships: mems},
+		Packages: packageshttpapi.PackageHandler{Packages: packageSvc, Memberships: mems},
 		// F9: fidelidad (cinco rutas: programa del salón; ficha, entrega y uso por clienta).
 		Loyalty: loyaltyhttpapi.LoyaltyHandler{Loyalty: loyaltySvc, Memberships: mems},
 		// F10: auditoría (el middleware de las rutas de D2 y GET audit-log).

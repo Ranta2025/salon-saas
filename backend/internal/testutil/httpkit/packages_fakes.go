@@ -4,6 +4,7 @@ import (
 	httpapi "salon-saas/internal/adapters/http"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/packages"
+	packageshttpapi "salon-saas/internal/packages/httpapi"
 	"salon-saas/internal/ports"
 	"sort"
 	"strings"
@@ -300,7 +301,7 @@ func NewPackagesEnv() (*Env, *PkgCatalog, *PkgOwned) {
 		Packages: catalog, ClientPackages: owned, Services: env.Services, Clients: env.Clients,
 		Memberships: env.Mems, Settings: env.Settings, Events: env.Events,
 	}
-	env.Deps.Packages = httpapi.PackageHandler{Packages: svc, Memberships: env.Mems}
+	env.Deps.Packages = packageshttpapi.PackageHandler{Packages: svc, Memberships: env.Mems}
 	env.Router = gin.New()
 	httpapi.RegisterRoutes(env.Router, env.Deps)
 	return env, catalog, owned

@@ -5,6 +5,7 @@ import (
 	exportshttpapi "salon-saas/internal/exports/httpapi"
 	financehttpapi "salon-saas/internal/finance/httpapi"
 	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
+	packageshttpapi "salon-saas/internal/packages/httpapi"
 	"salon-saas/internal/ports"
 	productshttpapi "salon-saas/internal/products/httpapi"
 
@@ -59,7 +60,7 @@ type Deps struct {
 	// Packages son los paquetes y bonos prepagos (F8): el catálogo del salón y,
 	// por clienta, comprar, ver el saldo, descontar una sesión y ajustarlo. La
 	// autorización vive en el caso de uso.
-	Packages PackageHandler
+	Packages packageshttpapi.PackageHandler
 	// Loyalty es la fidelidad «cada N visitas, un servicio de regalo» (F9): el
 	// programa del salón y, por clienta, la ficha, entregar y usar un vale. La
 	// autorización vive en el caso de uso.
