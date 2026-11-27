@@ -1385,9 +1385,12 @@ func (NoopGateway) CreateCharge(context.Context, ChargeRequest) (Charge, error) 
 	return Charge{}, domain.NewMessage(domain.ErrAlreadyExists, domain.MsgDepositGatewayUnavailable)
 }
 
-// Refund no tiene nada que devolver: nil (un barrido no puede quedar trabado
-// para siempre por un banco que no existe).
-func (NoopGateway) Refund(context.Context, string, int, string) error { return nil }
+// Refund es imposible sin banco y NO puede devolver nil: un reembolso que no se
+// hizo nunca puede parecer exitoso (quien llama cerraría la seña como «devuelta»
+// sin haber devuelto el dinero). Se devuelve el mismo 409 de D3.
+func (NoopGateway) Refund(context.Context, string, int, string) error {
+	return domain.NewMessage(domain.ErrAlreadyExists, domain.MsgDepositGatewayUnavailable)
+}
 
 // ParseCallback rechaza todo: sin banco no hay firma que valga.
 func (NoopGateway) ParseCallback(http.Header, []byte, time.Time) (CallbackEvent, error) {
