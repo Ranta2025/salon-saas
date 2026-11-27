@@ -1,9 +1,10 @@
-package pgstore
+package postgres
 
 import (
 	"context"
 	"errors"
 	"github.com/jackc/pgx/v5/pgconn"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -43,7 +44,7 @@ type Bookings struct {
 const bookingColumns = `id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at,COALESCE(service_id,''),COALESCE(covered_from,''),COALESCE(resource_unit_id,'')`
 
 func (r Bookings) Save(b domain.Booking) error {
-	return r.inWriteLock(b.SalonID, func(q querier) error { return saveBooking(q, b) })
+	return r.inWriteLock(b.SalonID, func(q pgstore.Querier) error { return saveBooking(q, b) })
 }
 
 // inWriteLock serializa las ESCRITURAS de turnos de un mismo salón con un lock
@@ -55,14 +56,14 @@ func (r Bookings) Save(b domain.Booking) error {
 // INSERT está en vuelo por salón: no hay espera cruzada y las EXCLUDE quedan
 // como la red de seguridad que rechaza el doble turno. La sección crítica es un
 // solo INSERT/UPDATE; salones distintos no se esperan entre sí.
-func (r Bookings) inWriteLock(salonID string, fn func(q querier) error) error {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+func (r Bookings) inWriteLock(salonID string, fn func(q pgstore.Querier) error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, "booking-write:"+salonID); err != nil {
 		return err
 	}
@@ -72,7 +73,7 @@ func (r Bookings) inWriteLock(salonID string, fn func(q querier) error) error {
 	return tx.Commit(ctx)
 }
 
-func saveBooking(q querier, b domain.Booking) error {
+func saveBooking(q pgstore.Querier, b domain.Booking) error {
 	_, err := q.Exec(context.Background(),
 		`INSERT INTO bookings(id,salon_id,professional_id,client_name,client_phone,starts_at,ends_at,status,client_op_id,created_at,service_id,covered_from,resource_unit_id)
 		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''),NULLIF($12,''),NULLIF($13,''))`,
@@ -94,7 +95,7 @@ func bookingWriteError(err error) error {
 	if errors.As(err, &pg) && (pg.Code == "40P01" || pg.Code == "40001") {
 		return domain.ErrAlreadyExists
 	}
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // FindByClientOpID busca una reserva ya registrada por su operation id.
@@ -104,14 +105,14 @@ func (r Bookings) FindByClientOpID(salonID, clientOpID string) (domain.Booking, 
 	return findBookingByClientOpID(r.Pool, salonID, clientOpID)
 }
 
-func findBookingByClientOpID(q querier, salonID, clientOpID string) (domain.Booking, error) {
+func findBookingByClientOpID(q pgstore.Querier, salonID, clientOpID string) (domain.Booking, error) {
 	row := q.QueryRow(context.Background(),
 		`SELECT `+bookingColumns+`
 		 FROM bookings WHERE salon_id=$1 AND client_op_id=$2 AND client_op_id <> ''`,
 		salonID, clientOpID)
 	b, err := scanBooking(row.Scan)
 	if err != nil {
-		return domain.Booking{}, notFound(err)
+		return domain.Booking{}, pgstore.NotFound(err)
 	}
 	return b, nil
 }
@@ -122,13 +123,13 @@ func (r Bookings) FindByID(salonID, id string) (domain.Booking, error) {
 	return findBooking(r.Pool, salonID, id)
 }
 
-func findBooking(q querier, salonID, id string) (domain.Booking, error) {
+func findBooking(q pgstore.Querier, salonID, id string) (domain.Booking, error) {
 	row := q.QueryRow(context.Background(),
 		`SELECT `+bookingColumns+`
 		 FROM bookings WHERE salon_id=$1 AND id=$2`, salonID, id)
 	b, err := scanBooking(row.Scan)
 	if err != nil {
-		return domain.Booking{}, notFound(err)
+		return domain.Booking{}, pgstore.NotFound(err)
 	}
 	return b, nil
 }
@@ -138,10 +139,10 @@ func findBooking(q querier, salonID, id string) (domain.Booking, error) {
 // WHERE lleva el salon_id (un id de otro tenant no se toca) y la EXCLUDE sigue
 // siendo el árbitro del solape: 23P01 -> ErrAlreadyExists -> 409.
 func (r Bookings) Update(b domain.Booking) error {
-	return r.inWriteLock(b.SalonID, func(q querier) error { return updateBooking(q, b) })
+	return r.inWriteLock(b.SalonID, func(q pgstore.Querier) error { return updateBooking(q, b) })
 }
 
-func updateBooking(q querier, b domain.Booking) error {
+func updateBooking(q pgstore.Querier, b domain.Booking) error {
 	tag, err := q.Exec(context.Background(),
 		`UPDATE bookings
 		 SET professional_id=$3, client_name=$4, client_phone=$5, starts_at=$6, ends_at=$7, status=$8,
@@ -165,7 +166,7 @@ func updateBooking(q querier, b domain.Booking) error {
 // optional capability used by the public booking flow when the deposit charge could
 // not be created; a booking that is not `booked`, or another salon's, is never touched.
 func (r Bookings) CancelBookingReleasingClientOp(salonID, bookingID string) error {
-	return r.inWriteLock(salonID, func(q querier) error {
+	return r.inWriteLock(salonID, func(q pgstore.Querier) error {
 		_, err := q.Exec(context.Background(),
 			`UPDATE bookings SET status='cancelled', client_op_id=''
 			 WHERE salon_id=$1 AND id=$2 AND status='booked'`,
@@ -178,7 +179,7 @@ func (r Bookings) FindOverlapping(salonID, professionalID string, start, end tim
 	return findOverlapping(r.Pool, salonID, professionalID, start, end)
 }
 
-func findOverlapping(q querier, salonID, professionalID string, start, end time.Time) ([]domain.Booking, error) {
+func findOverlapping(q pgstore.Querier, salonID, professionalID string, start, end time.Time) ([]domain.Booking, error) {
 	rows, err := q.Query(context.Background(),
 		`SELECT `+bookingColumns+`
 		 FROM bookings
@@ -204,7 +205,7 @@ func (r Bookings) ListRange(salonID string, from, to time.Time) ([]domain.Bookin
 	return listBookings(r.Pool, salonID, from, to)
 }
 
-func listBookings(q querier, salonID string, from, to time.Time) ([]domain.Booking, error) {
+func listBookings(q pgstore.Querier, salonID string, from, to time.Time) ([]domain.Booking, error) {
 	rows, err := q.Query(context.Background(),
 		`SELECT `+bookingColumns+`
 		 FROM bookings
@@ -239,13 +240,13 @@ func (r Bookings) InSalonTx(salonID string, fn func(tx ports.BookingTx) error) e
 	// transacción trabada dejaba al pedido esperando para siempre con una
 	// conexión del pool tomada, y los pedidos del mismo salón hacían cola detrás.
 	// Al vencer, pgx cancela la consulta y el Rollback libera conexión y lock.
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer rollbackTx(tx) // no-op si ya commiteó
+	defer pgstore.RollbackTx(tx) // no-op si ya commiteó
 
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, "booking-cover:"+salonID); err != nil {
 		return err

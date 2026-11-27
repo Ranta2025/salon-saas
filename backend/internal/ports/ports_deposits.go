@@ -10,7 +10,7 @@ import (
 // ===== F11: sena online con banco simulado (inicio) =====
 //
 // Este bloque es el contrato que el adaptador Postgres (migración 037), el banco
-// simulado (adapters/simbank) y las rutas de la SLICE 2 implementan. Todo el
+// simulado (internal/simbank) y las rutas de la SLICE 2 implementan. Todo el
 // dinero de F11 vive en tablas PROPIAS: ninguna consulta de acá toca ventas,
 // caja, nómina, ganancia ni exportes (D1).
 

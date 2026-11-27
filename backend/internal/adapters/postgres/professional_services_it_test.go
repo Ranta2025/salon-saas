@@ -1,7 +1,7 @@
 // F2c contra Postgres real (SALON_IT=1): la migración 016 (oficio, servicios
 // por profesional y el servicio del turno) y las queries nuevas, siempre
 // scopeadas por salon_id.
-package pgstore
+package pgstore_test
 
 import (
 	"context"
@@ -9,11 +9,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	pgstore "salon-saas/internal/adapters/postgres"
+	"salon-saas/internal/testutil/itdb"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	bookingspostgres "salon-saas/internal/bookings/postgres"
 	"salon-saas/internal/domain"
 )
 
@@ -25,12 +28,12 @@ import (
 // 015): el estado "antes de la 016" solo se puede reproducir desde cero. Nada
 // queda en la base.
 func TestMigration016_professional_services(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	ctx := context.Background()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 
-	raw, err := os.ReadFile(filepath.Join(migrationsDir(t), "016_professional_services.sql"))
+	raw, err := os.ReadFile(filepath.Join(itdb.MigrationsDir(t), "016_professional_services.sql"))
 	if err != nil {
 		t.Fatalf("leer la migración 016: %v", err)
 	}
@@ -210,10 +213,10 @@ func TestMigration016_professional_services(t *testing.T) {
 // queries de F2c (reusa el patrón de las otras suites IT).
 func f2cFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
 	ctx := context.Background()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 
 	for _, q := range []string{
 		`DELETE FROM salons WHERE id IN ('s-it-f2c','s-it-f2c-b')`,
@@ -243,7 +246,7 @@ func f2cFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 			t.Fatalf("fixture: %v", err)
 		}
 	}
-	mems := Memberships{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
 	for _, m := range []domain.Membership{
 		{UserID: "u-it-f2c-own", SalonID: "s-it-f2c", Role: domain.RoleOwner, Attends: true},
 		{UserID: "u-it-f2c-adm", SalonID: "s-it-f2c", Role: domain.RoleAdmin},
@@ -264,7 +267,7 @@ func f2cFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 // scopeada por salon_id.
 func TestProfessionalServices_IT(t *testing.T) {
 	pool, ctx := f2cFixtures(t)
-	repo := ProfessionalServices{Pool: pool}
+	repo := pgstore.ProfessionalServices{Pool: pool}
 
 	// Lista inicial vacía (nadie hace nada hasta que se asigna).
 	if ids, err := repo.ListServiceIDs("s-it-f2c", "u-it-f2c-pro"); err != nil || len(ids) != 0 {
@@ -339,7 +342,7 @@ func TestProfessionalServices_IT(t *testing.T) {
 
 	// Cascada por servicios: borrar un servicio se lleva sus filas, y un turno
 	// que lo tenía queda sin servicio (SET NULL), no sin turno.
-	bookings := Bookings{Pool: pool}
+	bookings := bookingspostgres.Bookings{Pool: pool}
 	start := time.Date(2026, 12, 2, 15, 0, 0, 0, time.UTC)
 	b, err := domain.NewBooking("s-it-f2c", "u-it-f2c-pro", "Lía", "555", start, start.Add(45*time.Minute))
 	if err != nil {
@@ -397,7 +400,7 @@ func TestProfessionalServices_IT(t *testing.T) {
 // con service_id NULL o con servicio.
 func TestMembersTrade_IT(t *testing.T) {
 	pool, _ := f2cFixtures(t)
-	mems := Memberships{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
 
 	if err := mems.SetTrade("u-it-f2c-pro", "s-it-f2c", "Barbero"); err != nil {
 		t.Fatalf("guardar oficio: %v", err)

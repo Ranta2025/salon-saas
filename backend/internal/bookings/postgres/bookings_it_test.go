@@ -2,37 +2,20 @@
 // Prueba la garantía dura: dos inserts concurrentes al mismo hueco -> uno gana,
 // el otro vuelve como ErrAlreadyExists (EXCLUDE 23P01). Corre con:
 // SALON_IT=1 go test ./internal/adapters/postgres/ -run TestRace -v
-package pgstore
+package postgres
 
 import (
 	"context"
-	"os"
+	"salon-saas/internal/testutil/itdb"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/domain"
 )
 
-func itPool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	if os.Getenv("SALON_IT") == "" {
-		t.Skip("SALON_IT no definido: test de integración salteado")
-	}
-	url := os.Getenv("DATABASE_URL")
-	if url == "" {
-		url = "postgres://salon:salon@127.0.0.1:5432/salon?sslmode=disable"
-	}
-	pool, err := pgxpool.New(context.Background(), url)
-	if err != nil {
-		t.Fatalf("pool: %v", err)
-	}
-	return pool
-}
-
 func TestRace_sameSlot_oneWins(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	ctx := context.Background()
 

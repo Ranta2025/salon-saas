@@ -1,57 +1,27 @@
 // Ronda 2 contra Postgres real (SALON_IT=1): settings del salón, búsqueda y
 // reprogramación de turnos con la EXCLUDE como árbitro, administración de
 // miembros e índices B-19.
-package pgstore
+package pgstore_test
 
 import (
 	"context"
 	"errors"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	bookingsapi "salon-saas/internal/bookings"
+	bookingspostgres "salon-saas/internal/bookings/postgres"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
-
-// round2Fixtures crea dos salones limpios (s-it-r2 y s-it-r2b) con usuarios.
-func round2Fixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
-	t.Helper()
-	pool := itPool(t)
-	t.Cleanup(pool.Close)
-	ctx := context.Background()
-	applyMigrations(t, pool)
-
-	for _, q := range []string{
-		`DELETE FROM salons WHERE id IN ('s-it-r2','s-it-r2b')`,
-		`DELETE FROM users WHERE id LIKE 'u-it-r2-%'`,
-	} {
-		if _, err := pool.Exec(ctx, q); err != nil {
-			t.Fatalf("limpieza: %v", err)
-		}
-	}
-	for _, q := range []string{
-		`INSERT INTO users(id,name,email,pass_hash) VALUES
-			('u-it-r2-owner','Ana Owner','u-it-r2-owner@test.com','x'),
-			('u-it-r2-prof','Bruno Prof','u-it-r2-prof@test.com','x'),
-			('u-it-r2-owner2','Eva Owner','u-it-r2-owner2@test.com','x')`,
-		`INSERT INTO salons(id,slug,name) VALUES
-			('s-it-r2','s-it-r2','Salón Ronda 2'),
-			('s-it-r2b','s-it-r2b','Salón Ronda 2 B')`,
-	} {
-		if _, err := pool.Exec(ctx, q); err != nil {
-			t.Fatalf("fixture: %v", err)
-		}
-	}
-	return pool, ctx
-}
 
 // Una base migrada tiene la configuración default; guardar y releer respeta la
 // zona y el scope por salón.
 func TestSalons_IT_settings(t *testing.T) {
-	pool, ctx := round2Fixtures(t)
-	salons := Salons{Pool: pool}
+	pool, ctx := itdb.Round2Fixtures(t)
+	salons := pgstore.Salons{Pool: pool}
 
 	got, err := salons.Settings("s-it-r2")
 	if err != nil {
@@ -96,8 +66,8 @@ func TestSalons_IT_settings(t *testing.T) {
 
 // FindByID/Update con scope por salón y la EXCLUDE como árbitro final.
 func TestBookings_IT_find_update_y_solape(t *testing.T) {
-	pool, _ := round2Fixtures(t)
-	repo := Bookings{Pool: pool}
+	pool, _ := itdb.Round2Fixtures(t)
+	repo := bookingspostgres.Bookings{Pool: pool}
 	day := time.Date(2027, 2, 1, 0, 0, 0, 0, time.UTC)
 
 	first, err := domain.NewBooking("s-it-r2", "u-it-r2-prof", "Lía", "555",
@@ -167,7 +137,7 @@ func TestBookings_IT_find_update_y_solape(t *testing.T) {
 
 // Índices B-19: agenda por salón+fecha y memberships por salón.
 func TestIndexes_IT_B19(t *testing.T) {
-	pool, ctx := round2Fixtures(t)
+	pool, ctx := itdb.Round2Fixtures(t)
 	for _, idx := range []string{"bookings_salon_starts_idx", "memberships_salon_idx"} {
 		var exists bool
 		if err := pool.QueryRow(ctx,
@@ -182,8 +152,8 @@ func TestIndexes_IT_B19(t *testing.T) {
 
 // Pantalla de equipo: listar con nombre/email, contar por rol y quitar.
 func TestMemberships_IT_admin(t *testing.T) {
-	pool, _ := round2Fixtures(t)
-	mems := Memberships{Pool: pool}
+	pool, _ := itdb.Round2Fixtures(t)
+	mems := pgstore.Memberships{Pool: pool}
 	for _, m := range []domain.Membership{
 		{UserID: "u-it-r2-owner", SalonID: "s-it-r2", Role: domain.RoleOwner},
 		{UserID: "u-it-r2-prof", SalonID: "s-it-r2", Role: domain.RoleProfessional},
@@ -238,11 +208,11 @@ func TestMemberships_IT_admin(t *testing.T) {
 // personas pidiendo el mismo hueco a la vez dejan pasar una y la otra recibe
 // ErrAlreadyExists (409). Corre contra la DB real con SALON_IT=1.
 func TestPublicBooking_IT_carrera_un_solo_gana(t *testing.T) {
-	pool, _ := round2Fixtures(t)
-	salons := Salons{Pool: pool}
-	services := Services{Pool: pool}
-	mems := Memberships{Pool: pool}
-	bookings := Bookings{Pool: pool}
+	pool, _ := itdb.Round2Fixtures(t)
+	salons := pgstore.Salons{Pool: pool}
+	services := pgstore.Services{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
+	bookings := bookingspostgres.Bookings{Pool: pool}
 
 	if err := mems.Save(domain.Membership{UserID: "u-it-r2-prof", SalonID: "s-it-r2", Role: domain.RoleProfessional}); err != nil {
 		t.Fatalf("membership: %v", err)
@@ -259,7 +229,7 @@ func TestPublicBooking_IT_carrera_un_solo_gana(t *testing.T) {
 		t.Fatalf("guardar servicio: %v", err)
 	}
 	// F2c: la reserva pública solo asigna a quien HACE el servicio.
-	professionals := ProfessionalServices{Pool: pool}
+	professionals := pgstore.ProfessionalServices{Pool: pool}
 	if err := professionals.SetServices("s-it-r2", "u-it-r2-prof", []string{svc.ID}); err != nil {
 		t.Fatalf("servicios de la profesional: %v", err)
 	}

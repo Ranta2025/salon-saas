@@ -1,11 +1,14 @@
-package pgstore
+package pgstore_test
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	pgstore "salon-saas/internal/adapters/postgres"
+	bookingspostgres "salon-saas/internal/bookings/postgres"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // H7 (revisión nativa de F2d3): InSalonTx esperaba el lock del salón con
@@ -14,7 +17,7 @@ import (
 // pool tomada, y los pedidos siguientes del mismo salón hacían cola detrás.
 // Ahora la espera tiene un tope y devuelve error liberando la conexión.
 func TestBookings_InSalonTx_lock_wait_is_bounded(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 
 	// Otra transacción tiene el lock del salón y no lo suelta.
@@ -27,7 +30,7 @@ func TestBookings_InSalonTx_lock_wait_is_bounded(t *testing.T) {
 		t.Fatalf("tomar el lock: %v", err)
 	}
 
-	repo := Bookings{Pool: pool, TxTimeout: 300 * time.Millisecond}
+	repo := bookingspostgres.Bookings{Pool: pool, TxTimeout: 300 * time.Millisecond}
 	done := make(chan error, 1)
 	go func() {
 		done <- repo.InSalonTx("s-h7", func(ports.BookingTx) error { return nil })
@@ -53,7 +56,7 @@ func TestBookings_InSalonTx_lock_wait_is_bounded(t *testing.T) {
 
 // H7: la caja tiene el mismo patrón (lock del salón) y el mismo riesgo.
 func TestCashCloses_InSalonTx_lock_wait_is_bounded(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 
 	holder, err := pool.Begin(context.Background())
@@ -65,7 +68,7 @@ func TestCashCloses_InSalonTx_lock_wait_is_bounded(t *testing.T) {
 		t.Fatalf("tomar el lock: %v", err)
 	}
 
-	repo := CashCloses{Pool: pool, TxTimeout: 300 * time.Millisecond}
+	repo := pgstore.CashCloses{Pool: pool, TxTimeout: 300 * time.Millisecond}
 	done := make(chan error, 1)
 	go func() {
 		done <- repo.InSalonTx("s-h7", func(ports.CashCloseTx) error { return nil })
@@ -83,14 +86,14 @@ func TestCashCloses_InSalonTx_lock_wait_is_bounded(t *testing.T) {
 // El tope no puede cortar el trabajo normal: sin nadie reteniendo el lock, la
 // transacción corre y confirma.
 func TestInSalonTx_normal_work_still_commits(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	ran := false
-	if err := (Bookings{Pool: pool}).InSalonTx("s-h7-ok", func(ports.BookingTx) error { ran = true; return nil }); err != nil || !ran {
+	if err := (bookingspostgres.Bookings{Pool: pool}).InSalonTx("s-h7-ok", func(ports.BookingTx) error { ran = true; return nil }); err != nil || !ran {
 		t.Fatalf("reservas: ran=%v err=%v", ran, err)
 	}
 	ran = false
-	if err := (CashCloses{Pool: pool}).InSalonTx("s-h7-ok", func(ports.CashCloseTx) error { ran = true; return nil }); err != nil || !ran {
+	if err := (pgstore.CashCloses{Pool: pool}).InSalonTx("s-h7-ok", func(ports.CashCloseTx) error { ran = true; return nil }); err != nil || !ran {
 		t.Fatalf("caja: ran=%v err=%v", ran, err)
 	}
 }

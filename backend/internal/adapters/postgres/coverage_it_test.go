@@ -2,7 +2,7 @@
 // (todo o nada, con la EXCLUDE de turnos como árbitro) y la lectura del email de
 // un turno para avisar a la clienta. Todas las queries siguen scopeadas por
 // salon_id.
-package pgstore
+package pgstore_test
 
 import (
 	"context"
@@ -10,18 +10,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"salon-saas/internal/testutil/itdb"
 	"testing"
 	"time"
 
+	bookingspostgres "salon-saas/internal/bookings/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
 
 // coverageFixture deja el salón, dos profesionales y turnos limpios para el test.
 // Usa ids propios (s-it-f2d3) para no tocar los fixtures de las otras pruebas.
-func coverageFixture(t *testing.T) (*Bookings, *BookingEmails) {
+func coverageFixture(t *testing.T) (*bookingspostgres.Bookings, *bookingspostgres.BookingEmails) {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
 	ctx := context.Background()
 	for _, q := range []string{
@@ -46,7 +48,7 @@ func coverageFixture(t *testing.T) (*Bookings, *BookingEmails) {
 			t.Fatalf("fixture: %v", err)
 		}
 	}
-	return &Bookings{Pool: pool}, &BookingEmails{Pool: pool}
+	return &bookingspostgres.Bookings{Pool: pool}, &bookingspostgres.BookingEmails{Pool: pool}
 }
 
 // coverageBooking arma un turno reservado del fixture.
@@ -285,11 +287,11 @@ func TestBookings_covered_from_roundtrip(t *testing.T) {
 // aplicar dos veces. Una base que ya tenía turnos los deja en NULL: no hay
 // backfill.
 func TestMigration019_booking_covered_from(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	ctx := context.Background()
 
-	raw, err := os.ReadFile(filepath.Join(migrationsDir(t), "019_booking_covered_from.sql"))
+	raw, err := os.ReadFile(filepath.Join(itdb.MigrationsDir(t), "019_booking_covered_from.sql"))
 	if err != nil {
 		t.Fatalf("leer la migración 019: %v", err)
 	}

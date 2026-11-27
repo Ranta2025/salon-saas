@@ -1,14 +1,16 @@
 // Hardening contra Postgres real (SALON_IT=1): sumas grandes, overflow
 // traducido a 400, cierres de caja concurrentes y personal del salón.
-package pgstore
+package pgstore_test
 
 import (
 	"context"
 	"errors"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"sync"
 	"testing"
 	"time"
 
+	bookingspostgres "salon-saas/internal/bookings/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/pos"
 )
@@ -18,8 +20,8 @@ import (
 // ::int Postgres devolvía 22003 y el dashboard quedaba roto para siempre.
 func TestSales_IT_sumas_grandes_no_rompen(t *testing.T) {
 	pool, _ := posFixtures(t)
-	repo := Sales{Pool: pool}
-	services := Services{Pool: pool}
+	repo := pgstore.Sales{Pool: pool}
+	services := pgstore.Services{Pool: pool}
 	corte, err := domain.NewService("s-it-pos", "Corte grande", 45, domain.MaxSaleUnitPriceCents, 0)
 	if err != nil {
 		t.Fatalf("dominio servicio: %v", err)
@@ -73,12 +75,12 @@ func TestSales_IT_sumas_grandes_no_rompen(t *testing.T) {
 	}
 
 	// El dashboard y el cierre leen esas sumas sin explotar.
-	mems := Memberships{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
 	if err := mems.Save(domain.Membership{UserID: "u-it-pos", SalonID: "s-it-pos", Role: domain.RoleOwner}); err != nil {
 		t.Fatalf("membership: %v", err)
 	}
 	owner, _ := mems.Find("u-it-pos", "s-it-pos")
-	dash := pos.DashboardService{Sales: repo, Agenda: Bookings{Pool: pool}, Staff: mems, Memberships: mems}
+	dash := pos.DashboardService{Sales: repo, Agenda: bookingspostgres.Bookings{Pool: pool}, Staff: mems, Memberships: mems}
 	if _, err := dash.Today(owner, "s-it-pos"); err != nil {
 		t.Fatalf("dashboard con ventas grandes: %v", err)
 	}
@@ -89,10 +91,10 @@ func TestSales_IT_sumas_grandes_no_rompen(t *testing.T) {
 // mismo esperado, y el salón cierra el doble de lo que había en el cajón.
 func TestCashCloses_IT_concurrentes_cuentan_una_vez(t *testing.T) {
 	pool, ctx := posFixtures(t)
-	repo := Sales{Pool: pool}
-	services := Services{Pool: pool}
-	cashRepo := CashCloses{Pool: pool}
-	mems := Memberships{Pool: pool}
+	repo := pgstore.Sales{Pool: pool}
+	services := pgstore.Services{Pool: pool}
+	cashRepo := pgstore.CashCloses{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
 
 	corte, err := domain.NewService("s-it-pos", "Corte caja", 30, 100000, 0)
 	if err != nil {
@@ -166,7 +168,7 @@ func TestCashCloses_IT_concurrentes_cuentan_una_vez(t *testing.T) {
 // (23P01) o el único de op id (23505) resuelve devolviendo la reserva original.
 func TestBookings_IT_replay_concurrente_no_duplica(t *testing.T) {
 	pool, _ := posFixtures(t)
-	repo := Bookings{Pool: pool}
+	repo := bookingspostgres.Bookings{Pool: pool}
 	_, _ = pool.Exec(context.Background(), `DELETE FROM bookings WHERE salon_id='s-it-pos'`)
 
 	day := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Minute)
@@ -220,7 +222,7 @@ func TestBookings_IT_replay_concurrente_no_duplica(t *testing.T) {
 // El staff del salón: solo quien atiende, con nombre, y nunca de otro tenant.
 func TestMemberships_IT_staff(t *testing.T) {
 	pool, ctx := posFixtures(t)
-	mems := Memberships{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
 	_, _ = pool.Exec(ctx, `DELETE FROM memberships WHERE salon_id IN ('s-it-pos','s-it-pos2')`)
 	_, _ = pool.Exec(ctx, `INSERT INTO users(id,name,email,pass_hash)
 		VALUES('u-staff-prof','Bruno Prof','u-staff-prof@test.com','x')
@@ -268,7 +270,7 @@ func TestMemberships_IT_staff(t *testing.T) {
 // B-05: un email duplicado sale como ErrAlreadyExists (23505), no como 500.
 func TestUsers_IT_email_duplicado_es_409(t *testing.T) {
 	pool, ctx := posFixtures(t)
-	users := Users{Pool: pool}
+	users := pgstore.Users{Pool: pool}
 	_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id IN ('u-dup-1','u-dup-2')`)
 
 	u1, err := domain.NewUser("Ana", "dup@test.com", "hash")
@@ -289,14 +291,14 @@ func TestUsers_IT_email_duplicado_es_409(t *testing.T) {
 		t.Fatalf("FindByID: %+v %v", got, err)
 	}
 	if _, err := users.FindByID("no-existe"); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("FindByID inexistente debe dar NotFound, dio %v", err)
+		t.Fatalf("FindByID inexistente debe dar pgstore.NotFound, dio %v", err)
 	}
 }
 
-// Salons.FindByID resuelve el salón de una membership (GET /me) y no cruza.
+// pgstore.Salons.FindByID resuelve el salón de una membership (GET /me) y no cruza.
 func TestSalons_IT_find_by_id(t *testing.T) {
 	pool, _ := posFixtures(t)
-	salons := Salons{Pool: pool}
+	salons := pgstore.Salons{Pool: pool}
 	got, err := salons.FindByID("s-it-pos")
 	if err != nil {
 		t.Fatalf("FindByID: %v", err)
@@ -305,6 +307,6 @@ func TestSalons_IT_find_by_id(t *testing.T) {
 		t.Fatalf("salón: %+v", got)
 	}
 	if _, err := salons.FindByID("s-no-existe"); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("inexistente debe dar NotFound, dio %v", err)
+		t.Fatalf("inexistente debe dar pgstore.NotFound, dio %v", err)
 	}
 }

@@ -175,3 +175,46 @@ func CountRows(t *testing.T, pool *pgxpool.Pool, query string, args ...any) int 
 	}
 	return n
 }
+
+// Round2Fixtures crea dos salones limpios (s-it-r2 y s-it-r2b) con usuarios.
+func Round2Fixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
+	t.Helper()
+	pool := Pool(t)
+	t.Cleanup(pool.Close)
+	ctx := context.Background()
+	ApplyMigrations(t, pool)
+
+	for _, q := range []string{
+		`DELETE FROM salons WHERE id IN ('s-it-r2','s-it-r2b')`,
+		`DELETE FROM users WHERE id LIKE 'u-it-r2-%'`,
+	} {
+		if _, err := pool.Exec(ctx, q); err != nil {
+			t.Fatalf("limpieza: %v", err)
+		}
+	}
+	for _, q := range []string{
+		`INSERT INTO users(id,name,email,pass_hash) VALUES
+			('u-it-r2-owner','Ana Owner','u-it-r2-owner@test.com','x'),
+			('u-it-r2-prof','Bruno Prof','u-it-r2-prof@test.com','x'),
+			('u-it-r2-owner2','Eva Owner','u-it-r2-owner2@test.com','x')`,
+		`INSERT INTO salons(id,slug,name) VALUES
+			('s-it-r2','s-it-r2','Salón Ronda 2'),
+			('s-it-r2b','s-it-r2b','Salón Ronda 2 B')`,
+	} {
+		if _, err := pool.Exec(ctx, q); err != nil {
+			t.Fatalf("fixture: %v", err)
+		}
+	}
+	return pool, ctx
+}
+
+// MigrationsDir devuelve el directorio de migraciones visto desde
+// internal/<feature>/postgres y falla si no existe. Los IT que aplican UNA
+// migración concreta (y comprueban que se puede aplicar dos veces) lo usan.
+func MigrationsDir(t *testing.T) string {
+	t.Helper()
+	if _, err := os.Stat(migrationsDir); err != nil {
+		t.Fatalf("no encuentro las migraciones en %s: %v", migrationsDir, err)
+	}
+	return migrationsDir
+}

@@ -1,11 +1,13 @@
 // Integración del enlace firmado de un turno (F1) contra Postgres real
 // (SALON_IT=1): lo que necesita la base de verdad, que es la concurrencia sobre
 // el advisory lock `booking-write:<salón>` y las dos EXCLUDE de turnos.
-package pgstore
+package postgres
 
 import (
 	"context"
 	"errors"
+	pgstore "salon-saas/internal/adapters/postgres"
+	"salon-saas/internal/testutil/itdb"
 	"strings"
 	"sync"
 	"testing"
@@ -57,9 +59,9 @@ type itLinkEnv struct {
 // 45 minutos, una profesional que lo hace y el enlace cableado.
 func newItLinkEnv(t *testing.T) *itLinkEnv {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 	ctx := context.Background()
 	for _, q := range []string{
 		`DELETE FROM salons WHERE id LIKE 's-it-link%'`,
@@ -70,14 +72,14 @@ func newItLinkEnv(t *testing.T) *itLinkEnv {
 		}
 	}
 
-	salons := Salons{Pool: pool}
-	users := Users{Pool: pool}
-	mems := Memberships{Pool: pool}
-	services := Services{Pool: pool}
-	profs := ProfessionalServices{Pool: pool}
-	hours := WeeklyHours{Pool: pool}
-	timeOff := TimeOff{Pool: pool}
-	resources := Resources{Pool: pool}
+	salons := pgstore.Salons{Pool: pool}
+	users := pgstore.Users{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
+	services := pgstore.Services{Pool: pool}
+	profs := pgstore.ProfessionalServices{Pool: pool}
+	hours := pgstore.WeeklyHours{Pool: pool}
+	timeOff := pgstore.TimeOff{Pool: pool}
+	resources := pgstore.Resources{Pool: pool}
 	emails := BookingEmails{Pool: pool}
 	bookings := Bookings{Pool: pool}
 	links := BookingLinks{Pool: pool}
@@ -512,7 +514,7 @@ func TestBookingLinks_IT_recordatorio(t *testing.T) {
 	tokenConfirm := env.mintLink(t, b)
 
 	reminders := bookingsapi.ReminderService{
-		Emails: BookingEmails{Pool: env.pool}, Mailer: env.mails, Settings: Salons{Pool: env.pool},
+		Emails: BookingEmails{Pool: env.pool}, Mailer: env.mails, Settings: pgstore.Salons{Pool: env.pool},
 		Links: env.links, AppURL: "http://localhost:8081",
 	}
 	sent, failed := reminders.RunOnce(env.ctx, time.Now().UTC())
@@ -550,9 +552,9 @@ func TestBookingLinks_IT_recordatorio(t *testing.T) {
 // La migración 027 es idempotente y la tabla existe con su CHECK y su índice
 // único (la reaplican TestMain y applyMigrations, que corre todo dos veces).
 func TestMigration027_IT_idempotente(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 	ctx := context.Background()
 	var def string
 	if err := pool.QueryRow(ctx,

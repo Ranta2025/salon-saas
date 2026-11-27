@@ -1,8 +1,9 @@
-package pgstore
+package postgres
 
 import (
 	"context"
 	"errors"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -69,33 +70,33 @@ func scanDeposit(scan func(dest ...any) error) (domain.BookingDeposit, error) {
 func depositLockKey(depositID string) string { return "deposit:" + depositID }
 
 // lockDeposit toma el xact lock de la sena dentro de la transacción.
-func lockDeposit(ctx context.Context, q querier, depositID string) error {
+func lockDeposit(ctx context.Context, q pgstore.Querier, depositID string) error {
 	_, err := q.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, depositLockKey(depositID))
 	return err
 }
 
 // depositIDForCharge resuelve el id de la sena de un cargo (el lock se toma por
 // el id de la sena, no por el del cargo).
-func depositIDForCharge(ctx context.Context, q querier, chargeID string) (string, error) {
+func depositIDForCharge(ctx context.Context, q pgstore.Querier, chargeID string) (string, error) {
 	var id string
 	if err := q.QueryRow(ctx, `SELECT id FROM booking_deposits WHERE charge_id=$1`, chargeID).Scan(&id); err != nil {
-		return "", notFound(err)
+		return "", pgstore.NotFound(err)
 	}
 	return id, nil
 }
 
 // readDepositByID lee una sena con su turno, ya scopeada por el id.
-func readDepositByID(ctx context.Context, q querier, depositID string) (domain.BookingDeposit, error) {
+func readDepositByID(ctx context.Context, q pgstore.Querier, depositID string) (domain.BookingDeposit, error) {
 	row := q.QueryRow(ctx, `SELECT `+depositColumns+depositFrom+` WHERE d.id=$1`, depositID)
 	d, err := scanDeposit(row.Scan)
 	if err != nil {
-		return domain.BookingDeposit{}, notFound(err)
+		return domain.BookingDeposit{}, pgstore.NotFound(err)
 	}
 	return d, nil
 }
 
 // bankEventSeen dice si ese evento del banco ya está en el libro mayor.
-func bankEventSeen(ctx context.Context, q querier, bankEventID string) (bool, error) {
+func bankEventSeen(ctx context.Context, q pgstore.Querier, bankEventID string) (bool, error) {
 	if bankEventID == "" {
 		return false, nil
 	}
@@ -108,7 +109,7 @@ func bankEventSeen(ctx context.Context, q querier, bankEventID string) (bool, er
 }
 
 // insertDepositEvent escribe UNA fila del libro mayor (append-only).
-func insertDepositEvent(ctx context.Context, q querier, depositID, kind string, amountCents int, detail, bankEventID string, now time.Time) error {
+func insertDepositEvent(ctx context.Context, q pgstore.Querier, depositID, kind string, amountCents int, detail, bankEventID string, now time.Time) error {
 	_, err := q.Exec(ctx,
 		`INSERT INTO deposit_events(id,deposit_id,kind,amount_cents,detail,bank_event_id,created_at)
 		 VALUES($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),$7)`,
@@ -118,7 +119,7 @@ func insertDepositEvent(ctx context.Context, q querier, depositID, kind string, 
 
 // isUniqueViolation dice si el error es un 23505 (el evento del banco ya entró).
 func isUniqueViolation(err error) bool {
-	return constraintOf(err) != ""
+	return pgstore.ConstraintOf(err) != ""
 }
 
 // Create inserta la sena y su evento `created` en UNA transacción (D8).
@@ -129,13 +130,13 @@ func isUniqueViolation(err error) bool {
 // otra recibe ErrAlreadyExists (el caso de uso vuelve a leer y devuelve la
 // original; el cargo huérfano del banco vence solo).
 func (r Deposits) Create(d domain.BookingDeposit) (domain.BookingDeposit, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return domain.BookingDeposit{}, err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 
 	// La lectura de la idempotencia va dentro de la transacción y ANTES del
 	// INSERT: el índice único es la guarda final, no la única.
@@ -146,7 +147,7 @@ func (r Deposits) Create(d domain.BookingDeposit) (domain.BookingDeposit, error)
 	if existing, err := scanDeposit(row.Scan); err == nil {
 		return existing, nil
 	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return domain.BookingDeposit{}, pgError(err)
+		return domain.BookingDeposit{}, pgstore.PGError(err)
 	}
 
 	if _, err := tx.Exec(ctx,
@@ -155,13 +156,13 @@ func (r Deposits) Create(d domain.BookingDeposit) (domain.BookingDeposit, error)
 		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''))`,
 		d.ID, d.SalonID, d.BookingID, d.AmountCents, d.Percent, d.Status, d.ChargeID,
 		d.CreatedAt.UTC(), d.ExpiresAt.UTC(), d.ClientOpID); err != nil {
-		return domain.BookingDeposit{}, pgError(err)
+		return domain.BookingDeposit{}, pgstore.PGError(err)
 	}
 	if err := insertDepositEvent(ctx, tx, d.ID, domain.DepositEventCreated, d.AmountCents, "", "", d.CreatedAt); err != nil {
-		return domain.BookingDeposit{}, pgError(err)
+		return domain.BookingDeposit{}, pgstore.PGError(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return domain.BookingDeposit{}, pgError(err)
+		return domain.BookingDeposit{}, pgstore.PGError(err)
 	}
 	return d, nil
 }
@@ -172,7 +173,7 @@ func (r Deposits) FindByBooking(salonID, bookingID string) (domain.BookingDeposi
 		`SELECT `+depositColumns+depositFrom+` WHERE d.salon_id=$1 AND d.booking_id=$2`, salonID, bookingID)
 	d, err := scanDeposit(row.Scan)
 	if err != nil {
-		return domain.BookingDeposit{}, notFound(err)
+		return domain.BookingDeposit{}, pgstore.NotFound(err)
 	}
 	return d, nil
 }
@@ -185,27 +186,27 @@ func (r Deposits) FindByCharge(chargeID string) (domain.BookingDeposit, error) {
 		`SELECT `+depositColumns+depositFrom+` WHERE d.charge_id=$1`, chargeID)
 	d, err := scanDeposit(row.Scan)
 	if err != nil {
-		return domain.BookingDeposit{}, notFound(err)
+		return domain.BookingDeposit{}, pgstore.NotFound(err)
 	}
 	return d, nil
 }
 
 // ApplyApproved aplica un evento `approved` (D7) bajo el lock de la sena.
 func (r Deposits) ApplyApproved(cb domain.DepositCallback) (domain.DepositApply, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return domain.DepositApply{}, err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 
 	id, err := depositIDForCharge(ctx, tx, cb.ChargeID)
 	if err != nil {
 		return domain.DepositApply{}, err
 	}
 	if err := lockDeposit(ctx, tx, id); err != nil {
-		return domain.DepositApply{}, pgError(err)
+		return domain.DepositApply{}, pgstore.PGError(err)
 	}
 	d, err := readDepositByID(ctx, tx, id)
 	if err != nil {
@@ -213,7 +214,7 @@ func (r Deposits) ApplyApproved(cb domain.DepositCallback) (domain.DepositApply,
 	}
 	// Un evento del banco se aplica UNA sola vez (índice único por banco).
 	if seen, err := bankEventSeen(ctx, tx, cb.EventID); err != nil {
-		return domain.DepositApply{}, pgError(err)
+		return domain.DepositApply{}, pgstore.PGError(err)
 	} else if seen {
 		return domain.DepositApply{Deposit: d}, tx.Commit(ctx)
 	}
@@ -226,17 +227,17 @@ func (r Deposits) ApplyApproved(cb domain.DepositCallback) (domain.DepositApply,
 			`UPDATE booking_deposits SET status=$2, paid_at=$3 WHERE id=$1 AND status=$4`,
 			d.ID, domain.DepositPaid, now, domain.DepositPending)
 		if err != nil {
-			return domain.DepositApply{}, pgError(err)
+			return domain.DepositApply{}, pgstore.PGError(err)
 		}
 		if tag.RowsAffected() == 1 {
 			if err := insertDepositEvent(ctx, tx, d.ID, domain.DepositEventPaid, d.AmountCents, "", cb.EventID, now); err != nil {
 				if isUniqueViolation(err) {
 					return domain.DepositApply{Deposit: d}, tx.Rollback(ctx)
 				}
-				return domain.DepositApply{}, pgError(err)
+				return domain.DepositApply{}, pgstore.PGError(err)
 			}
 			if err := tx.Commit(ctx); err != nil {
-				return domain.DepositApply{}, pgError(err)
+				return domain.DepositApply{}, pgstore.PGError(err)
 			}
 			paid := now
 			d.Status, d.PaidAt = domain.DepositPaid, &paid
@@ -264,23 +265,23 @@ func (r Deposits) ApplyApproved(cb domain.DepositCallback) (domain.DepositApply,
 // ApplyDeclined registra un intento rechazado y deja la sena `pending` (D7). La
 // MISMA guarda de idempotencia por bank_event_id: ese evento se registra UNA vez.
 func (r Deposits) ApplyDeclined(cb domain.DepositCallback) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return false, err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 
 	id, err := depositIDForCharge(ctx, tx, cb.ChargeID)
 	if err != nil {
 		return false, err
 	}
 	if err := lockDeposit(ctx, tx, id); err != nil {
-		return false, pgError(err)
+		return false, pgstore.PGError(err)
 	}
 	if seen, err := bankEventSeen(ctx, tx, cb.EventID); err != nil {
-		return false, pgError(err)
+		return false, pgstore.PGError(err)
 	} else if seen {
 		return false, nil
 	}
@@ -289,10 +290,10 @@ func (r Deposits) ApplyDeclined(cb domain.DepositCallback) (bool, error) {
 		if isUniqueViolation(err) {
 			return false, tx.Rollback(ctx)
 		}
-		return false, pgError(err)
+		return false, pgstore.PGError(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return false, pgError(err)
+		return false, pgstore.PGError(err)
 	}
 	return true, nil
 }
@@ -302,13 +303,13 @@ func (r Deposits) ApplyDeclined(cb domain.DepositCallback) (bool, error) {
 // todavía `booked`: el tick anterior no alcanzó a cancelarlo y el cupo no puede
 // quedar retenido para siempre.
 func (r Deposits) ExpirePending(now time.Time, limit int) ([]domain.BookingDeposit, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 
 	// Los candidatos se leen SIN row lock a propósito: el lock de la sena es el
 	// advisory (el MISMO que toma el callback) y tomarlo después de un FOR UPDATE
@@ -321,20 +322,20 @@ func (r Deposits) ExpirePending(now time.Time, limit int) ([]domain.BookingDepos
 		 LIMIT $3`,
 		domain.DepositPending, now.UTC(), limit)
 	if err != nil {
-		return nil, pgError(err)
+		return nil, pgstore.PGError(err)
 	}
 	var ids []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
 			rows.Close()
-			return nil, pgError(err)
+			return nil, pgstore.PGError(err)
 		}
 		ids = append(ids, id)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return nil, pgError(err)
+		return nil, pgstore.PGError(err)
 	}
 
 	out := make([]domain.BookingDeposit, 0, len(ids))
@@ -343,13 +344,13 @@ func (r Deposits) ExpirePending(now time.Time, limit int) ([]domain.BookingDepos
 		// El MISMO lock de la sena que usan ApplyApproved/Settle*: el callback y el
 		// barrido no pueden intercalar el UPDATE de estado.
 		if err := lockDeposit(ctx, tx, id); err != nil {
-			return nil, pgError(err)
+			return nil, pgstore.PGError(err)
 		}
 		tag, err := tx.Exec(ctx,
 			`UPDATE booking_deposits SET status=$2 WHERE id=$1 AND status=$3`,
 			id, domain.DepositExpired, domain.DepositPending)
 		if err != nil {
-			return nil, pgError(err)
+			return nil, pgstore.PGError(err)
 		}
 		if tag.RowsAffected() == 0 {
 			continue
@@ -362,7 +363,7 @@ func (r Deposits) ExpirePending(now time.Time, limit int) ([]domain.BookingDepos
 			return nil, err
 		}
 		if err := insertDepositEvent(ctx, tx, id, domain.DepositEventExpired, d.AmountCents, "", "", now); err != nil {
-			return nil, pgError(err)
+			return nil, pgstore.PGError(err)
 		}
 		expiredNow[id] = true
 		out = append(out, d)
@@ -377,13 +378,13 @@ func (r Deposits) ExpirePending(now time.Time, limit int) ([]domain.BookingDepos
 		 LIMIT $3`,
 		domain.DepositExpired, domain.BookingBooked, limit)
 	if err != nil {
-		return nil, pgError(err)
+		return nil, pgstore.PGError(err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		d, err := scanDeposit(rows.Scan)
 		if err != nil {
-			return nil, pgError(err)
+			return nil, pgstore.PGError(err)
 		}
 		if expiredNow[d.ID] {
 			continue
@@ -391,10 +392,10 @@ func (r Deposits) ExpirePending(now time.Time, limit int) ([]domain.BookingDepos
 		out = append(out, d)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, pgError(err)
+		return nil, pgstore.PGError(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, pgError(err)
+		return nil, pgstore.PGError(err)
 	}
 	return out, nil
 }
@@ -409,18 +410,18 @@ func (r Deposits) ListPaidCancelled(limit int) ([]domain.BookingDeposit, error) 
 		 LIMIT $3`,
 		domain.DepositPaid, domain.BookingCancelled, limit)
 	if err != nil {
-		return nil, pgError(err)
+		return nil, pgstore.PGError(err)
 	}
 	defer rows.Close()
 	out := []domain.BookingDeposit{}
 	for rows.Next() {
 		d, err := scanDeposit(rows.Scan)
 		if err != nil {
-			return nil, pgError(err)
+			return nil, pgstore.PGError(err)
 		}
 		out = append(out, d)
 	}
-	return out, pgError(rows.Err())
+	return out, pgstore.PGError(rows.Err())
 }
 
 // SettleLateRefund cierra una sena `pending` o `expired` (pago tardío, D7): UN
@@ -443,16 +444,16 @@ func (r Deposits) SettlePaidCancelled(s domain.DepositSettlement) (bool, error) 
 // settle es el cierre común: lock por sena, UPDATE condicional por el estado de
 // origen y evento en la misma transacción.
 func (r Deposits) settle(s domain.DepositSettlement, eventKind, origin string) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return false, err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 
 	if err := lockDeposit(ctx, tx, s.DepositID); err != nil {
-		return false, pgError(err)
+		return false, pgstore.PGError(err)
 	}
 	d, err := readDepositByID(ctx, tx, s.DepositID)
 	if err != nil {
@@ -461,7 +462,7 @@ func (r Deposits) settle(s domain.DepositSettlement, eventKind, origin string) (
 	// El evento del banco que dispara el cierre entra UNA sola vez: el reintento
 	// del callback no vuelve a escribir ni vuelve a reembolsar.
 	if seen, err := bankEventSeen(ctx, tx, s.BankEventID); err != nil {
-		return false, pgError(err)
+		return false, pgstore.PGError(err)
 	} else if seen {
 		return false, nil
 	}
@@ -469,7 +470,7 @@ func (r Deposits) settle(s domain.DepositSettlement, eventKind, origin string) (
 		`UPDATE booking_deposits SET status=$2, settled_at=$3 WHERE id=$1 AND `+origin,
 		d.ID, s.Status, s.Now.UTC())
 	if err != nil {
-		return false, pgError(err)
+		return false, pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return false, nil
@@ -478,10 +479,10 @@ func (r Deposits) settle(s domain.DepositSettlement, eventKind, origin string) (
 		if isUniqueViolation(err) {
 			return false, tx.Rollback(ctx)
 		}
-		return false, pgError(err)
+		return false, pgstore.PGError(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return false, pgError(err)
+		return false, pgstore.PGError(err)
 	}
 	return true, nil
 }
@@ -505,18 +506,18 @@ func (r Deposits) List(salonID string, q domain.DepositQuery) ([]domain.BookingD
 		 LIMIT $5`,
 		salonID, q.Status, beforeAt, beforeID, q.Limit)
 	if err != nil {
-		return nil, pgError(err)
+		return nil, pgstore.PGError(err)
 	}
 	defer rows.Close()
 	out := []domain.BookingDeposit{}
 	for rows.Next() {
 		d, err := scanDeposit(rows.Scan)
 		if err != nil {
-			return nil, pgError(err)
+			return nil, pgstore.PGError(err)
 		}
 		out = append(out, d)
 	}
-	return out, pgError(rows.Err())
+	return out, pgstore.PGError(rows.Err())
 }
 
 // Notice implementa ports.BookingNoticeRepository: lo que necesita el correo de
@@ -531,7 +532,7 @@ func (r Deposits) Notice(salonID, bookingID string) (domain.BookingNotice, error
 		 WHERE b.salon_id=$1 AND b.id=$2`, salonID, bookingID,
 	).Scan(&n.SalonID, &n.BookingID, &n.SalonName, &n.ClientName, &n.ClientEmail, &n.StartsAt)
 	if err != nil {
-		return domain.BookingNotice{}, notFound(err)
+		return domain.BookingNotice{}, pgstore.NotFound(err)
 	}
 	n.StartsAt = n.StartsAt.UTC()
 	return n, nil
@@ -543,7 +544,16 @@ func (r Deposits) Notice(salonID, bookingID string) (domain.BookingNotice, error
 // con Bookings.Update, que toma el lock `booking-write:<salón>`. No reimplementa
 // lógica de turnos: no hay INSERT ni UPDATE propio.
 type BookingCanceller struct {
-	Bookings Bookings
+	// Bookings es el adaptador de reservas, visto por lo MÍNIMO que necesita D9
+	// (leer el turno y persistir el estado): el de bookings/postgres lo cumple sin
+	// que este módulo importe aquel.
+	Bookings bookingStore
+}
+
+// bookingStore es la parte del repositorio de reservas que usa el cancelador.
+type bookingStore interface {
+	FindByID(salonID, id string) (domain.Booking, error)
+	Update(b domain.Booking) error
 }
 
 // CancelBooking: un turno ya cerrado es nil; uno inexistente también (su sena se

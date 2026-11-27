@@ -1,7 +1,7 @@
 // T12 contra Postgres real (SALON_IT=1): email del turno y cola de
 // recordatorios. La consulta del claim es la pieza delicada: tiene que ser
 // atómica, respetar los reintentos y no cruzar salones.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -12,13 +12,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // bookingEmailFixtures reusa los dos salones de la ronda 2 y los deja sin
 // reservas (los emails cuelgan de bookings con ON DELETE CASCADE).
 func bookingEmailFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 	t.Helper()
-	pool, ctx := round2Fixtures(t)
+	pool, ctx := itdb.Round2Fixtures(t)
 	if _, err := pool.Exec(ctx, `DELETE FROM bookings WHERE salon_id IN ('s-it-r2','s-it-r2b')`); err != nil {
 		t.Fatalf("limpieza de reservas: %v", err)
 	}

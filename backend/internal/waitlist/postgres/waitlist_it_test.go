@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	pgstore "salon-saas/internal/adapters/postgres"
 	bookingsapi "salon-saas/internal/bookings"
+	bookingspostgres "salon-saas/internal/bookings/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/testutil/itdb"
@@ -61,7 +62,7 @@ type itWaitlistEnv struct {
 	ctx      context.Context
 	svc      waitlistuc.WaitlistService
 	repo     Waitlist
-	bookings pgstore.Bookings
+	bookings bookingspostgres.Bookings
 	mails    *itWaitlistMailer
 	salonID  string
 	otherID  string
@@ -101,7 +102,7 @@ func newItWaitlistEnv(t *testing.T) *itWaitlistEnv {
 	hours := pgstore.WeeklyHours{Pool: pool}
 	timeOff := pgstore.TimeOff{Pool: pool}
 	resources := pgstore.Resources{Pool: pool}
-	bookings := pgstore.Bookings{Pool: pool}
+	bookings := bookingspostgres.Bookings{Pool: pool}
 	waitlist := Waitlist{Pool: pool}
 	mails := &itWaitlistMailer{}
 

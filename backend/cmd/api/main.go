@@ -22,9 +22,11 @@ import (
 	authhttpapi "salon-saas/internal/auth/httpapi"
 	"salon-saas/internal/auth/security"
 	"salon-saas/internal/bookings"
+	bookingspostgres "salon-saas/internal/bookings/postgres"
 	"salon-saas/internal/clients"
 	clientshttpapi "salon-saas/internal/clients/httpapi"
 	"salon-saas/internal/deposits"
+	depositspostgres "salon-saas/internal/deposits/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/exports"
 	exportshttpapi "salon-saas/internal/exports/httpapi"
@@ -257,7 +259,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	recoveryRepo := pgstore.AccountRecovery{Pool: pool}
 	sessionGate := pgstore.SessionGate{Pool: pool}
 	tenSvc := team.TenantService{Salons: salons, Memberships: mems}
-	bookingRepo := pgstore.Bookings{Pool: pool}
+	bookingRepo := bookingspostgres.Bookings{Pool: pool}
 	salesRepo := pgstore.Sales{Pool: pool}
 	// F6: catálogo de productos (con su libro de stock) y la venta CON productos
 	// en una sola transacción con tope de tiempo. Una venta sin productos sigue
@@ -521,7 +523,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 		Users: users, Verifs: recoveryRepo, Mailer: mailer, AppURL: cfg.AppURL,
 	}
 	// La cola de recordatorios vive en su propia tabla (014).
-	bookingEmails := pgstore.BookingEmails{Pool: pool}
+	bookingEmails := bookingspostgres.BookingEmails{Pool: pool}
 	// F2g1: invitaciones de equipo (el alta manda el correo y devuelve el enlace
 	// una sola vez) y el canje público (cuenta nueva + membresía + invitación
 	// aceptada en una transacción). Con el mailer nil la invitación existe igual
@@ -546,7 +548,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	coverageSvc.Emails = bookingEmails
 	// F1: el enlace de un solo uso que viaja en la confirmación, el recordatorio y
 	// el aviso de cambio. Guarda solo el SHA-256 del token (migración 027).
-	bookingLinks := pgstore.BookingLinks{Pool: pool}
+	bookingLinks := bookingspostgres.BookingLinks{Pool: pool}
 	reminders := bookings.ReminderService{
 		Emails: bookingEmails, Mailer: mailer, Settings: salons,
 		Links: bookingLinks, AppURL: cfg.AppURL,
@@ -555,8 +557,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	// PAYMENT_SIM_SECRET: sin secreto queda el NoopGateway (D12), no se pueden
 	// activar señas, las rutas del banco y el callback no se montan y el barrido
 	// no corre. Con secreto, el banco es un adaptador más del mismo puerto.
-	depositPoliciesRepo := pgstore.DepositPolicies{Pool: pool}
-	depositRepo := pgstore.Deposits{Pool: pool}
+	depositPoliciesRepo := depositspostgres.DepositPolicies{Pool: pool}
+	depositRepo := depositspostgres.Deposits{Pool: pool}
 	var gateway ports.PaymentGateway = ports.NoopGateway{}
 	var simbankHandler *simbank.Handler
 	if cfg.PaymentSimSecret != "" {
@@ -568,7 +570,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	// (SetStatus(cancelled) bajo el lock `booking-write:`): no reimplementa turnos.
 	depositsSvc := deposits.DepositService{
 		Policies: depositPoliciesRepo, Deposits: depositRepo, Gateway: gateway,
-		Bookings: pgstore.BookingCanceller{Bookings: bookingRepo},
+		Bookings: depositspostgres.BookingCanceller{Bookings: bookingRepo},
 		Notices:  depositRepo, Mailer: mailer, Links: bookingLinks,
 		Settings: salons, Memberships: mems, AppURL: cfg.AppURL,
 	}

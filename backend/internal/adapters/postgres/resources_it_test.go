@@ -3,23 +3,26 @@
 // sin importar mayúsculas, la EXCLUDE por unidad (dos reservas simultáneas nunca
 // se llevan la última), la FK RESTRICT al borrar y el scope por salón.
 // Corre con: SALON_IT=1 DATABASE_URL=... go test ./internal/adapters/postgres/
-package pgstore
+package pgstore_test
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	pgstore "salon-saas/internal/adapters/postgres"
+	"salon-saas/internal/testutil/itdb"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	bookingsapi "salon-saas/internal/bookings"
+	bookingspostgres "salon-saas/internal/bookings/postgres"
 	"salon-saas/internal/domain"
 )
 
 // itResourcesEnv deja un salón limpio y devuelve los repos de equipo y catálogo.
-func itResourcesEnv(t *testing.T, pool *pgxpool.Pool, salonID string) (Resources, Services) {
+func itResourcesEnv(t *testing.T, pool *pgxpool.Pool, salonID string) (pgstore.Resources, pgstore.Services) {
 	t.Helper()
 	ctx := context.Background()
 	_, _ = pool.Exec(ctx, `INSERT INTO salons(id,slug,name) VALUES($1,$1,'Salón '||$1)
@@ -28,7 +31,7 @@ func itResourcesEnv(t *testing.T, pool *pgxpool.Pool, salonID string) (Resources
 	_, _ = pool.Exec(ctx, `DELETE FROM services WHERE salon_id=$1`, salonID)
 	_, _ = pool.Exec(ctx, `DELETE FROM resource_units WHERE salon_id=$1`, salonID)
 	_, _ = pool.Exec(ctx, `DELETE FROM resource_types WHERE salon_id=$1`, salonID)
-	return Resources{Pool: pool}, Services{Pool: pool}
+	return pgstore.Resources{Pool: pool}, pgstore.Services{Pool: pool}
 }
 
 // itUser deja un usuario miembro del salón.
@@ -43,7 +46,7 @@ func itUser(t *testing.T, pool *pgxpool.Pool, userID, salonID string, role domai
 }
 
 // itType crea un tipo con `count` unidades en la DB.
-func itType(t *testing.T, repo Resources, salonID, name string, count int) (domain.ResourceType, []domain.ResourceUnit) {
+func itType(t *testing.T, repo pgstore.Resources, salonID, name string, count int) (domain.ResourceType, []domain.ResourceUnit) {
 	t.Helper()
 	rt, err := domain.NewResourceType(salonID, name)
 	if err != nil {
@@ -66,7 +69,7 @@ func itType(t *testing.T, repo Resources, salonID, name string, count int) (doma
 // S-F2e-1: la 020 deja las columnas y la EXCLUDE con el mismo patrón y nombre de
 // guarda que bookings_no_overlap.
 func TestIT_resources_migration(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	ctx := context.Background()
 
@@ -100,7 +103,7 @@ func TestIT_resources_migration(t *testing.T) {
 // S-F2e-2: el nombre es único por salón sin importar mayúsculas y cada salón
 // tiene su propio equipamiento (scope por salon_id).
 func TestIT_resources_names_and_scope(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	repo, _ := itResourcesEnv(t, pool, "s-f2e-names")
 
@@ -140,12 +143,12 @@ func TestIT_resources_names_and_scope(t *testing.T) {
 // S-F2e-1/S-F2e-4: dos reservas simultáneas a la MISMA unidad y hora: la
 // EXCLUDE deja entrar una y la otra vuelve como conflicto; cancelar libera.
 func TestIT_resources_unit_exclusion(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	repo, _ := itResourcesEnv(t, pool, "s-f2e-excl")
 	itUser(t, pool, "prof-f2e-excl", "s-f2e-excl", domain.RoleProfessional, true)
 	_, units := itType(t, repo, "s-f2e-excl", "Puesto", 1)
-	bookings := Bookings{Pool: pool}
+	bookings := bookingspostgres.Bookings{Pool: pool}
 
 	day := time.Date(2027, 3, 2, 10, 0, 0, 0, time.UTC)
 	errs := saveSameUnit(t, bookings, "s-f2e-excl", "prof-f2e-excl", units[0].ID, day, 2)
@@ -189,7 +192,7 @@ func TestIT_resources_unit_exclusion(t *testing.T) {
 // S-F2e-3: no se borra un tipo que un servicio usa o que tiene una unidad con
 // turnos (FK RESTRICT: ErrAlreadyExists, nunca 500); uno libre se borra entero.
 func TestIT_resources_delete_restrict(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	repo, services := itResourcesEnv(t, pool, "s-f2e-del")
 	itUser(t, pool, "prof-f2e-del", "s-f2e-del", domain.RoleProfessional, true)
@@ -212,7 +215,7 @@ func TestIT_resources_delete_restrict(t *testing.T) {
 	}
 
 	busy, units := itType(t, repo, "s-f2e-del", "Silla", 1)
-	bookings := Bookings{Pool: pool}
+	bookings := bookingspostgres.Bookings{Pool: pool}
 	day := time.Date(2027, 3, 3, 10, 0, 0, 0, time.UTC)
 	b, _ := domain.NewBooking("s-f2e-del", "prof-f2e-del", "Clienta", "", day, day.Add(time.Hour))
 	b.ResourceUnitID = units[0].ID
@@ -238,13 +241,13 @@ func TestIT_resources_delete_restrict(t *testing.T) {
 // S-F2e-3: desactivar una unidad la saca de ActiveUnits y conserva los turnos ya
 // agendados; el conteo de turnos futuros es el aviso de la pantalla.
 func TestIT_resources_deactivate_keeps_bookings(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	repo, _ := itResourcesEnv(t, pool, "s-f2e-off")
 	itUser(t, pool, "prof-f2e-off", "s-f2e-off", domain.RoleProfessional, true)
 	rt, units := itType(t, repo, "s-f2e-off", "Puesto", 2)
 
-	bookings := Bookings{Pool: pool}
+	bookings := bookingspostgres.Bookings{Pool: pool}
 	day := time.Now().UTC().Truncate(time.Hour).Add(48 * time.Hour)
 	b, _ := domain.NewBooking("s-f2e-off", "prof-f2e-off", "Clienta", "", day, day.Add(time.Hour))
 	b.ResourceUnitID = units[0].ID
@@ -272,7 +275,7 @@ func TestIT_resources_deactivate_keeps_bookings(t *testing.T) {
 // S-F2e-4: dos reservas públicas simultáneas por la ÚLTIMA unidad libre: una
 // gana y la otra recibe 409 (o cae en otro par libre); nunca dos en una unidad.
 func TestIT_public_booking_concurrent_last_unit(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	env := newITBookingEnv(t, pool, "s-f2e-race", 5, 3)
 	start := time.Date(2027, 4, 6, 10, 0, 0, 0, time.UTC)
@@ -294,7 +297,7 @@ func TestIT_public_booking_concurrent_last_unit(t *testing.T) {
 // S-F2e-4: el MISMO caso con el último PROFESIONAL (1 profesional, 3 unidades):
 // una reserva gana y la otra 409 (no hay otro par posible).
 func TestIT_public_booking_concurrent_last_professional(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	env := newITBookingEnv(t, pool, "s-f2e-race-prof", 1, 3)
 	start := time.Date(2027, 4, 7, 10, 0, 0, 0, time.UTC)
@@ -309,7 +312,7 @@ func TestIT_public_booking_concurrent_last_professional(t *testing.T) {
 // S-F2e-4: con 2 profesionales y 2 unidades entran las dos reservas simultáneas:
 // el caso de uso reintenta con otro par en vez de devolver un 500.
 func TestIT_public_booking_concurrent_two_pairs(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	env := newITBookingEnv(t, pool, "s-f2e-race2", 2, 2)
 	start := time.Date(2027, 4, 8, 10, 0, 0, 0, time.UTC)
@@ -364,9 +367,9 @@ func newITBookingEnv(t *testing.T, pool *pgxpool.Pool, salonID string, professio
 		slug:      salonID,
 		serviceID: svc.ID,
 		book: bookingsapi.PublicBookingService{
-			Salons: Salons{Pool: pool}, Services: Services{Pool: pool}, Settings: Salons{Pool: pool},
-			Staff: Memberships{Pool: pool}, Bookings: Bookings{Pool: pool},
-			Professionals: ProfessionalServices{Pool: pool}, Resources: repo,
+			Salons: pgstore.Salons{Pool: pool}, Services: pgstore.Services{Pool: pool}, Settings: pgstore.Salons{Pool: pool},
+			Staff: pgstore.Memberships{Pool: pool}, Bookings: bookingspostgres.Bookings{Pool: pool},
+			Professionals: pgstore.ProfessionalServices{Pool: pool}, Resources: repo,
 		},
 	}
 }
@@ -409,7 +412,7 @@ func raceBook(t *testing.T, env *itBookingEnv, start time.Time, n int) raceResul
 }
 
 // saveSameUnit guarda `n` turnos concurrentes para la misma unidad y horario.
-func saveSameUnit(t *testing.T, bookings Bookings, salonID, professionalID, unitID string, start time.Time, n int) []error {
+func saveSameUnit(t *testing.T, bookings bookingspostgres.Bookings, salonID, professionalID, unitID string, start time.Time, n int) []error {
 	t.Helper()
 	var wg sync.WaitGroup
 	errs := make([]error, n)
@@ -465,7 +468,7 @@ func assertUnitNotDoubled(t *testing.T, pool *pgxpool.Pool, salonID string, star
 // es un CONFLICTO de reserva: tiene que reintentarse o terminar en 409, nunca
 // en un error interno. Se repite porque la carrera no es determinista.
 func TestIT_public_booking_many_concurrent_never_internal_error(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	for round := 0; round < 6; round++ {
 		slug := fmt.Sprintf("s-f2e-many-%d", round)

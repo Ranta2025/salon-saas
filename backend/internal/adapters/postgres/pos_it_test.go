@@ -3,16 +3,18 @@
 // repositorios: scoping por salón, índice único de nombres activos, transacción
 // de venta + ítems, suma de efectivo para el cierre y ranking del dashboard.
 // Corre con: SALON_IT=1 go test ./internal/adapters/postgres/ -run IT -v
-package pgstore
+package pgstore_test
 
 import (
 	"context"
 	"errors"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	bookingspostgres "salon-saas/internal/bookings/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/testutil/itdb"
 )
@@ -20,19 +22,15 @@ import (
 // applyMigrations aplica las migraciones con el runner compartido de los tests de
 // integración (itdb): dos pasadas, en orden léxico y bajo el advisory lock para
 // que los paquetes IT que corren en paralelo no se pisen.
-func applyMigrations(t *testing.T, pool *pgxpool.Pool) {
-	t.Helper()
-	itdb.ApplyMigrations(t, pool)
-}
 
 // posFixtures deja el escenario limpio y devuelve el pool. Ids fijos (mismo
 // patrón que el test de carrera) para que el test sea re-ejecutable.
 func posFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
 	ctx := context.Background()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 
 	// Limpieza acotada a las fixtures de este archivo (el salón cascadea todo).
 	for _, q := range []string{
@@ -57,7 +55,7 @@ func posFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 
 func TestServices_IT(t *testing.T) {
 	pool, _ := posFixtures(t)
-	repo := Services{Pool: pool}
+	repo := pgstore.Services{Pool: pool}
 
 	corte, err := domain.NewService("s-it-pos", "Corte IT", 45, 150000, 30)
 	if err != nil {
@@ -129,8 +127,8 @@ func TestServices_IT(t *testing.T) {
 
 func TestSales_IT(t *testing.T) {
 	pool, _ := posFixtures(t)
-	services := Services{Pool: pool}
-	repo := Sales{Pool: pool}
+	services := pgstore.Services{Pool: pool}
+	repo := pgstore.Sales{Pool: pool}
 
 	corte, _ := domain.NewService("s-it-pos", "Corte IT", 45, 150000, 30)
 	brushing, _ := domain.NewService("s-it-pos", "Brushing IT", 30, 80000, 20)
@@ -228,7 +226,7 @@ func TestSales_IT(t *testing.T) {
 
 func TestCashCloses_IT(t *testing.T) {
 	pool, _ := posFixtures(t)
-	repo := CashCloses{Pool: pool}
+	repo := pgstore.CashCloses{Pool: pool}
 
 	if _, err := repo.Last("s-it-pos"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("sin cierres debe dar ErrNotFound, dio %v", err)
@@ -275,10 +273,10 @@ func TestCashCloses_IT(t *testing.T) {
 // TestMigrations_idempotent_IT: el runner del boot re-aplica TODO en cada
 // arranque. Si una migración no fuera re-ejecutable, el API no levantaría.
 func TestMigrations_idempotent_IT(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
-	applyMigrations(t, pool) // ya aplica dos veces; un tercer pase por si acaso
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool) // ya aplica dos veces; un tercer pase por si acaso
+	itdb.ApplyMigrations(t, pool)
 
 	ctx := context.Background()
 	for _, tc := range []struct{ kind, name string }{
@@ -314,8 +312,8 @@ func TestMigrations_idempotent_IT(t *testing.T) {
 // no pasa por los fakes.
 func TestDashboard_IT(t *testing.T) {
 	pool, _ := posFixtures(t)
-	bookings := Bookings{Pool: pool}
-	mems := Memberships{Pool: pool}
+	bookings := bookingspostgres.Bookings{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
 
 	if err := mems.Save(domain.Membership{UserID: "u-it-pos", SalonID: "s-it-pos", Role: domain.RoleProfessional}); err != nil {
 		t.Fatalf("membership: %v", err)

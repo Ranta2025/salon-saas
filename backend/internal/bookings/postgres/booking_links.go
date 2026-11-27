@@ -1,7 +1,8 @@
-package pgstore
+package postgres
 
 import (
 	"context"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -54,7 +55,7 @@ func (r BookingLinks) Save(l domain.BookingLink) error {
 		`INSERT INTO booking_links(id,salon_id,booking_id,token_hash,created_at,used_at)
 		 VALUES($1,$2,$3,$4,$5,$6)`,
 		l.ID, l.SalonID, l.BookingID, l.TokenHash, l.CreatedAt, l.UsedAt)
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // FindByTokenHash es la ÚNICA query sin salon_id: el hash del token es la
@@ -64,7 +65,7 @@ func (r BookingLinks) FindByTokenHash(tokenHash string) (domain.BookingLink, err
 	link, err := scanBookingLink(r.Pool.QueryRow(context.Background(),
 		`SELECT `+bookingLinkColumns+` FROM booking_links WHERE token_hash=$1`, tokenHash).Scan)
 	if err != nil {
-		return domain.BookingLink{}, notFound(err)
+		return domain.BookingLink{}, pgstore.NotFound(err)
 	}
 	return link, nil
 }
@@ -74,13 +75,13 @@ func (r BookingLinks) FindByTokenHash(tokenHash string) (domain.BookingLink, err
 // de uso (`LockWrites`) después de resolver el enlace, que es lo único que dice de
 // qué salón es. Una sola conexión del pool para toda la operación.
 func (r BookingLinks) InBookingLinkTx(fn func(tx ports.BookingLinkTx) error) error {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer rollbackTx(tx) // no-op si ya commiteó
+	defer pgstore.RollbackTx(tx) // no-op si ya commiteó
 	if err := fn(bookingLinkTx{tx: tx, ctx: ctx}); err != nil {
 		return err
 	}
@@ -98,7 +99,7 @@ func (t bookingLinkTx) FindLink(tokenHash string) (domain.BookingLink, error) {
 	link, err := scanBookingLink(t.tx.QueryRow(t.ctx,
 		`SELECT `+bookingLinkColumns+` FROM booking_links WHERE token_hash=$1`, tokenHash).Scan)
 	if err != nil {
-		return domain.BookingLink{}, notFound(err)
+		return domain.BookingLink{}, pgstore.NotFound(err)
 	}
 	return link, nil
 }
@@ -120,7 +121,7 @@ func (t bookingLinkTx) ClaimLink(id string, now time.Time) (domain.BookingLink, 
 		 WHERE id=$1 AND used_at IS NULL
 		 RETURNING `+bookingLinkColumns, id, now.UTC()).Scan)
 	if err != nil {
-		return domain.BookingLink{}, notFound(err)
+		return domain.BookingLink{}, pgstore.NotFound(err)
 	}
 	return link, nil
 }
@@ -132,7 +133,7 @@ func (t bookingLinkTx) SaveLink(l domain.BookingLink) error {
 		`INSERT INTO booking_links(id,salon_id,booking_id,token_hash,created_at,used_at)
 		 VALUES($1,$2,$3,$4,$5,$6)`,
 		l.ID, l.SalonID, l.BookingID, l.TokenHash, l.CreatedAt, l.UsedAt)
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // FindBooking es la lectura del turno dentro de la transacción, con el MISMO

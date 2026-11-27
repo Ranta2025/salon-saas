@@ -1,7 +1,8 @@
-package pgstore
+package postgres
 
 import (
 	"context"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,7 +24,7 @@ func (r BookingEmails) Save(salonID, bookingID, email string) error {
 		 VALUES($1,$2,$3)
 		 ON CONFLICT (booking_id) DO NOTHING`,
 		bookingID, salonID, email)
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // dueRemindersSQL es UN solo statement: reclama y devuelve los recordatorios
@@ -96,7 +97,7 @@ func (r BookingEmails) MarkReminderSent(bookingID string) error {
 	tag, err := r.Pool.Exec(context.Background(),
 		`UPDATE booking_emails SET reminder_sent_at = now() WHERE booking_id = $1`, bookingID)
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
@@ -116,7 +117,7 @@ func (r BookingEmails) FindEmail(salonID, bookingID string) (string, error) {
 		`SELECT email FROM booking_emails
 		 WHERE salon_id=$1 AND booking_id=$2`, salonID, bookingID).Scan(&email)
 	if err != nil {
-		return "", notFound(err)
+		return "", pgstore.NotFound(err)
 	}
 	return email, nil
 }

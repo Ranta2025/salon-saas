@@ -3,7 +3,7 @@
 // mayor y UN correo de confirmación; dos eventos distintos del mismo cargo dejan
 // UNA transición; 20 callbacks aprobados contra una sena vencida dejan UN
 // reembolso; el mismo client_op_id 16 veces crea UN cargo.
-package pgstore
+package postgres
 
 import (
 	"sync"

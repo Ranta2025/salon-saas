@@ -5,7 +5,7 @@
 // del banco, el barrido (vencimiento, reembolso por ventana, `done`/`no_show`
 // que no reembolsan), la carrera barrido↔callback en los DOS órdenes y el cursor
 // opaco de la pantalla.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -14,12 +14,14 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"salon-saas/internal/testutil/itdb"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	bookingspostgres "salon-saas/internal/bookings/postgres"
 	"salon-saas/internal/deposits"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
@@ -43,10 +45,10 @@ type depFix struct {
 // depFixtures deja dos salones y una profesional limpios para las pruebas.
 func depFixtures(t *testing.T) *depFix {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
 	ctx := context.Background()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 	for _, q := range []string{
 		`DELETE FROM salons WHERE id LIKE 's-it-dep%'`,
 		`DELETE FROM users WHERE id LIKE 'u-it-dep%'`,
@@ -587,7 +589,7 @@ func (f *depFix) sweepEnv(t *testing.T, gateway *itGateway, mailer *itMailer) de
 	t.Helper()
 	return deposits.DepositService{
 		Policies: f.policies, Deposits: f.deposits, Gateway: gateway,
-		Bookings: BookingCanceller{Bookings: Bookings{Pool: f.pool}},
+		Bookings: BookingCanceller{Bookings: bookingspostgres.Bookings{Pool: f.pool}},
 		Notices:  f.deposits, Mailer: mailer,
 	}
 }
@@ -960,7 +962,7 @@ func TestDepositsIT_bankEventIndexIsTheGuard(t *testing.T) {
 // booking of that salon.
 func TestBookingsIT_cancelReleasingClientOpIsAtomicAndScoped(t *testing.T) {
 	f := depFixtures(t)
-	bookings := Bookings{Pool: f.pool}
+	bookings := bookingspostgres.Bookings{Pool: f.pool}
 	start := time.Now().UTC().Add(48 * time.Hour)
 
 	booked := f.booking(t, depSalon, domain.BookingBooked, start)

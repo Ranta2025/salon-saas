@@ -1,7 +1,8 @@
-package pgstore
+package postgres
 
 import (
 	"context"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -35,7 +36,7 @@ func (r DepositPolicies) Find(salonID string) (domain.DepositPolicy, error) {
 	row := r.Pool.QueryRow(context.Background(), depositPolicySelect+` WHERE salon_id=$1`, salonID)
 	p, err := scanDepositPolicy(row.Scan)
 	if err != nil {
-		return domain.DepositPolicy{}, notFound(err)
+		return domain.DepositPolicy{}, pgstore.NotFound(err)
 	}
 	return p, nil
 }
@@ -55,7 +56,7 @@ func (r DepositPolicies) Save(p domain.DepositPolicy) (domain.DepositPolicy, err
 		p.SalonID, p.Enabled, p.Percent, p.HoldMinutes, p.RefundHours, updatedAtOrNow(p.UpdatedAt))
 	saved, err := scanDepositPolicy(row.Scan)
 	if err != nil {
-		return domain.DepositPolicy{}, pgError(err)
+		return domain.DepositPolicy{}, pgstore.PGError(err)
 	}
 	return saved, nil
 }

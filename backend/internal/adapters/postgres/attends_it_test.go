@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // S-F2a-1: 015_membership_attends.sql agrega memberships.attends (not null,
@@ -139,7 +140,7 @@ func TestMigration015_attends(t *testing.T) {
 // S-F2a-3: el adaptador Postgres. ListStaff devuelve role='professional' OR
 // attends; Find lee la marca; SetAttends y ListMembers van scopeados por salón.
 func TestMemberships_IT_attends(t *testing.T) {
-	pool, ctx := round2Fixtures(t)
+	pool, ctx := itdb.Round2Fixtures(t)
 	mems := Memberships{Pool: pool}
 	mustExec := func(q string) {
 		t.Helper()
