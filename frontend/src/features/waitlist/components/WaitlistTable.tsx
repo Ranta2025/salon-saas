@@ -6,7 +6,7 @@ import {
   waitlistDayLabel,
   waitlistStatusLabel,
   type WaitlistEntry,
-} from '../../lib/waitlist'
+} from '../lib/waitlist'
 
 type WaitlistTableProps = {
   entries: readonly WaitlistEntry[]

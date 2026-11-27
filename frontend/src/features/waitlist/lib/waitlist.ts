@@ -30,11 +30,11 @@
  *   permissions; these helpers only avoid sending what the API would reject.
  */
 
-import { ApiError, NetworkError, request } from './api.ts'
-import { readBookingLinkHash, type HashRead, type HistoryLike } from './bookingLinks.ts'
-import { EMAIL_INVALID_MESSAGE, isValidEmail, normalizeEmail } from './email.ts'
-import { splitPhone, toE164, validatePhone } from './phone.ts'
-import { RATE_LIMIT_MESSAGE } from './publicBooking.ts'
+import { ApiError, NetworkError, request } from '../../../lib/api.ts'
+import { readBookingLinkHash, type HashRead, type HistoryLike } from '../../../lib/bookingLinks.ts'
+import { EMAIL_INVALID_MESSAGE, isValidEmail, normalizeEmail } from '../../../lib/email.ts'
+import { splitPhone, toE164, validatePhone } from '../../../lib/phone.ts'
+import { RATE_LIMIT_MESSAGE } from '../../../lib/publicBooking.ts'
 
 // --- copy of the contract (D9), verbatim where the contract quotes it ------
 

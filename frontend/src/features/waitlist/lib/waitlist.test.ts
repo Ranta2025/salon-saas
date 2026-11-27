@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, NetworkError } from './api.ts'
-import { EMAIL_INVALID_MESSAGE } from './email.ts'
-import { RATE_LIMIT_MESSAGE } from './publicBooking.ts'
-import { canViewWaitlist } from './permissions.ts'
-import { clearToken, setToken } from './session.ts'
+import { ApiError, NetworkError } from '../../../lib/api.ts'
+import { EMAIL_INVALID_MESSAGE } from '../../../lib/email.ts'
+import { RATE_LIMIT_MESSAGE } from '../../../lib/publicBooking.ts'
+import { canViewWaitlist } from '../../../lib/permissions.ts'
+import { clearToken, setToken } from '../../../lib/session.ts'
 import {
   WAITLIST_ANY_PROFESSIONAL,
   WAITLIST_EMAIL_MISSING,

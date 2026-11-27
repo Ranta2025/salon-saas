@@ -12,7 +12,7 @@ import {
   validateWaitlistDraft,
   waitlistDayLabel,
   type WaitlistField,
-} from '../../lib/waitlist'
+} from '@/features/waitlist/lib/waitlist'
 
 type WaitlistFormProps = {
   /** Public slug of the salon, as the availability request already uses it. */

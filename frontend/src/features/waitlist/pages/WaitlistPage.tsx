@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { describeApiError, type ApiErrorNotice } from '../lib/api'
-import { activeRole, canViewWaitlist } from '../lib/permissions'
+import { describeApiError, type ApiErrorNotice } from '@/lib/api'
+import { activeRole, canViewWaitlist } from '@/lib/permissions'
 import {
   WAITLIST_EMPTY,
   WAITLIST_LOAD_FALLBACK,
@@ -10,11 +10,11 @@ import {
   waitlistCountLabel,
   type WaitlistEntry,
 } from '../lib/waitlist'
-import { useSalon } from './SalonContext'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { PageHeader } from './components/PageHeader'
-import { WaitlistNotice } from './components/WaitlistNotice'
-import { WaitlistTable } from './components/WaitlistTable'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { PageHeader } from '@/app/components/PageHeader'
+import { WaitlistNotice } from '../components/WaitlistNotice'
+import { WaitlistTable } from '../components/WaitlistTable'
 
 /**
  * `/panel/lista-de-espera` (contract F7, D8 and D9c): the avisos of the salon
