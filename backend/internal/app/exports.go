@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -55,10 +56,10 @@ func (s ExportService) now() time.Time {
 // Orden de las reglas: (1) permisos, (2) rango válido en la zona del salón, (3)
 // la lectura con tope + 1, (4) más filas que el tope es 400 SIN archivo (D3).
 func (s ExportService) Sales(actor domain.Membership, salonID, from, to string) (ExportFile, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return ExportFile{}, err
 	}
-	loc, err := SalonLocation(s.Settings, salonID)
+	loc, err := kernel.SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return ExportFile{}, err
 	}
@@ -82,10 +83,10 @@ func (s ExportService) Sales(actor domain.Membership, salonID, from, to string) 
 
 // CashCloses arma el CSV de cierres de caja del rango (closed_at en la ventana).
 func (s ExportService) CashCloses(actor domain.Membership, salonID, from, to string) (ExportFile, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return ExportFile{}, err
 	}
-	loc, err := SalonLocation(s.Settings, salonID)
+	loc, err := kernel.SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return ExportFile{}, err
 	}
@@ -111,10 +112,10 @@ func (s ExportService) CashCloses(actor domain.Membership, salonID, from, to str
 // el nombre del archivo. El tope tiene su propio mensaje porque una lista de
 // clientes no se recorta por fecha: es la cartera completa del salón.
 func (s ExportService) Clients(actor domain.Membership, salonID string) (ExportFile, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return ExportFile{}, err
 	}
-	loc, err := SalonLocation(s.Settings, salonID)
+	loc, err := kernel.SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return ExportFile{}, err
 	}

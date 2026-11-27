@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -226,13 +227,13 @@ func (s CoverageService) CancelBooking(actor domain.Membership, salonID, booking
 	if err := s.Bookings.Update(cancelled); err != nil {
 		return domain.Booking{}, err
 	}
-	publish(s.Events, ports.Event{
+	kernel.Publish(s.Events, ports.Event{
 		Type:    "booking.updated",
 		SalonID: salonID,
 		Data:    bookingEventData(cancelled),
 		TS:      time.Now().UTC(),
 	})
-	notify(s.Notifier, salonID, "", "Turno cancelado",
+	kernel.Notify(s.Notifier, salonID, "", "Turno cancelado",
 		cancelNoticeBody(cancelled, motivo, salonTimeLabel(s.Settings, salonID, cancelled.StartsAt)),
 		domain.KindBooking)
 	s.sendCoverMail(salonID, cancelled, "", coverMailCancelled)
@@ -375,7 +376,7 @@ func (s CoverageService) absenceBookings(off domain.TimeOff) ([]domain.Booking, 
 // manda el correo a la clienta: el turno se mantiene y quién la atiende ahora
 // (S-F2d3-4).
 func (s CoverageService) announceReassign(salonID string, b domain.Booking, professionalName string) {
-	publish(s.Events, ports.Event{
+	kernel.Publish(s.Events, ports.Event{
 		Type:    "booking.updated",
 		SalonID: salonID,
 		Data:    bookingEventData(b),
@@ -386,7 +387,7 @@ func (s CoverageService) announceReassign(salonID string, b domain.Booking, prof
 	if name := strings.TrimSpace(professionalName); name != "" {
 		body += " · ahora la atiende " + name
 	}
-	notify(s.Notifier, salonID, "", "Turno reasignado", body, domain.KindBooking)
+	kernel.Notify(s.Notifier, salonID, "", "Turno reasignado", body, domain.KindBooking)
 	s.sendCoverMail(salonID, b, professionalName, coverMailReassigned)
 }
 
@@ -404,7 +405,7 @@ func (s CoverageService) sendCoverMail(salonID string, b domain.Booking, profess
 		}
 		return
 	}
-	settings, err := loadSalonSettings(s.Settings, salonID)
+	settings, err := kernel.LoadSalonSettings(s.Settings, salonID)
 	if err != nil {
 		log.Printf("cobertura: settings del salón %s: %v", salonID, err)
 		settings = domain.SalonSettings{SalonID: salonID, Timezone: "UTC"}
@@ -518,7 +519,7 @@ func (s CoverageService) loadCandidates(salonID string) (*candidateSet, error) {
 	if err != nil {
 		return nil, err
 	}
-	settings, err := loadSalonSettings(s.Settings, salonID)
+	settings, err := kernel.LoadSalonSettings(s.Settings, salonID)
 	if err != nil {
 		return nil, err
 	}

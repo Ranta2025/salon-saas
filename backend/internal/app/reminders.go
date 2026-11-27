@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -59,7 +60,7 @@ func (s ReminderService) RunOnce(ctx context.Context, now time.Time) (sent, fail
 		// La hora del correo es la del salón. Si su configuración no se puede
 		// leer, el recordatorio sale igual en UTC (mejor una hora con zona que
 		// ningún recordatorio).
-		settings, err := loadSalonSettings(s.Settings, d.SalonID)
+		settings, err := kernel.LoadSalonSettings(s.Settings, d.SalonID)
 		if err != nil {
 			log.Printf("recordatorios: settings del salón %s: %v", d.SalonID, err)
 			settings = domain.SalonSettings{SalonID: d.SalonID, Timezone: "UTC"}

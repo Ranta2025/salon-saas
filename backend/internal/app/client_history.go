@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -50,9 +51,9 @@ func (s ClientHistoryService) History(actor domain.Membership, salonID, clientID
 		return ClientHistoryView{}, domain.ErrForbidden
 	}
 	if _, err := s.Clients.FindByID(salonID, clientID); err != nil {
-		return ClientHistoryView{}, ClientError(err)
+		return ClientHistoryView{}, kernel.ClientError(err)
 	}
-	loc, err := SalonLocation(s.Settings, salonID)
+	loc, err := kernel.SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return ClientHistoryView{}, err
 	}
@@ -68,7 +69,7 @@ func (s ClientHistoryService) History(actor domain.Membership, salonID, clientID
 		Sales:    data.Sales,
 	}
 	// El profesional ve visitas y turnos, nunca la facturación de la clienta.
-	if !puedeVerPlata(m) {
+	if !kernel.PuedeVerPlata(m) {
 		view.Spend = nil
 		view.Sales = nil
 	}

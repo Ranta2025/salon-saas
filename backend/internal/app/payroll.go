@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -71,7 +72,7 @@ type PayrollMe struct {
 // al menos una venta en el período o un fijo que aplicar; los totales son la
 // suma de las líneas y el orden es por total descendente y después por nombre.
 func (s PayrollService) Preview(actor domain.Membership, salonID, kind, date string) (PayrollPreview, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return PayrollPreview{}, err
 	}
 	return s.preview(salonID, kind, date)
@@ -214,7 +215,7 @@ func (s PayrollService) Me(actor domain.Membership, salonID, kind, date string) 
 // instantes [from, to). La zona sale SIEMPRE de la configuración del salón: un
 // salón de CDMX liquida su marzo local, no el marzo UTC.
 func (s PayrollService) period(salonID, kind, date string) (domain.PayPeriod, time.Time, time.Time, error) {
-	settings, err := loadSalonSettings(s.Settings, salonID)
+	settings, err := kernel.LoadSalonSettings(s.Settings, salonID)
 	if err != nil {
 		return domain.PayPeriod{}, time.Time{}, time.Time{}, err
 	}

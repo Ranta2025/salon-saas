@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -400,23 +401,10 @@ func (s MemberService) now() time.Time {
 
 // manager exige membership real y permiso de gestión (owner/admin).
 func (s MemberService) manager(actor domain.Membership, salonID string) (domain.Membership, error) {
-	return manageActor(s.Memberships, actor, salonID)
+	return kernel.ManageActor(s.Memberships, actor, salonID)
 }
 
 // manageActor es la autorización compartida de la pantalla de equipo y de las
 // invitaciones (F2g1): el actor tiene que estar en ESE salón y ser owner/admin.
 // Vive una sola vez para que el alta directa (`POST /members`) y la invitación
 // no puedan divergir en quién puede sumar gente.
-func manageActor(memberships ports.MembershipRepository, actor domain.Membership, salonID string) (domain.Membership, error) {
-	if actor.SalonID != salonID {
-		return domain.Membership{}, domain.ErrForbidden
-	}
-	m, err := memberships.Find(actor.UserID, salonID)
-	if err != nil {
-		return domain.Membership{}, domain.ErrForbidden
-	}
-	if !m.CanManage() {
-		return domain.Membership{}, domain.ErrForbidden
-	}
-	return m, nil
-}

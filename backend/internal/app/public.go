@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -99,7 +100,7 @@ func (s PublicSalonService) Public(slug string) (PublicSalon, error) {
 	if err != nil {
 		return PublicSalon{}, err
 	}
-	settings, err := loadSalonSettings(s.Settings, salon.ID)
+	settings, err := kernel.LoadSalonSettings(s.Settings, salon.ID)
 	if err != nil {
 		return PublicSalon{}, err
 	}

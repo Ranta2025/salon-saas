@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -31,7 +32,7 @@ func (s DashboardService) Today(actor domain.Membership, salonID string) (Dashbo
 	if err != nil {
 		return Dashboard{}, err
 	}
-	if !puedeVerPlata(m) {
+	if !kernel.PuedeVerPlata(m) {
 		return Dashboard{}, domain.ErrForbidden
 	}
 	from := startOfUTCDay(time.Now().UTC())

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -26,10 +27,10 @@ type ProfitService struct {
 // profesional y cliente reciben 403. Un `kind` o un `date` inválidos son 400
 // «Período inválido».
 func (s ProfitService) Report(actor domain.Membership, salonID, kind, date string) (domain.ProfitReport, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return domain.ProfitReport{}, err
 	}
-	settings, err := loadSalonSettings(s.Settings, salonID)
+	settings, err := kernel.LoadSalonSettings(s.Settings, salonID)
 	if err != nil {
 		return domain.ProfitReport{}, err
 	}

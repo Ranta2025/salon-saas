@@ -30,6 +30,7 @@ import (
 	"unicode/utf8"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -301,7 +302,7 @@ func (s DepositService) sendConfirmation(deposit domain.BookingDeposit, now time
 	if email == "" {
 		return // reserva anónima: no hay a quién avisar
 	}
-	settings, err := loadSalonSettings(s.Settings, deposit.SalonID)
+	settings, err := kernel.LoadSalonSettings(s.Settings, deposit.SalonID)
 	if err != nil {
 		log.Printf("sena: leer la configuracion del salon %s: %v", deposit.SalonID, err)
 		return
@@ -357,7 +358,7 @@ func (s DepositService) RequireViewer(actor domain.Membership, salonID string) e
 	if err != nil {
 		return err
 	}
-	if !PuedeVender(m) {
+	if !kernel.PuedeVender(m) {
 		return domain.ErrForbidden
 	}
 	return nil

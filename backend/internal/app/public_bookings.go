@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -153,7 +154,7 @@ func (s PublicBookingService) book(slug string, in PublicBookingInput, out *depo
 		return domain.Booking{}, err
 	}
 
-	settings, err := loadSalonSettings(s.Settings, salon.ID)
+	settings, err := kernel.LoadSalonSettings(s.Settings, salon.ID)
 	if err != nil {
 		return domain.Booking{}, err
 	}
@@ -340,7 +341,7 @@ func (s PublicBookingService) book(slug string, in PublicBookingInput, out *depo
 		}
 	}
 
-	publish(s.Events, ports.Event{
+	kernel.Publish(s.Events, ports.Event{
 		Type:    "booking.created",
 		SalonID: salon.ID,
 		Data: map[string]any{
@@ -353,7 +354,7 @@ func (s PublicBookingService) book(slug string, in PublicBookingInput, out *depo
 		},
 		TS: b.CreatedAt,
 	})
-	notify(s.Notifier, salon.ID, "", "Nuevo turno",
+	kernel.Notify(s.Notifier, salon.ID, "", "Nuevo turno",
 		b.ClientName+" · "+FormatSalonTime(settings, b.StartsAt)+" (reserva web)", domain.KindBooking)
 	// El enlace de un solo uso para cambiar o cancelar (F1/D1): un token NUEVO por
 	// cada email enviado y solo para un turno con email. Si no se puede emitir, la

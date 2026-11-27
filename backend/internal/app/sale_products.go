@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -37,7 +38,7 @@ func (s SaleService) RegisterSaleWithProducts(actor domain.Membership, salonID, 
 	if err != nil {
 		return domain.Sale{}, err
 	}
-	if !PuedeVender(m) {
+	if !kernel.PuedeVender(m) {
 		return domain.Sale{}, domain.ErrForbidden
 	}
 	// La ficha del POS (F5): tiene que existir EN ESTE salón; si el nombre vino
@@ -71,7 +72,7 @@ func (s SaleService) RegisterSaleWithProducts(actor domain.Membership, salonID, 
 			return domain.Sale{}, err
 		}
 	}
-	if err := EnsureProfessional(s.Memberships, salonID, professionalID); err != nil {
+	if err := kernel.EnsureProfessional(s.Memberships, salonID, professionalID); err != nil {
 		return domain.Sale{}, err
 	}
 	// (4) Precio del catálogo del salón, nunca del cliente. Los servicios se
@@ -132,7 +133,7 @@ func (s SaleService) RegisterSaleWithProducts(actor domain.Membership, salonID, 
 			log.Printf("venta %s: vincular la ficha en el salón %s: %v", sale.ID, salonID, err)
 		}
 	}
-	publish(s.Events, ports.Event{
+	kernel.Publish(s.Events, ports.Event{
 		Type:    "sale.created",
 		SalonID: salonID,
 		Data: map[string]any{

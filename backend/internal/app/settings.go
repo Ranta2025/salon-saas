@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -22,7 +23,7 @@ func (s SettingsService) Get(actor domain.Membership, salonID string) (domain.Sa
 	if _, err := s.member(actor, salonID); err != nil {
 		return domain.SalonSettings{}, err
 	}
-	return loadSalonSettings(s.Settings, salonID)
+	return kernel.LoadSalonSettings(s.Settings, salonID)
 }
 
 // Update valida y persiste. El cuerpo es completo (los cuatro campos): un PUT
@@ -67,16 +68,3 @@ func (s SettingsService) member(actor domain.Membership, salonID string) (domain
 // loadSalonSettings es el único camino de lectura de la configuración: fila
 // ausente = defaults de fábrica; cualquier otro error se propaga (nunca se
 // inventa una zona horaria con la DB caída).
-func loadSalonSettings(repo ports.SalonSettingsRepository, salonID string) (domain.SalonSettings, error) {
-	if repo == nil {
-		return domain.DefaultSalonSettings(salonID), nil
-	}
-	settings, err := repo.Settings(salonID)
-	if errors.Is(err, domain.ErrNotFound) {
-		return domain.DefaultSalonSettings(salonID), nil
-	}
-	if err != nil {
-		return domain.SalonSettings{}, err
-	}
-	return settings, nil
-}

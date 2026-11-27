@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -38,7 +39,7 @@ func (s NotificationService) Create(salonID, userID, title, body string, kind do
 	}
 	// El evento `notify` lleva la notificación ya persistida (con su id): el
 	// frontend la pinta al instante y después la puede marcar leída.
-	publish(s.Events, ports.Event{
+	kernel.Publish(s.Events, ports.Event{
 		Type:    "notify",
 		SalonID: n.SalonID,
 		Data:    map[string]any{"notification": NotificationPayload(n)},

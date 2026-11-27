@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -19,7 +20,7 @@ type PayModelService struct {
 // baja; sin fila, el default de D3: solo comisión). Solo owner/admin: el sueldo
 // de cada quien es información sensible del negocio (D7).
 func (s PayModelService) List(actor domain.Membership, salonID string) ([]domain.MemberPayView, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return nil, err
 	}
 	list, err := s.Pay.ListPayModels(salonID)
@@ -39,7 +40,7 @@ func (s PayModelService) List(actor domain.Membership, salonID string) ([]domain
 // modelo (400 en español). La validación va después de la existencia para que un
 // pedido inválido sobre alguien ajeno no confirme que el salón lo conoce.
 func (s PayModelService) Update(actor domain.Membership, salonID, userID string, fixedCents int, period string, commissionEnabled bool) (domain.MemberPayView, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return domain.MemberPayView{}, err
 	}
 	view, err := s.Pay.FindPayModel(salonID, userID)

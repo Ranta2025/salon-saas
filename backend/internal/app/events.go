@@ -11,36 +11,20 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
-// Notifier es lo que necesitan los casos de uso para dejar un aviso persistido.
-// Lo implementa NotificationService; nil significa "este entorno no avisa".
-type Notifier interface {
-	Create(salonID, userID, title, body string, kind domain.NotificationKind) (domain.Notification, error)
-}
+// Notifier es el aviso persistido que piden los casos de uso (vive en el
+// núcleo: kernel.Notifier). Alias para no tocar a quien ya lo nombra acá.
+type Notifier = kernel.Notifier
 
 // publish manda el evento al bus del salón. Best-effort a propósito: si el
 // broadcast falla, la venta ya está cobrada y no se puede deshacer por un
 // websocket caído (el error del canal no es el error del negocio).
-func publish(events ports.EventPublisher, ev ports.Event) {
-	if events == nil {
-		return
-	}
-	if ev.TS.IsZero() {
-		ev.TS = time.Now().UTC()
-	}
-	_ = events.Publish(ev)
-}
 
 // notify deja el aviso persistido, si hay quién lo haga. Mismo criterio que
 // publish: un aviso que no se pudo guardar no tumba la operación de negocio.
-func notify(n Notifier, salonID, userID, title, body string, kind domain.NotificationKind) {
-	if n == nil {
-		return
-	}
-	_, _ = n.Create(salonID, userID, title, body, kind)
-}
 
 // FormatSalonTime pasa un instante al texto de un aviso en la hora LOCAL del
 // salón y nombra la zona. Sin esto, un turno de las 11:00 en CDMX se lee "17:00"
@@ -62,7 +46,7 @@ func FormatSalonTime(settings domain.SalonSettings, t time.Time) string {
 // configuración no se puede leer, el aviso sale igual (en UTC): un aviso que se
 // pierde por una fila de settings es peor que una hora con la zona a la vista.
 func salonTimeLabel(repo ports.SalonSettingsRepository, salonID string, t time.Time) string {
-	settings, err := loadSalonSettings(repo, salonID)
+	settings, err := kernel.LoadSalonSettings(repo, salonID)
 	if err != nil {
 		settings = domain.SalonSettings{SalonID: salonID, Timezone: "UTC"}
 	}

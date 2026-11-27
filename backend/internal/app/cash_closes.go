@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -69,7 +70,7 @@ func (s CashCloseService) CloseCash(actor domain.Membership, salonID string, cou
 		return domain.CashClose{}, err
 	}
 	// El turno cerró: el equipo se entera sin refrescar (y queda el aviso).
-	publish(s.Events, ports.Event{
+	kernel.Publish(s.Events, ports.Event{
 		Type:    "cash_closed",
 		SalonID: salonID,
 		Data: map[string]any{
@@ -80,7 +81,7 @@ func (s CashCloseService) CloseCash(actor domain.Membership, salonID string, cou
 		},
 		TS: closed.ClosedAt,
 	})
-	notify(s.Notifier, salonID, "", "Cierre de caja",
+	kernel.Notify(s.Notifier, salonID, "", "Cierre de caja",
 		fmt.Sprintf("Esperado %s · contado %s · diferencia %s",
 			FormatCents(closed.SystemCashCents), FormatCents(closed.CountedCents), FormatCents(closed.DifferenceCents)),
 		domain.KindCash)
@@ -120,7 +121,7 @@ func (s CashCloseService) closeWith(w cashWindow, salonID string, countedCents i
 // salón. Si la configuración no se puede leer, el cierre falla (nunca se cuenta
 // plata con una ventana adivinada).
 func (s CashCloseService) openOfShift(salonID string, now time.Time) (time.Time, error) {
-	settings, err := loadSalonSettings(s.Settings, salonID)
+	settings, err := kernel.LoadSalonSettings(s.Settings, salonID)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -160,7 +161,7 @@ func (s CashCloseService) ListCloses(actor domain.Membership, salonID string) ([
 	if err != nil {
 		return nil, err
 	}
-	if !puedeVerPlata(m) {
+	if !kernel.PuedeVerPlata(m) {
 		return nil, domain.ErrForbidden
 	}
 	return s.CashCloses.List(salonID)

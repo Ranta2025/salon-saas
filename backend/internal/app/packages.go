@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -63,7 +64,7 @@ func (s PackageService) ListCatalog(actor domain.Membership, salonID string) ([]
 	if err != nil {
 		return nil, err
 	}
-	if !puedeVerPlata(m) {
+	if !kernel.PuedeVerPlata(m) {
 		return nil, domain.ErrForbidden
 	}
 	return s.Packages.List(salonID)
@@ -144,7 +145,7 @@ func (s PackageService) Purchase(actor domain.Membership, salonID, clientID, pac
 	if err != nil {
 		return domain.ClientPackage{}, err
 	}
-	if !PuedeVender(m) {
+	if !kernel.PuedeVender(m) {
 		return domain.ClientPackage{}, domain.ErrForbidden
 	}
 	client, err := s.client(salonID, clientID)
@@ -169,7 +170,7 @@ func (s PackageService) Purchase(actor domain.Membership, salonID, clientID, pac
 	if err != nil {
 		return domain.ClientPackage{}, err
 	}
-	loc, err := SalonLocation(s.Settings, salonID)
+	loc, err := kernel.SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return domain.ClientPackage{}, err
 	}
@@ -188,7 +189,7 @@ func (s PackageService) Purchase(actor domain.Membership, salonID, clientID, pac
 		return domain.ClientPackage{}, err
 	}
 	sale := order.Sale
-	publish(s.Events, ports.Event{
+	kernel.Publish(s.Events, ports.Event{
 		Type:    "sale.created",
 		SalonID: salonID,
 		Data: map[string]any{
@@ -229,7 +230,7 @@ func (s PackageService) ListClientPackages(actor domain.Membership, salonID, cli
 	if err != nil {
 		return nil, err
 	}
-	if !puedeVerPlata(m) {
+	if !kernel.PuedeVerPlata(m) {
 		return nil, domain.ErrForbidden
 	}
 	client, err := s.client(salonID, clientID)
@@ -254,7 +255,7 @@ func (s PackageService) Movements(actor domain.Membership, salonID, clientID, cl
 	if err != nil {
 		return nil, err
 	}
-	if !puedeVerPlata(m) {
+	if !kernel.PuedeVerPlata(m) {
 		return nil, domain.ErrForbidden
 	}
 	if !cleanIDs(clientID, clientPackageID) {
@@ -280,7 +281,7 @@ func (s PackageService) Redeem(actor domain.Membership, salonID, clientID, clien
 	if err != nil {
 		return domain.ClientPackage{}, err
 	}
-	if !PuedeVender(m) {
+	if !kernel.PuedeVender(m) {
 		return domain.ClientPackage{}, domain.ErrForbidden
 	}
 	if !cleanIDs(clientID, clientPackageID) {
@@ -389,7 +390,7 @@ func (s PackageService) client(salonID, clientID string) (domain.Client, error) 
 	}
 	c, err := s.Clients.FindByID(salonID, clientID)
 	if err != nil {
-		return domain.Client{}, ClientError(err)
+		return domain.Client{}, kernel.ClientError(err)
 	}
 	return c, nil
 }
@@ -451,7 +452,7 @@ func (s PackageService) ensureStaff(salonID, professionalID string) error {
 	if !cleanIDs(professionalID) {
 		return fmt.Errorf("%w: el profesional no pertenece al salón", domain.ErrValidation)
 	}
-	return EnsureProfessional(s.Memberships, salonID, professionalID)
+	return kernel.EnsureProfessional(s.Memberships, salonID, professionalID)
 }
 
 // ensureFreeName rechaza un nombre que ya usa un paquete ACTIVO del salón, sin
@@ -498,7 +499,7 @@ func (s PackageService) RequireSeller(actor domain.Membership, salonID string) e
 	if err != nil {
 		return err
 	}
-	if !PuedeVender(m) {
+	if !kernel.PuedeVender(m) {
 		return domain.ErrForbidden
 	}
 	return nil

@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -303,7 +304,7 @@ func (s BookingLinkService) resolve(token string) (linkedBooking, error) {
 	if err != nil {
 		return linkedBooking{}, err
 	}
-	settings, err := loadSalonSettings(s.Settings, salon.ID)
+	settings, err := kernel.LoadSalonSettings(s.Settings, salon.ID)
 	if err != nil {
 		return linkedBooking{}, err
 	}
@@ -555,7 +556,7 @@ func (s BookingLinkService) checkNewTime(got linkedBooking, startsAt time.Time) 
 // `booking.updated` para que el calendario del salón se refresque solo y el aviso
 // interno del mostrador con la hora local.
 func (s BookingLinkService) announce(b domain.Booking, rescheduled bool) {
-	publish(s.Events, ports.Event{
+	kernel.Publish(s.Events, ports.Event{
 		Type:    "booking.updated",
 		SalonID: b.SalonID,
 		Data: map[string]any{
@@ -572,7 +573,7 @@ func (s BookingLinkService) announce(b domain.Booking, rescheduled bool) {
 	if !rescheduled {
 		title = bookingChangeTitle(b.Status)
 	}
-	notify(s.Notifier, b.SalonID, "", title,
+	kernel.Notify(s.Notifier, b.SalonID, "", title,
 		b.ClientName+" · "+salonTimeLabel(s.Settings, b.SalonID, b.StartsAt), domain.KindBooking)
 }
 
@@ -598,7 +599,7 @@ func (s BookingLinkService) sendChangeMail(b domain.Booking, kind int, link stri
 		log.Printf("enlace del turno %s del salón %s: leer el salón: %v", b.ID, b.SalonID, err)
 		return false
 	}
-	settings, err := loadSalonSettings(s.Settings, b.SalonID)
+	settings, err := kernel.LoadSalonSettings(s.Settings, b.SalonID)
 	if err != nil {
 		log.Printf("enlace del turno %s del salón %s: leer la configuración: %v", b.ID, b.SalonID, err)
 		settings = domain.SalonSettings{SalonID: b.SalonID, Timezone: "UTC"}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -44,7 +45,7 @@ type PayrollRunService struct {
 // puede derivar el período con una zona que se está cambiando en paralelo (el
 // bloqueante del verificador: fechas locales comparadas por la EXCLUDE).
 func (s PayrollRunService) Create(actor domain.Membership, salonID, kind, date string) (domain.PayrollRun, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return domain.PayrollRun{}, err
 	}
 	if s.Tx == nil {
@@ -116,7 +117,7 @@ func (s PayrollRunService) Create(actor domain.Membership, salonID, kind, date s
 
 // List devuelve las liquidaciones del salón, la más nueva primero.
 func (s PayrollRunService) List(actor domain.Membership, salonID string) ([]domain.PayrollRunSummary, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return nil, err
 	}
 	list, err := s.Runs.ListRuns(salonID)
@@ -131,7 +132,7 @@ func (s PayrollRunService) List(actor domain.Membership, salonID string) ([]doma
 
 // Get devuelve una liquidación con sus líneas. Inexistente o de otro salón: 404.
 func (s PayrollRunService) Get(actor domain.Membership, salonID, runID string) (domain.PayrollRun, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return domain.PayrollRun{}, err
 	}
 	return s.Runs.FindRun(salonID, runID)
@@ -145,7 +146,7 @@ func (s PayrollRunService) Get(actor domain.Membership, salonID, runID string) (
 // La escritura repite la condición status='open' en la DB: aunque una pagada se
 // cuele entre la lectura y el UPDATE, el query no la toca.
 func (s PayrollRunService) AdjustLine(actor domain.Membership, salonID, runID, userID string, adjustmentCents int, note string) (domain.PayrollRun, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return domain.PayrollRun{}, err
 	}
 	run, err := s.Runs.FindRun(salonID, runID)
@@ -187,7 +188,7 @@ func (s PayrollRunService) AdjustLine(actor domain.Membership, salonID, runID, u
 // Pay marca la corrida como pagada. Desde ahí es INMUTABLE: ni líneas, ni
 // borrado, ni un segundo pago (409 con la misma frase).
 func (s PayrollRunService) Pay(actor domain.Membership, salonID, runID string) (domain.PayrollRun, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return domain.PayrollRun{}, err
 	}
 	if s.Tx == nil {
@@ -218,7 +219,7 @@ func (s PayrollRunService) Pay(actor domain.Membership, salonID, runID string) (
 // Delete borra una corrida ABIERTA (y sus líneas en cascada), liberando sus
 // días para poder liquidarlos de nuevo. Una pagada es 409.
 func (s PayrollRunService) Delete(actor domain.Membership, salonID, runID string) error {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return err
 	}
 	if s.Tx == nil {
@@ -233,7 +234,7 @@ func (s PayrollRunService) Delete(actor domain.Membership, salonID, runID string
 // ExportCSV arma el archivo de una liquidación (D8). Se puede exportar una
 // abierta o una pagada: los montos son la foto congelada, nunca un recálculo.
 func (s PayrollRunService) ExportCSV(actor domain.Membership, salonID, runID string) (string, []byte, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return "", nil, err
 	}
 	run, err := s.Runs.FindRun(salonID, runID)

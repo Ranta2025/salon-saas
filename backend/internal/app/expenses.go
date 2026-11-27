@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -30,10 +31,10 @@ type ExpenseService struct {
 // Create registra un gasto. Solo owner/admin (403 para el resto, D5). Un 400 de
 // validación no escribe nada.
 func (s ExpenseService) Create(actor domain.Membership, salonID string, f domain.ExpenseFields) (domain.Expense, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return domain.Expense{}, err
 	}
-	loc, err := SalonLocation(s.Settings, salonID)
+	loc, err := kernel.SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return domain.Expense{}, err
 	}
@@ -51,7 +52,7 @@ func (s ExpenseService) Create(actor domain.Membership, salonID string, f domain
 // List devuelve los gastos del rango (from y to INCLUSIVOS) y si había más de
 // 500. El rango es obligatorio, `to` >= `from` y de hasta 366 días.
 func (s ExpenseService) List(actor domain.Membership, salonID, from, to string) ([]domain.Expense, bool, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return nil, false, err
 	}
 	fromDate, toDate, err := domain.ExpenseRange(from, to)
@@ -72,14 +73,14 @@ func (s ExpenseService) List(actor domain.Membership, salonID, from, to string) 
 // F3.2): (1) permisos, (2) el gasto existe en ESTE salón (404), (3) validación
 // (400, no escribe nada). Un gasto de otro salón es 404 «Gasto no encontrado».
 func (s ExpenseService) Update(actor domain.Membership, salonID, expenseID string, f domain.ExpenseFields) (domain.Expense, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return domain.Expense{}, err
 	}
 	current, err := s.Expenses.FindByID(salonID, expenseID)
 	if err != nil {
 		return domain.Expense{}, expenseNotFound(err)
 	}
-	loc, err := SalonLocation(s.Settings, salonID)
+	loc, err := kernel.SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return domain.Expense{}, err
 	}
@@ -97,7 +98,7 @@ func (s ExpenseService) Update(actor domain.Membership, salonID, expenseID strin
 // Delete borra un gasto del salón (D4: DELETE físico). Inexistente o de otro
 // salón es 404 con la frase del contrato.
 func (s ExpenseService) Delete(actor domain.Membership, salonID, expenseID string) error {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return err
 	}
 	return expenseNotFound(s.Expenses.Delete(salonID, expenseID))
@@ -115,13 +116,6 @@ func expenseNotFound(err error) error {
 // SalonLocation resuelve la zona horaria del salón con los defaults de fábrica
 // cuando no hay fila de configuración. Es la MISMA lectura que usa la nómina y
 // el reporte de ganancia: no hay una segunda regla de «hoy».
-func SalonLocation(repo ports.SalonSettingsRepository, salonID string) (*time.Location, error) {
-	settings, err := loadSalonSettings(repo, salonID)
-	if err != nil {
-		return nil, err
-	}
-	return settings.Location()
-}
 
 // now es el reloj del caso de uso.
 func (s ExpenseService) now() time.Time {

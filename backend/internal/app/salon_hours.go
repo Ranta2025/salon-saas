@@ -6,6 +6,7 @@ package app
 
 import (
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -55,7 +56,7 @@ func (s SalonHoursService) current(salonID string) ([]domain.WeekdayHours, bool,
 	if weekly.Custom() {
 		return weekly.Days(), true, nil
 	}
-	settings, err := loadSalonSettings(s.Settings, salonID)
+	settings, err := kernel.LoadSalonSettings(s.Settings, salonID)
 	if err != nil {
 		return nil, false, err
 	}

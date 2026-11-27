@@ -4,10 +4,10 @@
 package app
 
 import (
-	"errors"
 	"strings"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -56,7 +56,7 @@ func (s ClientService) Get(actor domain.Membership, salonID, clientID string) (d
 	}
 	c, err := s.Clients.FindByID(salonID, clientID)
 	if err != nil {
-		return domain.Client{}, ClientError(err)
+		return domain.Client{}, kernel.ClientError(err)
 	}
 	return c, nil
 }
@@ -70,7 +70,7 @@ func (s ClientService) Update(actor domain.Membership, salonID, clientID, name, 
 	}
 	c, err := s.Clients.FindByID(salonID, clientID)
 	if err != nil {
-		return domain.Client{}, ClientError(err)
+		return domain.Client{}, kernel.ClientError(err)
 	}
 	updated, err := c.Updated(name, phone, email, notes, allergies)
 	if err != nil {
@@ -85,12 +85,6 @@ func (s ClientService) Update(actor domain.Membership, salonID, clientID, name, 
 // ClientError traduce la falta de la ficha al mensaje del contrato F5: una
 // ficha de otro salón es «Ficha no encontrada» (404), nunca un 500 ni un 403
 // que confirme que existe.
-func ClientError(err error) error {
-	if errors.Is(err, domain.ErrNotFound) {
-		return domain.NewMessage(domain.ErrNotFound, domain.MsgClientNotFound)
-	}
-	return err
-}
 
 // List trae las fichas del salón. Cualquier miembro puede leer.
 func (s ClientService) List(actor domain.Membership, salonID string) ([]domain.Client, error) {

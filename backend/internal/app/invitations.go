@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -78,7 +79,7 @@ type CreatedInvitation struct {
 
 // Invite emite una invitación y manda el correo (best effort).
 func (s InvitationService) Invite(actor domain.Membership, salonID string, in InvitationInput) (CreatedInvitation, error) {
-	m, err := manageActor(s.Memberships, actor, salonID)
+	m, err := kernel.ManageActor(s.Memberships, actor, salonID)
 	if err != nil {
 		return CreatedInvitation{}, err
 	}
@@ -145,7 +146,7 @@ func (s InvitationService) Invite(actor domain.Membership, salonID string, in In
 // List devuelve las invitaciones PENDIENTES del salón. Nunca incluye el token
 // (no existe en la DB) y el handler tampoco expone el hash.
 func (s InvitationService) List(actor domain.Membership, salonID string) ([]domain.Invitation, error) {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return nil, err
 	}
 	list, err := s.Invitations.ListPending(salonID, s.now())
@@ -161,7 +162,7 @@ func (s InvitationService) List(actor domain.Membership, salonID string) ([]doma
 // Revoke da de baja una invitación pendiente (DELETE). El token revocado pasa a
 // responder el 404 genérico.
 func (s InvitationService) Revoke(actor domain.Membership, salonID, invitationID string) error {
-	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
+	if _, err := kernel.ManageActor(s.Memberships, actor, salonID); err != nil {
 		return err
 	}
 	if strings.TrimSpace(invitationID) == "" {

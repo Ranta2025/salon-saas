@@ -24,8 +24,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -122,7 +122,7 @@ func (s LoyaltyService) ClientStatus(actor domain.Membership, salonID, clientID 
 	if err != nil {
 		return LoyaltyStatus{}, err
 	}
-	if !app.PuedeVender(m) {
+	if !kernel.PuedeVender(m) {
 		return LoyaltyStatus{}, domain.ErrForbidden
 	}
 	client, err := s.client(salonID, clientID)
@@ -171,7 +171,7 @@ func (s LoyaltyService) Grant(actor domain.Membership, salonID, clientID, client
 	if err != nil {
 		return domain.LoyaltyReward{}, err
 	}
-	if !app.PuedeVender(m) {
+	if !kernel.PuedeVender(m) {
 		return domain.LoyaltyReward{}, domain.ErrForbidden
 	}
 	client, err := s.client(salonID, clientID)
@@ -182,7 +182,7 @@ func (s LoyaltyService) Grant(actor domain.Membership, salonID, clientID, client
 	if err != nil {
 		return domain.LoyaltyReward{}, err
 	}
-	loc, err := app.SalonLocation(s.Settings, salonID)
+	loc, err := kernel.SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return domain.LoyaltyReward{}, err
 	}
@@ -209,7 +209,7 @@ func (s LoyaltyService) Redeem(actor domain.Membership, salonID, clientID, rewar
 	if err != nil {
 		return domain.LoyaltyReward{}, err
 	}
-	if !app.PuedeVender(m) {
+	if !kernel.PuedeVender(m) {
 		return domain.LoyaltyReward{}, domain.ErrForbidden
 	}
 	client, err := s.client(salonID, clientID)
@@ -274,7 +274,7 @@ func (s LoyaltyService) client(salonID, clientID string) (domain.Client, error) 
 	}
 	c, err := s.Clients.FindByID(salonID, clientID)
 	if err != nil {
-		return domain.Client{}, app.ClientError(err)
+		return domain.Client{}, kernel.ClientError(err)
 	}
 	return c, nil
 }
@@ -305,7 +305,7 @@ func (s LoyaltyService) ensureStaff(salonID, professionalID string) error {
 	if !loyaltyCleanID(professionalID) {
 		return domain.NewMessage(domain.ErrValidation, "el profesional no pertenece al salón")
 	}
-	return app.EnsureProfessional(s.Memberships, salonID, professionalID)
+	return kernel.EnsureProfessional(s.Memberships, salonID, professionalID)
 }
 
 // member valida que el actor sea miembro ACTIVO del salón (no confía en el rol
@@ -334,7 +334,7 @@ func (s LoyaltyService) RequireSeller(actor domain.Membership, salonID string) e
 	if err != nil {
 		return err
 	}
-	if !app.PuedeVender(m) {
+	if !kernel.PuedeVender(m) {
 		return domain.ErrForbidden
 	}
 	return nil

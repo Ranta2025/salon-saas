@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -42,7 +43,7 @@ func (s ProductService) List(actor domain.Membership, salonID string) ([]domain.
 	if err != nil {
 		return nil, err
 	}
-	if !puedeVerPlata(m) {
+	if !kernel.PuedeVerPlata(m) {
 		return nil, domain.ErrForbidden
 	}
 	return s.Products.List(salonID)
@@ -224,9 +225,9 @@ func (s ProductService) manager(actor domain.Membership, salonID string) (domain
 // Best-effort: si el aviso falla, la venta/ajuste ya está escrito y la respuesta
 // no cambia.
 func announceProductLow(events ports.EventPublisher, notifier Notifier, p domain.Product) {
-	notify(notifier, p.SalonID, "", "Stock bajo",
+	kernel.Notify(notifier, p.SalonID, "", "Stock bajo",
 		fmt.Sprintf("%s: quedan %d unidades", p.Name, p.Stock), domain.KindInfo)
-	publish(events, ports.Event{
+	kernel.Publish(events, ports.Event{
 		Type:    "product.updated",
 		SalonID: p.SalonID,
 		Data: map[string]any{

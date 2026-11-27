@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -39,17 +40,11 @@ type SaleService struct {
 // puedeVender: recepción y quien administra (el profesional cobra en caja...
 // o no: el POS es del salón, no de la persona). Se mantiene explícito y en un
 // solo lugar para que el día que cambie, cambie una función.
-func PuedeVender(m domain.Membership) bool {
-	return m.CanManage() || m.Role == domain.RoleReception
-}
 
 // puedeVerPlata: el dinero (ventas, cierres de caja, revenue del panel) es
 // información sensible del negocio. Solo la ve quien administra o recepción.
 // Un profesional o un cliente del salón ven la agenda y el catálogo, no la
 // facturación. Regla en un solo lugar: cambiarla es cambiar esta función.
-func puedeVerPlata(m domain.Membership) bool {
-	return m.CanManage() || m.Role == domain.RoleReception
-}
 
 // RegisterSale registra la venta y devuelve la entidad con el total calculado.
 func (s SaleService) RegisterSale(actor domain.Membership, salonID, professionalID, clientName string, items []domain.SaleItem, method domain.PaymentMethod) (domain.Sale, error) {
@@ -87,7 +82,7 @@ func (s SaleService) register(actor domain.Membership, salonID, professionalID, 
 	if err != nil {
 		return domain.Sale{}, err
 	}
-	if !PuedeVender(m) {
+	if !kernel.PuedeVender(m) {
 		return domain.Sale{}, domain.ErrForbidden
 	}
 	// (1.b) La ficha del POS (F5): tiene que existir EN ESTE salón. Se lee antes
@@ -117,7 +112,7 @@ func (s SaleService) register(actor domain.Membership, salonID, professionalID, 
 			return domain.Sale{}, err
 		}
 	}
-	if err := EnsureProfessional(s.Memberships, salonID, professionalID); err != nil {
+	if err := kernel.EnsureProfessional(s.Memberships, salonID, professionalID); err != nil {
 		return domain.Sale{}, err
 	}
 	// (5) El precio lo pone el catálogo del salón, nunca el cliente, y un
@@ -167,7 +162,7 @@ func (s SaleService) register(actor domain.Membership, salonID, professionalID, 
 		}
 	}
 	// El total que viaja acá es el que calculó el dominio, no el del cliente.
-	publish(s.Events, ports.Event{
+	kernel.Publish(s.Events, ports.Event{
 		Type:    "sale.created",
 		SalonID: salonID,
 		Data: map[string]any{
@@ -204,7 +199,7 @@ func (s SaleService) ListSales(actor domain.Membership, salonID string, from, to
 	if err != nil {
 		return nil, err
 	}
-	if !puedeVerPlata(m) {
+	if !kernel.PuedeVerPlata(m) {
 		return nil, domain.ErrForbidden
 	}
 	return s.Sales.ListRange(salonID, from, to)

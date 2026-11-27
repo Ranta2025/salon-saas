@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -74,7 +75,7 @@ func (s BookingService) CreateBookingWithOp(actor domain.Membership, salonID, pr
 		}
 	}
 	// B-12: el turno tiene que ser para alguien que atiende en ESTE salón.
-	if err := EnsureProfessional(s.Memberships, salonID, professionalID); err != nil {
+	if err := kernel.EnsureProfessional(s.Memberships, salonID, professionalID); err != nil {
 		return domain.Booking{}, err
 	}
 	busy, err := s.Bookings.FindOverlapping(salonID, professionalID, startsAt, endsAt)
@@ -103,7 +104,7 @@ func (s BookingService) CreateBookingWithOp(actor domain.Membership, salonID, pr
 		}
 	}
 	// La agenda cambió: el calendario de los demás se actualiza solo.
-	publish(s.Events, ports.Event{
+	kernel.Publish(s.Events, ports.Event{
 		Type:    "booking.created",
 		SalonID: salonID,
 		Data: map[string]any{
@@ -116,7 +117,7 @@ func (s BookingService) CreateBookingWithOp(actor domain.Membership, salonID, pr
 		},
 		TS: b.CreatedAt,
 	})
-	notify(s.Notifier, salonID, "", "Nuevo turno",
+	kernel.Notify(s.Notifier, salonID, "", "Nuevo turno",
 		b.ClientName+" · "+salonTimeLabel(s.Settings, salonID, b.StartsAt), domain.KindBooking)
 	return b, nil
 }
@@ -192,7 +193,7 @@ func (s BookingService) Update(actor domain.Membership, salonID, bookingID strin
 			return domain.Booking{}, err
 		}
 		if moved.ProfessionalID != b.ProfessionalID {
-			if err := EnsureProfessional(s.Memberships, salonID, moved.ProfessionalID); err != nil {
+			if err := kernel.EnsureProfessional(s.Memberships, salonID, moved.ProfessionalID); err != nil {
 				return domain.Booking{}, err
 			}
 		}
@@ -229,7 +230,7 @@ func (s BookingService) Update(actor domain.Membership, salonID, bookingID strin
 		}
 		return domain.Booking{}, err
 	}
-	publish(s.Events, ports.Event{
+	kernel.Publish(s.Events, ports.Event{
 		Type:    "booking.updated",
 		SalonID: salonID,
 		Data: map[string]any{
@@ -243,10 +244,10 @@ func (s BookingService) Update(actor domain.Membership, salonID, bookingID strin
 		TS: time.Now().UTC(),
 	})
 	if patch.Status != nil {
-		notify(s.Notifier, salonID, "", bookingChangeTitle(b.Status),
+		kernel.Notify(s.Notifier, salonID, "", bookingChangeTitle(b.Status),
 			b.ClientName+" · "+salonTimeLabel(s.Settings, salonID, b.StartsAt), domain.KindBooking)
 	} else if rescheduled {
-		notify(s.Notifier, salonID, "", "Turno reprogramado",
+		kernel.Notify(s.Notifier, salonID, "", "Turno reprogramado",
 			b.ClientName+" · "+salonTimeLabel(s.Settings, salonID, b.StartsAt), domain.KindBooking)
 	}
 	return b, nil
