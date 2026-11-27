@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { describeApiError, fetchServices, type ApiErrorNotice } from '../lib/api'
-import { formatCents } from '../lib/money'
+import { describeApiError, fetchServices, type ApiErrorNotice } from '@/lib/api'
+import { formatCents } from '@/lib/money'
 import {
   createPackagesGate,
   fetchPackages,
@@ -11,13 +11,13 @@ import {
   type PackageUpdatePayload,
   type ServicePackage,
 } from '../lib/packages'
-import { activeRole, canManagePackages, canViewPackages } from '../lib/permissions'
-import type { Service } from '../types'
-import { useSalon } from './SalonContext'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { PackageForm } from './components/PackageForm'
-import { PackagesNotice } from './components/PackagesNotice'
-import { PageHeader } from './components/PageHeader'
+import { activeRole, canManagePackages, canViewPackages } from '@/lib/permissions'
+import type { Service } from '@/types'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { PackageForm } from '../components/PackageForm'
+import { PackagesNotice } from '../components/PackagesNotice'
+import { PageHeader } from '@/app/components/PageHeader'
 
 type FormMode = { kind: 'closed' } | { kind: 'create' } | { kind: 'edit'; pkg: ServicePackage }
 

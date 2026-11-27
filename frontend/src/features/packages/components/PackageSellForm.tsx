@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { formatCents } from '../../lib/money'
+import { formatCents } from '@/lib/money'
 import {
   packageSessionsLabel,
   packageValidityLabel,
@@ -9,9 +9,9 @@ import {
   type SellField,
   type SellPayload,
   type ServicePackage,
-} from '../../lib/packages'
-import type { StaffMember } from '../../lib/staff'
-import { SALE_METHODS } from '../../types'
+} from '../lib/packages'
+import type { StaffMember } from '@/lib/staff'
+import { SALE_METHODS } from '@/types'
 
 type PackageSellFormProps = {
   /** Only the packages that can be sold (active) come in. */

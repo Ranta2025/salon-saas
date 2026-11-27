@@ -15,7 +15,7 @@
 
 import { ApiError, request } from './api.ts'
 import { isBrowserOnline } from './connectivity.ts'
-import { createPackagesGate, type PackagesGate } from './packages.ts'
+import { createPackagesGate, type PackagesGate } from '../features/packages/lib/packages.ts'
 import { formatCents } from './money.ts'
 import { depositSentence } from './publicSalon.ts'
 

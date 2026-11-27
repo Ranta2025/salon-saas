@@ -11,7 +11,7 @@ import {
   type PackageField,
   type PackageUpdatePayload,
   type ServicePackage,
-} from '../../lib/packages'
+} from '../lib/packages'
 
 /** A service the new package can be made of (only the fields the form needs). */
 export type PackageServiceOption = { id: string; name: string }

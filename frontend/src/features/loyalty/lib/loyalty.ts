@@ -17,7 +17,7 @@
 import { ApiError, NetworkError, request } from '../../../lib/api.ts'
 import { isBrowserOnline } from '../../../lib/connectivity.ts'
 import { toDateInputValue, TIME_ZONE } from '../../../lib/datetime.ts'
-import { createOpAttempt, createPackagesGate, type OpAttempt, type PackagesGate } from '../../../lib/packages.ts'
+import { createOpAttempt, createPackagesGate, type OpAttempt, type PackagesGate } from '../../packages/lib/packages.ts'
 import { loyaltySentence } from '../../../lib/publicSalon.ts'
 
 export { createOpAttempt }

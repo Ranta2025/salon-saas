@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, API_BASE, NetworkError } from './api.ts'
+import { ApiError, API_BASE, NetworkError } from '../../../lib/api.ts'
 import {
   canAdjustPackages,
   canManagePackages,
@@ -9,8 +9,8 @@ import {
   canManageInventory,
   canViewWaitlist,
   isManager,
-} from './permissions.ts'
-import { clearToken, setToken } from './session.ts'
+} from '../../../lib/permissions.ts'
+import { clearToken, setToken } from '../../../lib/session.ts'
 import {
   adjustPackageBalance,
   clientPackageStatus,

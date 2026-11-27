@@ -14,7 +14,7 @@
 
 import { ApiError, NetworkError, request, narrowLoginResponse } from './api.ts'
 import { isBrowserOnline } from './connectivity.ts'
-import { createPackagesGate, type PackagesGate } from './packages.ts'
+import { createPackagesGate, type PackagesGate } from '../features/packages/lib/packages.ts'
 
 export { narrowLoginResponse }
 export type { LoginResult } from './api.ts'

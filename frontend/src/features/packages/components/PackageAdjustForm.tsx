@@ -8,7 +8,7 @@ import {
   type PackageAdjustDraft,
   type PackageAdjustField,
   type PackageAdjustPayload,
-} from '../../lib/packages'
+} from '../lib/packages'
 
 type PackageAdjustFormProps = {
   /** Balance being corrected; the server's current numbers are shown as a reference. */

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { describeApiError, fetchStaff, type ApiErrorNotice } from '../../lib/api'
-import { TIME_ZONE } from '../../lib/datetime'
-import { formatCents } from '../../lib/money'
+import { describeApiError, fetchStaff, type ApiErrorNotice } from '@/lib/api'
+import { TIME_ZONE } from '@/lib/datetime'
+import { formatCents } from '@/lib/money'
 import {
   canRedeemPackage,
   clientPackageStatus,
@@ -25,18 +25,18 @@ import {
   type RedeemDraft,
   type SellPayload,
   type ServicePackage,
-} from '../../lib/packages'
+} from '../lib/packages'
 import {
   activeRole,
   canAdjustPackages,
   canManagePackages,
   canViewPackages,
-} from '../../lib/permissions'
-import { fetchSettings } from '../../lib/settings'
-import type { StaffMember } from '../../lib/staff'
-import { useOffline } from '../OfflineContext'
-import { useSalon } from '../SalonContext'
-import { ErrorNotice, LoadingState } from './Feedback'
+} from '@/lib/permissions'
+import { fetchSettings } from '@/lib/settings'
+import type { StaffMember } from '@/lib/staff'
+import { useOffline } from '@/app/OfflineContext'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState } from '@/app/components/Feedback'
 import { PackageAdjustForm } from './PackageAdjustForm'
 import { PackageMovements } from './PackageMovements'
 import { PackageSellForm } from './PackageSellForm'

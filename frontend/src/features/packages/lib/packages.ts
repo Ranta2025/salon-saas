@@ -15,12 +15,12 @@
  * a sale of money must not go through.
  */
 
-import { ApiError, NetworkError, request } from './api.ts'
-import { toDateInputValue, TIME_ZONE } from './datetime.ts'
-import { isBrowserOnline } from './connectivity.ts'
-import { expenseAmountInputFromCents, parseExpenseAmountToCents } from './expenses.ts'
-import { newClientOpId } from './offlineQueue.ts'
-import { SALE_METHODS, type SaleMethod } from '../types.ts'
+import { ApiError, NetworkError, request } from '../../../lib/api.ts'
+import { toDateInputValue, TIME_ZONE } from '../../../lib/datetime.ts'
+import { isBrowserOnline } from '../../../lib/connectivity.ts'
+import { expenseAmountInputFromCents, parseExpenseAmountToCents } from '../../../lib/expenses.ts'
+import { newClientOpId } from '../../../lib/offlineQueue.ts'
+import { SALE_METHODS, type SaleMethod } from '../../../types.ts'
 
 /** Domain limit of a package name (`service_packages.name` CHECK of 031). */
 export const MAX_PACKAGE_NAME_LENGTH = 120

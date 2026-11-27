@@ -1,10 +1,10 @@
-import { formatHistoryInstant } from '../../lib/clientHistory'
+import { formatHistoryInstant } from '@/lib/clientHistory'
 import {
   movementReasonLabel,
   sessionsLabel,
   type ClientPackage,
   type PackageMovement,
-} from '../../lib/packages'
+} from '../lib/packages'
 
 type PackageMovementsProps = {
   pkg: ClientPackage

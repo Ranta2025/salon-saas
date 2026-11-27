@@ -17,7 +17,7 @@
  */
 
 import { ApiError, NetworkError, request } from './api.ts'
-import { createPackagesGate, type PackagesGate } from './packages.ts'
+import { createPackagesGate, type PackagesGate } from '../features/packages/lib/packages.ts'
 
 // --- the two public routes of the payment (D13-c) ---
 
