@@ -16,13 +16,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/products"
 )
 
 type ProductHandler struct {
-	Products    app.ProductService
+	Products    products.ProductService
 	Memberships ports.MembershipRepository
 }
 

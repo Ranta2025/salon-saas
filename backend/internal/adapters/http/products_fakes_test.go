@@ -10,6 +10,7 @@ import (
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/products"
 )
 
 // Fakes de productos/inventario (F6) con la misma semántica que pgstore:
@@ -174,7 +175,7 @@ func newProductsEnv() (*posEnv, *mproducts) {
 		Sales: env.sales, Services: env.services, Memberships: env.mems, Events: env.events,
 		Products: inv, ProductSales: &mproductSales{inv: inv, sales: env.sales}, Notifier: notifSvc,
 	}
-	productSvc := app.ProductService{Products: inv, Memberships: env.mems, Events: env.events, Notifier: notifSvc}
+	productSvc := products.ProductService{Products: inv, Memberships: env.mems, Events: env.events, Notifier: notifSvc}
 	env.d.Sales = SaleHandler{Sales: saleSvc, Memberships: env.mems}
 	env.d.Products = ProductHandler{Products: productSvc, Memberships: env.mems}
 	env.r = gin.New()

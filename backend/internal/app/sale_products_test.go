@@ -6,29 +6,53 @@ import (
 	"testing"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/products"
+	"salon-saas/internal/testutil"
 )
+
+// producto siembra un producto en el fake y devuelve su ficha (la copia vive en
+// internal/products: los tests del POS la necesitan mientras la venta con
+// productos viva acá).
+func producto(t *testing.T, inv *testutil.FakeProducts, salonID, name string, price, stock, low int) domain.Product {
+	t.Helper()
+	p, err := domain.NewProduct(salonID, name, price, stock, low)
+	if err != nil {
+		t.Fatalf("producto %q: %v", name, err)
+	}
+	var initial *domain.StockMovement
+	if stock > 0 {
+		initial = &domain.StockMovement{
+			ID: domain.NewID(), SalonID: salonID, ProductID: p.ID,
+			Delta: stock, Reason: domain.StockInitial,
+		}
+	}
+	if err := inv.Create(p, initial); err != nil {
+		t.Fatalf("guardar producto %q: %v", name, err)
+	}
+	return p
+}
 
 // ventaEnv arma un POS con catálogo de servicios y productos del salón "s1".
 type ventaEnv struct {
 	sales    *fakeSales
-	productS *fakeProductSales
-	inv      *fakeProducts
+	productS *testutil.FakeProductSales
+	inv      *testutil.FakeProducts
 	services *fakeServices
 	mems     *fakeMemberships
 	events   *fakeEvents
-	notifier *fakeStockNotifier
+	notifier *testutil.FakeStockNotifier
 	svc      SaleService
 }
 
 func newVentaEnv(t *testing.T) *ventaEnv {
 	t.Helper()
-	inv := &fakeProducts{}
+	inv := &testutil.FakeProducts{}
 	sales := &fakeSales{}
 	mems := &fakeMemberships{}
 	services := &fakeServices{}
 	events := &fakeEvents{}
-	notifier := &fakeStockNotifier{}
-	productS := &fakeProductSales{inv: inv, sales: sales}
+	notifier := &testutil.FakeStockNotifier{}
+	productS := &testutil.FakeProductSales{Inv: inv, Sales: sales}
 	catalogo(t, services, "s1")
 	miembro(mems, "recep", "s1", domain.RoleReception)
 	miembro(mems, "prof", "s1", domain.RoleProfessional)
@@ -62,11 +86,11 @@ func TestSaleServiceWithProducts_productsOnly(t *testing.T) {
 	if sale.TotalCents != 130000 {
 		t.Fatalf("total = %d, quería 130000", sale.TotalCents)
 	}
-	if len(env.sales.all) != 1 || len(env.productS.all) != 1 {
-		t.Fatalf("no guardó la venta: %+v %+v", env.sales.all, env.productS.all)
+	if len(env.sales.all) != 1 || len(env.productS.All) != 1 {
+		t.Fatalf("no guardó la venta: %+v %+v", env.sales.all, env.productS.All)
 	}
-	if env.productS.all[0].ProductsCents != 130000 || len(env.productS.all[0].Products) != 2 {
-		t.Fatalf("líneas de producto guardadas: %+v", env.productS.all[0])
+	if env.productS.All[0].ProductsCents != 130000 || len(env.productS.All[0].Products) != 2 {
+		t.Fatalf("líneas de producto guardadas: %+v", env.productS.All[0])
 	}
 	got, _ := env.inv.FindByID("s1", shampoo.ID)
 	if got.Stock != 3 {
@@ -77,7 +101,7 @@ func TestSaleServiceWithProducts_productsOnly(t *testing.T) {
 		t.Fatalf("stock de la cera = 1, dio %d", gotCera.Stock)
 	}
 	saleMoves := 0
-	for _, m := range env.inv.movements {
+	for _, m := range env.inv.Movements {
 		if m.Reason == domain.StockSale {
 			saleMoves++
 			if m.SaleID != sale.ID {
@@ -113,21 +137,21 @@ func TestSaleServiceWithProducts_mixedAndSnapshot(t *testing.T) {
 	if sale.TotalCents != 250000 {
 		t.Fatalf("total = %d, quería 150000 + 100000", sale.TotalCents)
 	}
-	if env.productS.all[0].ProductsCents != 100000 {
-		t.Fatalf("products_cents = %d", env.productS.all[0].ProductsCents)
+	if env.productS.All[0].ProductsCents != 100000 {
+		t.Fatalf("products_cents = %d", env.productS.All[0].ProductsCents)
 	}
-	if env.productS.all[0].Products[0].UnitPriceCents != 50000 {
-		t.Fatalf("precio congelado del catálogo: %+v", env.productS.all[0].Products[0])
+	if env.productS.All[0].Products[0].UnitPriceCents != 50000 {
+		t.Fatalf("precio congelado del catálogo: %+v", env.productS.All[0].Products[0])
 	}
 
 	// Cambiar el precio después NO toca la venta guardada.
 	owner := miembro(env.mems, "owner", "s1", domain.RoleOwner)
-	svc := ProductService{Products: env.inv, Memberships: env.mems}
+	svc := products.ProductService{Products: env.inv, Memberships: env.mems}
 	if _, err := svc.Update(owner, "s1", shampoo.ID, "Shampoo", 90000, 0, true); err != nil {
 		t.Fatalf("cambiar precio: %v", err)
 	}
-	if env.productS.all[0].Products[0].UnitPriceCents != 50000 || env.productS.all[0].TotalCents != 250000 {
-		t.Fatalf("la venta cambió con el catálogo: %+v", env.productS.all[0])
+	if env.productS.All[0].Products[0].UnitPriceCents != 50000 || env.productS.All[0].TotalCents != 250000 {
+		t.Fatalf("la venta cambió con el catálogo: %+v", env.productS.All[0])
 	}
 }
 
@@ -145,8 +169,8 @@ func TestSaleServiceWithProducts_repeatedLinesSummed(t *testing.T) {
 	if sale.TotalCents != 50000 {
 		t.Fatalf("total = %d, quería 5 x 10000", sale.TotalCents)
 	}
-	if len(env.productS.all[0].Products) != 1 || env.productS.all[0].Products[0].Qty != 5 {
-		t.Fatalf("se suma en una línea: %+v", env.productS.all[0].Products)
+	if len(env.productS.All[0].Products) != 1 || env.productS.All[0].Products[0].Qty != 5 {
+		t.Fatalf("se suma en una línea: %+v", env.productS.All[0].Products)
 	}
 	got, _ := env.inv.FindByID("s1", shampoo.ID)
 	if got.Stock != 5 {
@@ -167,7 +191,7 @@ func TestSaleServiceWithProducts_lineCap(t *testing.T) {
 	if err == nil || err.Error() != domain.MsgProductLines {
 		t.Fatalf("51 líneas: %v", err)
 	}
-	if len(env.sales.all) != 0 || len(env.productS.all) != 0 {
+	if len(env.sales.all) != 0 || len(env.productS.All) != 0 {
 		t.Fatalf("no se guarda nada: %+v", env.sales.all)
 	}
 }
@@ -180,7 +204,7 @@ func TestSaleServiceWithProducts_invalidAndNoStock(t *testing.T) {
 	ajeno := producto(t, env.inv, "s2", "Ajeno", 1000, 10, 0)
 	inactivo := producto(t, env.inv, "s1", "Viejo", 1000, 10, 0)
 	owner := miembro(env.mems, "owner", "s1", domain.RoleOwner)
-	if _, err := (ProductService{Products: env.inv, Memberships: env.mems}).Update(owner, "s1", inactivo.ID, "Viejo", 1000, 0, false); err != nil {
+	if _, err := (products.ProductService{Products: env.inv, Memberships: env.mems}).Update(owner, "s1", inactivo.ID, "Viejo", 1000, 0, false); err != nil {
 		t.Fatalf("desactivar: %v", err)
 	}
 	casi := producto(t, env.inv, "s1", "Casi", 1000, 1, 0)
@@ -201,7 +225,7 @@ func TestSaleServiceWithProducts_invalidAndNoStock(t *testing.T) {
 	if got, _ := env.inv.FindByID("s1", casi.ID); got.Stock != 1 {
 		t.Fatalf("el stock no cambia: %d", got.Stock)
 	}
-	if len(env.sales.all) != 0 || len(env.productS.all) != 0 {
+	if len(env.sales.all) != 0 || len(env.productS.All) != 0 {
 		t.Fatalf("no se guarda la venta fallida: %+v", env.sales.all)
 	}
 }
@@ -268,8 +292,8 @@ func TestSaleServiceWithProducts_lowStockNotice(t *testing.T) {
 		[]domain.SaleProduct{env.line(shampoo.ID, 1)}, domain.MethodCash, ""); err != nil {
 		t.Fatalf("venta: %v", err)
 	}
-	if len(env.notifier.all) != 1 || env.notifier.all[0].Title != "Stock bajo" {
-		t.Fatalf("aviso: %+v", env.notifier.all)
+	if len(env.notifier.All) != 1 || env.notifier.All[0].Title != "Stock bajo" {
+		t.Fatalf("aviso: %+v", env.notifier.All)
 	}
 	var updated bool
 	for _, ev := range env.events.all {
@@ -285,8 +309,8 @@ func TestSaleServiceWithProducts_lowStockNotice(t *testing.T) {
 		[]domain.SaleProduct{env.line(shampoo.ID, 1)}, domain.MethodCash, ""); err != nil {
 		t.Fatalf("segunda venta: %v", err)
 	}
-	if len(env.notifier.all) != 1 {
-		t.Fatalf("avisó dos veces: %d", len(env.notifier.all))
+	if len(env.notifier.All) != 1 {
+		t.Fatalf("avisó dos veces: %d", len(env.notifier.All))
 	}
 }
 
@@ -301,7 +325,7 @@ func TestSaleService_withoutProducts_untouched(t *testing.T) {
 	if err != nil {
 		t.Fatalf("venta clásica: %v", err)
 	}
-	if sale.TotalCents != 150000 || len(env.sales.all) != 1 || len(env.productS.all) != 0 {
-		t.Fatalf("la venta clásica no toca productos: %+v %+v", env.sales.all, env.productS.all)
+	if sale.TotalCents != 150000 || len(env.sales.all) != 1 || len(env.productS.All) != 0 {
+		t.Fatalf("la venta clásica no toca productos: %+v %+v", env.sales.all, env.productS.All)
 	}
 }

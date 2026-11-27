@@ -31,6 +31,7 @@ import (
 	"salon-saas/internal/loyalty"
 	loyaltystore "salon-saas/internal/loyalty/postgres"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/products"
 )
 
 // Timeouts del servidor (B-11): sin ellos un cliente lento ocupa una conexión
@@ -295,7 +296,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	}
 	// F6: productos e inventario del POS. Leer owner/admin/recepción; escribir
 	// solo owner/admin (D7). El aviso de stock bajo sale DESPUÉS del commit.
-	productSvc := app.ProductService{
+	productSvc := products.ProductService{
 		Products: productsRepo, Memberships: mems, Events: hub, Notifier: notifSvc,
 	}
 	// F8: paquetes y bonos prepagos. Comprar es una VENTA (el dinero entra hoy);

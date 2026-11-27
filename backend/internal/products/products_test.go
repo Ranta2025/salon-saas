@@ -1,4 +1,4 @@
-package app
+package products
 
 import (
 	"errors"
@@ -6,10 +6,11 @@ import (
 	"testing"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // producto siembra un producto en el fake y devuelve su id.
-func producto(t *testing.T, inv *fakeProducts, salonID, name string, price, stock, low int) domain.Product {
+func producto(t *testing.T, inv *testutil.FakeProducts, salonID, name string, price, stock, low int) domain.Product {
 	t.Helper()
 	p, err := domain.NewProduct(salonID, name, price, stock, low)
 	if err != nil {
@@ -28,11 +29,11 @@ func producto(t *testing.T, inv *fakeProducts, salonID, name string, price, stoc
 	return p
 }
 
-func newProductEnv() (*fakeProducts, *fakeMemberships, *fakeEvents, *fakeStockNotifier, ProductService) {
-	inv := &fakeProducts{}
-	mems := &fakeMemberships{}
-	events := &fakeEvents{}
-	notifier := &fakeStockNotifier{}
+func newProductEnv() (*testutil.FakeProducts, *testutil.FakeMemberships, *testutil.FakeEvents, *testutil.FakeStockNotifier, ProductService) {
+	inv := &testutil.FakeProducts{}
+	mems := &testutil.FakeMemberships{}
+	events := &testutil.FakeEvents{}
+	notifier := &testutil.FakeStockNotifier{}
 	svc := ProductService{Products: inv, Memberships: mems, Events: events, Notifier: notifier}
 	return inv, mems, events, notifier, svc
 }
@@ -42,12 +43,12 @@ func newProductEnv() (*fakeProducts, *fakeMemberships, *fakeEvents, *fakeStockNo
 // Un actor de otro salón es 403.
 func TestProductService_permissions(t *testing.T) {
 	inv, mems, _, _, svc := newProductEnv()
-	owner := miembro(mems, "owner", "s1", domain.RoleOwner)
-	admin := miembro(mems, "admin", "s1", domain.RoleAdmin)
-	recep := miembro(mems, "recep", "s1", domain.RoleReception)
-	prof := miembro(mems, "prof", "s1", domain.RoleProfessional)
-	client := miembro(mems, "client", "s1", domain.RoleClient)
-	otherSalon := miembro(mems, "owner2", "s2", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "owner", "s1", domain.RoleOwner)
+	admin := testutil.Miembro(mems, "admin", "s1", domain.RoleAdmin)
+	recep := testutil.Miembro(mems, "recep", "s1", domain.RoleReception)
+	prof := testutil.Miembro(mems, "prof", "s1", domain.RoleProfessional)
+	client := testutil.Miembro(mems, "client", "s1", domain.RoleClient)
+	otherSalon := testutil.Miembro(mems, "owner2", "s2", domain.RoleOwner)
 	producto(t, inv, "s1", "Shampoo", 1000, 3, 1)
 
 	for _, actor := range []domain.Membership{owner, admin} {
@@ -62,13 +63,13 @@ func TestProductService_permissions(t *testing.T) {
 	if _, err := svc.Create(recep, "s1", "Cera", 100, nil, nil); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("recepción no crea: %v", err)
 	}
-	if _, err := svc.Update(recep, "s1", inv.all[0].ID, "X", 1, 0, true); !errors.Is(err, domain.ErrForbidden) {
+	if _, err := svc.Update(recep, "s1", inv.All[0].ID, "X", 1, 0, true); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("recepción no edita: %v", err)
 	}
-	if _, err := svc.Adjust(recep, "s1", inv.all[0].ID, 1, "restock", ""); !errors.Is(err, domain.ErrForbidden) {
+	if _, err := svc.Adjust(recep, "s1", inv.All[0].ID, 1, "restock", ""); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("recepción no ajusta: %v", err)
 	}
-	if _, err := svc.Movements(recep, "s1", inv.all[0].ID, 50); !errors.Is(err, domain.ErrForbidden) {
+	if _, err := svc.Movements(recep, "s1", inv.All[0].ID, 50); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("recepción no ve movimientos: %v", err)
 	}
 	for _, actor := range []domain.Membership{prof, client, otherSalon} {
@@ -86,7 +87,7 @@ func TestProductService_permissions(t *testing.T) {
 // mayúsculas) es 409 con el texto del contrato.
 func TestProductService_create(t *testing.T) {
 	inv, mems, _, _, svc := newProductEnv()
-	owner := miembro(mems, "owner", "s1", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "owner", "s1", domain.RoleOwner)
 
 	p, err := svc.Create(owner, "s1", "  Shampoo ", 150000, nil, nil)
 	if err != nil {
@@ -95,16 +96,16 @@ func TestProductService_create(t *testing.T) {
 	if p.Name != "Shampoo" || p.Stock != 0 || p.LowStockThreshold != 0 || !p.Active {
 		t.Fatalf("defaults: %+v", p)
 	}
-	if len(inv.movements) != 0 {
-		t.Fatalf("stock 0 no escribe movimiento: %+v", inv.movements)
+	if len(inv.Movements) != 0 {
+		t.Fatalf("stock 0 no escribe movimiento: %+v", inv.Movements)
 	}
 	stock, low := 4, 2
 	withStock, err := svc.Create(owner, "s1", "Cera", 5000, &stock, &low)
 	if err != nil {
 		t.Fatalf("crear con stock: %v", err)
 	}
-	if len(inv.movements) != 1 || inv.movements[0].Delta != 4 || inv.movements[0].Reason != domain.StockInitial {
-		t.Fatalf("movimiento inicial: %+v", inv.movements)
+	if len(inv.Movements) != 1 || inv.Movements[0].Delta != 4 || inv.Movements[0].Reason != domain.StockInitial {
+		t.Fatalf("movimiento inicial: %+v", inv.Movements)
 	}
 	if withStock.Stock != 4 || withStock.LowStockThreshold != 2 {
 		t.Fatalf("stock/umbral: %+v", withStock)
@@ -134,7 +135,7 @@ func TestProductService_create(t *testing.T) {
 // PUT reemplaza los cuatro campos y NO toca el stock; un id ajeno es 404.
 func TestProductService_update(t *testing.T) {
 	inv, mems, _, _, svc := newProductEnv()
-	owner := miembro(mems, "owner", "s1", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "owner", "s1", domain.RoleOwner)
 	p := producto(t, inv, "s1", "Shampoo", 1000, 7, 1)
 	producto(t, inv, "s1", "Cera", 5000, 2, 0)
 	other := producto(t, inv, "s2", "Mascarilla", 5000, 2, 0)
@@ -161,7 +162,7 @@ func TestProductService_update(t *testing.T) {
 // product.updated). Si ya estaba bajo, no hay aviso nuevo.
 func TestProductService_adjust_lowStockNotice(t *testing.T) {
 	inv, mems, events, notifier, svc := newProductEnv()
-	owner := miembro(mems, "owner", "s1", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "owner", "s1", domain.RoleOwner)
 	// stock 6, umbral 5: bajar 1 cruza.
 	p := producto(t, inv, "s1", "Shampoo", 1000, 6, 5)
 
@@ -172,22 +173,22 @@ func TestProductService_adjust_lowStockNotice(t *testing.T) {
 	if up.Stock != 5 || !up.Low() {
 		t.Fatalf("quedó stock %d low=%v", up.Stock, up.Low())
 	}
-	if len(notifier.all) != 1 || notifier.all[0].Title != "Stock bajo" {
-		t.Fatalf("aviso de stock bajo: %+v", notifier.all)
+	if len(notifier.All) != 1 || notifier.All[0].Title != "Stock bajo" {
+		t.Fatalf("aviso de stock bajo: %+v", notifier.All)
 	}
-	if !strings.Contains(notifier.all[0].Body, "Shampoo") || !strings.Contains(notifier.all[0].Body, "5") {
-		t.Fatalf("el aviso nombra el producto y el stock: %q", notifier.all[0].Body)
+	if !strings.Contains(notifier.All[0].Body, "Shampoo") || !strings.Contains(notifier.All[0].Body, "5") {
+		t.Fatalf("el aviso nombra el producto y el stock: %q", notifier.All[0].Body)
 	}
-	if len(events.all) != 1 || events.all[0].Type != "product.updated" {
-		t.Fatalf("evento product.updated: %+v", events.all)
+	if len(events.All) != 1 || events.All[0].Type != "product.updated" {
+		t.Fatalf("evento product.updated: %+v", events.All)
 	}
 
 	// Ya estaba bajo: otro ajuste NO avisa de nuevo.
 	if _, err := svc.Adjust(owner, "s1", p.ID, -1, "loss", ""); err != nil {
 		t.Fatalf("segundo ajuste: %v", err)
 	}
-	if len(notifier.all) != 1 || len(events.all) != 1 {
-		t.Fatalf("no debe avisar dos veces: %d avisos, %d eventos", len(notifier.all), len(events.all))
+	if len(notifier.All) != 1 || len(events.All) != 1 {
+		t.Fatalf("no debe avisar dos veces: %d avisos, %d eventos", len(notifier.All), len(events.All))
 	}
 
 	// Reponer por encima del umbral no avisa; volver a cruzar SÍ (otra vez).
@@ -197,14 +198,14 @@ func TestProductService_adjust_lowStockNotice(t *testing.T) {
 	if _, err := svc.Adjust(owner, "s1", p.ID, -10, "loss", ""); err != nil {
 		t.Fatalf("volver a cruzar: %v", err)
 	}
-	if len(notifier.all) != 2 {
-		t.Fatalf("un segundo cruce avisa otra vez: %d", len(notifier.all))
+	if len(notifier.All) != 2 {
+		t.Fatalf("un segundo cruce avisa otra vez: %d", len(notifier.All))
 	}
 }
 
 func TestProductService_adjust_validation(t *testing.T) {
 	inv, mems, _, _, svc := newProductEnv()
-	owner := miembro(mems, "owner", "s1", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "owner", "s1", domain.RoleOwner)
 	p := producto(t, inv, "s1", "Shampoo", 1000, 2, 0)
 
 	for _, tc := range []struct {
@@ -227,8 +228,8 @@ func TestProductService_adjust_validation(t *testing.T) {
 		}
 	}
 	// Nada de eso escribió un movimiento ni cambió el stock.
-	if len(inv.movements) != 1 || inv.all[0].Stock != 2 {
-		t.Fatalf("un ajuste inválido no escribe: %+v stock=%d", inv.movements, inv.all[0].Stock)
+	if len(inv.Movements) != 1 || inv.All[0].Stock != 2 {
+		t.Fatalf("un ajuste inválido no escribe: %+v stock=%d", inv.Movements, inv.All[0].Stock)
 	}
 	if _, err := svc.Adjust(owner, "s1", "no-existe", 1, "restock", ""); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("producto inexistente: %v", err)
@@ -239,7 +240,7 @@ func TestProductService_adjust_validation(t *testing.T) {
 // producto de otro salón.
 func TestProductService_movements(t *testing.T) {
 	inv, mems, _, _, svc := newProductEnv()
-	owner := miembro(mems, "owner", "s1", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "owner", "s1", domain.RoleOwner)
 	p := producto(t, inv, "s1", "Shampoo", 1000, 5, 0)
 	for i := 0; i < 3; i++ {
 		if _, err := svc.Adjust(owner, "s1", p.ID, 1, "restock", ""); err != nil {
@@ -291,7 +292,7 @@ func TestProductService_list(t *testing.T) {
 }
 
 // recepActorOwner siembra un owner para las operaciones de escritura del test.
-func recepActorOwner(t *testing.T, mems *fakeMemberships) domain.Membership {
+func recepActorOwner(t *testing.T, mems *testutil.FakeMemberships) domain.Membership {
 	t.Helper()
-	return miembro(mems, "owner", "s1", domain.RoleOwner)
+	return testutil.Miembro(mems, "owner", "s1", domain.RoleOwner)
 }

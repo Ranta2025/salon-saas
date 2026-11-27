@@ -361,3 +361,23 @@ var _ ports.AuditRepository = (*FakeAudit)(nil)
 // ErrAuditDown simula el registro de auditoría caído (un error que no debe
 // tumbar la operación de negocio).
 var ErrAuditDown = errors.New("audit down")
+
+// FakeEvents es el bus de eventos en memoria: guarda todo lo publicado para que
+// el test pueda contar y mirar el último de un tipo.
+type FakeEvents struct{ All []ports.Event }
+
+func (f *FakeEvents) Publish(ev ports.Event) error { f.All = append(f.All, ev); return nil }
+
+// Typed cuenta los eventos de un tipo y devuelve el último.
+func (f *FakeEvents) Typed(t string) (ports.Event, int) {
+	var last ports.Event
+	n := 0
+	for _, ev := range f.All {
+		if ev.Type == t {
+			last, n = ev, n+1
+		}
+	}
+	return last, n
+}
+
+var _ ports.EventPublisher = (*FakeEvents)(nil)

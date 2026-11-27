@@ -11,7 +11,7 @@
 //     hay aviso nuevo.
 //
 // Toda consulta va scopeada por salon_id: el producto de otro salón es 404.
-package app
+package products
 
 import (
 	"errors"
@@ -29,7 +29,7 @@ type ProductService struct {
 	// Events y Notifier son opcionales (nil = no avisa): el stock bajo avisa
 	// después de escribir y un fallo nunca cambia la respuesta.
 	Events   ports.EventPublisher
-	Notifier Notifier
+	Notifier kernel.Notifier
 }
 
 const (
@@ -153,7 +153,7 @@ func (s ProductService) Adjust(actor domain.Membership, salonID, productID strin
 	before := saved
 	before.Stock = saved.Stock - delta
 	if domain.CrossedLowStock(before, saved) {
-		announceProductLow(s.Events, s.Notifier, saved)
+		AnnounceProductLow(s.Events, s.Notifier, saved)
 	}
 	return saved, nil
 }
@@ -224,7 +224,7 @@ func (s ProductService) manager(actor domain.Membership, salonID string) (domain
 // announceProductLow deja el aviso interno y el evento del stock bajo (D8).
 // Best-effort: si el aviso falla, la venta/ajuste ya está escrito y la respuesta
 // no cambia.
-func announceProductLow(events ports.EventPublisher, notifier Notifier, p domain.Product) {
+func AnnounceProductLow(events ports.EventPublisher, notifier kernel.Notifier, p domain.Product) {
 	kernel.Notify(notifier, p.SalonID, "", "Stock bajo",
 		fmt.Sprintf("%s: quedan %d unidades", p.Name, p.Stock), domain.KindInfo)
 	kernel.Publish(events, ports.Event{

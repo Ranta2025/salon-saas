@@ -21,6 +21,7 @@ import (
 	"salon-saas/internal/domain"
 	"salon-saas/internal/finance"
 	"salon-saas/internal/loyalty"
+	"salon-saas/internal/products"
 )
 
 // --- Middleware solo (router mínimo) -----------------------------------------------
@@ -254,7 +255,7 @@ func newAudWorld(t *testing.T) *audWorld {
 	notifSvc := app.NotificationService{Notifications: env.notifs, Salons: env.mems, Events: env.events}
 	inv := &mproducts{}
 	env.d.Products = ProductHandler{
-		Products:    app.ProductService{Products: inv, Memberships: env.mems, Events: env.events, Notifier: notifSvc},
+		Products:    products.ProductService{Products: inv, Memberships: env.mems, Events: env.events, Notifier: notifSvc},
 		Memberships: env.mems,
 	}
 	env.d.Expenses = ExpenseHandler{

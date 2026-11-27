@@ -28,6 +28,7 @@ import (
 	"salon-saas/internal/domain"
 	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
+	productsvc "salon-saas/internal/products"
 )
 
 // RegisterSaleWithProducts registra una venta con líneas de producto. `items`
@@ -149,7 +150,7 @@ func (s SaleService) RegisterSaleWithProducts(actor domain.Membership, salonID, 
 	// productos que cruzaron el umbral en esta venta. Un fallo no cambia la
 	// respuesta (la venta ya está cobrada).
 	for _, p := range crossed {
-		announceProductLow(s.Events, s.Notifier, p)
+		productsvc.AnnounceProductLow(s.Events, s.Notifier, p)
 	}
 	return sale.Sale, nil
 }
