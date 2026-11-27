@@ -172,31 +172,29 @@ func (h Handler) Pay(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": domain.MsgCardInvalid})
 		return
 	}
+	// The merchant must hear about an APPROVAL before the bank commits it (F11
+	// native review R4-001): if every delivery fails the charge stays pending, the
+	// payer can simply retry and nothing was captured. The retry delivers the SAME
+	// deterministic event id (charge, attempt), which the merchant applies once, so
+	// a crash between the delivery and the commit is also safe. A declined attempt
+	// is only informative: it is committed first so the attempt cap still holds.
+	expected := ch.attempts + 1
+	if decision.Outcome == domain.CallbackApproved {
+		if err := h.deliver(chargeID, ch, expected, decision.Outcome); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": MsgChargeUnavailable})
+			return
+		}
+	}
 	attempt, err := h.recordAttempt(c.Request.Context(), chargeID, decision, now)
 	if err != nil {
 		respondBankErr(c, err)
 		return
 	}
-	// El callback va DESPUÉS del commit: el comercio lo aplica una sola vez y el
-	// pago ya es un hecho del banco.
-	payload := callbackPayload{
-		EventID:     eventIDForCharge(chargeID, attempt),
-		ChargeID:    chargeID,
-		Reference:   ch.reference,
-		Kind:        decision.Outcome,
-		AmountCents: ch.amountCents,
-	}
-	// La entrega NO cuelga del contexto del pedido: si la persona cierra la
-	// página, el aviso al comercio tiene que completarse igual (el pago ya es un
-	// hecho del banco). Se acota con su propio tope.
-	deliverCtx, cancel := context.WithTimeout(context.Background(), 3*callbackTimeout)
-	defer cancel()
-	if err := h.Bank.sendCallback(deliverCtx, payload); err != nil {
-		// El cobro quedó decidido en el banco pero el comercio no se enteró. Se
-		// responde el error para que la persona lo vea: el estado del pago lo
-		// sigue fijando solo el callback (limitación conocida de la simulación).
-		c.JSON(http.StatusInternalServerError, gin.H{"error": MsgChargeUnavailable})
-		return
+	if decision.Outcome != domain.CallbackApproved {
+		if err := h.deliver(chargeID, ch, attempt, decision.Outcome); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": MsgChargeUnavailable})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"charge_id":    chargeID,
@@ -207,6 +205,22 @@ func (h Handler) Pay(c *gin.Context) {
 		"brand":        decision.Brand,
 		"simulated":    true,
 	})
+}
+
+// deliver sends the signed callback of one attempt to the merchant. It does NOT
+// hang from the request context: if the person closes the page the notice must
+// still complete (bounded by its own timeout).
+func (h Handler) deliver(chargeID string, ch charge, attempt int, kind string) error {
+	payload := callbackPayload{
+		EventID:     eventIDForCharge(chargeID, attempt),
+		ChargeID:    chargeID,
+		Reference:   ch.reference,
+		Kind:        kind,
+		AmountCents: ch.amountCents,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*callbackTimeout)
+	defer cancel()
+	return h.Bank.sendCallback(ctx, payload)
 }
 
 // recordAttempt incrementa intentos y deja el resultado del intento con UN

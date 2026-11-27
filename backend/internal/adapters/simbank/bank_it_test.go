@@ -398,3 +398,52 @@ func TestBankIT_callbackRetriesSameEventID(t *testing.T) {
 		t.Fatalf("id: %q", got)
 	}
 }
+
+// F11 native review R4-001: the approval must not be committed in the bank before
+// the merchant has been told. If all deliveries fail the charge stays PENDING (the
+// payer can retry, nothing was captured) and the retry delivers the SAME event id.
+func TestBankIT_payApprovedDeliveryFailureLeavesChargePending(t *testing.T) {
+	bank, sink := newBank(t)
+	r := bankRouter(bank)
+	ch := newCharge(t, bank, time.Now().UTC().Add(30*time.Minute))
+	pay := `{"charge_id":"` + ch + `","card":{"number":"4242424242424242","exp":"12/30","cvc":"123","name":"Lia Perez"}}`
+
+	sink.mu.Lock()
+	sink.fail = 1000 // every delivery of the first pay fails
+	sink.mu.Unlock()
+	rec := doJSON(r, "/api/v1/simbank/charges/pay", pay)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("sin entrega al comercio el pago no puede salir bien: %d %s", rec.Code, rec.Body.String())
+	}
+	var status string
+	var attempts int
+	if err := bank.Pool.QueryRow(context.Background(),
+		`SELECT status, attempts FROM simbank_charges WHERE id=$1`, ch).Scan(&status, &attempts); err != nil {
+		t.Fatal(err)
+	}
+	if status != "pending" || attempts != 0 {
+		t.Fatalf("el cargo no puede quedar decidido si el comercio no se enteró: status=%s attempts=%d", status, attempts)
+	}
+
+	// The merchant is back: the retry is not a 409 and delivers once.
+	sink.mu.Lock()
+	sink.fail = 0
+	sink.mu.Unlock()
+	rec = doJSON(r, "/api/v1/simbank/charges/pay", pay)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("el reintento debe aprobar: %d %s", rec.Code, rec.Body.String())
+	}
+	if sink.count() != 1 {
+		t.Fatalf("callbacks = %d, quiero 1", sink.count())
+	}
+	if got := sink.last(t).EventID; got != eventIDForCharge(ch, 1) {
+		t.Fatalf("id del evento = %q, quiero el del intento 1", got)
+	}
+	if err := bank.Pool.QueryRow(context.Background(),
+		`SELECT status, attempts FROM simbank_charges WHERE id=$1`, ch).Scan(&status, &attempts); err != nil {
+		t.Fatal(err)
+	}
+	if status != "approved" || attempts != 1 {
+		t.Fatalf("tras el reintento: status=%s attempts=%d", status, attempts)
+	}
+}
