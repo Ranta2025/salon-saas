@@ -10,8 +10,8 @@
  * write returns the row the server stored and the page asks for the list again.
  */
 
-import { ApiError, request } from './api.ts'
-import { expenseAmountInputFromCents, parseExpenseAmountToCents } from '../features/expenses/lib/expenses.ts'
+import { ApiError, request } from '../../../lib/api.ts'
+import { expenseAmountInputFromCents, parseExpenseAmountToCents } from '../../expenses/lib/expenses.ts'
 
 /** Domain limit of a product name (`products.name` CHECK of 029). */
 export const MAX_PRODUCT_NAME_LENGTH = 120

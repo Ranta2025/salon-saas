@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { describeApiError, type ApiErrorNotice } from '../lib/api'
-import { TIME_ZONE } from '../lib/datetime'
-import { formatCents } from '../lib/money'
-import { activeRole, canManageInventory, canViewInventory } from '../lib/permissions'
+import { describeApiError, type ApiErrorNotice } from '@/lib/api'
+import { TIME_ZONE } from '@/lib/datetime'
+import { formatCents } from '@/lib/money'
+import { activeRole, canManageInventory, canViewInventory } from '@/lib/permissions'
 import {
   createInventoryGate,
   fetchProductMovements,
@@ -17,14 +17,14 @@ import {
   type ProductUpdatePayload,
   type StockMovement,
 } from '../lib/products'
-import { fetchSettings } from '../lib/settings'
-import { useSalon } from './SalonContext'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { ManagerOnlyNotice } from './components/ManagerOnlyNotice'
-import { PageHeader } from './components/PageHeader'
-import { ProductAdjustForm } from './components/ProductAdjustForm'
-import { ProductForm } from './components/ProductForm'
-import { ProductMovements } from './components/ProductMovements'
+import { fetchSettings } from '@/lib/settings'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { ManagerOnlyNotice } from '@/app/components/ManagerOnlyNotice'
+import { PageHeader } from '@/app/components/PageHeader'
+import { ProductAdjustForm } from '../components/ProductAdjustForm'
+import { ProductForm } from '../components/ProductForm'
+import { ProductMovements } from '../components/ProductMovements'
 
 type FormMode = { kind: 'closed' } | { kind: 'create' } | { kind: 'edit'; product: Product }
 

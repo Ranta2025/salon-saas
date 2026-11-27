@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, API_BASE, createSale } from './api.ts'
-import { dropReasonLabel, type DroppedOperation } from './offlineQueue.ts'
-import { clearToken, setToken } from './session.ts'
+import { ApiError, API_BASE, createSale } from '../../../lib/api.ts'
+import { dropReasonLabel, type DroppedOperation } from '../../../lib/offlineQueue.ts'
+import { clearToken, setToken } from '../../../lib/session.ts'
 import { insufficientStockMessage, isInsufficientStockMessage, type Product } from './products.ts'
 import {
   addProduct,
@@ -22,7 +22,7 @@ import {
   type PosProduct,
   type ProductCartLine,
 } from './productCart.ts'
-import type { SaleInput } from '../types.ts'
+import type { SaleInput } from '../../../types.ts'
 
 const tinte: PosProduct = { id: 'p1', name: 'Tinte rubio', price_cents: 1250, stock: 3 }
 const shampoo: PosProduct = { id: 'p2', name: 'Shampoo', price_cents: 900, stock: 0 }

@@ -9,7 +9,7 @@ import {
   type AdjustField,
   type AdjustPayload,
   type Product,
-} from '../../lib/products'
+} from '../lib/products'
 
 type ProductAdjustFormProps = {
   /** Product whose stock is adjusted; it shows the stock on screen as a reference. */

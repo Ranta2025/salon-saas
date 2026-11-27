@@ -8,7 +8,7 @@ import {
   type ProductField,
   type ProductPayload,
   type ProductUpdatePayload,
-} from '../../lib/products'
+} from '../lib/products'
 
 type ProductFormProps = {
   /** The product being replaced, or absent to create a new one. */

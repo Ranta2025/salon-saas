@@ -23,8 +23,8 @@ import {
   stockAvailable,
   type PosProduct,
   type ProductCart,
-} from '../../lib/productCart'
-import { isInsufficientStockMessage } from '../../lib/products'
+} from '@/features/products/lib/productCart'
+import { isInsufficientStockMessage } from '@/features/products/lib/products'
 import type { PickableClient } from '../../lib/clientRecord'
 import { ClientPicker } from './ClientPicker'
 import {

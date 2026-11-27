@@ -21,8 +21,8 @@ import {
   emptyProductCart,
   sellableProducts,
   type ProductCart,
-} from '../lib/productCart'
-import { fetchProducts, type Product } from '../lib/products'
+} from '@/features/products/lib/productCart'
+import { fetchProducts, type Product } from '@/features/products/lib/products'
 import {
   SALE_METHODS,
   type Sale,

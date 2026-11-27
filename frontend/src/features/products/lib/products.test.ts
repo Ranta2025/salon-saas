@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, API_BASE } from './api.ts'
-import { canManageInventory, canViewInventory } from './permissions.ts'
-import { clearToken, setToken } from './session.ts'
+import { ApiError, API_BASE } from '../../../lib/api.ts'
+import { canManageInventory, canViewInventory } from '../../../lib/permissions.ts'
+import { clearToken, setToken } from '../../../lib/session.ts'
 import {
   ADJUST_REASONS,
   ADJUST_REASON_LABELS,

@@ -1,4 +1,4 @@
-import { formatHistoryInstant } from '../../lib/clientHistory'
+import { formatHistoryInstant } from '@/lib/clientHistory'
 import {
   LOW_STOCK_LABEL,
   movementReasonLabel,
@@ -6,7 +6,7 @@ import {
   MOVEMENTS_MAX_LIMIT,
   type Product,
   type StockMovement,
-} from '../../lib/products'
+} from '../lib/products'
 
 type ProductMovementsProps = {
   product: Product
