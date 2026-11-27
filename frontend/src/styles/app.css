@@ -5363,8 +5363,9 @@
 .review-star__glyph {
   font-size: 1.85rem;
   line-height: 1;
-  /* An unchosen star: the muted line colour, not a second brand colour. */
-  color: var(--line-strong);
+  /* An unchosen star: a solid muted ink, not the line colour. The line tint gave
+     1.61:1 over white, below the 3:1 an interactive control needs. */
+  color: var(--ink-muted);
   transition: color var(--transition), transform var(--transition);
 }
 
@@ -5530,5 +5531,50 @@
 
   .reviews-row__side {
     justify-content: flex-end;
+  }
+}
+
+/* ==========================================================================
+   Touch targets, mobile dropdown and star contrast (UI audit 2026-02)
+   ========================================================================== */
+
+/* A coarse pointer (finger) cannot hit a 30 px control: every action of the
+   panel grows to the 44 px minimum. Inline links inside a sentence are left as
+   they are (WCAG 2.5.8 exempts them), the layout of the copy depends on them. */
+@media (pointer: coarse) {
+  .btn--sm,
+  .qty-btn,
+  .agenda__actions,
+  .team-confirm__buttons .btn,
+  .shell__salon,
+  .shell__salon-select,
+  .notif__trigger,
+  .notif__close {
+    min-height: 44px;
+  }
+
+  .qty-btn,
+  .notif__trigger,
+  .notif__close {
+    width: 44px;
+  }
+
+  .checkbox {
+    min-height: 44px;
+  }
+}
+
+/* The bell panel is anchored to the bell, so on a phone it opened below the fold.
+   Below 900 px it is a sheet over the bottom edge, fully visible at 390x600. */
+@media (max-width: 899px) {
+  .notif__panel {
+    position: fixed;
+    top: auto;
+    right: var(--space-4);
+    bottom: var(--space-4);
+    left: var(--space-4);
+    width: auto;
+    max-height: calc(100dvh - 2 * var(--space-4));
+    z-index: 80;
   }
 }
