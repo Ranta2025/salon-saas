@@ -695,3 +695,37 @@ func mustToken(t *testing.T) string {
 	}
 	return tok
 }
+
+// F13 native review R4-001: the email can reach the client while MarkDelivered fails
+// (or before it runs), so a CLAIMED but not yet delivered token must still redeem:
+// redeeming proves delivery. The review is created and the request ends used AND
+// delivered (the used_after_delivered CHECK holds).
+func TestReviewsSubmit_redeemsAClaimedTokenWhoseDeliveryWasNeverMarked(t *testing.T) {
+	f := rvFixtures(t)
+	f.enabled(t, f.salonID, 1)
+	f.booking(t, f.salonID, "b-undelivered", "done", f.now.Add(-48*time.Hour), f.now.Add(-47*time.Hour))
+	f.email(t, f.salonID, "b-undelivered", "undelivered@mail.com")
+
+	tok, _ := reviews.NewToken()
+	hash := reviews.HashToken(tok)
+	if _, claimed, err := f.repo.Claim(ports.ReviewClaim{
+		ID: domain.NewID(), SalonID: f.salonID, BookingID: "b-undelivered",
+		TokenHash: hash, Now: f.now, ExpiresAt: f.now.Add(reviews.RequestTTL),
+	}); err != nil || !claimed {
+		t.Fatalf("reclamo: %v %v", claimed, err)
+	}
+	// The mail went out but MarkDelivered never ran: delivered_at is still NULL.
+	review, err := f.repo.Submit(ports.ReviewSubmit{TokenHash: hash, Rating: 5, Comment: "Llego el correo", Now: f.now.Add(time.Minute)})
+	if err != nil {
+		t.Fatalf("el enlace del correo debe canjearse aunque no se marcara la entrega: %v", err)
+	}
+	if review.BookingID != "b-undelivered" {
+		t.Fatalf("reseña del turno equivocado: %+v", review)
+	}
+	if n := f.count(t, `SELECT count(*) FROM review_requests WHERE booking_id='b-undelivered' AND used_at IS NOT NULL AND delivered_at IS NOT NULL`); n != 1 {
+		t.Fatalf("el pedido queda usado Y entregado: %d", n)
+	}
+	if n := f.count(t, `SELECT count(*) FROM reviews WHERE booking_id='b-undelivered'`); n != 1 {
+		t.Fatalf("una sola reseña: %d", n)
+	}
+}

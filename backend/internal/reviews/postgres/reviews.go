@@ -184,7 +184,8 @@ func (r Reviews) Visible(salonID string) (ports.PublicReviews, error) {
 
 // Submit canjea el token y crea la reseña en UNA transacción:
 //
-//  1. `UPDATE review_requests SET used_at WHERE token_hash AND used_at IS NULL
+//  1. `UPDATE review_requests SET used_at (and delivered_at when it was never marked:
+//     redeeming proves the mail arrived) WHERE token_hash AND used_at IS NULL
 //     AND expires_at > now` — el consumo atómico del enlace. Sin filas (usado,
 //     vencido o desconocido) es ErrNotFound, el MISMO error para los tres.
 //  2. El nombre del turno y del servicio para el snapshot (D5).
@@ -200,7 +201,7 @@ func (r Reviews) Submit(req ports.ReviewSubmit) (ports.Review, error) {
 
 	var requestID, salonID, bookingID string
 	err = tx.QueryRow(ctx,
-		`UPDATE review_requests SET used_at=$2
+		`UPDATE review_requests SET used_at=$2, delivered_at=COALESCE(delivered_at, $2)
 		 WHERE token_hash=$1 AND used_at IS NULL AND expires_at > $2
 		 RETURNING id, salon_id, booking_id`,
 		req.TokenHash, req.Now.UTC()).Scan(&requestID, &salonID, &bookingID)
