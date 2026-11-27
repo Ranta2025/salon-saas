@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	httpapi "salon-saas/internal/adapters/http"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/payroll"
+	payrollhttpapi "salon-saas/internal/payroll/httpapi"
 	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
@@ -31,8 +32,8 @@ func newRunHTTPEnv(t *testing.T) *runHTTPEnv {
 	runs.SettingsRepo = base.Env.Settings
 	runs.Body, runs.Sales = base.Body, base.Sales
 	d := base.Env.Deps
-	d.PayrollRuns = httpapi.PayrollRunHandler{
-		Runs: app.PayrollRunService{
+	d.PayrollRuns = payrollhttpapi.PayrollRunHandler{
+		Runs: payroll.PayrollRunService{
 			Runs: runs, Tx: runs,
 			PayModels: base.Body, Sales: base.Sales,
 			Memberships: base.Env.Mems, Settings: base.Env.Settings,

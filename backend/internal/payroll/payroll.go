@@ -2,7 +2,7 @@
 // (F3.2 del contrato F3). El período lo deriva SIEMPRE el servidor en la zona
 // del salón (D5) y la comisión sale de la fórmula de D2, que la hace el dominio:
 // el adaptador solo suma qty × precio × pct en enteros y acá se divide una vez.
-package app
+package payroll
 
 import (
 	"sort"

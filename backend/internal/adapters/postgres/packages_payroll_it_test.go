@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/payroll"
 )
 
 // payrollVentasMain es el CTE `ventas` TAL COMO ESTÁ en `main` (F6/D6): la
@@ -80,11 +80,11 @@ func TestPackagesPayrollIT_ventas_excludes_package_sales(t *testing.T) {
 	}
 
 	repo := PayrollSales{Pool: pool}
-	svc := app.PayrollService{
+	svc := payroll.PayrollService{
 		Pay: PayModels{Pool: pool}, Sales: repo, Memberships: Memberships{Pool: pool}, Settings: Salons{Pool: pool},
 		Now: func() time.Time { return time.Date(2026, 4, 15, 0, 0, 0, 0, time.UTC) },
 	}
-	previewLine := func() app.PayrollLine {
+	previewLine := func() payroll.PayrollLine {
 		t.Helper()
 		p, err := svc.Preview(owner, "s-it-pkg", "month", "2026-03-10")
 		if err != nil {
@@ -96,7 +96,7 @@ func TestPackagesPayrollIT_ventas_excludes_package_sales(t *testing.T) {
 			}
 		}
 		t.Fatalf("la vista previa no trae al profesional: %+v", p.Lines)
-		return app.PayrollLine{}
+		return payroll.PayrollLine{}
 	}
 
 	// (a) SIN paquetes: idéntico a `main`. 3 ventas; total = 30000 + 5000 + (7000 -

@@ -9,14 +9,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	httpx "salon-saas/internal/adapters/http/httpx"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/payroll"
 	"salon-saas/internal/ports"
 )
 
 // PayrollRunHandler agrupa las rutas de F3.3.
 type PayrollRunHandler struct {
-	Runs        app.PayrollRunService
+	Runs        payroll.PayrollRunService
 	Memberships ports.MembershipRepository
 }
 
@@ -107,12 +107,12 @@ func (h PayrollRunHandler) Create(c *gin.Context) {
 		Date string `json:"date"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	run, err := h.Runs.Create(actor, salonID, in.Kind, in.Date)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, payrollRunJSON(run))
@@ -128,7 +128,7 @@ func (h PayrollRunHandler) List(c *gin.Context) {
 	}
 	list, err := h.Runs.List(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -147,7 +147,7 @@ func (h PayrollRunHandler) Get(c *gin.Context) {
 	}
 	run, err := h.Runs.Get(actor, salonID, c.Param("rid"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, payrollRunJSON(run))
@@ -167,11 +167,11 @@ func (h PayrollRunHandler) AdjustLine(c *gin.Context) {
 		AdjustmentNote  *string `json:"adjustment_note"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if in.AdjustmentCents == nil {
-		respondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgPayrollAdjustmentMissing))
+		httpx.RespondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgPayrollAdjustmentMissing))
 		return
 	}
 	note := ""
@@ -180,7 +180,7 @@ func (h PayrollRunHandler) AdjustLine(c *gin.Context) {
 	}
 	run, err := h.Runs.AdjustLine(actor, salonID, c.Param("rid"), c.Param("uid"), *in.AdjustmentCents, note)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, payrollRunJSON(run))
@@ -195,7 +195,7 @@ func (h PayrollRunHandler) Pay(c *gin.Context) {
 	}
 	run, err := h.Runs.Pay(actor, salonID, c.Param("rid"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, payrollRunJSON(run))
@@ -209,7 +209,7 @@ func (h PayrollRunHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.Runs.Delete(actor, salonID, c.Param("rid")); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -226,7 +226,7 @@ func (h PayrollRunHandler) ExportCSV(c *gin.Context) {
 	}
 	name, data, err := h.Runs.ExportCSV(actor, salonID, c.Param("rid"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.Header("Content-Disposition", `attachment; filename="`+name+`"`)

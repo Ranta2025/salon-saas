@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/payroll"
 	"salon-saas/internal/ports"
 )
 
@@ -29,9 +29,9 @@ import (
 // Febrero está cerrado; marzo está en curso.
 var payrollRunNow = time.Date(2026, 3, 20, 18, 0, 0, 0, time.UTC)
 
-func payrollRunService(pool *pgxpool.Pool) app.PayrollRunService {
+func payrollRunService(pool *pgxpool.Pool) payroll.PayrollRunService {
 	repo := PayrollRuns{Pool: pool}
-	return app.PayrollRunService{
+	return payroll.PayrollRunService{
 		Runs: repo, Tx: repo,
 		PayModels: PayModels{Pool: pool}, Sales: PayrollSales{Pool: pool},
 		Memberships: Memberships{Pool: pool}, Settings: Salons{Pool: pool},
@@ -123,7 +123,7 @@ func TestPayrollRunsIT_crear_congela_la_foto(t *testing.T) {
 	}
 
 	// La vista previa, en cambio, SÍ es viva: ahora ve el 90% y el fijo nuevo.
-	previewSvc := app.PayrollService{
+	previewSvc := payroll.PayrollService{
 		Pay: PayModels{Pool: pool}, Sales: PayrollSales{Pool: pool},
 		Memberships: Memberships{Pool: pool}, Settings: Salons{Pool: pool},
 		Now: func() time.Time { return payrollRunNow },
@@ -132,7 +132,7 @@ func TestPayrollRunsIT_crear_congela_la_foto(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preview: %v", err)
 	}
-	var live app.PayrollLine
+	var live payroll.PayrollLine
 	found := false
 	for _, l := range preview.Lines {
 		if l.UserID == "u-it-pay-a" {
@@ -526,6 +526,6 @@ func TestPayrollRunsIT_tenant_listado_y_export(t *testing.T) {
 
 // svc2Run crea la liquidación del salón 2 reusando el mismo servicio pero con
 // el actor de ese salón.
-func svc2Run(svc app.PayrollRunService, actor domain.Membership, salonID string) (domain.PayrollRun, error) {
+func svc2Run(svc payroll.PayrollRunService, actor domain.Membership, salonID string) (domain.PayrollRun, error) {
 	return svc.Create(actor, salonID, "month", "2026-02-10")
 }

@@ -8,6 +8,7 @@ import (
 	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
 	notificationshttpapi "salon-saas/internal/notifications/httpapi"
 	packageshttpapi "salon-saas/internal/packages/httpapi"
+	payrollhttpapi "salon-saas/internal/payroll/httpapi"
 	"salon-saas/internal/ports"
 	poshttpapi "salon-saas/internal/pos/httpapi"
 	productshttpapi "salon-saas/internal/products/httpapi"
@@ -52,10 +53,10 @@ type Deps struct {
 	Invitations teamhttpapi.InvitationHandler
 	// Payroll es la nómina de F3.2: modelo de pago por miembro, vista previa del
 	// período y «Mis comisiones». Los permisos de D7 los aplica el caso de uso.
-	Payroll PayrollHandler
+	Payroll payrollhttpapi.PayrollHandler
 	// PayrollRuns son las liquidaciones de F3.3 (crear, listar, detalle, ajuste,
 	// pago, borrado y CSV). Solo owner/admin: lo aplica el caso de uso.
-	PayrollRuns PayrollRunHandler
+	PayrollRuns payrollhttpapi.PayrollRunHandler
 	// Expenses son los gastos operativos de F3b (F3b del contrato Fase 6).
 	Expenses financehttpapi.ExpenseHandler
 	// Profit es el reporte de ganancia neta de F3b (ingresos - gastos - nómina

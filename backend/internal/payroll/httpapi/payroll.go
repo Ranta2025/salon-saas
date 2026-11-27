@@ -8,15 +8,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 	httpx "salon-saas/internal/adapters/http/httpx"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/payroll"
 	"salon-saas/internal/ports"
 )
 
 // PayrollHandler agrupa las cuatro rutas de F3.2.
 type PayrollHandler struct {
-	PayModels   app.PayModelService
-	Payroll     app.PayrollService
+	PayModels   payroll.PayModelService
+	Payroll     payroll.PayrollService
 	Memberships ports.MembershipRepository
 }
 
@@ -60,7 +60,7 @@ func (h PayrollHandler) ListPayModels(c *gin.Context) {
 	}
 	list, err := h.PayModels.List(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -87,17 +87,17 @@ func (h PayrollHandler) UpdatePayModel(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
 		// Incluye un monto con decimales (1500.5): no es un modelo válido.
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if in.FixedCents == nil || in.FixedPeriod == nil || in.CommissionEnabled == nil {
-		respondErr(c, domain.NewMessage(domain.ErrValidation,
+		httpx.RespondErr(c, domain.NewMessage(domain.ErrValidation,
 			"Faltan datos del modelo de pago: indicá el sueldo fijo, su período y si cobra comisión"))
 		return
 	}
 	v, err := h.PayModels.Update(actor, salonID, c.Param("uid"), *in.FixedCents, *in.FixedPeriod, *in.CommissionEnabled)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, payModelJSON(v))
@@ -117,12 +117,12 @@ func (h PayrollHandler) Preview(c *gin.Context) {
 		Date string `json:"date"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	out, err := h.Payroll.Preview(actor, salonID, in.Kind, in.Date)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	lines := make([]gin.H, 0, len(out.Lines))
@@ -160,7 +160,7 @@ func (h PayrollHandler) Me(c *gin.Context) {
 	}
 	out, err := h.Payroll.Me(actor, salonID, c.Query("kind"), c.Query("date"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{

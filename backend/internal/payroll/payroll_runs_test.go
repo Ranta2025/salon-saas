@@ -1,4 +1,4 @@
-package app
+package payroll
 
 import (
 	"errors"
@@ -9,6 +9,7 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil"
 )
 
 // Liquidaciones de nómina (F3.3): ciclo de vida sobre el motor de la vista
@@ -22,7 +23,7 @@ type fakePayrollRuns struct {
 	order []string
 	// settings es la configuración del salón que lee la creación DENTRO de la
 	// transacción (zona horaria del período, F3.3).
-	settings *fakeSettings
+	settings *testutil.FakeSettings
 	// pay y sales son la fuente de la vista previa dentro de la transacción.
 	pay   *fakePayModels
 	sales *fakePayrollSales

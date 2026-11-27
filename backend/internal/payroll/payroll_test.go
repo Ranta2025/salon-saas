@@ -1,4 +1,4 @@
-package app
+package payroll
 
 import (
 	"errors"
@@ -7,6 +7,7 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil"
 )
 
 // Fakes de la nómina (F3.2): el modelo de pago de cada miembro y los agregados
@@ -122,8 +123,8 @@ type payrollEnv struct {
 	paySvc   PayModelService
 	pay      *fakePayModels
 	sales    *fakePayrollSales
-	mems     *fakeMemberships
-	settings *fakeSettings
+	mems     *testutil.FakeMemberships
+	settings *testutil.FakeSettings
 	when     time.Time
 }
 
@@ -131,7 +132,7 @@ func newPayrollEnv(t *testing.T) *payrollEnv {
 	t.Helper()
 	const salon = "s-pay"
 	// Las filas se cargan directo (Save reactivaría la baja, como el upsert real).
-	mems := &fakeMemberships{ByKey: map[string]domain.Membership{}}
+	mems := &testutil.FakeMemberships{ByKey: map[string]domain.Membership{}}
 	for _, m := range []domain.Membership{
 		{UserID: "u-owner", SalonID: salon, Role: domain.RoleOwner},
 		{UserID: "u-admin", SalonID: salon, Role: domain.RoleAdmin},
@@ -148,7 +149,7 @@ func newPayrollEnv(t *testing.T) *payrollEnv {
 		domain.MemberPayView{MemberPay: domain.DefaultMemberPay(salon, "u-recep"), Name: "Recep", Role: domain.RoleReception, Active: true},
 		domain.MemberPayView{MemberPay: domain.DefaultMemberPay(salon, "u-gone"), Name: "Beto", Role: domain.RoleProfessional, Active: false},
 	)
-	settings := &fakeSettings{BySalon: map[string]domain.SalonSettings{
+	settings := &testutil.FakeSettings{BySalon: map[string]domain.SalonSettings{
 		salon: {SalonID: salon, Timezone: "America/Mexico_City", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30},
 	}}
 	when := time.Date(2026, 3, 20, 18, 0, 0, 0, time.UTC)

@@ -1,7 +1,7 @@
 // PayModelService: el modelo de pago de cada miembro (D3 del contrato F3): sueldo
 // fijo por período, comisión o mixto. Solo owner/admin lo ven y lo cambian; el
 // profesional no ve el de nadie (D7).
-package app
+package payroll
 
 import (
 	"errors"

@@ -4,8 +4,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	httpapi "salon-saas/internal/adapters/http"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/payroll"
+	payrollhttpapi "salon-saas/internal/payroll/httpapi"
 	httpkit "salon-saas/internal/testutil/httpkit"
 	"testing"
 	"time"
@@ -38,9 +39,9 @@ func newPayEnv(t *testing.T) *payEnv {
 	pay := &httpkit.PayModels{Mems: env.Mems, Users: env.Users, Rows: map[string]domain.MemberPay{}}
 	sales := &httpkit.PayrollSales{}
 	d := env.Deps
-	d.Payroll = httpapi.PayrollHandler{
-		PayModels: app.PayModelService{Pay: pay, Memberships: env.Mems},
-		Payroll: app.PayrollService{
+	d.Payroll = payrollhttpapi.PayrollHandler{
+		PayModels: payroll.PayModelService{Pay: pay, Memberships: env.Mems},
+		Payroll: payroll.PayrollService{
 			Pay: pay, Sales: sales, Memberships: env.Mems, Settings: env.Settings,
 			Now: func() time.Time { return payrollNow },
 		},

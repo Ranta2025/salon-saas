@@ -3,7 +3,7 @@
 // F3.2, no una fórmula nueva); ajustar, pagar y borrar solo se pueden mientras
 // la corrida está abierta. La transacción con advisory lock y la EXCLUDE de la
 // DB son las garantías duras; este caso de uso pone los permisos y las frases.
-package app
+package payroll
 
 import (
 	"errors"

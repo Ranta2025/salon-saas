@@ -38,6 +38,8 @@ import (
 	notifstore "salon-saas/internal/notifications/postgres"
 	"salon-saas/internal/packages"
 	packageshttpapi "salon-saas/internal/packages/httpapi"
+	"salon-saas/internal/payroll"
+	payrollhttpapi "salon-saas/internal/payroll/httpapi"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/pos"
 	poshttpapi "salon-saas/internal/pos/httpapi"
@@ -424,13 +426,13 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F3.2: nómina. El período se deriva en la zona del salón (settings) y la
 	// comisión sale de los agregados de ventas; el fijo se paga una vez cuando el
 	// tipo de período coincide con el del miembro (D4).
-	payModelSvc := app.PayModelService{Pay: payModelsRepo, Memberships: mems}
-	payrollSvc := app.PayrollService{
+	payModelSvc := payroll.PayModelService{Pay: payModelsRepo, Memberships: mems}
+	payrollSvc := payroll.PayrollService{
 		Pay: payModelsRepo, Sales: payrollSalesRepo, Memberships: mems, Settings: salons,
 	}
 	// F3.3: crear congela la vista previa; ajustar, pagar y borrar solo con la
 	// corrida abierta (la DB repite la condición status='open').
-	payrollRunSvc := app.PayrollRunService{
+	payrollRunSvc := payroll.PayrollRunService{
 		Runs: payrollRunsRepo, Tx: payrollRunsRepo,
 		PayModels: payModelsRepo, Sales: payrollSalesRepo, Memberships: mems, Settings: salons,
 	}
@@ -621,8 +623,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Invitations: teamhttpapi.InvitationHandler{
 			Invitations: invitationSvc, Public: invitationPublicSvc, Memberships: mems,
 		},
-		Payroll: httpapi.PayrollHandler{PayModels: payModelSvc, Payroll: payrollSvc, Memberships: mems},
-		PayrollRuns: httpapi.PayrollRunHandler{
+		Payroll: payrollhttpapi.PayrollHandler{PayModels: payModelSvc, Payroll: payrollSvc, Memberships: mems},
+		PayrollRuns: payrollhttpapi.PayrollRunHandler{
 			Runs: payrollRunSvc, Memberships: mems,
 		},
 		Expenses: financehttpapi.ExpenseHandler{Expenses: expenseSvc, Memberships: mems},
