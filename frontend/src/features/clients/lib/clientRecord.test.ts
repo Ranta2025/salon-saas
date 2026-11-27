@@ -29,7 +29,7 @@ import {
 } from './clientRecord.ts'
 import { formatCents } from '../../../lib/money.ts'
 import { canEditClient, canSeeClientMoney } from '../../../lib/permissions.ts'
-import { saleWithClient } from '../../../lib/posCart.ts'
+import { saleWithClient } from '../../pos/lib/posCart.ts'
 import { clearToken, setToken } from '../../../lib/session.ts'
 
 type Call = { url: string; method: string; body: string | undefined; headers: Record<string, string> }

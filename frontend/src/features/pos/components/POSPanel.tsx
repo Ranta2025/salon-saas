@@ -1,7 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react'
-import { formatCents } from '../../lib/money'
-import { dropReasonLabel, findDropped, type DroppedOperation } from '../../lib/offlineQueue'
-import type { StaffMember } from '../../lib/staff'
+import { formatCents } from '@/lib/money'
+import { dropReasonLabel, findDropped, type DroppedOperation } from '@/lib/offlineQueue'
+import type { StaffMember } from '@/lib/staff'
 import {
   changeQty,
   itemCount,
@@ -11,7 +11,7 @@ import {
   totalCents,
   type Cart,
   type PosPickedClient,
-} from '../../lib/posCart'
+} from '../lib/posCart'
 import {
   changeProductQty,
   productCartQty,
@@ -32,7 +32,7 @@ import {
   type SaleInput,
   type SaleMethod,
   type SaleOutcome,
-} from '../../types'
+} from '@/types'
 
 type POSPanelProps = {
   cart: Cart

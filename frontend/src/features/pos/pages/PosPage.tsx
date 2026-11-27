@@ -8,12 +8,12 @@ import {
   fetchStaff,
   NetworkError,
   type ApiErrorNotice,
-} from '../lib/api'
+} from '@/lib/api'
 import type { PickableClient } from '@/features/clients/lib/clientRecord'
-import { dayRange } from '../lib/datetime'
-import { formatCents } from '../lib/money'
-import { newClientOpId, type QueuedOperation } from '../lib/offlineQueue'
-import type { StaffMember } from '../lib/staff'
+import { dayRange } from '@/lib/datetime'
+import { formatCents } from '@/lib/money'
+import { newClientOpId, type QueuedOperation } from '@/lib/offlineQueue'
+import type { StaffMember } from '@/lib/staff'
 import { addItem, type Cart } from '../lib/posCart'
 import {
   addProduct,
@@ -29,12 +29,12 @@ import {
   type SaleInput,
   type SaleOutcome,
   type Service,
-} from '../types'
-import { useSalon } from './SalonContext'
-import { useOffline } from './OfflineContext'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { PageHeader } from './components/PageHeader'
-import { POSPanel } from './components/POSPanel'
+} from '@/types'
+import { useSalon } from '@/app/SalonContext'
+import { useOffline } from '@/app/OfflineContext'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { PageHeader } from '@/app/components/PageHeader'
+import { POSPanel } from '../components/POSPanel'
 
 function pendingSalePayload(operation: QueuedOperation): SaleInput {
   return operation.payload as SaleInput
