@@ -7,14 +7,16 @@ import (
 	"testing"
 	"time"
 
+	"salon-saas/internal/clients"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 type galleryWorld struct {
 	svc     GalleryService
 	gallery *fakeGallery
-	store   *fakeStorage
-	images  *fakeImages
+	store   *testutil.FakeStorage
+	images  *testutil.FakeImages
 	salons  *fakeSalons
 	mems    *fakeMemberships
 }
@@ -34,7 +36,7 @@ func newGalleryWorld() *galleryWorld {
 	_ = salons.Save(domain.Salon{ID: "s1", Slug: "uno", Name: "Uno"})
 	_ = salons.Save(domain.Salon{ID: "s2", Slug: "dos", Name: "Dos"})
 	gallery := &fakeGallery{slugs: map[string]string{"s1": "uno", "s2": "dos"}}
-	store, images := &fakeStorage{}, &fakeImages{}
+	store, images := &testutil.FakeStorage{}, &testutil.FakeImages{}
 	return &galleryWorld{
 		svc:     GalleryService{Gallery: gallery, Memberships: mems, Salons: salons, Photos: store, Images: images},
 		gallery: gallery, store: store, images: images, salons: salons, mems: mems,
@@ -72,12 +74,12 @@ func TestGallery_Add_pipeline(t *testing.T) {
 		p.URL != "/api/v1/public/salons/uno/gallery/"+p.ID {
 		t.Fatalf("foto: %+v", p)
 	}
-	if string(w.images.gotContentIn) != "jpeg-bytes" {
-		t.Fatalf("el pipeline no convirtió lo subido: %q", w.images.gotContentIn)
+	if string(w.images.GotContentIn) != "jpeg-bytes" {
+		t.Fatalf("el pipeline no convirtió lo subido: %q", w.images.GotContentIn)
 	}
-	data, ok := w.store.files[p.StorageKey]
+	data, ok := w.store.Files[p.StorageKey]
 	if !ok || !bytes.Equal(data, []byte("RIFF....WEBP")) || !strings.HasPrefix(p.StorageKey, "s1/gallery/") {
-		t.Fatalf("archivo guardado: key=%q files=%v", p.StorageKey, w.store.files)
+		t.Fatalf("archivo guardado: key=%q files=%v", p.StorageKey, w.store.Files)
 	}
 	if n, _ := w.gallery.Count("s1"); n != 1 {
 		t.Fatalf("filas: %d", n)
@@ -105,8 +107,8 @@ func TestGallery_permissions(t *testing.T) {
 			t.Fatalf("Delete %v: %v", a, err)
 		}
 	}
-	if w.store.puts != 1 || w.gallery.adds != 1 || w.gallery.deletes != 0 || w.store.dels != 0 {
-		t.Fatalf("un rechazo no escribe: puts=%d adds=%d dels=%d", w.store.puts, w.gallery.adds, w.store.dels)
+	if w.store.Puts != 1 || w.gallery.adds != 1 || w.gallery.deletes != 0 || w.store.Dels != 0 {
+		t.Fatalf("un rechazo no escribe: puts=%d adds=%d dels=%d", w.store.Puts, w.gallery.adds, w.store.Dels)
 	}
 }
 
@@ -134,12 +136,12 @@ func TestGallery_Add_validatesTypeAndSize(t *testing.T) {
 	}
 	// Bytes que no son una imagen: el procesador falla y no queda nada.
 	w2 := newGalleryWorld()
-	w2.images.err = domain.ErrValidation
+	w2.images.Err = domain.ErrValidation
 	if _, err := w2.svc.Add(gActor("owner", "s1"), "s1", []byte("no-imagen"), "image/png"); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("no imagen: %v", err)
 	}
-	if w2.store.puts != 0 || w2.gallery.adds != 0 {
-		t.Fatalf("nada guardado: puts=%d adds=%d", w2.store.puts, w2.gallery.adds)
+	if w2.store.Puts != 0 || w2.gallery.adds != 0 {
+		t.Fatalf("nada guardado: puts=%d adds=%d", w2.store.Puts, w2.gallery.adds)
 	}
 }
 
@@ -157,12 +159,12 @@ func TestGallery_Add_capOf12(t *testing.T) {
 	for i := 0; i < 12; i++ {
 		w.add(t, "s1")
 	}
-	puts := w.store.puts
+	puts := w.store.Puts
 	_, err := w.svc.Add(gActor("owner", "s1"), "s1", []byte("x"), "image/png")
 	if !errors.Is(err, domain.ErrAlreadyExists) || err.Error() != "La galería ya tiene 12 fotos" {
 		t.Fatalf("13ª: %v", err)
 	}
-	if w.store.puts != puts {
+	if w.store.Puts != puts {
 		t.Fatalf("la 13ª no debe guardar archivo")
 	}
 	// El tope es POR salón: el otro salón sigue pudiendo subir.
@@ -178,16 +180,16 @@ func TestGallery_Add_raceLostCleansFile(t *testing.T) {
 	if !errors.Is(err, domain.ErrAlreadyExists) || err.Error() != domain.MsgGalleryFull {
 		t.Fatalf("err: %v", err)
 	}
-	if w.store.puts != 1 || w.store.dels != 1 || len(w.store.files) != 0 {
-		t.Fatalf("el archivo debe borrarse: puts=%d dels=%d files=%d", w.store.puts, w.store.dels, len(w.store.files))
+	if w.store.Puts != 1 || w.store.Dels != 1 || len(w.store.Files) != 0 {
+		t.Fatalf("el archivo debe borrarse: puts=%d dels=%d files=%d", w.store.Puts, w.store.Dels, len(w.store.Files))
 	}
 	// Un fallo cualquiera de la DB también limpia y se propaga.
 	w.gallery.addErr = errBoom
 	if _, err := w.svc.Add(gActor("owner", "s1"), "s1", []byte("x"), "image/png"); !errors.Is(err, errBoom) {
 		t.Fatalf("err: %v", err)
 	}
-	if len(w.store.files) != 0 {
-		t.Fatalf("archivo huérfano: %v", w.store.files)
+	if len(w.store.Files) != 0 {
+		t.Fatalf("archivo huérfano: %v", w.store.Files)
 	}
 }
 
@@ -252,14 +254,14 @@ func TestGallery_Delete(t *testing.T) {
 	if err := w.svc.Delete(gActor("owner", "s1"), "s1", other.ID); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("otro salón: %v", err)
 	}
-	if _, ok := w.store.files[other.StorageKey]; !ok || len(w.gallery.all) != 2 {
+	if _, ok := w.store.Files[other.StorageKey]; !ok || len(w.gallery.all) != 2 {
 		t.Fatalf("la foto de s2 debe seguir")
 	}
 	if err := w.svc.Delete(gActor("owner", "s1"), "s1", p.ID); err != nil {
 		t.Fatalf("borrar: %v", err)
 	}
-	if _, ok := w.store.files[p.StorageKey]; ok || w.store.dels != 1 {
-		t.Fatalf("el archivo también se borra: %v dels=%d", w.store.files, w.store.dels)
+	if _, ok := w.store.Files[p.StorageKey]; ok || w.store.Dels != 1 {
+		t.Fatalf("el archivo también se borra: %v dels=%d", w.store.Files, w.store.Dels)
 	}
 	if err := w.svc.Delete(gActor("owner", "s1"), "s1", p.ID); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("segunda vez: %v", err)
@@ -290,7 +292,7 @@ func TestGallery_PublicPhoto(t *testing.T) {
 		t.Fatalf("el 404 debe ser uniforme: %q %q %q %q", a, b, c, d)
 	}
 	// El archivo se perdió del storage: también el mismo 404 (no un 500).
-	delete(w.store.files, p.StorageKey)
+	delete(w.store.Files, p.StorageKey)
 	if got := uniform("uno", p.ID); got != domain.MsgPhotoNotFound {
 		t.Fatalf("archivo perdido: %q", got)
 	}
@@ -300,9 +302,9 @@ func TestGallery_PublicPhoto(t *testing.T) {
 // pedir su id con un slug real es 404.
 func TestGallery_PublicPhoto_neverServesClientPhotos(t *testing.T) {
 	w := newGalleryWorld()
-	clients := &fakeClients{}
-	clientSvc := ClientService{Clients: clients, Memberships: w.mems, Photos: w.store, Images: w.images}
-	_ = clients.Save(domain.Client{ID: "c1", SalonID: "s1", Name: "Ana"})
+	fichas := &testutil.FakeClients{}
+	clientSvc := clients.ClientService{Clients: fichas, Memberships: w.mems, Photos: w.store, Images: w.images}
+	_ = fichas.Save(domain.Client{ID: "c1", SalonID: "s1", Name: "Ana"})
 	photo, err := clientSvc.AddPhoto(gActor("owner", "s1"), "s1", "c1", []byte("x"), "image/png")
 	if err != nil {
 		t.Fatalf("foto de clienta: %v", err)

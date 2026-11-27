@@ -8,7 +8,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	httpx "salon-saas/internal/adapters/http/httpx"
+	"salon-saas/internal/clients"
 	"salon-saas/internal/domain"
 )
 
@@ -22,7 +23,7 @@ func (h ClientHandler) Get(c *gin.Context) {
 	}
 	client, err := h.Clients.Get(actor, salonID, c.Param("cid"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, clientJSON(client))
@@ -47,7 +48,7 @@ func (h ClientHandler) Update(c *gin.Context) {
 		Allergies *string `json:"allergies"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if in.Name == nil || in.Phone == nil || in.Email == nil || in.Notes == nil || in.Allergies == nil {
@@ -57,7 +58,7 @@ func (h ClientHandler) Update(c *gin.Context) {
 	client, err := h.Clients.Update(actor, salonID, c.Param("cid"),
 		*in.Name, *in.Phone, *in.Email, *in.Notes, *in.Allergies)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, clientJSON(client))
@@ -74,14 +75,14 @@ func (h ClientHandler) ClientHistory(c *gin.Context) {
 	}
 	view, err := h.History.History(actor, salonID, c.Param("cid"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, clientHistoryJSON(view))
 }
 
 // clientHistoryJSON es la forma única del historial.
-func clientHistoryJSON(v app.ClientHistoryView) gin.H {
+func clientHistoryJSON(v clients.ClientHistoryView) gin.H {
 	bookings := make([]gin.H, 0, len(v.Bookings))
 	for _, b := range v.Bookings {
 		bookings = append(bookings, gin.H{

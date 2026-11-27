@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	audithttpapi "salon-saas/internal/audit/httpapi"
+	clientshttpapi "salon-saas/internal/clients/httpapi"
 	exportshttpapi "salon-saas/internal/exports/httpapi"
 	financehttpapi "salon-saas/internal/finance/httpapi"
 	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
@@ -27,7 +28,7 @@ type Deps struct {
 	CashCloses    CashCloseHandler
 	Dashboard     DashboardHandler
 	Notifications notificationshttpapi.NotificationHandler
-	Clients       ClientHandler
+	Clients       clientshttpapi.ClientHandler
 	Me            MeHandler
 	Staff         teamhttpapi.StaffHandler
 	Public        PublicHandler

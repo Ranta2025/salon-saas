@@ -9,7 +9,9 @@ package httpx
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"salon-saas/internal/domain"
 	ports "salon-saas/internal/ports"
@@ -176,4 +178,65 @@ func BookingJSON(b domain.Booking) gin.H {
 	// no ocupa ninguna (turno del calendario o servicio sin equipo).
 	out["resource_unit_id"] = OptionalID(b.ResourceUnitID)
 	return out
+}
+
+var ErrUpload = errors.New("se esperaba multipart/form-data con el archivo en el campo \"photo\" (o \"file\") o un body de imagen (jpg, png o webp)")
+
+// uploadFields son los nombres de campo que se aceptan en el multipart. `photo`
+// es el que manda el frontend (FormData.append('photo', file)) y `file` el
+// genérico de curl/Postman: aceptar los dos evita un contrato frágil por un
+// nombre.
+var uploadFields = []string{"photo", "file"}
+
+// ReadUpload saca los bytes y el content type declarado de lo que subió el
+// cliente. El límite de 8 MB se aplica al leer (no se carga un archivo enorme
+// en memoria para después rechazarlo).
+func ReadUpload(c *gin.Context) ([]byte, string, error) {
+	// Tope del BODY antes de parsear nada (R4-001): c.Request.FormFile parsea y
+	// spoolea TODO el multipart en memoria/disco sin límite propio. Sin esta
+	// línea, un body de 1 GB con un archivo chico adentro se acepta y el
+	// servidor lo procesa entero. El +1 MB es el overhead del propio multipart
+	// (boundaries + headers); el archivo sigue acotado por MaxPhotoBytes.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, domain.MaxPhotoBytes+(1<<20))
+	// R3-002: el Content-Type se compara sin distinguir mayúsculas ("IMAGE/PNG"
+	// es un image/png válido y algunos clientes lo mandan así).
+	ct := strings.ToLower(strings.TrimSpace(c.GetHeader("Content-Type")))
+	switch {
+	case strings.HasPrefix(ct, "multipart/form-data"):
+		file, header, err := multipartFile(c)
+		if err != nil {
+			return nil, "", ErrUpload
+		}
+		defer file.Close()
+		data, err := io.ReadAll(io.LimitReader(file, domain.MaxPhotoBytes+1))
+		if err != nil {
+			return nil, "", ErrUpload
+		}
+		declared := header.Header.Get("Content-Type")
+		if declared == "" {
+			declared = http.DetectContentType(data)
+		}
+		return data, declared, nil
+	case strings.HasPrefix(ct, "image/"):
+		data, err := io.ReadAll(io.LimitReader(c.Request.Body, domain.MaxPhotoBytes+1))
+		if err != nil {
+			return nil, "", ErrUpload
+		}
+		return data, ct, nil
+	default:
+		return nil, "", ErrUpload
+	}
+}
+
+// multipartFile busca el archivo en los nombres de campo aceptados.
+func multipartFile(c *gin.Context) (multipart.File, *multipart.FileHeader, error) {
+	var lastErr error
+	for _, field := range uploadFields {
+		file, header, err := c.Request.FormFile(field)
+		if err == nil {
+			return file, header, nil
+		}
+		lastErr = err
+	}
+	return nil, nil, lastErr
 }

@@ -1,4 +1,4 @@
-package app
+package clients
 
 import (
 	"errors"
@@ -7,18 +7,19 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil"
 )
 
 // fakeClients imita a pgstore.Clients: todo scopeado por salón y cliente.
 type fakeClients struct {
 	clients       []domain.Client
 	photos        []domain.ClientPhoto
-	failSavePhoto bool // simula una DB caída justo después de escribir el archivo
-	failSave      bool // simula una DB caída al guardar la ficha
+	FailSavePhoto bool // simula una DB caída justo después de escribir el archivo
+	FailSave      bool // simula una DB caída al guardar la ficha
 }
 
 func (f *fakeClients) Save(c domain.Client) error {
-	if f.failSave {
+	if f.FailSave {
 		return errors.New("db caída")
 	}
 	for i := range f.clients {
@@ -71,7 +72,7 @@ func (f *fakeClients) List(salonID string) ([]domain.Client, error) {
 }
 
 func (f *fakeClients) SavePhoto(p domain.ClientPhoto) error {
-	if f.failSavePhoto {
+	if f.FailSavePhoto {
 		return errors.New("db caída")
 	}
 	f.photos = append(f.photos, p)
@@ -118,81 +119,23 @@ func (f *fakeClients) PhotoByID(id string) (domain.ClientPhoto, error) {
 
 var _ ports.ClientRepository = (*fakeClients)(nil)
 
-// fakeStorage: filesystem en memoria, con contador de escrituras.
-type fakeStorage struct {
-	files map[string][]byte
-	puts  int
-	dels  int
-}
-
-func (f *fakeStorage) Put(key string, data []byte, contentType string) (string, error) {
-	if f.files == nil {
-		f.files = map[string][]byte{}
-	}
-	f.files[key] = data
-	f.puts++
-	return key, nil
-}
-
-func (f *fakeStorage) Get(path string) ([]byte, error) {
-	data, ok := f.files[path]
-	if !ok {
-		return nil, domain.ErrNotFound
-	}
-	return data, nil
-}
-
-func (f *fakeStorage) Delete(path string) error {
-	delete(f.files, path)
-	f.dels++
-	return nil
-}
-
-var _ ports.PhotoStorage = (*fakeStorage)(nil)
-
-// fakeImages: no convierte nada, devuelve un WebP de mentira con dimensiones
-// fijas. err simula bytes que no son una imagen.
-type fakeImages struct {
-	out          []byte
-	w, h         int
-	err          error
-	gotContentIn []byte
-}
-
-func (f *fakeImages) ToWebP(data []byte) ([]byte, int, int, error) {
-	f.gotContentIn = data
-	if f.err != nil {
-		return nil, 0, 0, f.err
-	}
-	if f.out == nil {
-		f.out = []byte("RIFF....WEBP")
-	}
-	out := f.out
-	w, h := f.w, f.h
-	if w == 0 {
-		w, h = 1280, 960
-	}
-	return out, w, h, nil
-}
-
-var _ ports.ImageProcessor = (*fakeImages)(nil)
-
-func clientEnv() (*ClientService, *fakeClients, *fakeStorage, *fakeImages, *fakeMemberships) {
+// testutil.FakeStorage: filesystem en memoria, con contador de escrituras.
+func clientEnv() (*ClientService, *fakeClients, *testutil.FakeStorage, *testutil.FakeImages, *testutil.FakeMemberships) {
 	clients := &fakeClients{}
-	store := &fakeStorage{}
-	images := &fakeImages{}
-	mems := &fakeMemberships{}
+	store := &testutil.FakeStorage{}
+	images := &testutil.FakeImages{}
+	mems := &testutil.FakeMemberships{}
 	return &ClientService{Clients: clients, Memberships: mems, Photos: store, Images: images}, clients, store, images, mems
 }
 
 func TestClientService_create_permisos(t *testing.T) {
 	svc, clients, _, _, mems := clientEnv()
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
-	admin := miembro(mems, "u-admin", "s1", domain.RoleAdmin)
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	profe := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
-	cliente := miembro(mems, "u-cli", "s1", domain.RoleClient)
-	ajeno := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	admin := testutil.Miembro(mems, "u-admin", "s1", domain.RoleAdmin)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
+	profe := testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	cliente := testutil.Miembro(mems, "u-cli", "s1", domain.RoleClient)
+	ajeno := testutil.Miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
 
 	for _, actor := range []domain.Membership{owner, admin, recep} {
 		c, err := svc.Create(actor, "s1", "Cliente "+actor.UserID, "555", "", "")
@@ -218,9 +161,9 @@ func TestClientService_create_permisos(t *testing.T) {
 
 func TestClientService_list_scoped(t *testing.T) {
 	svc, _, _, _, mems := clientEnv()
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
-	profe := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
-	ajeno := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	profe := testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	ajeno := testutil.Miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
 	if _, err := svc.Create(owner, "s1", "Lía", "", "", ""); err != nil {
 		t.Fatalf("crear: %v", err)
 	}
@@ -235,7 +178,7 @@ func TestClientService_list_scoped(t *testing.T) {
 
 func TestClientService_addPhoto_convierte_y_guarda(t *testing.T) {
 	svc, clients, store, images, mems := clientEnv()
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
 	c, err := svc.Create(recep, "s1", "Lía", "555", "", "")
 	if err != nil {
 		t.Fatalf("crear cliente: %v", err)
@@ -245,16 +188,16 @@ func TestClientService_addPhoto_convierte_y_guarda(t *testing.T) {
 	if err != nil {
 		t.Fatalf("subir foto: %v", err)
 	}
-	if string(images.gotContentIn) != string(raw) {
+	if string(images.GotContentIn) != string(raw) {
 		t.Fatal("el procesador debe recibir el original")
 	}
 	if photo.ContentType != domain.PhotoTypeWebP {
 		t.Fatalf("se persiste la variante webp, dio %q", photo.ContentType)
 	}
-	if photo.Width != 1280 || photo.Height != 960 || photo.Bytes != len(images.out) {
+	if photo.Width != 1280 || photo.Height != 960 || photo.Bytes != len(images.Out) {
 		t.Fatalf("dimensiones/bytes de la variante: %+v", photo)
 	}
-	if got := store.files[photo.Path]; string(got) != string(images.out) {
+	if got := store.Files[photo.Path]; string(got) != string(images.Out) {
 		t.Fatalf("el storage debe tener la variante y no el original (%d bytes)", len(got))
 	}
 	if strings.Contains(photo.Path, "..") || !strings.Contains(photo.Path, c.ID) {
@@ -267,7 +210,7 @@ func TestClientService_addPhoto_convierte_y_guarda(t *testing.T) {
 
 func TestClientService_addPhoto_rechaza_lo_que_no_es_imagen(t *testing.T) {
 	svc, clients, store, images, mems := clientEnv()
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
 	c, _ := svc.Create(recep, "s1", "Lía", "", "", "")
 
 	// Tipo declarado fuera del catálogo: 400 antes de procesar.
@@ -277,11 +220,11 @@ func TestClientService_addPhoto_rechaza_lo_que_no_es_imagen(t *testing.T) {
 		}
 	}
 	// Bytes que no son una imagen (el procesador lo detecta): 400.
-	images.err = domain.ErrValidation
+	images.Err = domain.ErrValidation
 	if _, err := svc.AddPhoto(recep, "s1", c.ID, []byte("no soy imagen"), "image/png"); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("bytes inválidos deben dar ErrValidation, dio %v", err)
 	}
-	images.err = nil
+	images.Err = nil
 	// Vacío y más de 8 MB: 400.
 	if _, err := svc.AddPhoto(recep, "s1", c.ID, nil, "image/png"); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("archivo vacío debe dar ErrValidation, dio %v", err)
@@ -290,16 +233,16 @@ func TestClientService_addPhoto_rechaza_lo_que_no_es_imagen(t *testing.T) {
 	if _, err := svc.AddPhoto(recep, "s1", c.ID, big, "image/png"); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("más de 8 MB debe dar ErrValidation, dio %v", err)
 	}
-	if len(clients.photos) != 0 || store.puts != 0 {
-		t.Fatalf("nada inválido debe persistirse: photos=%d puts=%d", len(clients.photos), store.puts)
+	if len(clients.photos) != 0 || store.Puts != 0 {
+		t.Fatalf("nada inválido debe persistirse: photos=%d puts=%d", len(clients.photos), store.Puts)
 	}
 }
 
 func TestClientService_addPhoto_scoped_y_permisos(t *testing.T) {
 	svc, clients, store, _, mems := clientEnv()
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	profe := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
-	ajenoOwner := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
+	profe := testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	ajenoOwner := testutil.Miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
 	c, _ := svc.Create(recep, "s1", "Lía", "", "", "")
 
 	// Actor de otro salón: 403 aunque el cliente exista en s1.
@@ -314,8 +257,8 @@ func TestClientService_addPhoto_scoped_y_permisos(t *testing.T) {
 	if _, err := svc.AddPhoto(recep, "s1", "no-existe", []byte("x"), "image/png"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("cliente inexistente debe dar NotFound, dio %v", err)
 	}
-	if len(clients.photos) != 0 || store.puts != 0 {
-		t.Fatalf("nada debe persistirse: photos=%d puts=%d", len(clients.photos), store.puts)
+	if len(clients.photos) != 0 || store.Puts != 0 {
+		t.Fatalf("nada debe persistirse: photos=%d puts=%d", len(clients.photos), store.Puts)
 	}
 }
 
@@ -323,25 +266,25 @@ func TestClientService_addPhoto_scoped_y_permisos(t *testing.T) {
 // huérfano en el storage: se borra y el error sube.
 func TestClientService_addPhoto_rollback_del_archivo(t *testing.T) {
 	svc, clients, store, _, mems := clientEnv()
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
 	c, _ := svc.Create(recep, "s1", "Lía", "", "", "")
-	clients.failSavePhoto = true
+	clients.FailSavePhoto = true
 	if _, err := svc.AddPhoto(recep, "s1", c.ID, []byte("x"), "image/png"); err == nil {
 		t.Fatal("esperaba error de persistencia")
 	}
-	if store.puts != 1 || store.dels != 1 {
-		t.Fatalf("el archivo escrito debe borrarse: puts=%d dels=%d", store.puts, store.dels)
+	if store.Puts != 1 || store.Dels != 1 {
+		t.Fatalf("el archivo escrito debe borrarse: puts=%d dels=%d", store.Puts, store.Dels)
 	}
-	if len(store.files) != 0 {
-		t.Fatalf("no debe quedar basura: %+v", store.files)
+	if len(store.Files) != 0 {
+		t.Fatalf("no debe quedar basura: %+v", store.Files)
 	}
 }
 
 func TestClientService_listPhotos_y_delete(t *testing.T) {
 	svc, _, store, _, mems := clientEnv()
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	profe := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
-	ajeno := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
+	profe := testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	ajeno := testutil.Miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
 	c, _ := svc.Create(recep, "s1", "Lía", "", "", "")
 	p, err := svc.AddPhoto(recep, "s1", c.ID, []byte("x"), "image/png")
 	if err != nil {
@@ -366,7 +309,7 @@ func TestClientService_listPhotos_y_delete(t *testing.T) {
 	if err := svc.DeletePhoto(recep, "s1", c.ID, p.ID); err != nil {
 		t.Fatalf("borrar: %v", err)
 	}
-	if _, ok := store.files[p.Path]; ok {
+	if _, ok := store.Files[p.Path]; ok {
 		t.Fatal("el archivo debe borrarse del storage")
 	}
 	if list, _ := svc.ListPhotos(recep, "s1", c.ID); len(list) != 0 {
@@ -376,7 +319,7 @@ func TestClientService_listPhotos_y_delete(t *testing.T) {
 
 func TestClientService_photo_para_streaming(t *testing.T) {
 	svc, _, store, images, mems := clientEnv()
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
 	c, _ := svc.Create(recep, "s1", "Lía", "", "", "")
 	p, _ := svc.AddPhoto(recep, "s1", c.ID, []byte("x"), "image/png")
 
@@ -387,8 +330,8 @@ func TestClientService_photo_para_streaming(t *testing.T) {
 	if got.ID != p.ID || got.ContentType != domain.PhotoTypeWebP {
 		t.Fatalf("metadata: %+v", got)
 	}
-	if string(data) != string(images.out) {
-		t.Fatalf("bytes servidos distintos a los guardados (%q vs %q)", data, store.files[p.Path])
+	if string(data) != string(images.Out) {
+		t.Fatalf("bytes servidos distintos a los guardados (%q vs %q)", data, store.Files[p.Path])
 	}
 	if _, _, err := svc.Photo("no-existe"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("foto inexistente debe dar NotFound, dio %v", err)
@@ -399,7 +342,7 @@ func TestClientService_photo_para_streaming(t *testing.T) {
 // descartaba en silencio y la ficha quedaba "Sin correo" en la pantalla).
 func TestClientService_create_con_email(t *testing.T) {
 	svc, clients, _, _, mems := clientEnv()
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
 
 	c, err := svc.Create(recep, "s1", "Lía", "11 5555-1234", "  Lia@Mail.COM ", "")
 	if err != nil {

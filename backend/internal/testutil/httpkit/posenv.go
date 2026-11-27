@@ -7,6 +7,8 @@ import (
 	"salon-saas/internal/adapters/realtime"
 	"salon-saas/internal/adapters/security"
 	"salon-saas/internal/app"
+	"salon-saas/internal/clients"
+	clientshttpapi "salon-saas/internal/clients/httpapi"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/notifications"
 	notificationshttpapi "salon-saas/internal/notifications/httpapi"
@@ -214,7 +216,7 @@ func NewPOSEnv() *Env {
 	saleSvc := app.SaleService{Sales: env.Sales, Services: env.Services, Memberships: env.Mems, Events: env.Events}
 	cashSvc := app.CashCloseService{CashCloses: env.Closes, Sales: env.Sales, Memberships: env.Mems, Tx: &CashTx{Closes: env.Closes, Sales: env.Sales}, Events: env.Events, Notifier: notifSvc}
 	dashSvc := app.DashboardService{Sales: env.Sales, Agenda: env.Bookings, Staff: env.Mems, Memberships: env.Mems}
-	clientSvc := app.ClientService{Clients: env.Clients, Memberships: env.Mems, Photos: env.Storage, Images: Images{}}
+	clientSvc := clients.ClientService{Clients: env.Clients, Memberships: env.Mems, Photos: env.Storage, Images: Images{}}
 	meSvc := app.MeService{Users: env.Users, Salons: env.Salons, Members: env.Mems}
 	staffSvc := team.StaffService{Staff: env.Mems, Memberships: env.Mems}
 	publicSvc := app.PublicSalonService{
@@ -275,7 +277,7 @@ func NewPOSEnv() *Env {
 		CashCloses:    httpapi.CashCloseHandler{CashCloses: cashSvc, Memberships: env.Mems},
 		Dashboard:     httpapi.DashboardHandler{Dashboard: dashSvc, Memberships: env.Mems},
 		Notifications: notificationshttpapi.NotificationHandler{Notifications: notifSvc, Memberships: env.Mems},
-		Clients:       httpapi.ClientHandler{Clients: clientSvc, Memberships: env.Mems, Photos: env.Signer},
+		Clients:       clientshttpapi.ClientHandler{Clients: clientSvc, Memberships: env.Mems, Photos: env.Signer},
 		Me:            httpapi.MeHandler{Me: meSvc},
 		Staff:         teamhttpapi.StaffHandler{Staff: staffSvc, Memberships: env.Mems},
 		Public:        httpapi.PublicHandler{Public: publicSvc, Avail: availabilitySvc, Bookings: publicBookingSvc},

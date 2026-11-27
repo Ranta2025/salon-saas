@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
@@ -70,7 +71,7 @@ func (h GalleryHandler) Add(c *gin.Context) {
 		respondErr(c, err)
 		return
 	}
-	data, contentType, err := ReadUpload(c)
+	data, contentType, err := httpx.ReadUpload(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

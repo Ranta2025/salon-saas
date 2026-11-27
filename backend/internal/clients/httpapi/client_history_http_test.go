@@ -8,7 +8,7 @@ import (
 	"errors"
 	"net/http"
 	httpapi "salon-saas/internal/adapters/http"
-	"salon-saas/internal/app"
+	"salon-saas/internal/clients"
 	"salon-saas/internal/domain"
 	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
@@ -142,15 +142,15 @@ func newHistoryEnv() (*httpkit.Env, *fakeHistoryRepo, *fakeHTTPLinks) {
 	}}
 	links := &fakeHTTPLinks{}
 
-	clients := env.Deps.Clients
-	clients.Clients = app.ClientService{
+	h := env.Deps.Clients
+	h.Clients = clients.ClientService{
 		Clients: &historyClients{}, Memberships: env.Mems, Photos: env.Storage, Images: httpkit.Images{},
 	}
-	clients.History = app.ClientHistoryService{
+	h.History = clients.ClientHistoryService{
 		Clients: env.Clients, Source: history, Memberships: env.Mems, Settings: env.Settings,
 		Now: func() time.Time { return now },
 	}
-	env.Deps.Clients = clients
+	env.Deps.Clients = h
 
 	saleSvc := env.Deps.Sales.Sales
 	saleSvc.Clients = env.Clients

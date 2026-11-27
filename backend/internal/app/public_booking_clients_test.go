@@ -11,12 +11,13 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // fichas ordena por nombre para comparar sin depender del orden de inserción.
-func fichas(f *fakeClients, salonID string) []domain.Client {
+func fichas(f *testutil.FakeClients, salonID string) []domain.Client {
 	var out []domain.Client
-	for _, c := range f.clients {
+	for _, c := range f.Clients {
 		if c.SalonID == salonID {
 			out = append(out, c)
 		}
@@ -34,7 +35,7 @@ func TestPublicBooking_crea_ficha_del_cliente(t *testing.T) {
 	}
 	list := fichas(env.clients, "s1")
 	if len(list) != 1 {
-		t.Fatalf("la reserva pública tiene que dejar una ficha: %+v", env.clients.clients)
+		t.Fatalf("la reserva pública tiene que dejar una ficha: %+v", env.clients.Clients)
 	}
 	if list[0].Name != "Lía" || list[0].Phone != "555" {
 		t.Fatalf("la ficha debe llevar nombre y teléfono de la reserva: %+v", list[0])
@@ -59,7 +60,7 @@ func TestPublicBooking_crea_ficha_del_cliente(t *testing.T) {
 		t.Fatalf("tercera reserva: %v", err)
 	}
 	if got := len(fichas(env.clients, "s1")); got != 2 {
-		t.Fatalf("esperaba 2 fichas, hay %d: %+v", got, env.clients.clients)
+		t.Fatalf("esperaba 2 fichas, hay %d: %+v", got, env.clients.Clients)
 	}
 }
 
@@ -120,7 +121,7 @@ func TestPublicBooking_ficha_aislada_por_salon(t *testing.T) {
 // error y su turno queda agendado (la ficha se puede crear después a mano).
 func TestPublicBooking_si_falla_la_ficha_la_reserva_entra(t *testing.T) {
 	env := newPublicEnv(t)
-	env.clients.failSave = true
+	env.clients.FailSave = true
 	in := publicInput()
 	in.ServiceID = env.corte.ID
 
@@ -131,7 +132,7 @@ func TestPublicBooking_si_falla_la_ficha_la_reserva_entra(t *testing.T) {
 	if b.ID == "" || len(env.bookings.all) != 1 {
 		t.Fatalf("la reserva tiene que quedar agendada: %+v", env.bookings.all)
 	}
-	if got := len(env.clients.clients); got != 0 {
+	if got := len(env.clients.Clients); got != 0 {
 		t.Fatalf("la ficha falló, no debería haber quedado nada: %d", got)
 	}
 }

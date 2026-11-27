@@ -1,7 +1,7 @@
 // ClientService: fichas de clientes y sus fotos. Quién administra clientes
 // (owner/admin/recepción) crea fichas y sube fotos; cualquier miembro del salón
 // las lee, porque en el mostrador todos atienden al cliente.
-package app
+package clients
 
 import (
 	"strings"

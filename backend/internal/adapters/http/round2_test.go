@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	httpapi "salon-saas/internal/adapters/http"
+	clientshttpapi "salon-saas/internal/clients/httpapi"
 	"salon-saas/internal/domain"
 	httpkit "salon-saas/internal/testutil/httpkit"
 	"strconv"
@@ -600,7 +601,7 @@ func TestHTTP_photo_signed_urls(t *testing.T) {
 		t.Fatalf("la url debe venir firmada: %q", up.Photo.URL)
 	}
 	expUnix, err := strconv.ParseInt(exp, 10, 64)
-	if err != nil || expUnix <= httpapi.PhotoURLNow().Unix() {
+	if err != nil || expUnix <= clientshttpapi.PhotoURLNow().Unix() {
 		t.Fatalf("vencimiento en el futuro: %q", exp)
 	}
 	_ = expUnix
@@ -626,7 +627,7 @@ func TestHTTP_photo_signed_urls(t *testing.T) {
 		}
 	}
 	// Vencida de verdad: firmamos con un exp pasado.
-	past := httpapi.PhotoURLNow().Add(-time.Hour).Unix()
+	past := clientshttpapi.PhotoURLNow().Add(-time.Hour).Unix()
 	expired := "/api/v1/photos/" + up.Photo.ID + "?exp=" + strconv.FormatInt(past, 10) + "&sig=" + env.Signer.Sign(up.Photo.ID, past)
 	req = httptest.NewRequest("GET", expired, nil)
 	rec = httptest.NewRecorder()

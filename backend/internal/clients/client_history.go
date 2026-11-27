@@ -2,7 +2,7 @@
 // cualquier miembro activo ve las visitas y los turnos; el DINERO (gasto y
 // ventas) solo quien puede ver la plata (owner/admin/recepción). El resumen con
 // el día local lo arma el dominio; acá solo se decide qué se muestra y qué no.
-package app
+package clients
 
 import (
 	"time"

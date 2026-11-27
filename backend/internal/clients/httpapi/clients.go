@@ -1,17 +1,14 @@
 package httpapi
 
 import (
-	"errors"
 	"fmt"
-	"io"
-	"mime/multipart"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	httpx "salon-saas/internal/adapters/http/httpx"
+	"salon-saas/internal/clients"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -20,7 +17,7 @@ import (
 // (JSON o multipart), llama al caso de uso y serializa; las reglas del archivo
 // viven en app/domain.
 type ClientHandler struct {
-	Clients     app.ClientService
+	Clients     clients.ClientService
 	Memberships ports.MembershipRepository
 	// Photos firma la url de cada foto con vencimiento (24 h). Sin firma válida
 	// el streaming responde 403: la capability ya no es solo el id aleatorio.
@@ -28,7 +25,7 @@ type ClientHandler struct {
 	// History es el historial de la clienta (F5, D6): visitas, turnos y —solo
 	// para quien puede ver la plata— gasto y ventas. La autorización vive en el
 	// caso de uso.
-	History app.ClientHistoryService
+	History clients.ClientHistoryService
 }
 
 // photoURLTTL es el vencimiento de la url firmada.
@@ -104,12 +101,12 @@ func (h ClientHandler) Create(c *gin.Context) {
 		Allergies string `json:"allergies"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	client, err := h.Clients.CreateWithAllergies(actor, salonID, in.Name, in.Phone, in.Email, in.Notes, in.Allergies)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, clientJSON(client))
@@ -124,7 +121,7 @@ func (h ClientHandler) List(c *gin.Context) {
 	}
 	list, err := h.Clients.List(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -143,14 +140,14 @@ func (h ClientHandler) AddPhoto(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, contentType, err := ReadUpload(c)
+	data, contentType, err := httpx.ReadUpload(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	photo, err := h.Clients.AddPhoto(actor, salonID, c.Param("cid"), data, contentType)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"photo": h.photoJSON(photo)})
@@ -165,7 +162,7 @@ func (h ClientHandler) ListPhotos(c *gin.Context) {
 	}
 	list, err := h.Clients.ListPhotos(actor, salonID, c.Param("cid"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -183,7 +180,7 @@ func (h ClientHandler) DeletePhoto(c *gin.Context) {
 		return
 	}
 	if err := h.Clients.DeletePhoto(actor, salonID, c.Param("cid"), c.Param("pid")); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -206,7 +203,7 @@ func (h ClientHandler) StreamPhoto(c *gin.Context) {
 	}
 	photo, data, err := h.Clients.Photo(photoID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.Header("Content-Type", photo.ContentType)
@@ -215,65 +212,4 @@ func (h ClientHandler) StreamPhoto(c *gin.Context) {
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Status(http.StatusOK)
 	_, _ = c.Writer.Write(data)
-}
-
-var errUpload = errors.New("se esperaba multipart/form-data con el archivo en el campo \"photo\" (o \"file\") o un body de imagen (jpg, png o webp)")
-
-// uploadFields son los nombres de campo que se aceptan en el multipart. `photo`
-// es el que manda el frontend (FormData.append('photo', file)) y `file` el
-// genérico de curl/Postman: aceptar los dos evita un contrato frágil por un
-// nombre.
-var uploadFields = []string{"photo", "file"}
-
-// ReadUpload saca los bytes y el content type declarado de lo que subió el
-// cliente. El límite de 8 MB se aplica al leer (no se carga un archivo enorme
-// en memoria para después rechazarlo).
-func ReadUpload(c *gin.Context) ([]byte, string, error) {
-	// Tope del BODY antes de parsear nada (R4-001): c.Request.FormFile parsea y
-	// spoolea TODO el multipart en memoria/disco sin límite propio. Sin esta
-	// línea, un body de 1 GB con un archivo chico adentro se acepta y el
-	// servidor lo procesa entero. El +1 MB es el overhead del propio multipart
-	// (boundaries + headers); el archivo sigue acotado por MaxPhotoBytes.
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, domain.MaxPhotoBytes+(1<<20))
-	// R3-002: el Content-Type se compara sin distinguir mayúsculas ("IMAGE/PNG"
-	// es un image/png válido y algunos clientes lo mandan así).
-	ct := strings.ToLower(strings.TrimSpace(c.GetHeader("Content-Type")))
-	switch {
-	case strings.HasPrefix(ct, "multipart/form-data"):
-		file, header, err := multipartFile(c)
-		if err != nil {
-			return nil, "", errUpload
-		}
-		defer file.Close()
-		data, err := io.ReadAll(io.LimitReader(file, domain.MaxPhotoBytes+1))
-		if err != nil {
-			return nil, "", errUpload
-		}
-		declared := header.Header.Get("Content-Type")
-		if declared == "" {
-			declared = http.DetectContentType(data)
-		}
-		return data, declared, nil
-	case strings.HasPrefix(ct, "image/"):
-		data, err := io.ReadAll(io.LimitReader(c.Request.Body, domain.MaxPhotoBytes+1))
-		if err != nil {
-			return nil, "", errUpload
-		}
-		return data, ct, nil
-	default:
-		return nil, "", errUpload
-	}
-}
-
-// multipartFile busca el archivo en los nombres de campo aceptados.
-func multipartFile(c *gin.Context) (multipart.File, *multipart.FileHeader, error) {
-	var lastErr error
-	for _, field := range uploadFields {
-		file, header, err := c.Request.FormFile(field)
-		if err == nil {
-			return file, header, nil
-		}
-		lastErr = err
-	}
-	return nil, nil, lastErr
 }

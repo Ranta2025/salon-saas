@@ -21,6 +21,8 @@ import (
 	"salon-saas/internal/app"
 	"salon-saas/internal/audit"
 	audithttpapi "salon-saas/internal/audit/httpapi"
+	"salon-saas/internal/clients"
+	clientshttpapi "salon-saas/internal/clients/httpapi"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/exports"
 	exportshttpapi "salon-saas/internal/exports/httpapi"
@@ -362,7 +364,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Settings: salons, Events: hub, Notifier: notifSvc,
 	}
 	dashSvc := app.DashboardService{Sales: salesRepo, Agenda: bookings, Staff: mems, Memberships: mems}
-	clientSvc := app.ClientService{
+	clientSvc := clients.ClientService{
 		Clients:     clientsRepo,
 		Memberships: mems,
 		Photos:      store,                                      // filesystem local
@@ -379,7 +381,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Gallery: salonGalleryRepo, Memberships: mems, Salons: salons,
 		Photos: store, Images: imaging.WebP{MaxSide: domain.MaxPhotoSide},
 	}
-	clientHistorySvc := app.ClientHistoryService{
+	clientHistorySvc := clients.ClientHistoryService{
 		Clients: clientsRepo, Source: clientHistoryRepo,
 		Memberships: mems, Settings: salons,
 	}
@@ -598,7 +600,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		CashCloses:    httpapi.CashCloseHandler{CashCloses: cashCloseSvc, Memberships: mems},
 		Dashboard:     httpapi.DashboardHandler{Dashboard: dashSvc, Memberships: mems},
 		Notifications: notificationshttpapi.NotificationHandler{Notifications: notifSvc, Memberships: mems},
-		Clients:       httpapi.ClientHandler{Clients: clientSvc, Memberships: mems, Photos: photoSigner, History: clientHistorySvc},
+		Clients:       clientshttpapi.ClientHandler{Clients: clientSvc, Memberships: mems, Photos: photoSigner, History: clientHistorySvc},
 		Me:            httpapi.MeHandler{Me: meSvc},
 		Staff:         teamhttpapi.StaffHandler{Staff: staffSvc, Memberships: mems},
 		Public:        httpapi.PublicHandler{Public: publicSvc, Avail: availabilitySvc, Bookings: publicBookingSvc},

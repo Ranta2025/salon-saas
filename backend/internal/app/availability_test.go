@@ -20,7 +20,7 @@ type publicEnv struct {
 	profs    *fakeProfessionalServices
 	settings *fakeSettings
 	services *fakeServices
-	clients  *fakeClients
+	clients  *testutil.FakeClients
 	// F2d1: horario semanal del salón y de las profesionales (sin filas = el
 	// comportamiento de siempre).
 	hours *testutil.FakeWeeklyHours
@@ -65,7 +65,7 @@ func newPublicEnv(t *testing.T) *publicEnv {
 	bookings := &fb{}
 	events := &fakeEvents{}
 	notifier := &fakeNotifier{}
-	clients := &fakeClients{}
+	clients := &testutil.FakeClients{}
 	hours := &testutil.FakeWeeklyHours{}
 	timeOff := &testutil.FakeTimeOff{}
 	resources := &fakeResources{bookings: bookings}

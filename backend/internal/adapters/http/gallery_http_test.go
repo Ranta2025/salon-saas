@@ -144,7 +144,7 @@ type photoDTO struct {
 
 func (w *f16World) addPhoto(t *testing.T, salon, token string) photoDTO {
 	t.Helper()
-	r := w.upload("/api/v1/salons/"+salon+"/gallery", token, "file", "image/png", png1x1())
+	r := w.upload("/api/v1/salons/"+salon+"/gallery", token, "file", "image/png", httpkit.PNG1x1())
 	if r.Code != http.StatusCreated {
 		t.Fatalf("subir: %d %s", r.Code, r.Body.String())
 	}
@@ -158,7 +158,7 @@ func (w *f16World) addPhoto(t *testing.T, salon, token string) photoDTO {
 // D3: subir -> 201 {"photo":{id,url,caption,created_at}} con la URL pública.
 func TestGallery_upload_shape(t *testing.T) {
 	w := newF16World(t)
-	r := w.upload(w.galleryPath(), w.Admin, "file", "image/png", png1x1())
+	r := w.upload(w.galleryPath(), w.Admin, "file", "image/png", httpkit.PNG1x1())
 	if r.Code != http.StatusCreated {
 		t.Fatalf("subir: %d %s", r.Code, r.Body.String())
 	}
@@ -185,7 +185,7 @@ func TestGallery_upload_shape(t *testing.T) {
 func TestGallery_permissionsBeforeBody(t *testing.T) {
 	w := newF16World(t)
 	for name, tok := range map[string]string{"recep": w.Recep, "prof": w.Prof, "outsider": w.Outsider} {
-		if r := w.upload(w.galleryPath(), tok, "file", "image/png", png1x1()); r.Code != http.StatusForbidden {
+		if r := w.upload(w.galleryPath(), tok, "file", "image/png", httpkit.PNG1x1()); r.Code != http.StatusForbidden {
 			t.Fatalf("%s sube: %d", name, r.Code)
 		}
 		// Cuerpo que ni siquiera es multipart: 403 igual (se mira el permiso primero).
@@ -205,7 +205,7 @@ func TestGallery_permissionsBeforeBody(t *testing.T) {
 			t.Fatalf("%s borra: %d", name, r.Code)
 		}
 	}
-	if r := w.upload(w.galleryPath(), "", "file", "image/png", png1x1()); r.Code != http.StatusUnauthorized {
+	if r := w.upload(w.galleryPath(), "", "file", "image/png", httpkit.PNG1x1()); r.Code != http.StatusUnauthorized {
 		t.Fatalf("sin token: %d", r.Code)
 	}
 	if len(w.Gallery.byID) != 0 || len(w.Env.Storage.Files) != 0 {
@@ -224,7 +224,7 @@ func TestGallery_upload_invalid(t *testing.T) {
 	big := make([]byte, domain.MaxPhotoBytes+1)
 	httpkit.WantHTTP(t, w.upload(w.galleryPath(), w.Owner, "file", "image/png", big), http.StatusBadRequest, domain.MsgPhotoSize)
 	// Campo equivocado: 400.
-	if r := w.upload(w.galleryPath(), w.Owner, "otro", "image/png", png1x1()); r.Code != http.StatusBadRequest {
+	if r := w.upload(w.galleryPath(), w.Owner, "otro", "image/png", httpkit.PNG1x1()); r.Code != http.StatusBadRequest {
 		t.Fatalf("campo: %d", r.Code)
 	}
 	if r := httpkit.Do(w.Env.Router, "POST", w.galleryPath(), `{"a":1}`, w.Owner); r.Code != http.StatusBadRequest {
@@ -246,7 +246,7 @@ func TestGallery_capOf12(t *testing.T) {
 		w.addPhoto(t, w.Salon, w.Owner)
 	}
 	files := len(w.Env.Storage.Files)
-	r := w.upload(w.galleryPath(), w.Owner, "file", "image/png", png1x1())
+	r := w.upload(w.galleryPath(), w.Owner, "file", "image/png", httpkit.PNG1x1())
 	httpkit.WantHTTP(t, r, http.StatusConflict, "La galería ya tiene 12 fotos")
 	if len(w.Env.Storage.Files) != files || len(w.Gallery.byID) != 12 {
 		t.Fatalf("la 13ª no guarda nada")
@@ -412,7 +412,7 @@ func TestGallery_publicImage_uniform404(t *testing.T) {
 func TestGallery_publicImage_neverServesClientPhotos(t *testing.T) {
 	w := newF16World(t)
 	clientID := w.newClientForGallery(t)
-	rec := w.upload("/api/v1/salons/"+w.Salon+"/clients/"+clientID+"/photos", w.Owner, "photo", "image/png", png1x1())
+	rec := w.upload("/api/v1/salons/"+w.Salon+"/clients/"+clientID+"/photos", w.Owner, "photo", "image/png", httpkit.PNG1x1())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("foto de clienta: %d %s", rec.Code, rec.Body.String())
 	}

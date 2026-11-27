@@ -10,7 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"salon-saas/internal/adapters/http"
+	clientshttpapi "salon-saas/internal/clients/httpapi"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 	httpkit "salon-saas/internal/testutil/httpkit"
@@ -265,7 +265,7 @@ func TestHTTP_photos_flujo(t *testing.T) {
 
 	// Foto inexistente con firma válida: 404 en JSON (no un body vacío). Sin
 	// firma la respuesta es 403 y no confirma si el id existe (ronda 2).
-	expNoExiste := httpapi.PhotoURLNow().Add(time.Hour).Unix()
+	expNoExiste := clientshttpapi.PhotoURLNow().Add(time.Hour).Unix()
 	noExiste := "/api/v1/photos/no-existe?exp=" + strconv.FormatInt(expNoExiste, 10) + "&sig=" + env.Signer.Sign("no-existe", expNoExiste)
 	req = httptest.NewRequest("GET", noExiste, nil)
 	rec = httptest.NewRecorder()
