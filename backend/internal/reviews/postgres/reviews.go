@@ -267,10 +267,16 @@ func (r Reviews) Link(tokenHash string, now time.Time) (ports.ReviewLink, error)
 	return l, nil
 }
 
+// reviewLeaseMinutes es el arriendo del reclamo, en minutos, tal como lo usa la
+// SQL (make_interval). Sale del puerto para que el barrido y este adaptador midan
+// el MISMO plazo.
+var reviewLeaseMinutes = int(ports.ClaimLease / time.Minute)
+
 // Due devuelve los turnos que ya pueden pedir reseña (D3): `done`, de un salón con
 // las reseñas activas, con correo, terminados hace al menos delay_hours y como
-// máximo 14 días, y SIN un pedido ya enviado o usado. Un pedido sin enviar vuelve
-// a salir: es el reintento de un correo que falló.
+// máximo 14 días, y SIN un pedido ENTREGADO o usado. Un pedido sin entregar del
+// que NADIE tiene el arriendo (nunca se reclamó, o el arriendo venció porque el
+// proceso murió entre el reclamo y el envío) vuelve a salir: es el reintento.
 func (r Reviews) Due(now time.Time, limit int) ([]ports.DueReview, error) {
 	rows, err := r.Pool.Query(context.Background(),
 		`SELECT b.id, b.salon_id, sa.name, COALESCE(sv.name, ''), b.client_name, be.email,
@@ -286,10 +292,19 @@ func (r Reviews) Due(now time.Time, limit int) ([]ports.DueReview, error) {
 		   AND b.ends_at > $1 - interval '14 days'
 		   AND NOT EXISTS (
 		     SELECT 1 FROM review_requests rr
-		     WHERE rr.booking_id = b.id AND (rr.sent_at IS NOT NULL OR rr.used_at IS NOT NULL)
+		     WHERE rr.booking_id = b.id
+		       AND (
+		         -- Entregado o canjeado: no se pide más.
+		         rr.delivered_at IS NOT NULL
+		         OR rr.used_at IS NOT NULL
+		         -- Un enlace que ya venció no se puede refrescar sin otro pedido.
+		         OR rr.expires_at <= $1
+		         -- Arriendo VIVO: otro barredor lo está mandando ahora mismo.
+		         OR (rr.sent_at IS NOT NULL AND rr.sent_at > $1 - make_interval(mins => $3))
+		       )
 		   )
 		 ORDER BY b.ends_at, b.id
-		 LIMIT $2`, now.UTC(), limit)
+		 LIMIT $2`, now.UTC(), limit, reviewLeaseMinutes)
 	if err != nil {
 		return nil, pgstore.PGError(err)
 	}
@@ -307,61 +322,62 @@ func (r Reviews) Due(now time.Time, limit int) ([]ports.DueReview, error) {
 	return out, rows.Err()
 }
 
-// Claim crea el pedido del turno —o reutiliza el que quedó sin enviar rotándole el
-// token— y RECLAMA el envío en el mismo paso (sent_at), en UNA transacción.
+// Claim crea el pedido del turno —o reutiliza uno reclamable rotándole el token— y
+// RENUEVA el arriendo del envío (sent_at) en UNA sola sentencia.
 //
-// claimed=false significa «otro barredor ya lo tiene» o «ya se envió»: este
-// proceso no manda nada. El UNIQUE(booking_id) decide quién crea el pedido; el
-// `sent_at IS NULL` del UPDATE decide quién manda el correo.
+// Por qué un solo INSERT ... ON CONFLICT DO UPDATE con WHERE: la condición de
+// «reclamable» (sin entregar, sin usar, sin vencer y con el arriendo vencido) se
+// evalúa bajo el lock de la fila, así que dos barredores simultáneos no pueden
+// ganar los dos: el segundo reevalúa el WHERE con la fila ya actualizada y no
+// devuelve nada (claimed=false). El UNIQUE(booking_id) decide además quién CREA
+// el pedido, y el token se rota en cada reclamo porque la base solo guarda su
+// hash: el enlace del intento perdido deja de servir.
 func (r Reviews) Claim(req ports.ReviewClaim) (string, bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
-	tx, err := r.Pool.Begin(ctx)
-	if err != nil {
-		return "", false, err
-	}
-	defer pgstore.RollbackTx(tx)
-
 	var id string
-	err = tx.QueryRow(ctx,
+	err := r.Pool.QueryRow(ctx,
 		`INSERT INTO review_requests(id,salon_id,booking_id,token_hash,created_at,expires_at,sent_at)
 		 VALUES($1,$2,$3,$4,$5,$6,$5)
-		 ON CONFLICT (booking_id) DO NOTHING
+		 ON CONFLICT (booking_id) DO UPDATE SET
+		   token_hash = EXCLUDED.token_hash,
+		   expires_at = EXCLUDED.expires_at,
+		   sent_at    = EXCLUDED.sent_at
+		 WHERE review_requests.delivered_at IS NULL
+		   AND review_requests.used_at IS NULL
+		   AND review_requests.expires_at > EXCLUDED.sent_at
+		   AND (
+		     review_requests.sent_at IS NULL
+		     OR review_requests.sent_at <= EXCLUDED.sent_at - make_interval(mins => $7)
+		   )
 		 RETURNING id`,
-		req.ID, req.SalonID, req.BookingID, req.TokenHash, req.Now.UTC(), req.ExpiresAt.UTC()).Scan(&id)
-	switch {
-	case err == nil:
-		// Pedido nuevo y ya reclamado por este proceso.
-	case errors.Is(err, pgx.ErrNoRows):
-		// Ya existe: si quedó sin enviar (un tick anterior falló), se rota el
-		// token y se reclama el envío; si ya se envió o se usó, no hay nada que
-		// hacer.
-		err = tx.QueryRow(ctx,
-			`UPDATE review_requests SET token_hash=$2, expires_at=$3, sent_at=$4
-			 WHERE booking_id=$1 AND sent_at IS NULL AND used_at IS NULL
-			 RETURNING id`,
-			req.BookingID, req.TokenHash, req.ExpiresAt.UTC(), req.Now.UTC()).Scan(&id)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", false, nil
-		}
-		if err != nil {
-			return "", false, pgstore.BusyError(err, reviews.MsgLinkInvalid)
-		}
-	default:
-		return "", false, pgstore.PGError(err)
+		req.ID, req.SalonID, req.BookingID, req.TokenHash, req.Now.UTC(), req.ExpiresAt.UTC(),
+		reviewLeaseMinutes).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Otro barredor tiene el arriendo, o el pedido ya se entregó o se usó.
+		return "", false, nil
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return "", false, pgstore.BusyError(err, reviews.MsgLinkInvalid)
+	if err != nil {
+		return "", false, pgstore.PGError(err)
 	}
 	return id, true, nil
 }
 
-// Unclaim deshace el reclamo de ESTE proceso (sent_at = sentAt) cuando el correo
-// no salió: el próximo tick lo reintenta. Si otro proceso ya lo reclamó, no se
-// toca.
+// Unclaim deshace el arriendo de ESTE proceso (sent_at = sentAt) cuando el correo
+// no salió: el próximo tick lo reintenta sin esperar los 15 minutos. Si otro
+// proceso ya lo reclamó, no se toca.
 func (r Reviews) Unclaim(requestID string, sentAt time.Time) error {
 	_, err := r.Pool.Exec(context.Background(),
 		`UPDATE review_requests SET sent_at=NULL WHERE id=$1 AND sent_at=$2`, requestID, sentAt.UTC())
+	return pgstore.PGError(err)
+}
+
+// MarkDelivered sella la entrega del correo. Condicional al arriendo que este
+// proceso tiene: si otro barredor ya lo reclamó (sent_at distinto), no escribe.
+func (r Reviews) MarkDelivered(requestID string, sentAt time.Time) error {
+	_, err := r.Pool.Exec(context.Background(),
+		`UPDATE review_requests SET delivered_at=$2 WHERE id=$1 AND sent_at=$2 AND delivered_at IS NULL`,
+		requestID, sentAt.UTC())
 	return pgstore.PGError(err)
 }
 

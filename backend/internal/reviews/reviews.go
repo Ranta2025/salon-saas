@@ -542,15 +542,17 @@ const MaxPublicReviews = 6
 // pedir reseña, crea el pedido y manda el correo. Devuelve cuántos se enviaron y
 // cuántos fallaron (el tick los reintenta).
 //
-// Por qué el reclamo es un UPDATE condicional: dos barredores (dos réplicas, o un
-// tick que se solapa) pueden ver el MISMO turno. El UNIQUE(booking_id) del INSERT
-// deja que uno solo cree el pedido y el `sent_at` (UPDATE ... WHERE sent_at IS
-// NULL) deja que uno solo mande el correo. Si el envío falla se DESHACE el
-// reclamo (sent_at vuelve a NULL) y el próximo tick lo reintenta con un token
-// nuevo: como solo se guarda el hash, el token del intento fallido no se puede
-// reenviar (y nadie lo recibió). Si el proceso muere entre el reclamo y el envío
-// el correo no sale y NO se reintenta: preferimos un aviso perdido a dos correos
-// (el contrato pide «nunca dos correos»).
+// El reclamo es un ARRIENDO (D3), no un candado eterno: dos barredores (dos
+// réplicas, o un tick que se solapa) pueden ver el MISMO turno; el UNIQUE por
+// turno y la condición de «reclamable» del adaptador dejan que uno solo mande el
+// correo. Después del envío bueno se sella la ENTREGA (MarkDelivered). Si el
+// envío falla se deshace el arriendo (Unclaim) y el próximo tick lo reintenta con
+// un token nuevo. Si el proceso muere entre el reclamo y el envío, el arriendo
+// vence a los 15 minutos y otro tick lo reintenta: como solo se guarda el hash,
+// el token del intento muerto no se puede reenviar. El resultado es
+// AL-MENOS-UNA-VEZ: en el peor caso salen dos correos con tokens distintos (los
+// dos enlaces sirven) y el UNIQUE(booking_id) de `reviews` sigue dejando UNA sola
+// reseña. Un pedido entregado no vuelve a salir nunca.
 func (s Service) RunOnce(ctx context.Context, now time.Time) (sent, failed int) {
 	if s.Mailer == nil || s.Requests == nil {
 		return 0, 0
@@ -598,11 +600,16 @@ func (s Service) requestOne(ctx context.Context, d ports.DueReview, now time.Tim
 		return nil
 	}
 	if err := s.Mailer.Send(ctx, reviewRequestMail(d, ReviewLinkURL(s.AppURL, token))); err != nil {
-		// El correo no salió: se deshace el reclamo y el próximo tick reintenta.
+		// El correo no salió: se deshace el arriendo y el próximo tick reintenta.
 		_ = s.Requests.Unclaim(requestID, now)
 		return err
 	}
-	return nil
+	// El correo salió: se sella la entrega para que este turno no vuelva a salir.
+	// Si este UPDATE falla, el correo YA se mandó y el arriendo vence en 15
+	// minutos: a lo sumo saldrá un segundo correo con otro token (los dos enlaces
+	// sirven y la reseña sigue siendo una sola). Se cuenta como fallo para que
+	// quede en el log.
+	return s.Requests.MarkDelivered(requestID, now)
 }
 
 // --- Auxiliares -------------------------------------------------------------------

@@ -59,7 +59,7 @@ type fakeStore struct {
 type fakeRequest struct {
 	id, salonID, bookingID, tokenHash, clientName, serviceName string
 	createdAt, expiresAt                                       time.Time
-	sentAt, usedAt                                             *time.Time
+	sentAt, usedAt, deliveredAt                                *time.Time
 	startsAt                                                   time.Time
 }
 
@@ -223,24 +223,27 @@ func (f *fakeStore) Link(tokenHash string, now time.Time) (ports.ReviewLink, err
 	return ports.ReviewLink{}, domain.ErrNotFound
 }
 
+// claimable replica la condición del adaptador: entregado, usado o vencido no se
+// reclama; un arriendo vivo tampoco.
+func claimable(r fakeRequest, now time.Time) bool {
+	if r.deliveredAt != nil || r.usedAt != nil || !r.expiresAt.After(now) {
+		return false
+	}
+	return r.sentAt == nil || !r.sentAt.After(now.Add(-ports.ClaimLease))
+}
+
 func (f *fakeStore) Due(now time.Time, limit int) ([]ports.DueReview, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make([]ports.DueReview, 0, len(f.due))
 	for _, d := range f.due {
-		pending := false
-		settled := false
+		skip := false
 		for _, r := range f.requests {
-			if r.bookingID != d.BookingID {
-				continue
-			}
-			if r.sentAt != nil || r.usedAt != nil {
-				settled = true
-			} else {
-				pending = true
+			if r.bookingID == d.BookingID && !claimable(r, now) {
+				skip = true
 			}
 		}
-		if settled && !pending {
+		if skip {
 			continue
 		}
 		out = append(out, d)
@@ -262,10 +265,10 @@ func (f *fakeStore) Claim(req ports.ReviewClaim) (string, bool, error) {
 		if r.bookingID != req.BookingID {
 			continue
 		}
-		if r.sentAt != nil || r.usedAt != nil {
+		if !claimable(*r, req.Now) {
 			return "", false, nil
 		}
-		// Existe sin enviar: rota el token y reclama el envío.
+		// Reclamable: rota el token y renueva el arriendo.
 		r.tokenHash, r.expiresAt = req.TokenHash, req.ExpiresAt
 		sent := req.Now
 		r.sentAt = &sent
@@ -292,6 +295,20 @@ func (f *fakeStore) Unclaim(requestID string, sentAt time.Time) error {
 		if r.sentAt != nil && r.sentAt.Equal(sentAt) {
 			r.sentAt = nil
 		}
+	}
+	return nil
+}
+
+func (f *fakeStore) MarkDelivered(requestID string, sentAt time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.requests {
+		r := &f.requests[i]
+		if r.id != requestID || r.sentAt == nil || !r.sentAt.Equal(sentAt) || r.deliveredAt != nil {
+			continue
+		}
+		delivered := sentAt
+		r.deliveredAt = &delivered
 	}
 	return nil
 }

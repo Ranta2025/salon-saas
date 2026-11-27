@@ -130,9 +130,11 @@ func (f *rvFix) request(t *testing.T, salonID, bookingID string, expiresAt time.
 	if floor := expiresAt.Add(-reviews.RequestTTL); floor.Before(createdAt) {
 		createdAt = floor
 	}
+	// Un pedido sembrado así es un pedido ENTREGADO (el caso normal del enlace que
+	// la clienta tiene en su correo): sent_at = arriendo y delivered_at = entrega.
 	_, err = f.pool.Exec(f.ctx,
-		`INSERT INTO review_requests(id,salon_id,booking_id,token_hash,created_at,sent_at,expires_at)
-		 VALUES($1,$2,$3,$4,$5,$5,$6)`,
+		`INSERT INTO review_requests(id,salon_id,booking_id,token_hash,created_at,sent_at,delivered_at,expires_at)
+		 VALUES($1,$2,$3,$4,$5,$5,$5,$6)`,
 		domain.NewID(), salonID, bookingID, hash, createdAt.UTC(), expiresAt.UTC())
 	if err != nil {
 		t.Fatalf("pedido: %v", err)
@@ -390,6 +392,44 @@ func TestReviewsHiddenAndPublicSummary(t *testing.T) {
 	if err != nil || other.Count != 0 || len(other.Items) != 0 {
 		t.Fatalf("salón ajeno: %+v %v", other, err)
 	}
+
+	// D7: el día de la reseña es el LOCAL DEL SALÓN, no el de UTC. Auckland en
+	// noviembre es UTC+13: las 20:00 UTC del 1 son las 09:00 del 2.
+	tzCreated := time.Date(2026, 11, 1, 20, 0, 0, 0, time.UTC)
+	f.booking(t, f.salonID, "b-tz", "done", tzCreated.Add(-time.Hour), tzCreated)
+	_, tzHash := f.request(t, f.salonID, "b-tz", f.now.Add(24*time.Hour))
+	if _, err := f.repo.Submit(ports.ReviewSubmit{TokenHash: tzHash, Rating: 4, Comment: "zona",
+		Now: tzCreated}); err != nil {
+		t.Fatalf("canje de la zona: %v", err)
+	}
+	if got := publicDay(t, f, "zona"); got != "2026-11-02" {
+		t.Fatalf("el día debe ser el LOCAL del salón (UTC+13): %q", got)
+	}
+	// Una zona ilegible (fila escrita a mano) cae al default de fábrica... y una
+	// zona que no existe cae a UTC, nunca a un 500.
+	if _, err := f.pool.Exec(f.ctx, `UPDATE salons SET timezone='No/Existe' WHERE id=$1`, f.salonID); err != nil {
+		t.Fatal(err)
+	}
+	if got := publicDay(t, f, "zona"); got != "2026-11-01" {
+		t.Fatalf("con la zona ilegible debe caer a UTC: %q", got)
+	}
+}
+
+// publicDay devuelve el `date` del renglón público de la reseña cuyo comentario
+// es `comment`.
+func publicDay(t *testing.T, f *rvFix, comment string) string {
+	t.Helper()
+	sum, err := f.repo.Visible(f.salonID)
+	if err != nil {
+		t.Fatalf("sección pública: %v", err)
+	}
+	for _, item := range sum.Items {
+		if item.Comment == comment {
+			return item.Date
+		}
+	}
+	t.Fatalf("no está el renglón %q: %+v", comment, sum.Items)
+	return ""
 }
 
 // --- D3: el barrido ---------------------------------------------------------------------
@@ -427,12 +467,15 @@ func TestReviewsDue_onlyWhatTheContractSays(t *testing.T) {
 		t.Fatalf("apagadas: %+v %v", due, err)
 	}
 	f.enabled(t, f.salonID, 24)
-	// Un pedido ENVIADO saca el turno de la lista; uno sin enviar lo deja (reintento).
+	// Un pedido ENTREGADO saca el turno de la lista; uno reclamado y NUNCA
+	// entregado (el proceso se cayó) vuelve a salir cuando vence el arriendo.
 	f.request(t, f.salonID, "b-ready", f.now.Add(24*time.Hour))
 	if due, err = f.repo.Due(f.now, 50); err != nil || len(due) != 0 {
-		t.Fatalf("ya enviado: %+v %v", due, err)
+		t.Fatalf("ya entregado: %+v %v", due, err)
 	}
-	if _, err := f.pool.Exec(f.ctx, `UPDATE review_requests SET sent_at=NULL WHERE booking_id='b-ready'`); err != nil {
+	if _, err := f.pool.Exec(f.ctx,
+		`UPDATE review_requests SET delivered_at=NULL, sent_at = sent_at - interval '20 minutes'
+		 WHERE booking_id='b-ready'`); err != nil {
 		t.Fatal(err)
 	}
 	if due, err = f.repo.Due(f.now, 50); err != nil || len(due) != 1 {
@@ -535,4 +578,120 @@ func TestReviewSettings_roundTrip(t *testing.T) {
 	if err := f.repo.SaveSettings(ports.ReviewSettings{SalonID: "s-no-existe", Enabled: true, DelayHours: 6}); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("salón inexistente: %v", err)
 	}
+}
+
+// --- D3: el reclamo del envío es un ARRIENDO (lease) --------------------------------
+//
+// La resiliencia que se prueba acá: si el proceso muere DESPUÉS de reclamar el
+// envío y ANTES de mandar el correo, el reclamo no puede dejar el turno sin
+// reseña para siempre. El arriendo vence (15 min) y el barrido lo reintenta.
+func TestReviewsClaim_leaseRecoversAfterACrash(t *testing.T) {
+	f := rvFixtures(t)
+	f.enabled(t, f.salonID, 1)
+	f.booking(t, f.salonID, "b-crash", "done", f.now.Add(-48*time.Hour), f.now.Add(-47*time.Hour))
+	f.email(t, f.salonID, "b-crash", "crash@mail.com")
+
+	tok1, _ := reviews.NewToken()
+	hash1 := reviews.HashToken(tok1)
+	requestID, claimed, err := f.repo.Claim(ports.ReviewClaim{
+		ID: domain.NewID(), SalonID: f.salonID, BookingID: "b-crash",
+		TokenHash: hash1, Now: f.now, ExpiresAt: f.now.Add(reviews.RequestTTL),
+	})
+	if err != nil || !claimed {
+		t.Fatalf("reclamo: %q %v %v", requestID, claimed, err)
+	}
+
+	// El proceso "muere" acá: no hay MarkDelivered ni Unclaim.
+	due, err := f.repo.Due(f.now.Add(time.Minute), 50)
+	if err != nil {
+		t.Fatalf("debidos: %v", err)
+	}
+	if len(due) != 0 {
+		t.Fatalf("dentro del arriendo no debe volver a salir: %+v", due)
+	}
+	// Un segundo barredor tampoco gana dentro del arriendo.
+	if _, won, err := f.repo.Claim(ports.ReviewClaim{ID: domain.NewID(), SalonID: f.salonID,
+		BookingID: "b-crash", TokenHash: reviews.HashToken("otro"), Now: f.now.Add(2 * time.Minute),
+		ExpiresAt: f.now.Add(reviews.RequestTTL)}); err != nil || won {
+		t.Fatalf("reclamo dentro del arriendo: %v %v", won, err)
+	}
+	// A los 14 minutos sigue siendo de quien lo reclamó.
+	if due, err = f.repo.Due(f.now.Add(14*time.Minute), 50); err != nil || len(due) != 0 {
+		t.Fatalf("a los 14 min: %+v %v", due, err)
+	}
+	// Vencido el arriendo (se retrasa sent_at 20 minutos), el turno vuelve a salir:
+	// así no queda nunca sin reseña por un proceso que se cayó.
+	if _, err := f.pool.Exec(f.ctx,
+		`UPDATE review_requests SET sent_at = sent_at - interval '20 minutes' WHERE id=$1`, requestID); err != nil {
+		t.Fatal(err)
+	}
+	due, err = f.repo.Due(f.now, 50)
+	if err != nil || len(due) != 1 || due[0].BookingID != "b-crash" {
+		t.Fatalf("con el arriendo vencido debe volver a salir: %+v %v", due, err)
+	}
+	// El reintento ROTA el token (la base solo guarda el hash) y conserva el pedido.
+	tok2, _ := reviews.NewToken()
+	hash2 := reviews.HashToken(tok2)
+	retryID, claimed, err := f.repo.Claim(ports.ReviewClaim{ID: domain.NewID(), SalonID: f.salonID,
+		BookingID: "b-crash", TokenHash: hash2, Now: f.now.Add(20 * time.Minute),
+		ExpiresAt: f.now.Add(reviews.RequestTTL)})
+	if err != nil || !claimed || retryID != requestID {
+		t.Fatalf("reintento: %q %v %v", retryID, claimed, err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM review_requests WHERE booking_id='b-crash'`); n != 1 {
+		t.Fatalf("el reintento creó otro pedido: %d", n)
+	}
+	if _, err := f.repo.Link(hash1, f.now.Add(21*time.Minute)); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("el token del intento perdido sigue sirviendo: %v", err)
+	}
+	if _, err := f.repo.Link(hash2, f.now.Add(21*time.Minute)); err != nil {
+		t.Fatalf("el token del reintento no sirve: %v", err)
+	}
+}
+
+// Un pedido ENTREGADO no vuelve a salir nunca (ni aunque el arriendo esté viejo).
+func TestReviewsDelivered_neverDueAgain(t *testing.T) {
+	f := rvFixtures(t)
+	f.enabled(t, f.salonID, 1)
+	f.booking(t, f.salonID, "b-del", "done", f.now.Add(-48*time.Hour), f.now.Add(-47*time.Hour))
+	f.email(t, f.salonID, "b-del", "del@mail.com")
+
+	requestID, claimed, err := f.repo.Claim(ports.ReviewClaim{ID: domain.NewID(), SalonID: f.salonID,
+		BookingID: "b-del", TokenHash: reviews.HashToken(mustToken(t)), Now: f.now,
+		ExpiresAt: f.now.Add(reviews.RequestTTL)})
+	if err != nil || !claimed {
+		t.Fatalf("reclamo: %v %v", claimed, err)
+	}
+	if err := f.repo.MarkDelivered(requestID, f.now); err != nil {
+		t.Fatalf("entregado: %v", err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM review_requests WHERE id=$1 AND delivered_at IS NOT NULL`, requestID); n != 1 {
+		t.Fatalf("delivered_at no quedó: %d", n)
+	}
+	// Aunque el arriendo esté vencido (sent_at viejo), un entregado no vuelve.
+	if _, err := f.pool.Exec(f.ctx,
+		`UPDATE review_requests SET sent_at = sent_at - interval '20 minutes' WHERE id=$1`, requestID); err != nil {
+		t.Fatal(err)
+	}
+	if due, err := f.repo.Due(f.now, 50); err != nil || len(due) != 0 {
+		t.Fatalf("entregado: %+v %v", due, err)
+	}
+	if _, won, err := f.repo.Claim(ports.ReviewClaim{ID: domain.NewID(), SalonID: f.salonID,
+		BookingID: "b-del", TokenHash: reviews.HashToken("otro-mas"), Now: f.now,
+		ExpiresAt: f.now.Add(reviews.RequestTTL)}); err != nil || won {
+		t.Fatalf("reclamo de un entregado: %v %v", won, err)
+	}
+	// MarkDelivered solo aplica al arriendo que YO tengo: con otro sello no toca.
+	if err := f.repo.MarkDelivered(requestID, f.now.Add(time.Hour)); err != nil {
+		t.Fatalf("mark ajeno: %v", err)
+	}
+}
+
+func mustToken(t *testing.T) string {
+	t.Helper()
+	tok, err := reviews.NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tok
 }

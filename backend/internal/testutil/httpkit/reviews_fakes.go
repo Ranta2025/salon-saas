@@ -37,6 +37,7 @@ type ReviewRequestRow struct {
 	ExpiresAt   time.Time
 	SentAt      *time.Time
 	UsedAt      *time.Time
+	DeliveredAt *time.Time
 }
 
 func NewReviews() *Reviews {
@@ -247,23 +248,26 @@ func (f *Reviews) Link(tokenHash string, now time.Time) (ports.ReviewLink, error
 	return ports.ReviewLink{}, domain.ErrNotFound
 }
 
+// claimable replica la condición del adaptador de Postgres (arriendo incluido).
+func reviewClaimable(r ReviewRequestRow, now time.Time) bool {
+	if r.DeliveredAt != nil || r.UsedAt != nil || !r.ExpiresAt.After(now) {
+		return false
+	}
+	return r.SentAt == nil || !r.SentAt.After(now.Add(-ports.ClaimLease))
+}
+
 func (f *Reviews) Due(now time.Time, limit int) ([]ports.DueReview, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make([]ports.DueReview, 0, len(f.due))
 	for _, d := range f.due {
-		settled, pending := false, false
+		skip := false
 		for _, r := range f.reqs {
-			if r.BookingID != d.BookingID {
-				continue
-			}
-			if r.SentAt != nil || r.UsedAt != nil {
-				settled = true
-			} else {
-				pending = true
+			if r.BookingID == d.BookingID && !reviewClaimable(r, now) {
+				skip = true
 			}
 		}
-		if settled && !pending {
+		if skip {
 			continue
 		}
 		out = append(out, d)
@@ -285,7 +289,7 @@ func (f *Reviews) Claim(req ports.ReviewClaim) (string, bool, error) {
 		if r.BookingID != req.BookingID {
 			continue
 		}
-		if r.SentAt != nil || r.UsedAt != nil {
+		if !reviewClaimable(*r, req.Now) {
 			return "", false, nil
 		}
 		r.TokenHash, r.ExpiresAt = req.TokenHash, req.ExpiresAt
@@ -310,6 +314,21 @@ func (f *Reviews) Unclaim(requestID string, sentAt time.Time) error {
 		if f.reqs[i].ID == requestID && f.reqs[i].SentAt != nil && f.reqs[i].SentAt.Equal(sentAt) {
 			f.reqs[i].SentAt = nil
 		}
+	}
+	return nil
+}
+
+// MarkDelivered sella la entrega (D3): solo si este proceso tiene el arriendo.
+func (f *Reviews) MarkDelivered(requestID string, sentAt time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.reqs {
+		r := &f.reqs[i]
+		if r.ID != requestID || r.SentAt == nil || !r.SentAt.Equal(sentAt) || r.DeliveredAt != nil {
+			continue
+		}
+		delivered := sentAt
+		r.DeliveredAt = &delivered
 	}
 	return nil
 }

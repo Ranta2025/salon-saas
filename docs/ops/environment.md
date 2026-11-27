@@ -230,19 +230,25 @@ Sin fila guardada las reseñas están **apagadas** (`enabled:false`,
 `delay_hours:24`). Con la tarea apagada o con `SMTP_HOST` vacío no se crea ningún
 pedido: no se pide una reseña que nunca va a llegar.
 
-Cómo funciona el envío (y por qué no manda dos correos):
+Cómo funciona el envío (**al menos una vez**, con arriendo de 15 minutos):
 
 - El pedido es UNO por turno (`review_requests.booking_id` es UNIQUE), así que dos
   barredores (dos réplicas, o un tick que se solapa) no crean dos pedidos.
-- El envío se **reclama** con un `UPDATE ... WHERE sent_at IS NULL` antes de
-  mandar: solo un proceso gana.
+- El envío se toma como un **ARRIENDO**: `sent_at` es el último reclamo (no la
+  entrega) y `delivered_at` se sella DESPUÉS de que el correo salió bien. Solo un
+  proceso puede tener el arriendo a la vez y solo un pedido **entregado** sale de
+  la cola para siempre.
+- Si el envío falla, el arriendo se **deshace** (`sent_at` vuelve a NULL) y el
+  próximo tick lo reintenta. Si el proceso **muere** entre el reclamo y el envío,
+  el arriendo vence a los **15 minutos** y otro tick lo reintenta: así ningún turno
+  se queda sin enlace por un proceso que se cayó.
+- El precio de esa resiliencia: un correo puede salir **dos veces** (por ejemplo,
+  si el proceso murió justo después de entregarlo al SMTP y antes de sellar la
+  entrega). Cada correo lleva un token **distinto**, los dos enlaces sirven y
+  sigue habiendo **UNA sola reseña por turno** (`reviews.booking_id` es UNIQUE).
 - El enlace es un token de 32 bytes aleatorios; la base guarda **solo su
   SHA-256**. Vence a los **30 días** y sirve **una sola vez** (el canje es un
   `UPDATE` condicional en la misma transacción que crea la reseña).
-- Si el correo falla, el reclamo se **deshace** (`sent_at` vuelve a NULL) y el
-  próximo tick lo reintenta con un token nuevo. Si el proceso muere entre el
-  reclamo y el envío, ese correo no sale y no se reintenta: el contrato prefiere
-  un aviso perdido antes que dos correos.
 - Configuración del correo: el mismo `SMTP_*` de la confirmación de reserva. Abrí
   Mailpit (`http://localhost:8025`) para ver el correo; el enlace es
   `<APP_URL>/resena#<token>` (el token va en el fragmento, nunca en el query).

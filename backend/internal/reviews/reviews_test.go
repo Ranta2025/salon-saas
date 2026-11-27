@@ -593,3 +593,54 @@ func TestReviewRequestMail_linkAndEscaping(t *testing.T) {
 		t.Fatalf("sin APP_URL: %q", ReviewLinkURL("", "tok"))
 	}
 }
+
+// D3 (arriendo): el envío se marca ENTREGADO solo después del envío bueno, y un
+// envío fallido deshace el arriendo para que el próximo tick reintente.
+func TestRunOnce_marksDeliveredOnlyAfterTheSend(t *testing.T) {
+	svc, store, mailer, _ := newWorld()
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	store.due = []ports.DueReview{dueReview("b1")}
+
+	if sent, failed := svc.RunOnce(context.Background(), now); sent != 1 || failed != 0 {
+		t.Fatalf("pasada buena: %d/%d", sent, failed)
+	}
+	req := store.requestsOf()[0]
+	if req.deliveredAt == nil || !req.deliveredAt.Equal(now) {
+		t.Fatalf("no quedó entregado: %+v", req)
+	}
+	if req.sentAt == nil || !req.sentAt.Equal(now) {
+		t.Fatalf("el arriendo no quedó sellado: %+v", req)
+	}
+	// Un entregado no vuelve a salir ni a reclamarse.
+	if sent, failed := svc.RunOnce(context.Background(), now.Add(time.Hour)); sent != 0 || failed != 0 {
+		t.Fatalf("segunda pasada: %d/%d", sent, failed)
+	}
+	if got := len(mailer.messages()); got != 1 {
+		t.Fatalf("correos: %d", got)
+	}
+}
+
+func TestRunOnce_sendErrorDoesNotMarkDelivered(t *testing.T) {
+	svc, store, mailer, _ := newWorld()
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	store.due = []ports.DueReview{dueReview("b1")}
+	mailer.failNext = 1
+
+	if sent, failed := svc.RunOnce(context.Background(), now); sent != 0 || failed != 1 {
+		t.Fatalf("envío fallido: %d/%d", sent, failed)
+	}
+	req := store.requestsOf()[0]
+	if req.deliveredAt != nil {
+		t.Fatalf("un envío fallido quedó entregado: %+v", req)
+	}
+	if req.sentAt != nil {
+		t.Fatalf("el arriendo no se deshizo: %+v", req)
+	}
+	// El reintento entrega una sola vez más.
+	if sent, failed := svc.RunOnce(context.Background(), now.Add(time.Minute)); sent != 1 || failed != 0 {
+		t.Fatalf("reintento: %d/%d", sent, failed)
+	}
+	if store.requestsOf()[0].deliveredAt == nil {
+		t.Fatal("el reintento no marcó entregado")
+	}
+}

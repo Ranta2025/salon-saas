@@ -132,6 +132,13 @@ type ReviewRepository interface {
 	Submit(req ReviewSubmit) (Review, error)
 }
 
+// ClaimLease es el ARRIENDO del reclamo del envío (D3): un proceso que reclamó un
+// pedido y no lo entregó (murió, o el SMTP se colgó) lo suelta pasado este plazo y
+// otro tick lo reintenta. Es mayor que cualquier envío sano y mucho menor que el
+// vencimiento del enlace (30 días). Vive acá y no en el adaptador porque el
+// barrido y sus dobles tienen que medir el MISMO plazo que la SQL.
+const ClaimLease = 15 * time.Minute
+
 // ReviewRequestRepository son los pedidos de reseña: el barrido que crea y
 // reclama el envío (D3) y el enlace público (D4).
 type ReviewRequestRepository interface {
@@ -139,17 +146,25 @@ type ReviewRequestRepository interface {
 	// ErrNotFound, el MISMO error para los tres.
 	Link(tokenHash string, now time.Time) (ReviewLink, error)
 	// Due devuelve los turnos atendidos de salones con reseñas activas que ya
-	// pasaron su demora, no son más viejos que 14 días y no tienen un pedido
-	// enviado ni usado. Un pedido sin enviar vuelve a salir (reintento).
+	// pasaron su demora, no son más viejos que 14 días y NO tienen un pedido
+	// entregado ni usado. Un pedido sin entregar vuelve a salir cuando su
+	// arriendo ya venció (ClaimLease): es el reintento de un correo que falló O de
+	// un proceso que se cayó entre el reclamo y el envío.
 	Due(now time.Time, limit int) ([]DueReview, error)
-	// Claim crea el pedido del turno o, si ya existe sin enviar ni usar, le rota
-	// el token; en los dos casos RECLAMA el envío (sent_at) y devuelve el id del
-	// pedido y si este proceso ganó. claimed=false = otro barredor ya lo tiene o
-	// ya se envió.
+	// Claim crea el pedido del turno o, si ya existe y es reclamable, le rota el
+	// token y RENUEVA el arriendo (sent_at); devuelve el id del pedido y si este
+	// proceso ganó. claimed=false = otro barredor lo tiene arrendado, ya se
+	// entregó o ya se usó. Dos barredores simultáneos: exactamente UNO gana.
 	Claim(req ReviewClaim) (requestID string, claimed bool, err error)
-	// Unclaim devuelve el reclamo cuando el envío falló: sent_at vuelve a NULL y
-	// el próximo tick lo reintenta. Solo deshace SU reclamo (sent_at = sentAt).
+	// Unclaim devuelve el arriendo cuando el envío falló: sent_at vuelve a NULL y
+	// el próximo tick lo reintenta sin esperar el vencimiento. Solo deshace SU
+	// arriendo (sent_at = sentAt).
 	Unclaim(requestID string, sentAt time.Time) error
+	// MarkDelivered sella la ENTREGA después de que el correo salió bien. Es
+	// condicional al arriendo que este proceso tiene (sent_at = sentAt): si otro
+	// barredor ya lo reclamó, no toca nada. Sin esto el pedido vuelve a salir al
+	// vencer el arriendo (a lo sumo un segundo correo, nunca cero).
+	MarkDelivered(requestID string, sentAt time.Time) error
 }
 
 // PublicReviewReader es lo ÚNICO que la vidriera pública necesita de las

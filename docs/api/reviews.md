@@ -30,6 +30,12 @@ en base64url (43 caracteres). La base guarda **solo su SHA-256**; vence a los
 Un token desconocido, vencido o ya usado responde **el mismo `404`**
 (`{"error":"Enlace no válido"}`): la respuesta no dice cuál de los tres es.
 
+El envío es **al menos una vez** con un arriendo de **15 minutos**: el pedido se
+marca entregado recién cuando el correo salió bien, y si el proceso muere entre el
+reclamo y el envío el barrido lo reintenta al vencer el arriendo. En el peor caso
+salen dos correos con tokens **distintos** (los dos enlaces sirven) y la reseña
+sigue siendo **una sola**: `reviews.booking_id` es UNIQUE.
+
 ### `GET /public/reviews/:token`
 
 Público, con límite por IP. Sin sesión.

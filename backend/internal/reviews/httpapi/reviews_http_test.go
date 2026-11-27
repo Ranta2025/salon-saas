@@ -12,11 +12,14 @@ import (
 	"testing"
 	"time"
 
+	httpapi "salon-saas/internal/adapters/http"
 	"salon-saas/internal/auth/security"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/reviews"
 	httpkit "salon-saas/internal/testutil/httpkit"
+
+	"github.com/gin-gonic/gin"
 )
 
 type rvWorld struct {
@@ -96,6 +99,7 @@ func (w *rvWorld) seedLink(t *testing.T, token string, expiresAt time.Time, used
 		StartsAt:  time.Date(2026, 11, 3, 18, 0, 0, 0, time.UTC),
 		CreatedAt: sent, ExpiresAt: expiresAt, SentAt: &sent,
 	}
+	row.DeliveredAt = &sent
 	if used {
 		at := sent
 		row.UsedAt = &at
@@ -582,4 +586,55 @@ func mustJSON(t *testing.T, v any) string {
 		t.Fatal(err)
 	}
 	return string(raw)
+}
+
+// --- D4: el limitador por IP de las rutas públicas ------------------------------
+
+// El enlace público es una CREDENCIAL (el GET revela salón, servicio y fecha) y su
+// POST es una escritura sin sesión: el cubo propio de F13 tiene que frenar LOS DOS
+// métodos. El limitador se cablea con el método vacío ("todos"); este test lo
+// prueba a nivel de router, que es donde se elige.
+func TestPublicReviews_rateLimitedPerIPBothMethods(t *testing.T) {
+	const limit = 2
+	newRouter := func() *gin.Engine {
+		env := httpkit.NewPOSEnv()
+		env.Deps.PublicReviewLimit = httpapi.RateLimitFor(limit, time.Minute, "", "/api/v1/public/reviews/")
+		r := gin.New()
+		httpapi.RegisterRoutes(r, env.Deps)
+		return r
+	}
+	tok, err := reviews.NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/v1/public/reviews/" + tok
+
+	// GET: los primeros `limit` pasan (404 uniforme: el token no existe) y el
+	// siguiente es 429 con el texto del limitador.
+	r := newRouter()
+	for i := 0; i < limit; i++ {
+		if got := httpkit.Do(r, "GET", path, "", ""); got.Code != http.StatusNotFound {
+			t.Fatalf("GET %d: %d %s", i, got.Code, got.Body.String())
+		}
+	}
+	w := httpkit.Do(r, "GET", path, "", "")
+	if w.Code != http.StatusTooManyRequests || !strings.Contains(w.Body.String(), "demasiados intentos") {
+		t.Fatalf("GET tras el límite: %d %s", w.Code, w.Body.String())
+	}
+	// El cubo es SOLO del prefijo de las reseñas: la vidriera sigue respondiendo.
+	if code := httpkit.Do(r, "GET", "/api/v1/public/salons/rv-uno", "", "").Code; code == http.StatusTooManyRequests {
+		t.Fatal("el limitador de reseñas gastó el cupo de otra ruta pública")
+	}
+
+	// POST: mismo límite, instancia nueva (el cubo es por IP y por limitador).
+	r = newRouter()
+	for i := 0; i < limit; i++ {
+		if code := httpkit.Do(r, "POST", path, `{"rating":5}`, "").Code; code == http.StatusTooManyRequests {
+			t.Fatalf("POST %d limitado antes de tiempo: %d", i, code)
+		}
+	}
+	w = httpkit.Do(r, "POST", path, `{"rating":5}`, "")
+	if w.Code != http.StatusTooManyRequests || !strings.Contains(w.Body.String(), "demasiados intentos") {
+		t.Fatalf("POST tras el límite: %d %s", w.Code, w.Body.String())
+	}
 }
