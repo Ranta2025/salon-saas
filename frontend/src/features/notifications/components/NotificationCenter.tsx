@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { formatNotificationDate } from '../../lib/notifications'
-import { REALTIME_STATUS_LABEL, useNotifications } from '../NotificationsContext'
+import { formatNotificationDate } from '@/lib/notifications'
+import { REALTIME_STATUS_LABEL, useNotifications } from '@/app/NotificationsContext'
 
 const RECENT_LIMIT = 5
 

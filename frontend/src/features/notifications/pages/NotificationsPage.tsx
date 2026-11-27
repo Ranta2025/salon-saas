@@ -1,8 +1,8 @@
-import { formatNotificationDate } from '../lib/notifications'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { PageHeader } from './components/PageHeader'
-import { REALTIME_STATUS_LABEL, useNotifications } from './NotificationsContext'
-import { useSalon } from './SalonContext'
+import { formatNotificationDate } from '@/lib/notifications'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { PageHeader } from '@/app/components/PageHeader'
+import { REALTIME_STATUS_LABEL, useNotifications } from '@/app/NotificationsContext'
+import { useSalon } from '@/app/SalonContext'
 
 export function NotificationsPage() {
   const { salonId } = useSalon()
