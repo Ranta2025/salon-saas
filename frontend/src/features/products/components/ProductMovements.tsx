@@ -1,4 +1,4 @@
-import { formatHistoryInstant } from '@/lib/clientHistory'
+import { formatHistoryInstant } from '@/features/clients/lib/clientHistory'
 import {
   LOW_STOCK_LABEL,
   movementReasonLabel,

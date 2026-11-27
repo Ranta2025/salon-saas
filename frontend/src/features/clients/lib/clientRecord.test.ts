@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { API_BASE, ApiError, createSale, fetchClients } from './api.ts'
+import { API_BASE, ApiError, createSale, fetchClients } from '../../../lib/api.ts'
 import {
   ALLERGIES_LONG_MESSAGE,
   ALLERGIES_TITLE,
@@ -27,10 +27,10 @@ import {
   validateClientRecordDraft,
   type ClientRecordInput,
 } from './clientRecord.ts'
-import { formatCents } from './money.ts'
-import { canEditClient, canSeeClientMoney } from './permissions.ts'
-import { saleWithClient } from './posCart.ts'
-import { clearToken, setToken } from './session.ts'
+import { formatCents } from '../../../lib/money.ts'
+import { canEditClient, canSeeClientMoney } from '../../../lib/permissions.ts'
+import { saleWithClient } from '../../../lib/posCart.ts'
+import { clearToken, setToken } from '../../../lib/session.ts'
 
 type Call = { url: string; method: string; body: string | undefined; headers: Record<string, string> }
 

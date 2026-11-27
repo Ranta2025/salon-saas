@@ -8,8 +8,8 @@ import {
   type ClientRecord,
   type ClientRecordField,
   type ClientRecordInput,
-} from '../../lib/clientRecord'
-import { PhoneInput } from '../../components/PhoneInput'
+} from '../lib/clientRecord'
+import { PhoneInput } from '@/components/PhoneInput'
 
 type ClientRecordFormProps = {
   /** The file as the server returned it: the form always opens from that. */

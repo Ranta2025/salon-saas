@@ -11,7 +11,7 @@
 
 import { API_BASE, ApiError, request, requestMultipart } from './api.ts'
 import { EMAIL_INVALID_MESSAGE, isValidEmail } from './email.ts'
-import { validatePhotoFile, type PhotoFileLike } from './photos.ts'
+import { validatePhotoFile, type PhotoFileLike } from '../features/clients/lib/photos.ts'
 import {
   buildLanding,
   resolveAssetUrl,

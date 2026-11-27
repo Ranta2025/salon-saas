@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
-import { PHOTO_ACCEPT, formatBytes, validatePhotoFile } from '../../lib/photos'
+import { PHOTO_ACCEPT, formatBytes, validatePhotoFile } from '@/features/clients/lib/photos'
 
 type PhotoUploaderProps = {
   /** Performs the multipart upload; a rejection is rendered as a friendly error. */

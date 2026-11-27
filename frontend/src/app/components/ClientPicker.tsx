@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { searchClients, type PickableClient } from '../../lib/clientRecord'
+import { searchClients, type PickableClient } from '@/features/clients/lib/clientRecord'
 import { displayPhone } from '../../lib/phone'
 
 /** Rows painted at once: the rest appears as the person narrows the search. */

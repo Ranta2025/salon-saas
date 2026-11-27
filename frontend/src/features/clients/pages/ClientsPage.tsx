@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { PhoneInput } from '../components/PhoneInput'
-import { createClient, describeApiError, fetchClients, type ApiErrorNotice } from '../lib/api'
-import { EMAIL_INVALID_MESSAGE, isValidEmail } from '../lib/email'
-import { activeRole, canCreateClient } from '../lib/permissions'
-import { displayPhone } from '../lib/phone'
-import type { Client, ClientInput } from '../types'
-import { useSalon } from './SalonContext'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { PageHeader } from './components/PageHeader'
+import { PhoneInput } from '@/components/PhoneInput'
+import { createClient, describeApiError, fetchClients, type ApiErrorNotice } from '@/lib/api'
+import { EMAIL_INVALID_MESSAGE, isValidEmail } from '@/lib/email'
+import { activeRole, canCreateClient } from '@/lib/permissions'
+import { displayPhone } from '@/lib/phone'
+import type { Client, ClientInput } from '@/types'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { PageHeader } from '@/app/components/PageHeader'
 
 const EMPTY_DRAFT: ClientInput = { name: '', phone: '', email: '', notes: '' }
 

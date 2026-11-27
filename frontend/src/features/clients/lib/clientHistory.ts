@@ -9,9 +9,9 @@
  * money cannot paint one.
  */
 
-import { ApiError, request } from './api.ts'
-import { TIME_ZONE, formatTimeOfDay, toDateInputValue } from './datetime.ts'
-import { formatCents } from './money.ts'
+import { ApiError, request } from '../../../lib/api.ts'
+import { TIME_ZONE, formatTimeOfDay, toDateInputValue } from '../../../lib/datetime.ts'
+import { formatCents } from '../../../lib/money.ts'
 
 /**
  * The empty state of the history, exactly as the contract freezes it. It explains

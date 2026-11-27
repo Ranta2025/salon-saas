@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { API_BASE, ApiError } from './api.ts'
+import { API_BASE, ApiError } from '../../../lib/api.ts'
 import {
   CLIENT_HISTORY_UNREADABLE_MESSAGE,
   EMPTY_HISTORY_TEXT,
@@ -15,7 +15,7 @@ import {
   spendText,
   summaryCards,
 } from './clientHistory.ts'
-import { formatCents } from './money.ts'
+import { formatCents } from '../../../lib/money.ts'
 
 type Call = { url: string; method: string; body: string | undefined }
 

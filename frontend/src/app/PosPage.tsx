@@ -9,7 +9,7 @@ import {
   NetworkError,
   type ApiErrorNotice,
 } from '../lib/api'
-import type { PickableClient } from '../lib/clientRecord'
+import type { PickableClient } from '@/features/clients/lib/clientRecord'
 import { dayRange } from '../lib/datetime'
 import { formatCents } from '../lib/money'
 import { newClientOpId, type QueuedOperation } from '../lib/offlineQueue'

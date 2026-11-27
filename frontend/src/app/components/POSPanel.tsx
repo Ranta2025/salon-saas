@@ -25,7 +25,7 @@ import {
   type ProductCart,
 } from '@/features/products/lib/productCart'
 import { isInsufficientStockMessage } from '@/features/products/lib/products'
-import type { PickableClient } from '../../lib/clientRecord'
+import type { PickableClient } from '@/features/clients/lib/clientRecord'
 import { ClientPicker } from './ClientPicker'
 import {
   SALE_METHODS,

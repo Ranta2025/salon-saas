@@ -1,5 +1,5 @@
-import { NO_ALLERGIES_TEXT, type ClientRecord } from '../../lib/clientRecord'
-import { displayPhone } from '../../lib/phone'
+import { NO_ALLERGIES_TEXT, type ClientRecord } from '../lib/clientRecord'
+import { displayPhone } from '@/lib/phone'
 
 /**
  * Data of the client file (contract F5, D5). The allergies are repeated here as a

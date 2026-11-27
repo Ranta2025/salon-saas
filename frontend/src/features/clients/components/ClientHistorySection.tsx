@@ -1,4 +1,4 @@
-import type { ApiErrorNotice } from '../../lib/api'
+import type { ApiErrorNotice } from '@/lib/api'
 import { statusLabel } from '@/features/bookings/lib/bookingActions'
 import {
   BOOKINGS_TITLE,
@@ -14,11 +14,11 @@ import {
   spendText,
   summaryCards,
   type ClientHistory,
-} from '../../lib/clientHistory'
-import { formatCents } from '../../lib/money'
-import { SALE_METHODS, type SaleMethod } from '../../types'
-import { ErrorNotice, LoadingState } from './Feedback'
-import { KPICard } from './KPICard'
+} from '../lib/clientHistory'
+import { formatCents } from '@/lib/money'
+import { SALE_METHODS, type SaleMethod } from '@/types'
+import { ErrorNotice, LoadingState } from '@/app/components/Feedback'
+import { KPICard } from '@/app/components/KPICard'
 
 type ClientHistorySectionProps = {
   history: ClientHistory | null

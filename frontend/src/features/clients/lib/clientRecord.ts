@@ -9,8 +9,8 @@
  * while attending) and written only by owner/admin/reception.
  */
 
-import { ApiError, NetworkError, request } from './api.ts'
-import { EMAIL_INVALID_MESSAGE, isValidEmail } from './email.ts'
+import { ApiError, NetworkError, request } from '../../../lib/api.ts'
+import { EMAIL_INVALID_MESSAGE, isValidEmail } from '../../../lib/email.ts'
 
 /** Longest name of a file (same rule as the create, D5). */
 export const MAX_NAME_LENGTH = 120

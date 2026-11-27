@@ -6,7 +6,7 @@ import {
   fetchClientPhotos,
   uploadClientPhoto,
   type ApiErrorNotice,
-} from '../lib/api'
+} from '@/lib/api'
 import {
   createClientSaveGate,
   fetchClientRecord,
@@ -15,19 +15,19 @@ import {
   type ClientRecordInput,
 } from '../lib/clientRecord'
 import { fetchClientHistory, type ClientHistory } from '../lib/clientHistory'
-import { canEditClient, canSeeClientMoney, activeRole } from '../lib/permissions'
+import { canEditClient, canSeeClientMoney, activeRole } from '@/lib/permissions'
 import { formatBytes, validatePhotoFile } from '../lib/photos'
-import type { ClientPhoto } from '../types'
-import { useSalon } from './SalonContext'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { ClientHistorySection } from './components/ClientHistorySection'
-import { ClientLoyaltySection } from '@/features/loyalty'
-import { ClientPackagesSection } from '@/features/packages'
-import { ClientRecordAllergies } from './components/ClientRecordAllergies'
-import { ClientRecordForm } from './components/ClientRecordForm'
-import { ClientRecordSummary } from './components/ClientRecordSummary'
-import { PageHeader } from './components/PageHeader'
-import { PhotoUploader } from './components/PhotoUploader'
+import type { ClientPhoto } from '@/types'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { ClientHistorySection } from '../components/ClientHistorySection'
+import { ClientLoyaltySection } from '@/features/loyalty/index'
+import { ClientPackagesSection } from '@/features/packages/index'
+import { ClientRecordAllergies } from '../components/ClientRecordAllergies'
+import { ClientRecordForm } from '../components/ClientRecordForm'
+import { ClientRecordSummary } from '../components/ClientRecordSummary'
+import { PageHeader } from '@/app/components/PageHeader'
+import { PhotoUploader } from '@/app/components/PhotoUploader'
 
 function photoSizeLabel(photo: ClientPhoto): string {
   const parts: string[] = []

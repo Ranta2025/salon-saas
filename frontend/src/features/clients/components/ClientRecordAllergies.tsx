@@ -1,4 +1,4 @@
-import { ALLERGIES_NOTICE, ALLERGIES_TITLE } from '../../lib/clientRecord'
+import { ALLERGIES_NOTICE, ALLERGIES_TITLE } from '../lib/clientRecord'
 
 /**
  * Allergies of the client (contract F5, D4). Health data: the notice is shown to
