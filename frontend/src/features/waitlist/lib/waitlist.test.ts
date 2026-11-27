@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ApiError, NetworkError } from '../../../lib/api.ts'
 import { EMAIL_INVALID_MESSAGE } from '../../../lib/email.ts'
-import { RATE_LIMIT_MESSAGE } from '../../../lib/publicBooking.ts'
+import { RATE_LIMIT_MESSAGE } from '../../bookings/lib/publicBooking.ts'
 import { canViewWaitlist } from '../../../lib/permissions.ts'
 import { clearToken, setToken } from '../../../lib/session.ts'
 import {

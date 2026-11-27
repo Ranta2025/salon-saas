@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { fetchStaff } from '../lib/api'
-import { canOpenMyAgenda } from '../lib/myAgenda'
+import { canOpenMyAgenda } from '@/features/bookings/lib/myAgenda'
 import { canViewOwnCommissions } from '../lib/payroll'
 import {
   activeRole,

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { PUBLIC_HOURS_FALLBACK } from '../content'
 import type { LandingModel } from '../../lib/publicSalon'
-import { visitorTimeZone } from '../../lib/publicBooking'
+import { visitorTimeZone } from '@/features/bookings/lib/publicBooking'
 import { publicHoursRows, todayWeekday } from '../../lib/weeklyHours'
 
 type SiteFooterProps = {

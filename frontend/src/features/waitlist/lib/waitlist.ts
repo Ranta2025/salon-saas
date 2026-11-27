@@ -31,10 +31,10 @@
  */
 
 import { ApiError, NetworkError, request } from '../../../lib/api.ts'
-import { readBookingLinkHash, type HashRead, type HistoryLike } from '../../../lib/bookingLinks.ts'
+import { readBookingLinkHash, type HashRead, type HistoryLike } from '../../bookings/lib/bookingLinks.ts'
 import { EMAIL_INVALID_MESSAGE, isValidEmail, normalizeEmail } from '../../../lib/email.ts'
 import { splitPhone, toE164, validatePhone } from '../../../lib/phone.ts'
-import { RATE_LIMIT_MESSAGE } from '../../../lib/publicBooking.ts'
+import { RATE_LIMIT_MESSAGE } from '../../bookings/lib/publicBooking.ts'
 
 // --- copy of the contract (D9), verbatim where the contract quotes it ------
 

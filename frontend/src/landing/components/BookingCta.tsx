@@ -21,12 +21,12 @@ import {
   type AvailabilitySlot,
   type BookingFailure,
   type PublicBookingCreated,
-} from '../../lib/publicBooking'
+} from '@/features/bookings/lib/publicBooking'
 import {
   depositPaymentSummary,
   paymentTarget,
   type BookingPayment,
-} from '../../lib/deposits'
+} from '@/features/bookings/lib/deposits'
 import { whatsappUrl, type LandingModel, type LandingService } from '../../lib/publicSalon'
 import { weekSummary } from '../../lib/weeklyHours'
 import { PUBLIC_HOURS_FALLBACK } from '../content'

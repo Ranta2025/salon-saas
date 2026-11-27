@@ -1,5 +1,5 @@
 import type { ApiErrorNotice } from '../../lib/api'
-import { statusLabel } from '../../lib/bookingActions'
+import { statusLabel } from '@/features/bookings/lib/bookingActions'
 import {
   BOOKINGS_TITLE,
   EMPTY_HISTORY_TEXT,

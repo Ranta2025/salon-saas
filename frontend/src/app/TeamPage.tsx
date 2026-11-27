@@ -61,8 +61,8 @@ import {
 } from '../lib/payroll'
 import { fetchSalonHours, fetchSettings } from '../lib/settings'
 import { TIME_ZONE, addDaysToDateValue, fromDateInputValue, toDateInputValue } from '../lib/datetime'
-import { fetchTimeOff, type TimeOff } from '../lib/timeOff'
-import { fetchCoverAbsences, type CoverAbsence } from '../lib/coverAbsence'
+import { fetchTimeOff, type TimeOff } from '@/features/bookings/lib/timeOff'
+import { fetchCoverAbsences, type CoverAbsence } from '@/features/bookings/lib/coverAbsence'
 import type { SalonDay } from '../lib/weeklyHours'
 import { useSalon } from './SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
@@ -70,7 +70,7 @@ import { MemberHoursCard } from './components/MemberHoursCard'
 import { PageHeader } from './components/PageHeader'
 import { PayModelCard, type PayModelDraft } from './components/PayModelCard'
 import { TeamInvitations } from './components/TeamInvitations'
-import { TimeOffCard } from './components/TimeOffCard'
+import { TimeOffCard } from '@/features/bookings'
 
 /** `/panel/equipo`: team of the salon (owner/admin). */
 export function TeamPage() {
