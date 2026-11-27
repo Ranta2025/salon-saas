@@ -431,3 +431,21 @@ func At(dayOffset, hour, minute int) time.Time {
 	base := time.Now().UTC().Truncate(time.Hour).Add(time.Duration(dayOffset) * 24 * time.Hour)
 	return base.Add(time.Duration(hour)*time.Hour + time.Duration(minute)*time.Minute)
 }
+
+// FakeHasher firma y compara contraseñas sin criptografía (h:<plano>).
+type FakeHasher struct{}
+
+func (FakeHasher) Hash(plain string) (string, error) { return "h:" + plain, nil }
+func (FakeHasher) Compare(hash, plain string) bool   { return hash == "h:"+plain }
+func (FakeHasher) DummyCompare(string) bool          { return false }
+
+// FakeTokens firma y valida tokens de sesión sin criptografía (tok:<userID>).
+type FakeTokens struct{}
+
+func (FakeTokens) Issue(userID string) (string, error) { return "tok:" + userID, nil }
+func (FakeTokens) Parse(t string) (string, error) {
+	if !strings.HasPrefix(t, "tok:") {
+		return "", domain.ErrUnauthorized
+	}
+	return strings.TrimPrefix(t, "tok:"), nil
+}

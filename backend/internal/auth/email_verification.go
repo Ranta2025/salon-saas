@@ -3,7 +3,7 @@
 // panel. Mismas reglas de token que el restablecer: 32 bytes base64url, solo el
 // SHA-256 guardado, enlace en el fragmento, un solo uso por UPDATE condicional, y
 // el correo sale por el runner asíncrono sin loguear direcciones ni tokens.
-package app
+package auth
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -23,7 +24,7 @@ type EmailVerificationService struct {
 	Mailer ports.MailSender
 	AppURL string
 	// Run es el runner asíncrono; nil = GoAsync.
-	Run AsyncRunner
+	Run kernel.AsyncRunner
 	Now func() time.Time
 	// GenToken: nil = domain.NewRecoveryToken.
 	GenToken func() (string, error)
@@ -47,7 +48,7 @@ func (s EmailVerificationService) token() (string, error) {
 // TODO el trabajo (emitir el token y enviar) corre en el runner asíncrono:
 // nunca demora ni hace fallar el registro. Sin SMTP no hace nada.
 func (s EmailVerificationService) SendVerification(u domain.User) {
-	runAsync(s.Run, func(ctx context.Context) {
+	kernel.RunAsync(s.Run, func(ctx context.Context) {
 		if s.Mailer == nil {
 			return
 		}
@@ -112,7 +113,7 @@ func (s EmailVerificationService) Resend(userID string) error {
 	if !issued {
 		return domain.NewMessage(domain.ErrTooManyAttempts, domain.MsgVerificationThrottled)
 	}
-	runAsync(s.Run, func(ctx context.Context) { s.mail(ctx, u, token) })
+	kernel.RunAsync(s.Run, func(ctx context.Context) { s.mail(ctx, u, token) })
 	return nil
 }
 

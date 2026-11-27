@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	"salon-saas/internal/auth"
 	"salon-saas/internal/ports"
 )
 
@@ -25,7 +25,7 @@ func AuthMiddleware(tokens ports.TokenIssuer, gate ports.SessionGate) gin.Handle
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "falta token"})
 			return
 		}
-		uid, err := app.AuthenticateSession(tokens, gate, tok)
+		uid, err := auth.AuthenticateSession(tokens, gate, tok)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token inválido"})
 			return

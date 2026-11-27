@@ -1,6 +1,6 @@
 // Package app contiene los CASOS DE USO: orquestan dominio + puertos.
 // No conoce Gin ni Postgres: solo llama interfaces. (SRP: un servicio por tema.)
-package app
+package auth
 
 import (
 	"errors"

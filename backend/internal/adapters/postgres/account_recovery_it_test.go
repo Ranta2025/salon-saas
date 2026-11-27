@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"salon-saas/internal/adapters/security"
-	"salon-saas/internal/app"
+	"salon-saas/internal/auth"
+	"salon-saas/internal/auth/security"
 	"salon-saas/internal/domain"
 )
 
@@ -555,9 +555,9 @@ func TestF15_ConsumeReset_leavesTwoFactorAloneAndLoginStillAsksForTheCode(t *tes
 	// Login real: la contraseña nueva pasa, el 2FA sigue activo => desafío.
 	jwtIss := security.JWTIssuer{Secret: "test-secret"}
 	box, _ := domain.NewTOTPSecretBox("test-secret")
-	auth := app.AuthService{
+	auth := auth.AuthService{
 		Users: Users{Pool: f.pool}, Hasher: hasher, Tokens: jwtIss,
-		TwoFactor: app.TwoFactorService{Repo: tf, Challenges: jwtIss, Box: box},
+		TwoFactor: auth.TwoFactorService{Repo: tf, Challenges: jwtIss, Box: box},
 	}
 	res, err := auth.Authenticate("f15-ana@test.com", "claveNueva1")
 	if err != nil {

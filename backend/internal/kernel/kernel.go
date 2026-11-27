@@ -8,8 +8,10 @@
 package kernel
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -238,4 +240,43 @@ func StartOfSalonDay(t time.Time, loc *time.Location) time.Time {
 	}
 	local := t.In(loc)
 	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+}
+
+// --- Trabajos asíncronos -------------------------------------------------------
+
+// AsyncJobTimeout es el techo de un trabajo asíncrono (buscar, emitir, enviar).
+const AsyncJobTimeout = 15 * time.Second
+
+// AsyncRunner corre un trabajo FUERA del pedido. En producción es GoAsync (una
+// goroutine con timeout y recover); los tests inyectan uno que registra y
+// difiere, o uno que corre en línea.
+type AsyncRunner func(job func(ctx context.Context))
+
+// GoAsync es el runner de producción: una goroutine por trabajo, con su propio
+// timeout y con recover (un pánico del adaptador no puede tumbar el proceso desde
+// una goroutine suelta). Es el mismo patrón de la confirmación de reserva.
+func GoAsync(timeout time.Duration) AsyncRunner {
+	if timeout <= 0 {
+		timeout = AsyncJobTimeout
+	}
+	return func(job func(ctx context.Context)) {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("cuenta: pánico en un trabajo asíncrono: %v", r)
+				}
+			}()
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+			job(ctx)
+		}()
+	}
+}
+
+// RunAsync usa el runner inyectado o, si no hay, el de producción.
+func RunAsync(run AsyncRunner, job func(ctx context.Context)) {
+	if run == nil {
+		run = GoAsync(AsyncJobTimeout)
+	}
+	run(job)
 }

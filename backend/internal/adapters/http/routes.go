@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	audithttpapi "salon-saas/internal/audit/httpapi"
+	authhttpapi "salon-saas/internal/auth/httpapi"
 	clientshttpapi "salon-saas/internal/clients/httpapi"
 	exportshttpapi "salon-saas/internal/exports/httpapi"
 	financehttpapi "salon-saas/internal/finance/httpapi"
@@ -23,7 +24,7 @@ import (
 
 // Deps agrupa lo que HTTP necesita (todo interfaces: DIP hasta el borde).
 type Deps struct {
-	Auth          AuthHandler
+	Auth          authhttpapi.AuthHandler
 	Tenants       teamhttpapi.TenantsHandler
 	Bookings      BookingHandler
 	Services      staffinghttpapi.ServiceHandler
@@ -32,7 +33,7 @@ type Deps struct {
 	Dashboard     poshttpapi.DashboardHandler
 	Notifications notificationshttpapi.NotificationHandler
 	Clients       clientshttpapi.ClientHandler
-	Me            MeHandler
+	Me            authhttpapi.MeHandler
 	Staff         teamhttpapi.StaffHandler
 	Public        PublicHandler
 	// PublicSalon es la vidriera pública del salón (F16, D4): la landing no
@@ -86,7 +87,7 @@ type Deps struct {
 	// (`POST /auth/login/2fa`, público y bajo el límite por IP de /auth/) y las
 	// cuatro rutas de la cuenta propia (`/me/2fa`). Sin 2FA activo el login es el
 	// de siempre.
-	TwoFactor TwoFactorHandler
+	TwoFactor authhttpapi.TwoFactorHandler
 	// Profile es el perfil público del salón (F16, D1) y Gallery su galería de
 	// fotos (F16, D3): la autorización vive en el caso de uso.
 	Profile settingshttpapi.SalonProfileHandler
@@ -102,7 +103,7 @@ type Deps struct {
 	// Recovery es F15: recuperar contraseña (olvidé / canjear) y verificar el email
 	// (canjear el enlace y reenviarlo). El anti-enumeración y la seguridad del
 	// token viven en el caso de uso.
-	Recovery AccountRecoveryHandler
+	Recovery authhttpapi.AccountRecoveryHandler
 	// DepositPolicy es la política de señas del salón (F11, D3): GET cualquier
 	// miembro activo, PUT solo owner/admin.
 	DepositPolicy DepositPolicyHandler

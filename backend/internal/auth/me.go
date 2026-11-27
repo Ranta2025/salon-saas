@@ -1,6 +1,6 @@
 // MeService: "quién soy y en qué salones estoy". Es el endpoint que evita que
 // el frontend tenga que pedirle un ID a la persona para pegarlo a mano.
-package app
+package auth
 
 import (
 	"errors"

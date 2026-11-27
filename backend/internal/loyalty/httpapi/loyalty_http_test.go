@@ -2,7 +2,7 @@ package httpapi_test
 
 import (
 	"net/http"
-	"salon-saas/internal/adapters/security"
+	"salon-saas/internal/auth/security"
 	"salon-saas/internal/domain"
 	httpkit "salon-saas/internal/testutil/httpkit"
 	"sort"

@@ -13,8 +13,9 @@ import (
 	"net/http"
 	httpapi "salon-saas/internal/adapters/http"
 	"salon-saas/internal/adapters/realtime"
-	"salon-saas/internal/adapters/security"
-	"salon-saas/internal/app"
+	"salon-saas/internal/auth"
+	authhttpapi "salon-saas/internal/auth/httpapi"
+	"salon-saas/internal/auth/security"
 	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"sync"
@@ -72,20 +73,20 @@ func newRecHTTP(t *testing.T) *recHTTP {
 	tokens := security.JWTIssuer{Secret: "test-secret"}
 	hasher := security.BcryptHasher{Cost: 4}
 	run := &queuedRunner{}
-	recoverySvc := app.AccountRecoveryService{
+	recoverySvc := auth.AccountRecoveryService{
 		Users: store, Resets: store, Hasher: hasher, Mailer: box,
 		AppURL: "https://app.test", Run: run.Run,
 	}
-	verifSvc := app.EmailVerificationService{
+	verifSvc := auth.EmailVerificationService{
 		Users: store, Verifs: store, Mailer: box, AppURL: "https://app.test", Run: run.Run,
 	}
 	d := env.Deps
-	d.Auth = httpapi.AuthHandler{
-		Auth:         app.AuthService{Users: store, Hasher: hasher, Tokens: tokens},
+	d.Auth = authhttpapi.AuthHandler{
+		Auth:         auth.AuthService{Users: store, Hasher: hasher, Tokens: tokens},
 		Verification: verifSvc,
 	}
-	d.Recovery = httpapi.AccountRecoveryHandler{Recovery: recoverySvc, Verif: verifSvc}
-	d.Me = httpapi.MeHandler{Me: app.MeService{Users: store, Salons: env.Salons, Members: env.Mems}}
+	d.Recovery = authhttpapi.AccountRecoveryHandler{Recovery: recoverySvc, Verif: verifSvc}
+	d.Me = authhttpapi.MeHandler{Me: auth.MeService{Users: store, Salons: env.Salons, Members: env.Mems}}
 	d.WS = realtime.NewHub(tokens, env.Mems, realtime.HubSessionGate(store)).ServeWS
 	d.TokenIssuer = tokens
 	d.SessionGate = store

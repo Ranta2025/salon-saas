@@ -5,7 +5,7 @@
 // Reglas: español, el enlace con el token en el FRAGMENTO (lo que va después de
 // "#" no se manda al servidor, así no queda en ningún log), el HTML escapa todo lo
 // variable y nada más (ni ids, ni nombres, ni datos internos).
-package app
+package auth
 
 import (
 	"html"

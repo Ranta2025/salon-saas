@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"salon-saas/internal/auth"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/pos"
 	"salon-saas/internal/settings"
@@ -15,7 +16,7 @@ import (
 
 // B-06: la clave se valida ANTES de hashear (8..72 bytes).
 func TestAuth_register_valida_clave(t *testing.T) {
-	svc := AuthService{Users: &fakeUsers{}, Hasher: fakeHasher{}, Tokens: fakeTokens{}}
+	svc := auth.AuthService{Users: &fakeUsers{}, Hasher: fakeHasher{}, Tokens: fakeTokens{}}
 	for _, bad := range []string{"corta", strings.Repeat("x", domain.MaxPasswordBytes+1)} {
 		if _, err := svc.Register("Ana", "ana@mail.com", bad); !errors.Is(err, domain.ErrValidation) {
 			t.Fatalf("clave de %d bytes debe dar ErrValidation, dio %v", len(bad), err)
@@ -30,7 +31,7 @@ func TestAuth_register_valida_clave(t *testing.T) {
 // se detecta y el login funciona sin importar cómo se tipeó.
 func TestAuth_email_normalizado(t *testing.T) {
 	users := &fakeUsers{}
-	svc := AuthService{Users: users, Hasher: fakeHasher{}, Tokens: fakeTokens{}}
+	svc := auth.AuthService{Users: users, Hasher: fakeHasher{}, Tokens: fakeTokens{}}
 	if _, err := svc.Register("Ana", "  Ana@Mail.COM ", "unaClaveLarga"); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -45,7 +46,7 @@ func TestAuth_email_normalizado(t *testing.T) {
 // B-05: si el usuario no existe igual se gasta el trabajo de bcrypt.
 func TestAuth_login_usuario_inexistente_gasta_tiempo(t *testing.T) {
 	h := &countingHasher{}
-	svc := AuthService{Users: &fakeUsers{}, Hasher: h, Tokens: fakeTokens{}}
+	svc := auth.AuthService{Users: &fakeUsers{}, Hasher: h, Tokens: fakeTokens{}}
 	if _, err := svc.Login("nadie@mail.com", "unaClaveLarga"); !errors.Is(err, domain.ErrUnauthorized) {
 		t.Fatalf("esperaba ErrUnauthorized, dio %v", err)
 	}
@@ -196,7 +197,7 @@ func TestMeService(t *testing.T) {
 	users := &fakeUsers{}
 	salons := &fakeSalons{}
 	mems := &fakeMemberships{}
-	svc := MeService{Users: users, Salons: salons, Members: mems}
+	svc := auth.MeService{Users: users, Salons: salons, Members: mems}
 
 	u := domain.User{ID: "u1", Name: "Ana", Email: "ana@mail.com"}
 	_ = users.Save(u)

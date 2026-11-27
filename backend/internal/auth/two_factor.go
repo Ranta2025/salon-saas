@@ -13,7 +13,7 @@
 //     gana. Un código de recuperación se gasta con un UPDATE `used_at IS NULL`.
 //   - El login con 2FA devuelve un error uniforme (401) para desafío inválido,
 //     vencido o código malo; solo el bloqueo es distinto (429).
-package app
+package auth
 
 import (
 	"errors"

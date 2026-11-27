@@ -1,4 +1,4 @@
-package app
+package auth
 
 import (
 	"bytes"
@@ -12,22 +12,24 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil"
 )
 
 type recFix struct {
 	st     *f15Store
-	mailer *fakeMailer
+	mailer *testutil.FakeMailer
 	run    *deferredRunner
 	svc    AccountRecoveryService
 }
 
 func newRecFix() *recFix {
 	st := newF15Store()
-	m := &fakeMailer{}
+	m := &testutil.FakeMailer{}
 	r := &deferredRunner{}
 	return &recFix{st: st, mailer: m, run: r, svc: AccountRecoveryService{
-		Users: st, Resets: st, Hasher: fakeHasher{}, Mailer: m, AppURL: "https://app.test",
+		Users: st, Resets: st, Hasher: testutil.FakeHasher{}, Mailer: m, AppURL: "https://app.test",
 		Run: r.Run, Now: st.clock.Now,
 	}}
 }
@@ -65,14 +67,14 @@ func TestForgot_respondsBeforeAnyWorkRuns(t *testing.T) {
 	if f.run.Pending() != 1 {
 		t.Fatalf("debió encolar UN trabajo, hay %d", f.run.Pending())
 	}
-	if f.st.findByEmail != 0 || len(f.st.resets) != 0 || f.mailer.count() != 0 {
+	if f.st.findByEmail != 0 || len(f.st.resets) != 0 || f.mailer.Count() != 0 {
 		t.Fatalf("el trabajo corrió antes de responder: lookups=%d resets=%d mails=%d",
-			f.st.findByEmail, len(f.st.resets), f.mailer.count())
+			f.st.findByEmail, len(f.st.resets), f.mailer.Count())
 	}
 	f.run.Flush()
-	if f.st.findByEmail != 1 || len(f.st.resets) != 1 || f.mailer.count() != 1 {
+	if f.st.findByEmail != 1 || len(f.st.resets) != 1 || f.mailer.Count() != 1 {
 		t.Fatalf("tras correr el trabajo: lookups=%d resets=%d mails=%d",
-			f.st.findByEmail, len(f.st.resets), f.mailer.count())
+			f.st.findByEmail, len(f.st.resets), f.mailer.Count())
 	}
 }
 
@@ -90,8 +92,8 @@ func TestForgot_unknownEmailLooksIdentical(t *testing.T) {
 		t.Fatalf("ambos deben encolar y no tocar nada antes: pending=%d lookups=%d", f.run.Pending(), f.st.findByEmail)
 	}
 	f.run.Flush()
-	if len(f.st.resets) != 1 || f.mailer.count() != 1 || f.mailer.sent[0].To != "ana@mail.com" {
-		t.Fatalf("solo la conocida emite y envía: resets=%d mails=%d", len(f.st.resets), f.mailer.count())
+	if len(f.st.resets) != 1 || f.mailer.Count() != 1 || f.mailer.Sent[0].To != "ana@mail.com" {
+		t.Fatalf("solo la conocida emite y envía: resets=%d mails=%d", len(f.st.resets), f.mailer.Count())
 	}
 }
 
@@ -103,8 +105,8 @@ func TestForgot_normalizesAndValidatesEmail(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.run.Flush()
-	if f.mailer.count() != 1 {
-		t.Fatalf("no normalizó el email: %d correos", f.mailer.count())
+	if f.mailer.Count() != 1 {
+		t.Fatalf("no normalizó el email: %d correos", f.mailer.Count())
 	}
 	for _, bad := range []string{"", "sin-arroba", "a b@x.com", "x@y.com,evil@z.com", strings.Repeat("a", 300) + "@x.com"} {
 		f2 := newRecFix()
@@ -137,7 +139,7 @@ func TestForgot_storesOnlyHashAndMailsFragmentLink(t *testing.T) {
 	if !r.ExpiresAt.Equal(f.st.now().Add(60 * time.Minute)) {
 		t.Errorf("vence a los 60 minutos: %v", r.ExpiresAt)
 	}
-	msg := f.mailer.sent[0]
+	msg := f.mailer.Sent[0]
 	if msg.Subject != "Restablece tu contrasena" || msg.To != "ana@mail.com" {
 		t.Errorf("asunto/destino: %q %q", msg.Subject, msg.To)
 	}
@@ -162,11 +164,11 @@ func TestForgot_htmlEscapesTheLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.run.Flush()
-	if f.mailer.count() == 0 {
+	if f.mailer.Count() == 0 {
 		t.Fatal("no se envió el correo")
 	}
-	if strings.Contains(f.mailer.sent[0].HTML, "<script>") {
-		t.Errorf("el HTML no escapa el enlace:\n%s", f.mailer.sent[0].HTML)
+	if strings.Contains(f.mailer.Sent[0].HTML, "<script>") {
+		t.Errorf("el HTML no escapa el enlace:\n%s", f.mailer.Sent[0].HTML)
 	}
 }
 
@@ -200,16 +202,16 @@ func TestForgot_throttlePerUser(t *testing.T) {
 		t.Fatalf("el throttle es silencioso: %v", err)
 	}
 	f.run.Flush()
-	if f.mailer.count() != 1 || len(f.st.resets) != 1 {
-		t.Fatalf("a los 59 s no debe emitir: mails=%d resets=%d", f.mailer.count(), len(f.st.resets))
+	if f.mailer.Count() != 1 || len(f.st.resets) != 1 {
+		t.Fatalf("a los 59 s no debe emitir: mails=%d resets=%d", f.mailer.Count(), len(f.st.resets))
 	}
 	// Otro usuario no se ve afectado.
 	if err := f.svc.Forgot("bea@mail.com"); err != nil {
 		t.Fatal(err)
 	}
 	f.run.Flush()
-	if f.mailer.count() != 2 {
-		t.Fatalf("el throttle es por usuario: %d correos", f.mailer.count())
+	if f.mailer.Count() != 2 {
+		t.Fatalf("el throttle es por usuario: %d correos", f.mailer.Count())
 	}
 	// A los 60 s exactos del primero ya se puede (2.º de ana).
 	f.st.clock.Add(1 * time.Second)
@@ -219,14 +221,14 @@ func TestForgot_throttlePerUser(t *testing.T) {
 		f.st.clock.Add(61 * time.Second)
 		f.issue(t)
 	}
-	before := f.mailer.count()
+	before := f.mailer.Count()
 	f.st.clock.Add(61 * time.Second) // 6.º dentro de la misma hora
 	if err := f.svc.Forgot("ana@mail.com"); err != nil {
 		t.Fatal(err)
 	}
 	f.run.Flush()
-	if f.mailer.count() != before {
-		t.Fatalf("el 6.º en la hora no debe enviarse (%d -> %d)", before, f.mailer.count())
+	if f.mailer.Count() != before {
+		t.Fatalf("el 6.º en la hora no debe enviarse (%d -> %d)", before, f.mailer.Count())
 	}
 	// Pasada la hora desde los primeros, vuelve a andar.
 	f.st.clock.Add(time.Hour)
@@ -266,7 +268,7 @@ func TestForgot_neverLogsAddressOrToken(t *testing.T) {
 	secret := strings.Repeat("S", 43)
 	f.svc.GenToken = func() (string, error) { return secret, nil }
 	f.st.addUser("u-ana", "Ana", "ana@mail.com", true)
-	f.mailer.err = errors.New("550 <ana@mail.com> rechazado, enlace #" + secret)
+	f.mailer.Err = errors.New("550 <ana@mail.com> rechazado, enlace #" + secret)
 	if err := f.svc.Forgot("ana@mail.com"); err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +295,7 @@ func TestForgot_jobErrorsAreSwallowed(t *testing.T) {
 
 // El runner por defecto es una goroutine con timeout y recover.
 func TestGoAsync_runsAfterReturnRecoversAndTimesOut(t *testing.T) {
-	run := GoAsync(50 * time.Millisecond)
+	run := kernel.GoAsync(50 * time.Millisecond)
 	done := make(chan struct{})
 	release := make(chan struct{})
 	run(func(ctx context.Context) {
@@ -344,10 +346,10 @@ func TestForgot_nilRunnerUsesGoroutine(t *testing.T) {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for f.mailer.count() == 0 && time.Now().Before(deadline) {
+	for f.mailer.Count() == 0 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
-	if f.mailer.count() != 1 {
+	if f.mailer.Count() != 1 {
 		t.Fatal("el runner por defecto no envió el correo")
 	}
 }

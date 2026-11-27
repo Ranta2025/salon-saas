@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"salon-saas/internal/auth"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/team"
 	"salon-saas/internal/testutil"
@@ -124,7 +125,7 @@ func (fakeTokens) Parse(t string) (string, error) {
 }
 
 func TestAuth_Register_Login(t *testing.T) {
-	svc := AuthService{Users: &fakeUsers{}, Hasher: fakeHasher{}, Tokens: fakeTokens{}}
+	svc := auth.AuthService{Users: &fakeUsers{}, Hasher: fakeHasher{}, Tokens: fakeTokens{}}
 	// B-06: la clave mínima son 8 bytes.
 	u, err := svc.Register("Ana", "ana@mail.com", "secreta123")
 	if err != nil {

@@ -1,4 +1,4 @@
-package app
+package auth
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil"
 )
 
 // Fakes de F15: UNA tienda en memoria que hace de repositorio de usuarios, de
@@ -233,25 +234,20 @@ func inlineRunner(job func(ctx context.Context)) { job(context.Background()) }
 var linkRe = regexp.MustCompile(`https://app\.test/(restablecer|verificar-email)#(\S+)`)
 
 // lastLinkToken saca el token del último correo enviado (solo el test lo ve).
-func lastLinkToken(t *testing.T, m *fakeMailer) (path, token string) {
+func lastLinkToken(t *testing.T, m *testutil.FakeMailer) (path, token string) {
 	t.Helper()
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if len(m.sent) == 0 {
+	msgs := m.Messages()
+	if len(msgs) == 0 {
 		t.Fatal("no se envió ningún correo")
 	}
-	match := linkRe.FindStringSubmatch(m.sent[len(m.sent)-1].Text)
+	match := linkRe.FindStringSubmatch(msgs[len(msgs)-1].Text)
 	if match == nil {
-		t.Fatalf("el correo no trae el enlace esperado:\n%s", m.sent[len(m.sent)-1].Text)
+		t.Fatalf("el correo no trae el enlace esperado:\n%s", msgs[len(msgs)-1].Text)
 	}
 	return match[1], match[2]
 }
 
-func sentCount(m *fakeMailer) int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.sent)
-}
+func sentCount(m *testutil.FakeMailer) int { return m.Count() }
 
 func containsAny(s string, needles ...string) bool {
 	for _, n := range needles {

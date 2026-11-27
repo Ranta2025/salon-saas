@@ -9,7 +9,7 @@
 // o desafio vencido`).
 //
 // Nada de esto toca el reinicio: no emite sesión y no toca las tablas del 2FA.
-package app
+package auth
 
 import (
 	"errors"
@@ -19,6 +19,7 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil"
 )
 
 // tfGate es la compuerta bajo control del test: `at` es users.password_changed_at
@@ -230,7 +231,7 @@ func TestReset_doesNotTouchTwoFactorAndIssuesNoSession(t *testing.T) {
 	if ok, err := store.IssueReset(reset); err != nil || !ok {
 		t.Fatalf("issue reset: %v %v", ok, err)
 	}
-	svc := AccountRecoveryService{Users: store, Resets: store, Hasher: fakeHasher{}, Now: store.now}
+	svc := AccountRecoveryService{Users: store, Resets: store, Hasher: testutil.FakeHasher{}, Now: store.now}
 	// Reset devuelve SOLO error: no hay ningún camino que devuelva una sesión.
 	if err := svc.Reset(token, "nuevaClave1"); err != nil {
 		t.Fatalf("reset: %v", err)

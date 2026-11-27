@@ -12,9 +12,10 @@ import (
 	"net/http/httptest"
 	"regexp"
 	httpapi "salon-saas/internal/adapters/http"
-	"salon-saas/internal/adapters/security"
-	"salon-saas/internal/app"
 	auditsvc "salon-saas/internal/audit"
+	"salon-saas/internal/auth"
+	authhttpapi "salon-saas/internal/auth/httpapi"
+	"salon-saas/internal/auth/security"
 	"salon-saas/internal/domain"
 	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
@@ -48,14 +49,14 @@ func newTFHTTP(t *testing.T) *tfHTTP {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tfSvc := app.TwoFactorService{
+	tfSvc := auth.TwoFactorService{
 		Repo: repo, Users: env.Users, Hasher: security.BcryptHasher{}, Tokens: tokens,
 		Challenges: tokens, Box: box, Memberships: env.Mems,
 		Audit: auditsvc.AuditService{Events: audit, Users: env.Users}, Now: clock.Now,
 	}
 	d := env.Deps
-	d.Auth = httpapi.AuthHandler{Auth: app.AuthService{Users: env.Users, Hasher: security.BcryptHasher{}, Tokens: tokens, TwoFactor: tfSvc}}
-	d.TwoFactor = httpapi.TwoFactorHandler{Service: tfSvc}
+	d.Auth = authhttpapi.AuthHandler{Auth: auth.AuthService{Users: env.Users, Hasher: security.BcryptHasher{}, Tokens: tokens, TwoFactor: tfSvc}}
+	d.TwoFactor = authhttpapi.TwoFactorHandler{Service: tfSvc}
 	r := gin.New()
 	httpapi.RegisterRoutes(r, d)
 	h := &tfHTTP{r: r, d: d, Env: env, repo: repo, Clock: clock, Audit: audit, tokens: tokens,

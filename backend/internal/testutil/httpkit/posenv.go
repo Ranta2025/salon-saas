@@ -5,8 +5,10 @@ import (
 	"net/http"
 	httpapi "salon-saas/internal/adapters/http"
 	"salon-saas/internal/adapters/realtime"
-	"salon-saas/internal/adapters/security"
 	"salon-saas/internal/app"
+	"salon-saas/internal/auth"
+	authhttpapi "salon-saas/internal/auth/httpapi"
+	"salon-saas/internal/auth/security"
 	"salon-saas/internal/clients"
 	clientshttpapi "salon-saas/internal/clients/httpapi"
 	"salon-saas/internal/domain"
@@ -212,7 +214,7 @@ func NewPOSEnv() *Env {
 	env.Professionals = &Professionals{Mems: env.Mems}
 	hasher := security.BcryptHasher{}
 	tokens := security.JWTIssuer{Secret: "test-secret"}
-	authSvc := app.AuthService{Users: env.Users, Hasher: hasher, Tokens: tokens}
+	authSvc := auth.AuthService{Users: env.Users, Hasher: hasher, Tokens: tokens}
 	tenSvc := team.TenantService{Salons: env.Salons, Memberships: env.Mems}
 	notifSvc := notifications.NotificationService{Notifications: env.Notifications, Salons: env.Mems, Events: env.Events}
 	bookSvc := app.BookingService{Bookings: env.Bookings, Memberships: env.Mems, Events: env.Events, Notifier: notifSvc}
@@ -221,7 +223,7 @@ func NewPOSEnv() *Env {
 	cashSvc := pos.CashCloseService{CashCloses: env.Closes, Sales: env.Sales, Memberships: env.Mems, Tx: &CashTx{Closes: env.Closes, Sales: env.Sales}, Events: env.Events, Notifier: notifSvc}
 	dashSvc := pos.DashboardService{Sales: env.Sales, Agenda: env.Bookings, Staff: env.Mems, Memberships: env.Mems}
 	clientSvc := clients.ClientService{Clients: env.Clients, Memberships: env.Mems, Photos: env.Storage, Images: Images{}}
-	meSvc := app.MeService{Users: env.Users, Salons: env.Salons, Members: env.Mems}
+	meSvc := auth.MeService{Users: env.Users, Salons: env.Salons, Members: env.Mems}
 	staffSvc := team.StaffService{Staff: env.Mems, Memberships: env.Mems}
 	publicSvc := settings.PublicSalonService{
 		Salons: env.Salons, Services: env.Services,
@@ -273,7 +275,7 @@ func NewPOSEnv() *Env {
 	env.Hub = hub
 
 	env.Deps = httpapi.Deps{
-		Auth:          httpapi.AuthHandler{Auth: authSvc},
+		Auth:          authhttpapi.AuthHandler{Auth: authSvc},
 		Tenants:       teamhttpapi.TenantsHandler{Tenants: tenSvc, Memberships: env.Mems},
 		Bookings:      httpapi.BookingHandler{Bookings: bookSvc, Memberships: env.Mems},
 		Services:      staffinghttpapi.ServiceHandler{Services: svcSvc, Memberships: env.Mems},
@@ -282,7 +284,7 @@ func NewPOSEnv() *Env {
 		Dashboard:     poshttpapi.DashboardHandler{Dashboard: dashSvc, Memberships: env.Mems},
 		Notifications: notificationshttpapi.NotificationHandler{Notifications: notifSvc, Memberships: env.Mems},
 		Clients:       clientshttpapi.ClientHandler{Clients: clientSvc, Memberships: env.Mems, Photos: env.Signer},
-		Me:            httpapi.MeHandler{Me: meSvc},
+		Me:            authhttpapi.MeHandler{Me: meSvc},
 		Staff:         teamhttpapi.StaffHandler{Staff: staffSvc, Memberships: env.Mems},
 		Public:        httpapi.PublicHandler{Avail: availabilitySvc, Bookings: publicBookingSvc},
 		PublicSalon:   settingshttpapi.PublicSalonHandler{Public: publicSvc},

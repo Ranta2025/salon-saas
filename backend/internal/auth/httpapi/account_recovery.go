@@ -19,7 +19,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	httpx "salon-saas/internal/adapters/http/httpx"
+	"salon-saas/internal/auth"
 	"salon-saas/internal/domain"
 )
 
@@ -29,8 +30,8 @@ func containsNUL(s string) bool { return strings.ContainsRune(s, 0) }
 
 // AccountRecoveryHandler agrupa los dos casos de uso de F15 (parte A y parte B).
 type AccountRecoveryHandler struct {
-	Recovery app.AccountRecoveryService
-	Verif    app.EmailVerificationService
+	Recovery auth.AccountRecoveryService
+	Verif    auth.EmailVerificationService
 }
 
 // Forgot es `POST /api/v1/auth/forgot {email}` -> 202 `{"ok":true}`.
@@ -42,15 +43,15 @@ func (h AccountRecoveryHandler) Forgot(c *gin.Context) {
 		Email string `json:"email"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if containsNUL(in.Email) {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if err := h.Recovery.Forgot(in.Email); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusAccepted, gin.H{"ok": true})
@@ -64,15 +65,15 @@ func (h AccountRecoveryHandler) Reset(c *gin.Context) {
 		Password string `json:"password"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if containsNUL(in.Password) {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if err := h.Recovery.Reset(in.Token, in.Password); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -86,11 +87,11 @@ func (h AccountRecoveryHandler) VerifyEmail(c *gin.Context) {
 		Token string `json:"token"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if err := h.Verif.Verify(in.Token); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -108,7 +109,7 @@ func (h AccountRecoveryHandler) ResendVerification(c *gin.Context) {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
 			return
 		}
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusAccepted, gin.H{"ok": true})

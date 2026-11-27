@@ -1,5 +1,5 @@
 // TwoFactorHandler: 2FA TOTP opcional por usuario (F10, parte B del contrato de
-// la fase 6, D7 y D8). Es DELGADO: valida el cuerpo, llama a app.TwoFactorService
+// la fase 6, D7 y D8). Es DELGADO: valida el cuerpo, llama a auth.TwoFactorService
 // y mapea errores. Las reglas (bloqueo, replay, auditoría) viven en el servicio.
 //
 //   - GET  /me/2fa           -> {"enabled":bool}
@@ -22,12 +22,13 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	httpx "salon-saas/internal/adapters/http/httpx"
+	"salon-saas/internal/auth"
 	"salon-saas/internal/domain"
 )
 
 type TwoFactorHandler struct {
-	Service app.TwoFactorService
+	Service auth.TwoFactorService
 }
 
 // msgTwoFactorBadBody es el texto exacto de D7 para cuerpos inválidos de las
@@ -60,7 +61,7 @@ func respondTwoFactorErr(c *gin.Context, err error) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
 		return
 	}
-	respondErr(c, err)
+	httpx.RespondErr(c, err)
 }
 
 func sessionUserID(c *gin.Context) string {
@@ -73,7 +74,7 @@ func sessionUserID(c *gin.Context) string {
 func (h TwoFactorHandler) Status(c *gin.Context) {
 	enabled, err := h.Service.Status(sessionUserID(c))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"enabled": enabled})
@@ -83,7 +84,7 @@ func (h TwoFactorHandler) Status(c *gin.Context) {
 func (h TwoFactorHandler) Setup(c *gin.Context) {
 	out, err := h.Service.Setup(sessionUserID(c))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"secret": out.Secret, "otpauth_url": out.OTPAuthURL})

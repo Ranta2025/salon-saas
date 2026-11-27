@@ -1,4 +1,4 @@
-package app
+package auth
 
 import (
 	"bytes"
@@ -18,8 +18,8 @@ type tfEnv struct {
 	repo   *fakeTwoFactorRepo
 	clock  *fakeClock
 	audit  *testutil.FakeAudit
-	users  *fakeUsers
-	mems   *fakeMemberships
+	users  *testutil.FakeUsers
+	mems   *testutil.FakeMemberships
 	userID string
 	box    domain.TOTPSecretBox
 }
@@ -27,13 +27,13 @@ type tfEnv struct {
 func newTFEnv(t *testing.T) *tfEnv {
 	t.Helper()
 	clock := &fakeClock{t: time.Unix(1_700_000_010, 0).UTC()}
-	users := &fakeUsers{}
+	users := &testutil.FakeUsers{}
 	u, err := domain.NewUser("Ana Pérez", "ana@mail.com", "h:clave-secreta-1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = users.Save(u)
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	_ = mems.Save(domain.Membership{UserID: u.ID, SalonID: "s-1", Role: domain.RoleOwner})
 	_ = mems.Save(domain.Membership{UserID: u.ID, SalonID: "s-2", Role: domain.RoleAdmin})
 	ended := clock.Now()
@@ -49,7 +49,7 @@ func newTFEnv(t *testing.T) *tfEnv {
 	audit := &testutil.FakeAudit{}
 	return &tfEnv{
 		svc: TwoFactorService{
-			Repo: repo, Users: users, Hasher: fakeHasher{}, Tokens: fakeTokens{},
+			Repo: repo, Users: users, Hasher: testutil.FakeHasher{}, Tokens: testutil.FakeTokens{},
 			Challenges: fakeChallenges{}, Box: box, Memberships: mems,
 			Audit: auditsvc.AuditService{Events: audit, Users: users}, Now: clock.Now,
 		},
@@ -600,7 +600,7 @@ func TestTwoFactorParallelSameCodeOneWinner(t *testing.T) {
 
 func TestAuthenticateOldPathUnchangedWithoutTwoFactor(t *testing.T) {
 	e := newTFEnv(t)
-	auth := AuthService{Users: e.users, Hasher: fakeHasher{}, Tokens: fakeTokens{}, TwoFactor: e.svc}
+	auth := AuthService{Users: e.users, Hasher: testutil.FakeHasher{}, Tokens: testutil.FakeTokens{}, TwoFactor: e.svc}
 	// Sin fila: login de siempre.
 	out, err := auth.Authenticate("ana@mail.com", "clave-secreta-1")
 	if err != nil || out.TwoFactorRequired || out.Token != "tok:"+e.userID || out.Challenge != "" {
@@ -623,7 +623,7 @@ func TestAuthenticateOldPathUnchangedWithoutTwoFactor(t *testing.T) {
 		}
 	}
 	// Sin la dependencia (nil): idéntico a Login.
-	plain := AuthService{Users: e.users, Hasher: fakeHasher{}, Tokens: fakeTokens{}}
+	plain := AuthService{Users: e.users, Hasher: testutil.FakeHasher{}, Tokens: testutil.FakeTokens{}}
 	out, err = plain.Authenticate("ana@mail.com", "clave-secreta-1")
 	if err != nil || out.Token != "tok:"+e.userID || out.TwoFactorRequired {
 		t.Fatalf("nil: %+v %v", out, err)

@@ -16,7 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"salon-saas/internal/app"
+	"salon-saas/internal/auth"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -214,7 +214,7 @@ func (h *Hub) ServeWS(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "falta token"})
 		return
 	}
-	userID, err := app.AuthenticateSession(h.tokens, h.gate, token)
+	userID, err := auth.AuthenticateSession(h.tokens, h.gate, token)
 	if err != nil || userID == "" {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token inválido"})
 		return
@@ -310,13 +310,13 @@ func (h *Hub) writeLoop(conn *websocket.Conn, cl *client, token string) {
 	}
 }
 
-// sessionAlive repite la MISMA autenticación del handshake (app.AuthenticateSession):
+// sessionAlive repite la MISMA autenticación del handshake (auth.AuthenticateSession):
 // firma, método, vencimiento, tipo y compuerta de revocación. false = la sesión ya
 // no vale (contraseña cambiada después del `ia`, token sin `ia` con contraseña
 // cambiada, token vencido) o la consulta falló: se cierra la conexión. Falla
 // CERRADO, igual que el handshake.
 func (h *Hub) sessionAlive(token string) bool {
-	userID, err := app.AuthenticateSession(h.tokens, h.gate, token)
+	userID, err := auth.AuthenticateSession(h.tokens, h.gate, token)
 	return err == nil && userID != ""
 }
 

@@ -4,14 +4,15 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	httpx "salon-saas/internal/adapters/http/httpx"
+	"salon-saas/internal/auth"
 )
 
 // MeHandler: GET /api/v1/me. Devuelve quién es el dueño del token y en qué
 // salones está. Es lo que permite que el frontend elija el salón activo sin
 // pedirle un ID a la persona.
 type MeHandler struct {
-	Me app.MeService
+	Me auth.MeService
 }
 
 func (h MeHandler) Get(c *gin.Context) {
@@ -19,7 +20,7 @@ func (h MeHandler) Get(c *gin.Context) {
 	userID, _ := uid.(string)
 	me, err := h.Me.Me(userID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	salons := make([]gin.H, 0, len(me.Salons))

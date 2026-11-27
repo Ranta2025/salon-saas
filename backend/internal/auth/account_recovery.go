@@ -14,7 +14,7 @@
 //     sesión: hay que iniciar sesión de nuevo (y las sesiones anteriores mueren
 //     por la compuerta D4).
 //   - El 2FA no se toca: el login de un usuario con 2FA sigue pidiendo el código.
-package app
+package auth
 
 import (
 	"context"
@@ -23,45 +23,9 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
-
-// asyncJobTimeout es el techo de un trabajo asíncrono (buscar, emitir, enviar).
-const asyncJobTimeout = 15 * time.Second
-
-// AsyncRunner corre un trabajo FUERA del pedido. En producción es GoAsync (una
-// goroutine con timeout y recover); los tests inyectan uno que registra y
-// difiere, o uno que corre en línea.
-type AsyncRunner func(job func(ctx context.Context))
-
-// GoAsync es el runner de producción: una goroutine por trabajo, con su propio
-// timeout y con recover (un pánico del adaptador no puede tumbar el proceso desde
-// una goroutine suelta). Es el mismo patrón de la confirmación de reserva.
-func GoAsync(timeout time.Duration) AsyncRunner {
-	if timeout <= 0 {
-		timeout = asyncJobTimeout
-	}
-	return func(job func(ctx context.Context)) {
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("cuenta: pánico en un trabajo asíncrono: %v", r)
-				}
-			}()
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			defer cancel()
-			job(ctx)
-		}()
-	}
-}
-
-// runAsync usa el runner inyectado o, si no hay, el de producción.
-func runAsync(run AsyncRunner, job func(ctx context.Context)) {
-	if run == nil {
-		run = GoAsync(asyncJobTimeout)
-	}
-	run(job)
-}
 
 // errLinkInvalid es la ÚNICA respuesta de un enlace que no sirve (formato
 // inválido, desconocido, vencido o usado): 400 con el texto del contrato.
@@ -77,7 +41,7 @@ type AccountRecoveryService struct {
 	// AppURL es la base del enlace (APP_URL).
 	AppURL string
 	// Run es el runner asíncrono; nil = GoAsync.
-	Run AsyncRunner
+	Run kernel.AsyncRunner
 	// Now es el reloj; nil = time.Now.
 	Now func() time.Time
 	// GenToken genera el token; nil = domain.NewRecoveryToken (los tests inyectan
@@ -107,7 +71,7 @@ func (s AccountRecoveryService) Forgot(email string) error {
 	if err := domain.ValidateEmail(email); err != nil {
 		return err
 	}
-	runAsync(s.Run, func(ctx context.Context) { s.sendReset(ctx, email) })
+	kernel.RunAsync(s.Run, func(ctx context.Context) { s.sendReset(ctx, email) })
 	return nil
 }
 

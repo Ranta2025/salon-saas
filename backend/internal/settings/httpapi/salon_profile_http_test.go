@@ -3,7 +3,7 @@ package httpapi_test
 import (
 	"net/http"
 	httpapi "salon-saas/internal/adapters/http"
-	"salon-saas/internal/adapters/security"
+	"salon-saas/internal/auth/security"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/settings"

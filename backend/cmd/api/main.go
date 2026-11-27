@@ -15,12 +15,14 @@ import (
 	"salon-saas/internal/adapters/mail"
 	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/adapters/realtime"
-	"salon-saas/internal/adapters/security"
 	"salon-saas/internal/adapters/simbank"
 	"salon-saas/internal/adapters/storage"
 	"salon-saas/internal/app"
 	"salon-saas/internal/audit"
 	audithttpapi "salon-saas/internal/audit/httpapi"
+	"salon-saas/internal/auth"
+	authhttpapi "salon-saas/internal/auth/httpapi"
+	"salon-saas/internal/auth/security"
 	"salon-saas/internal/clients"
 	clientshttpapi "salon-saas/internal/clients/httpapi"
 	"salon-saas/internal/domain"
@@ -228,7 +230,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	hasher := security.BcryptHasher{}
 	tokens := security.JWTIssuer{Secret: cfg.JWTSecret, TTL: 0}
 
-	authSvc := app.AuthService{Users: users, Hasher: hasher, Tokens: tokens}
+	authSvc := auth.AuthService{Users: users, Hasher: hasher, Tokens: tokens}
 	// F15: compuerta de revocación de sesiones (D4). Una consulta por petición
 	// autenticada (`SELECT password_changed_at FROM users WHERE id=$1`); un fallo
 	// falla CERRADO (401). Los repositorios de restablecer/verificar email guardan
@@ -355,7 +357,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	if err != nil {
 		log.Fatalf("2fa: %v", err)
 	}
-	twoFactorSvc := app.TwoFactorService{
+	twoFactorSvc := auth.TwoFactorService{
 		Repo: pgstore.TwoFactor{Pool: pool}, Users: users, Hasher: hasher, Tokens: tokens,
 		Challenges: tokens, Box: totpBox, Memberships: mems, Audit: auditSvc,
 		// F15 D4: un desafío emitido antes del último cambio de contraseña no se
@@ -391,7 +393,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Clients: clientsRepo, Source: clientHistoryRepo,
 		Memberships: mems, Settings: salons,
 	}
-	meSvc := app.MeService{Users: users, Salons: salons, Members: mems}
+	meSvc := auth.MeService{Users: users, Salons: salons, Members: mems}
 	staffSvc := team.StaffService{Staff: mems, Memberships: mems}
 	// F16 (D4): la vidriera sale del panel: perfil, equipo que atiende, galería y
 	// paquetes activos, y la carta se filtra con la MISMA regla que la
@@ -483,11 +485,11 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// asíncrono de producción (goroutine con timeout y recover): el tiempo de la
 	// respuesta no revela si el email existe. Con el mailer nil (sin SMTP_HOST) no
 	// se emite token ni se envía nada.
-	recoverySvc := app.AccountRecoveryService{
+	recoverySvc := auth.AccountRecoveryService{
 		Users: users, Resets: recoveryRepo, Hasher: hasher,
 		Mailer: mailer, AppURL: cfg.AppURL,
 	}
-	verificationSvc := app.EmailVerificationService{
+	verificationSvc := auth.EmailVerificationService{
 		Users: users, Verifs: recoveryRepo, Mailer: mailer, AppURL: cfg.AppURL,
 	}
 	// La cola de recordatorios vive en su propia tabla (014).
@@ -597,8 +599,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	})
 
 	deps := httpapi.Deps{
-		Auth:          httpapi.AuthHandler{Auth: authSvc, Verification: verificationSvc},
-		TwoFactor:     httpapi.TwoFactorHandler{Service: twoFactorSvc},
+		Auth:          authhttpapi.AuthHandler{Auth: authSvc, Verification: verificationSvc},
+		TwoFactor:     authhttpapi.TwoFactorHandler{Service: twoFactorSvc},
 		Tenants:       teamhttpapi.TenantsHandler{Tenants: tenSvc, Memberships: mems},
 		Bookings:      httpapi.BookingHandler{Bookings: bookSvc, Memberships: mems},
 		Services:      staffinghttpapi.ServiceHandler{Services: svcSvc, Memberships: mems},
@@ -607,7 +609,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Dashboard:     poshttpapi.DashboardHandler{Dashboard: dashSvc, Memberships: mems},
 		Notifications: notificationshttpapi.NotificationHandler{Notifications: notifSvc, Memberships: mems},
 		Clients:       clientshttpapi.ClientHandler{Clients: clientSvc, Memberships: mems, Photos: photoSigner, History: clientHistorySvc},
-		Me:            httpapi.MeHandler{Me: meSvc},
+		Me:            authhttpapi.MeHandler{Me: meSvc},
 		Staff:         teamhttpapi.StaffHandler{Staff: staffSvc, Memberships: mems},
 		Public:        httpapi.PublicHandler{Avail: availabilitySvc, Bookings: publicBookingSvc},
 		PublicSalon:   settingshttpapi.PublicSalonHandler{Public: publicSvc},
@@ -664,7 +666,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		PublicDepositLookupLimit: httpapi.RateLimitFor(publicDepositLookupLimit, time.Minute, "POST", "/api/v1/public/deposits/"),
 		// F15: recuperar contraseña y verificar email (tres rutas públicas bajo
 		// /auth/ y el reenvío autenticado).
-		Recovery: httpapi.AccountRecoveryHandler{Recovery: recoverySvc, Verif: verificationSvc},
+		Recovery: authhttpapi.AccountRecoveryHandler{Recovery: recoverySvc, Verif: verificationSvc},
 		// La reserva pública es la única escritura sin auth: rate limit por IP
 		// como en /auth (el GET de disponibilidad no pasa por acá).
 		PublicBookingLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/salons/"),

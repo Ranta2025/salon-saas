@@ -11,7 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"salon-saas/internal/adapters/security"
+	"salon-saas/internal/auth/security"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )

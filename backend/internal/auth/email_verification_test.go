@@ -1,4 +1,4 @@
-package app
+package auth
 
 import (
 	"errors"
@@ -9,18 +9,19 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 type verFix struct {
 	st     *f15Store
-	mailer *fakeMailer
+	mailer *testutil.FakeMailer
 	run    *deferredRunner
 	svc    EmailVerificationService
 }
 
 func newVerFix() *verFix {
 	st := newF15Store()
-	m := &fakeMailer{}
+	m := &testutil.FakeMailer{}
 	r := &deferredRunner{}
 	return &verFix{st: st, mailer: m, run: r, svc: EmailVerificationService{
 		Users: st, Verifs: st, Mailer: m, AppURL: "https://app.test", Run: r.Run, Now: st.clock.Now,
@@ -42,9 +43,9 @@ func TestSendVerification_asyncMailWithFragmentLink(t *testing.T) {
 	f := newVerFix()
 	u := f.st.addUser("u-ana", "Ana", "ana@mail.com", false)
 	f.svc.SendVerification(u)
-	if f.run.Pending() != 1 || len(f.st.verifs) != 0 || f.mailer.count() != 0 {
+	if f.run.Pending() != 1 || len(f.st.verifs) != 0 || f.mailer.Count() != 0 {
 		t.Fatalf("el trabajo debe correr DESPUÉS: pending=%d verifs=%d mails=%d",
-			f.run.Pending(), len(f.st.verifs), f.mailer.count())
+			f.run.Pending(), len(f.st.verifs), f.mailer.Count())
 	}
 	f.run.Flush()
 	tok := f.token(t)
@@ -59,7 +60,7 @@ func TestSendVerification_asyncMailWithFragmentLink(t *testing.T) {
 	if containsAny(fmt.Sprintf("%+v", *v), tok) {
 		t.Fatal("el token en claro está en lo guardado")
 	}
-	msg := f.mailer.sent[0]
+	msg := f.mailer.Sent[0]
 	if msg.Subject != "Verifica tu email" || msg.To != "ana@mail.com" {
 		t.Errorf("asunto/destino: %q %q", msg.Subject, msg.To)
 	}
@@ -79,7 +80,7 @@ func TestSendVerification_smtpDisabledAndErrorsDoNothingVisible(t *testing.T) {
 		t.Errorf("sin SMTP no se emite token: %d", len(f.st.verifs))
 	}
 	f2 := newVerFix()
-	f2.mailer.err = errors.New("smtp caído")
+	f2.mailer.Err = errors.New("smtp caído")
 	u2 := f2.st.addUser("u-ana", "Ana", "ana@mail.com", false)
 	f2.svc.SendVerification(u2)
 	f2.run.Flush() // no entra en pánico
@@ -164,8 +165,8 @@ func TestResend(t *testing.T) {
 		t.Fatalf("primer reenvío: %v", err)
 	}
 	// El token se emite al responder; el correo sale por el runner.
-	if len(f.st.verifs) != 1 || f.mailer.count() != 0 || f.run.Pending() != 1 {
-		t.Fatalf("verifs=%d mails=%d pending=%d", len(f.st.verifs), f.mailer.count(), f.run.Pending())
+	if len(f.st.verifs) != 1 || f.mailer.Count() != 0 || f.run.Pending() != 1 {
+		t.Fatalf("verifs=%d mails=%d pending=%d", len(f.st.verifs), f.mailer.Count(), f.run.Pending())
 	}
 	f.run.Flush()
 	tok := f.token(t)
@@ -184,8 +185,8 @@ func TestResend(t *testing.T) {
 		t.Fatalf("a los 60 s ya se puede: %v", err)
 	}
 	f.run.Flush()
-	if f.mailer.count() != 2 {
-		t.Fatalf("correos: %d", f.mailer.count())
+	if f.mailer.Count() != 2 {
+		t.Fatalf("correos: %d", f.mailer.Count())
 	}
 	// Usuario inexistente: error de dominio (401), no un 500.
 	if err := f.svc.Resend("nadie"); !errors.Is(err, domain.ErrUnauthorized) {

@@ -15,9 +15,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
-	"salon-saas/internal/adapters/security"
-	"salon-saas/internal/app"
 	"salon-saas/internal/audit"
+	"salon-saas/internal/auth"
+	"salon-saas/internal/auth/security"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/testutil/itdb"
@@ -67,7 +67,7 @@ func (c *countingRepo) BeginAttempt(userID string) (domain.TwoFactorAttempt, err
 
 type tfStack struct {
 	*tfFix
-	svc     app.TwoFactorService
+	svc     auth.TwoFactorService
 	counter *countingRepo
 	box     domain.TOTPSecretBox
 	pass    string
@@ -93,7 +93,7 @@ func tfStackFor(t *testing.T) *tfStack {
 	}
 	cnt := &countingRepo{TwoFactorRepository: f.repo}
 	jwtIssuer := security.JWTIssuer{Secret: "jwt-secret-de-prueba-it"}
-	svc := app.TwoFactorService{
+	svc := auth.TwoFactorService{
 		Repo: cnt, Users: Users{Pool: pool}, Hasher: security.BcryptHasher{Cost: bcrypt.MinCost},
 		Tokens: jwtIssuer, Challenges: jwtIssuer, Box: box, Memberships: Memberships{Pool: pool},
 		Audit: audit.AuditService{Events: Audit{Pool: pool}, Users: Users{Pool: pool}},
