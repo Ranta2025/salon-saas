@@ -5042,3 +5042,143 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
+
+/* ---------- F13: reseñas (página pública /resena) ---------- */
+
+/* The salon, the service and the day of the turno the review is about. */
+.review-public__salon {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--cream);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.review-public__name {
+  font-family: var(--font-display);
+  font-size: var(--step-2);
+  line-height: 1.25;
+  color: var(--wine);
+  overflow-wrap: anywhere;
+}
+
+.review-public__service,
+.review-public__when {
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.review-public__fineprint {
+  font-size: var(--step--1);
+  line-height: 1.5;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.review-form {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.review-form .btn {
+  width: 100%;
+  min-height: 44px;
+}
+
+.review-form .notice,
+.review-form .field__error {
+  overflow-wrap: anywhere;
+}
+
+/* Accessible star rating: a radiogroup of five native radios, each one 44px. */
+.review-stars {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.review-stars__legend {
+  padding: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.review-stars__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.review-star {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.review-star__glyph {
+  font-size: 1.85rem;
+  line-height: 1;
+  /* An unchosen star: the muted line colour, not a second brand colour. */
+  color: var(--line-strong);
+  transition: color var(--transition), transform var(--transition);
+}
+
+.review-star[data-filled='true'] .review-star__glyph {
+  color: var(--gold);
+}
+
+.review-star:hover .review-star__glyph {
+  transform: scale(1.08);
+}
+
+.review-star__input:focus-visible + .review-star__glyph {
+  outline: var(--focus-width) solid var(--focus-light);
+  outline-offset: 3px;
+  border-radius: var(--radius-xs);
+}
+
+.review-stars[data-invalid='true'] .review-stars__hint {
+  color: #8c1d33;
+  font-weight: 600;
+}
+
+.review-stars__hint {
+  min-height: 1.2em;
+  font-size: var(--step--1);
+  color: var(--ink-muted);
+}
+
+.review-form__comment {
+  min-height: 7rem;
+  resize: vertical;
+}
+
+.review-form__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 0.75rem;
+}
+
+.review-counter {
+  font-size: var(--step--1);
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.review-counter[data-over='true'] {
+  color: #8c1d33;
+  font-weight: 700;
+}

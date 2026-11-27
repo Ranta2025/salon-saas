@@ -28,6 +28,7 @@ import { PosPage } from '@/features/pos'
 import { ProfitPage } from '@/features/expenses'
 import { RequireAuth } from './app/RequireAuth'
 import { ResetPasswordPage } from '@/features/auth'
+import { ReviewPage } from '@/features/reviews'
 import { SalonProfilePage } from '@/features/settings'
 import { SecurityPage } from '@/features/auth'
 import { ServicesPage } from '@/features/services'
@@ -98,6 +99,9 @@ export function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/salon/:slug" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
+        {/* Public, no session: the review link of an attended turno (F13). The token
+            travels in the FRAGMENT, like the other pages with a token. */}
+        <Route path="/resena" element={<ReviewPage />} />
         {/* Public, no session: the token of the link lives in the fragment. */}
         <Route path="/invitacion" element={<InvitationPage />} />
         {/* Public, no session: password recovery and email verification (F15). */}

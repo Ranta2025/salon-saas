@@ -20,6 +20,8 @@ import {
   readFragmentToken,
   REVIEW_MESSAGES,
   REVIEWS_PAGE_SIZE,
+  reviewCreatedText,
+  reviewDayLabel,
   reviewDelayLabel,
   reviewLinkPath,
   reviewRatingLabel,
@@ -582,4 +584,18 @@ test('reviewDelayLabel says the demora in plain Spanish', () => {
   assert.equal(reviewDelayLabel(1), '1 hora después del turno')
   assert.equal(reviewDelayLabel(24), '24 horas después del turno')
   assert.equal(reviewDelayLabel(72), '72 horas después del turno')
+})
+
+// --- presentation of the public link and of the panel rows ---
+
+test('reviewDayLabel shows the day as dd/mm/yyyy and nothing when it is not a date', () => {
+  assert.equal(reviewDayLabel('2026-11-04'), '04/11/2026')
+  assert.equal(reviewDayLabel('2026-11-04T12:00:00Z'), '04/11/2026')
+  assert.equal(reviewDayLabel('  '), '')
+  assert.equal(reviewDayLabel('no-es-fecha'), '')
+})
+
+test('reviewCreatedText shows the date and the time in the zone of the salon (24 h)', () => {
+  assert.equal(reviewCreatedText('2026-11-04T12:00:00Z', 'America/Mexico_City'), '2026-11-04 06:00')
+  assert.equal(reviewCreatedText('no-es-fecha', 'America/Mexico_City'), '—')
 })

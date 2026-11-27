@@ -18,6 +18,7 @@ import { GallerySection } from '../components/GallerySection'
 import { Hero } from '../components/Hero'
 import { LoyaltySection } from '@/features/loyalty/index'
 import { PackagesSection } from '../components/PackagesSection'
+import { ReviewsSection } from '@/features/reviews/index'
 import { ServicesSection } from '../components/ServicesSection'
 import { SiteFooter } from '../components/SiteFooter'
 import { SiteHeader } from '../components/SiteHeader'
@@ -170,6 +171,8 @@ export function LandingPage() {
         {model.sections.gallery ? (
           <GallerySection photos={model.gallery} salonName={model.name} />
         ) : null}
+        {/* F13 (D7): driven only by the payload `reviews`; null renders nothing. */}
+        {model.reviews !== null ? <ReviewsSection reviews={model.reviews} /> : null}
         <BookingCta slug={slug} services={model.services} preselected={preselected} model={model} />
       </main>
       <SiteFooter model={model} />

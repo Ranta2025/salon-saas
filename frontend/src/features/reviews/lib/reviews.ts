@@ -21,6 +21,7 @@
 
 import { ApiError, NetworkError, request } from '../../../lib/api.ts'
 import { isBrowserOnline } from '../../../lib/connectivity.ts'
+import { toDateInputValue, TIME_ZONE } from '../../../lib/datetime.ts'
 import { formatAuditWhen } from '../../audit/lib/audit.ts'
 import { createPackagesGate, type PackagesGate } from '../../packages/lib/packages.ts'
 
@@ -506,6 +507,29 @@ export function reviewDelayLabel(hours: number): string {
 /** `2026-11-04 12:30`: local date and time in the zone of the SALON (24 h). */
 export function reviewCreatedText(iso: string, timeZone: string): string {
   return formatAuditWhen(iso, timeZone)
+}
+
+/**
+ * `04/11/2026`: the day of the turno or of the review, for the public page. An empty
+ * or unreadable date says nothing instead of inventing one. The public link does not
+ * carry the zone of the salon, so the default zone of the app is used (the rest of
+ * the front does the same, see H14).
+ */
+export function reviewDayLabel(value: string): string {
+  const clean = typeof value === 'string' ? value.trim() : ''
+  if (clean === '') {
+    return ''
+  }
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(clean)
+    ? clean
+    : Number.isNaN(Date.parse(clean))
+      ? ''
+      : toDateInputValue(new Date(clean), TIME_ZONE)
+  if (day === '') {
+    return ''
+  }
+  const [year, month, rest] = day.split('-')
+  return `${rest}/${month}/${year}`
 }
 
 /** Sentence of the state of a row: `null` when the review is public. */
