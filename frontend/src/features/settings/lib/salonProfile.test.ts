@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { API_BASE, ApiError } from './api.ts'
-import { canEditSalonProfile, canViewSalonProfile } from './permissions.ts'
-import { clearToken, setToken } from './session.ts'
+import { API_BASE, ApiError } from '../../../lib/api.ts'
+import { canEditSalonProfile, canViewSalonProfile } from '../../../lib/permissions.ts'
+import { clearToken, setToken } from '../../../lib/session.ts'
 import {
   GALLERY_FULL_MESSAGE,
   GALLERY_LIMIT,

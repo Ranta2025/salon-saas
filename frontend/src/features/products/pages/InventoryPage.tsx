@@ -17,7 +17,7 @@ import {
   type ProductUpdatePayload,
   type StockMovement,
 } from '../lib/products'
-import { fetchSettings } from '@/lib/settings'
+import { fetchSettings } from '@/features/settings/lib/settings'
 import { useSalon } from '@/app/SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
 import { ManagerOnlyNotice } from '@/app/components/ManagerOnlyNotice'

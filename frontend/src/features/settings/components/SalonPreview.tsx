@@ -1,5 +1,5 @@
-import type { LandingModel } from '../../lib/publicSalon'
-import { PROFILE_HELP } from '../../lib/salonProfile'
+import type { LandingModel } from '@/lib/publicSalon'
+import { PROFILE_HELP } from '../lib/salonProfile'
 
 type SalonPreviewProps = {
   /** Built by `previewLanding`: the same builder the public page uses. */

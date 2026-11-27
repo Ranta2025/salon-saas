@@ -17,7 +17,7 @@ import {
   type DepositRow,
 } from '../lib/deposits'
 import { activeRole, canEditDepositPolicy, canViewDeposits } from '@/lib/permissions'
-import { fetchSettings } from '@/lib/settings'
+import { fetchSettings } from '@/features/settings/lib/settings'
 import { useOffline } from '@/app/OfflineContext'
 import { useSalon } from '@/app/SalonContext'
 import { DepositList } from '../components/DepositList'

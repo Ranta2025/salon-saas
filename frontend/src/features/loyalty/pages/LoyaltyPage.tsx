@@ -12,7 +12,7 @@ import {
   type LoyaltyProgramPayload,
 } from '../lib/loyalty'
 import { activeRole, canEditLoyaltyProgram, canViewLoyalty } from '@/lib/permissions'
-import { fetchSettings } from '@/lib/settings'
+import { fetchSettings } from '@/features/settings/lib/settings'
 import type { Service } from '@/types'
 import { useOffline } from '@/app/OfflineContext'
 import { useSalon } from '@/app/SalonContext'

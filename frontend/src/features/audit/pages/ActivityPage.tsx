@@ -9,7 +9,7 @@ import {
 } from '../lib/audit'
 import { TIME_ZONE } from '@/lib/datetime'
 import { activeRole, canViewAuditLog } from '@/lib/permissions'
-import { fetchSettings } from '@/lib/settings'
+import { fetchSettings } from '@/features/settings/lib/settings'
 import { useOffline } from '@/app/OfflineContext'
 import { useSalon } from '@/app/SalonContext'
 import { ActivityList } from '../components/ActivityList'

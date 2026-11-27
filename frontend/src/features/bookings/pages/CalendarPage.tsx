@@ -10,7 +10,7 @@ import {
 } from '../lib/myAgenda'
 import { activeRole, canManageBooking } from '@/lib/permissions'
 import { timeZoneLabel } from '../lib/publicBooking'
-import { fetchSettings } from '@/lib/settings'
+import { fetchSettings } from '@/features/settings/lib/settings'
 import { fetchTimeOff, timeOffBands, type TimeOff } from '../lib/timeOff'
 import { fetchCoverAbsences, type CoverAbsence } from '../lib/coverAbsence'
 import {

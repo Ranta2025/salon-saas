@@ -16,7 +16,7 @@ import {
 } from '../lib/expenses'
 import { subscribeOfflineData } from '@/lib/offlineData'
 import { activeRole } from '@/lib/permissions'
-import { fetchSettings } from '@/lib/settings'
+import { fetchSettings } from '@/features/settings/lib/settings'
 import { useSalon } from '@/app/SalonContext'
 import { ExpenseForm } from '../components/ExpenseForm'
 import { ExpenseList } from '../components/ExpenseList'

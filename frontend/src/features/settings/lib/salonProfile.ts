@@ -9,16 +9,16 @@
  * so the panel cannot show something the public page would not.
  */
 
-import { API_BASE, ApiError, request, requestMultipart } from './api.ts'
-import { EMAIL_INVALID_MESSAGE, isValidEmail } from './email.ts'
-import { validatePhotoFile, type PhotoFileLike } from '../features/clients/lib/photos.ts'
+import { API_BASE, ApiError, request, requestMultipart } from '../../../lib/api.ts'
+import { EMAIL_INVALID_MESSAGE, isValidEmail } from '../../../lib/email.ts'
+import { validatePhotoFile, type PhotoFileLike } from '../../clients/lib/photos.ts'
 import {
   buildLanding,
   resolveAssetUrl,
   type LandingModel,
   type PublicPhoto,
   type PublicSalonInfo,
-} from './publicSalon.ts'
+} from '../../../lib/publicSalon.ts'
 
 /** Photos a salon can publish; the server answers 409 beyond it. */
 export const GALLERY_LIMIT = 12

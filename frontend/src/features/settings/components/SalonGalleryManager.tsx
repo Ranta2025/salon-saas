@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { describeApiError } from '../../lib/api'
+import { describeApiError } from '@/lib/api'
 import {
   GALLERY_FULL_MESSAGE,
   GALLERY_LIMIT,
@@ -11,8 +11,8 @@ import {
   validateCaption,
   validateGalleryUpload,
   type GalleryPhoto,
-} from '../../lib/salonProfile'
-import { PhotoUploader } from './PhotoUploader'
+} from '../lib/salonProfile'
+import { PhotoUploader } from '@/app/components/PhotoUploader'
 
 type SalonGalleryManagerProps = {
   salonId: string

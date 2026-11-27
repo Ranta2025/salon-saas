@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { describeApiError } from '../../lib/api'
-import { fetchSalonHours, saveSalonHours } from '../../lib/settings'
+import { describeApiError } from '@/lib/api'
+import { fetchSalonHours, saveSalonHours } from '../lib/settings'
 import {
   copyDraftDay,
   copyTargets,
@@ -11,7 +11,7 @@ import {
   type DraftDay,
   type Weekday,
 } from '@/features/team/lib/weeklyHours'
-import { LoadingState } from './Feedback'
+import { LoadingState } from '@/app/components/Feedback'
 
 type SalonHoursCardProps = {
   salonId: string

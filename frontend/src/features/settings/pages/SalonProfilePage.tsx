@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { describeApiError, type ApiErrorNotice } from '../lib/api'
-import { activeRole, canEditSalonProfile, canViewSalonProfile, roleLabel } from '../lib/permissions'
+import { describeApiError, type ApiErrorNotice } from '@/lib/api'
+import { activeRole, canEditSalonProfile, canViewSalonProfile, roleLabel } from '@/lib/permissions'
 import {
   draftFromProfile,
   fetchGallery,
@@ -11,12 +11,12 @@ import {
   type ProfileDraft,
   type ProfilePayload,
 } from '../lib/salonProfile'
-import { useSalon } from './SalonContext'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { PageHeader } from './components/PageHeader'
-import { SalonGalleryManager } from './components/SalonGalleryManager'
-import { SalonPreview } from './components/SalonPreview'
-import { SalonProfileForm } from './components/SalonProfileForm'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { PageHeader } from '@/app/components/PageHeader'
+import { SalonGalleryManager } from '../components/SalonGalleryManager'
+import { SalonPreview } from '../components/SalonPreview'
+import { SalonProfileForm } from '../components/SalonProfileForm'
 
 const EMPTY_DRAFT: ProfileDraft = {
   name: '',

@@ -59,7 +59,7 @@ import {
   setMemberPayModel,
   type PayModel,
 } from '../lib/payroll'
-import { fetchSalonHours, fetchSettings } from '@/lib/settings'
+import { fetchSalonHours, fetchSettings } from '@/features/settings/lib/settings'
 import { TIME_ZONE, addDaysToDateValue, fromDateInputValue, toDateInputValue } from '@/lib/datetime'
 import { fetchTimeOff, type TimeOff } from '@/features/bookings/lib/timeOff'
 import { fetchCoverAbsences, type CoverAbsence } from '@/features/bookings/lib/coverAbsence'

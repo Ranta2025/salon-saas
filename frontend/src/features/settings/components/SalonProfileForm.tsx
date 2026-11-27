@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { describeApiError } from '../../lib/api'
-import { isEmailErrorMessage } from '../../lib/email'
+import { describeApiError } from '@/lib/api'
+import { isEmailErrorMessage } from '@/lib/email'
 import {
   PROFILE_HELP,
   PROFILE_LIMITS,
@@ -8,7 +8,7 @@ import {
   type ProfileDraft,
   type ProfileField,
   type ProfilePayload,
-} from '../../lib/salonProfile'
+} from '../lib/salonProfile'
 
 type SalonProfileFormProps = {
   draft: ProfileDraft

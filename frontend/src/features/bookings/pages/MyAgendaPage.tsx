@@ -31,7 +31,7 @@ import {
 import { activeRole, canManageBooking } from '@/lib/permissions'
 import { coveredNotices } from '../lib/coverAbsence'
 import { timeZoneLabel } from '../lib/publicBooking'
-import { fetchSettings } from '@/lib/settings'
+import { fetchSettings } from '@/features/settings/lib/settings'
 import type { StaffMember } from '@/lib/staff'
 import type { Booking } from '@/types'
 import { BookingDetail } from '../components/BookingDetail'

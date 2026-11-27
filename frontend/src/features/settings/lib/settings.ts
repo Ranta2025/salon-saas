@@ -4,8 +4,8 @@
  * the person sees the field that is wrong, not a generic 400.
  */
 
-import { request } from './api.ts'
-import { normalizeSalonHours, type SalonDay, type SalonHours } from '../features/team/lib/weeklyHours.ts'
+import { request } from '../../../lib/api.ts'
+import { normalizeSalonHours, type SalonDay, type SalonHours } from '../../team/lib/weeklyHours.ts'
 
 export type SalonSettings = {
   timezone: string

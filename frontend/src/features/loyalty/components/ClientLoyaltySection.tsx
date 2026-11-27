@@ -25,7 +25,7 @@ import {
   type RedeemRewardDraft,
 } from '../lib/loyalty'
 import { activeRole, canEditLoyaltyProgram, canViewLoyalty } from '@/lib/permissions'
-import { fetchSettings } from '@/lib/settings'
+import { fetchSettings } from '@/features/settings/lib/settings'
 import type { StaffMember } from '@/lib/staff'
 import { useOffline } from '@/app/OfflineContext'
 import { useSalon } from '@/app/SalonContext'

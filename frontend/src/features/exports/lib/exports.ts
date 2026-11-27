@@ -35,7 +35,7 @@ import {
   savePayrollRunCsv,
 } from '../../team/lib/payrollRuns.ts'
 import { isManager, type Role } from '../../../lib/permissions.ts'
-import { fetchSettings } from '../../../lib/settings.ts'
+import { fetchSettings } from '../../settings/lib/settings.ts'
 import { clearToken, getToken } from '../../../lib/session.ts'
 
 /** The three files of the contract. */

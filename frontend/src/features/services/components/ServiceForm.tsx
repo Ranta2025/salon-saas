@@ -11,7 +11,7 @@ import type { SalonMember } from '@/features/team/lib/members'
 import {
   serviceDescriptionBody,
   validateServiceDescription,
-} from '@/lib/salonProfile'
+} from '@/features/settings/lib/salonProfile'
 import type { Service, ServiceInput, ServiceUpdateInput } from '@/types'
 import { SalonServiceDescription } from './SalonServiceDescription'
 

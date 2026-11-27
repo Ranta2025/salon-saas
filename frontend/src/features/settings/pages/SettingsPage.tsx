@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { describeApiError, type ApiErrorNotice } from '../lib/api'
-import { activeRole, isManager, roleLabel } from '../lib/permissions'
+import { describeApiError, type ApiErrorNotice } from '@/lib/api'
+import { activeRole, isManager, roleLabel } from '@/lib/permissions'
 import {
   DEFAULT_SETTINGS,
   SLOT_STEPS,
@@ -11,10 +11,10 @@ import {
   type SalonSettings,
   type SettingsField,
 } from '../lib/settings'
-import { useSalon } from './SalonContext'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { PageHeader } from './components/PageHeader'
-import { SalonHoursCard } from './components/SalonHoursCard'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { PageHeader } from '@/app/components/PageHeader'
+import { SalonHoursCard } from '../components/SalonHoursCard'
 
 const STEP_LABEL: Record<number, string> = {
   15: 'Cada 15 minutos',
