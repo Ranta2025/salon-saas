@@ -47,6 +47,9 @@ import (
 	poshttpapi "salon-saas/internal/pos/httpapi"
 	"salon-saas/internal/products"
 	productshttpapi "salon-saas/internal/products/httpapi"
+	"salon-saas/internal/reviews"
+	reviewshttpapi "salon-saas/internal/reviews/httpapi"
+	reviewsstore "salon-saas/internal/reviews/postgres"
 	"salon-saas/internal/schedules"
 	scheduleshttpapi "salon-saas/internal/schedules/httpapi"
 	"salon-saas/internal/settings"
@@ -466,6 +469,15 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		// El sender y APP_URL se completan abajo, cuando el mailer existe.
 		AppURL: cfg.AppURL,
 	}
+	// F13: reseñas posvisita (migración 038). Un solo adaptador implementa los
+	// pedidos de reseña y las reseñas; el módulo SOLO LEE bookings por su propia
+	// consulta (D1) y no toca la agenda. El sender y APP_URL se completan abajo,
+	// cuando el mailer existe: sin SMTP el barrido no pide nada.
+	reviewsRepo := reviewsstore.Reviews{Pool: pool}
+	reviewsSvc := reviews.Service{
+		Reviews: reviewsRepo, Requests: reviewsRepo, Memberships: mems,
+		AppURL: cfg.AppURL,
+	}
 	// Email a clientes (T12): adaptador SMTP del puerto MailSender. Sin
 	// SMTP_HOST el sender queda deshabilitado y los casos de uso lo ven como
 	// nil (no hay correo en este entorno).
@@ -506,6 +518,10 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Invitations: invitationRepo, Tx: invitationRepo, Users: users, Salons: salons,
 		Hasher: hasher, Tokens: tokens,
 	}
+	// F13: el correo del pedido de reseña sale por el mismo MailSender. Sin email
+	// configurado queda nil y el barrido no reclama nada (no se pide una reseña
+	// que nunca va a llegar).
+	reviewsSvc.Mailer = mailer
 	// F7: el aviso de la lista sale por el mismo MailSender. Sin email
 	// configurado queda nil y la tarea no reclama nada (D7).
 	waitlistSvc.Mailer = mailer
@@ -638,6 +654,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Packages: packageshttpapi.PackageHandler{Packages: packageSvc, Memberships: mems},
 		// F9: fidelidad (cinco rutas: programa del salón; ficha, entrega y uso por clienta).
 		Loyalty: loyaltyhttpapi.LoyaltyHandler{Loyalty: loyaltySvc, Memberships: mems},
+		// F13: reseñas posvisita (el enlace público y las cinco rutas del panel).
+		Reviews: reviewshttpapi.ReviewHandler{Service: reviewsSvc, Memberships: mems},
 		// F10: auditoría (el middleware de las rutas de D2 y GET audit-log).
 		Audit: audithttpapi.AuditHandler{Service: auditSvc, Memberships: mems},
 		// F16: perfil público del salón y su galería de fotos.
@@ -681,9 +699,13 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		// inundación de enlaces no puede gastar el cupo de la reserva pública ni el
 		// de las invitaciones, ni al revés.
 		PublicBookingLinkLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/public/booking-links/"),
-		WS:                     hub.ServeWS,
-		TokenIssuer:            tokens,
-		SessionGate:            sessionGate,
+		// F13/D4: el enlace de la reseña es una credencial (revela salón, servicio
+		// y fecha) y su POST es una escritura sin sesión: cubo PROPIO por IP para
+		// las dos, como el del enlace de turno.
+		PublicReviewLimit: httpapi.RateLimitFor(authRateLimit, time.Minute, "", "/api/v1/public/reviews/"),
+		WS:                hub.ServeWS,
+		TokenIssuer:       tokens,
+		SessionGate:       sessionGate,
 	}
 	httpapi.RegisterRoutes(router, deps)
 	return router, deps, reminders

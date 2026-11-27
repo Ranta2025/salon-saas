@@ -17,6 +17,8 @@ import (
 	"salon-saas/internal/ports"
 	"salon-saas/internal/pos"
 	poshttpapi "salon-saas/internal/pos/httpapi"
+	"salon-saas/internal/reviews"
+	reviewshttpapi "salon-saas/internal/reviews/httpapi"
 	"salon-saas/internal/schedules"
 	scheduleshttpapi "salon-saas/internal/schedules/httpapi"
 	"salon-saas/internal/settings"
@@ -182,7 +184,9 @@ type Env struct {
 	Resources *Resources
 	// F2g1: invitaciones de equipo (con su reloj para probar el vencimiento).
 	Invitations *Invitations
-	Deps        httpapi.Deps
+	// F13: reseñas posvisita (configuración, lista, enlace y pedidos).
+	Reviews *Reviews
+	Deps    httpapi.Deps
 }
 
 func NewPOSEnv() *Env {
@@ -205,9 +209,14 @@ func NewPOSEnv() *Env {
 		Weekly:        &Weekly{},
 		TimeOff:       &TimeOff{},
 		Resources:     &Resources{},
+		Reviews:       NewReviews(),
 	}
 	env.Resources.Bookings = env.Bookings
 	env.Invitations = &Invitations{Rows: map[string]domain.Invitation{}, Users: env.Users, Mems: env.Mems}
+	reviewsSvc := reviews.Service{
+		Reviews: env.Reviews, Requests: env.Reviews, Memberships: env.Mems,
+		Mailer: env.Mailer, AppURL: "http://localhost:8081",
+	}
 	env.MemberDir = &MemberDir{
 		Mems: env.Mems, Users: env.Users, Bookings: env.Bookings, Invitations: env.Invitations,
 	}
@@ -297,6 +306,9 @@ func NewPOSEnv() *Env {
 		Absences:    scheduleshttpapi.AbsenceHandler{Coverage: coverageSvc, Memberships: env.Mems},
 		Resources:   staffinghttpapi.ResourceHandler{Resources: staffing.ResourceService{Resources: env.Resources, Services: env.Services, Memberships: env.Mems}, Memberships: env.Mems},
 		Invitations: teamhttpapi.InvitationHandler{Invitations: invitationSvc, Public: invitationPublicSvc, Memberships: env.Mems},
+		// F13: reseñas posvisita (enlace público y panel). El límite por IP no
+		// se cablea en los tests: todas las peticiones vienen de la misma IP.
+		Reviews:     reviewshttpapi.ReviewHandler{Service: reviewsSvc, Memberships: env.Mems},
 		WS:          hub.ServeWS,
 		TokenIssuer: tokens,
 	}

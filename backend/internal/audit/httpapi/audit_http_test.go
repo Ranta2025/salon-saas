@@ -812,6 +812,9 @@ func TestAuditRoutes_exactlyTheD2ListIsWrapped(t *testing.T) {
 		"loyalty.program":    "PUT /salons/:id/loyalty-program",
 		"deposit.policy":     "PUT /salons/:id/deposit-policy",
 		"product.adjust":     "POST /salons/:id/products/:pid/adjust",
+		"review.settings":    "PUT /salons/:id/review-settings",
+		"review.hide":        "POST /salons/:id/reviews/:rid/hide",
+		"review.unhide":      "POST /salons/:id/reviews/:rid/unhide",
 	}
 	var keys []string
 	for k := range want {

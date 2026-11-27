@@ -13,6 +13,7 @@ import (
 	"salon-saas/internal/ports"
 	poshttpapi "salon-saas/internal/pos/httpapi"
 	productshttpapi "salon-saas/internal/products/httpapi"
+	reviewshttpapi "salon-saas/internal/reviews/httpapi"
 	scheduleshttpapi "salon-saas/internal/schedules/httpapi"
 	settingshttpapi "salon-saas/internal/settings/httpapi"
 	staffinghttpapi "salon-saas/internal/staffing/httpapi"
@@ -110,6 +111,14 @@ type Deps struct {
 	// Deposits es la pantalla «Señas» (F11, D10) y la consulta pública del estado
 	// de un pago (D8). La autorización vive en el caso de uso.
 	Deposits DepositHandler
+	// Reviews son las reseñas posvisita (F13): las dos rutas públicas del enlace
+	// (lookup y envío), la lista del panel, su configuración y ocultar/mostrar.
+	// La autorización, las validaciones y la paginación viven en el caso de uso.
+	Reviews reviewshttpapi.ReviewHandler
+	// PublicReviewLimit limita por IP las dos rutas públicas del enlace (el
+	// token es una credencial: un GET revela salón, servicio y fecha). nil = sin
+	// límite (tests unitarios del router).
+	PublicReviewLimit gin.HandlerFunc
 	// PaymentsCallback es el POST público y firmado del banco (F11, D7). nil = sin
 	// banco configurado: la ruta NO existe y responde 404 (D12).
 	PaymentsCallback gin.HandlerFunc
@@ -213,6 +222,18 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 		publicDepositLookup = append([]gin.HandlerFunc{d.PublicDepositLookupLimit}, publicDepositLookup...)
 	}
 	v1.POST("/public/deposits/lookup", publicDepositLookup...)
+
+	// F13: el enlace de la reseña (D4). Las dos son públicas y el token viaja en
+	// la RUTA (es la credencial del fragmento del correo); van bajo su propio
+	// cubo por IP, como las otras escrituras sin sesión.
+	publicReview := func(h gin.HandlerFunc) []gin.HandlerFunc {
+		if d.PublicReviewLimit == nil {
+			return []gin.HandlerFunc{h}
+		}
+		return []gin.HandlerFunc{d.PublicReviewLimit, h}
+	}
+	v1.GET("/public/reviews/:token", publicReview(d.Reviews.GetLink)...)
+	v1.POST("/public/reviews/:token", publicReview(d.Reviews.Submit)...)
 
 	// F7: el alta de la lista de espera comparte el limitador de la reserva
 	// pública (D4: es la misma escritura sin sesión bajo el prefijo
@@ -432,6 +453,16 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	authed.GET("/salons/:id/deposit-policy", d.DepositPolicy.Get)
 	authed.PUT("/salons/:id/deposit-policy", audit("deposit.policy"), d.DepositPolicy.Put)
 	authed.GET("/salons/:id/deposits", d.Deposits.List)
+
+	// F13: reseñas posvisita (D6). Ver la lista y la configuración:
+	// owner/admin/recepción; guardar la configuración y ocultar/mostrar una
+	// reseña: solo owner/admin (el permiso va ANTES del cuerpo y de los
+	// parámetros). Ocultar, mostrar y guardar la configuración se auditan.
+	authed.GET("/salons/:id/reviews", d.Reviews.List)
+	authed.GET("/salons/:id/review-settings", d.Reviews.GetSettings)
+	authed.PUT("/salons/:id/review-settings", audit("review.settings"), d.Reviews.PutSettings)
+	authed.POST("/salons/:id/reviews/:rid/hide", audit("review.hide"), d.Reviews.Hide)
+	authed.POST("/salons/:id/reviews/:rid/unhide", audit("review.unhide"), d.Reviews.Unhide)
 
 	// Bandeja de avisos. Listar va por salón; marcar leída no (el aviso ya sabe
 	// de qué salón es y el alcance sale de las memberships del usuario).
