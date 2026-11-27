@@ -1,4 +1,4 @@
-import type { LandingModel } from '../../lib/publicSalon'
+import type { LandingModel } from '@/lib/publicSalon'
 
 type HeroProps = {
   model: LandingModel

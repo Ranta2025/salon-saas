@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
-import { PUBLIC_HOURS_FALLBACK } from '../content'
-import type { LandingModel } from '../../lib/publicSalon'
+import { PUBLIC_HOURS_FALLBACK } from '../lib/content'
+import type { LandingModel } from '@/lib/publicSalon'
 import { visitorTimeZone } from '@/features/bookings/lib/publicBooking'
 import { publicHoursRows, todayWeekday } from '@/features/team/lib/weeklyHours'
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { LandingModel } from '../../lib/publicSalon'
+import type { LandingModel } from '@/lib/publicSalon'
 
 type SiteHeaderProps = {
   model: LandingModel

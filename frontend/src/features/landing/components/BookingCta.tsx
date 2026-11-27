@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { PhoneInput } from '../../components/PhoneInput'
-import { toDateInputValue } from '../../lib/datetime'
+import { PhoneInput } from '@/components/PhoneInput'
+import { toDateInputValue } from '@/lib/datetime'
 import {
   EMAIL_INVALID_MESSAGE,
   isEmailErrorMessage,
   isValidEmail,
   normalizeEmail,
-} from '../../lib/email'
-import { splitPhone, validatePhone } from '../../lib/phone'
+} from '@/lib/email'
+import { splitPhone, validatePhone } from '@/lib/phone'
 import {
   BookingAttempt,
   createPublicBooking,
@@ -27,9 +27,9 @@ import {
   paymentTarget,
   type BookingPayment,
 } from '@/features/bookings/lib/deposits'
-import { whatsappUrl, type LandingModel, type LandingService } from '../../lib/publicSalon'
+import { whatsappUrl, type LandingModel, type LandingService } from '@/lib/publicSalon'
 import { weekSummary } from '@/features/team/lib/weeklyHours'
-import { PUBLIC_HOURS_FALLBACK } from '../content'
+import { PUBLIC_HOURS_FALLBACK } from '../lib/content'
 import { WaitlistForm } from './WaitlistForm'
 
 /** `2025-03-14` → `viernes, 14 de marzo de 2025` without shifting the day. */

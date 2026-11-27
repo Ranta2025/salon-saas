@@ -1,6 +1,6 @@
 import { useState, type KeyboardEvent } from 'react'
-import { PhoneInput } from '../../components/PhoneInput'
-import { isEmailErrorMessage, normalizeEmail } from '../../lib/email'
+import { PhoneInput } from '@/components/PhoneInput'
+import { isEmailErrorMessage, normalizeEmail } from '@/lib/email'
 import {
   WAITLIST_DATE_MISSING,
   WAITLIST_FORM_TITLE,

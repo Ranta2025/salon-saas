@@ -1,5 +1,5 @@
-import { formatCents } from '../../lib/money'
-import type { LandingPackage } from '../../lib/publicSalon'
+import { formatCents } from '@/lib/money'
+import type { LandingPackage } from '@/lib/publicSalon'
 
 type PackagesSectionProps = {
   packages: readonly LandingPackage[]

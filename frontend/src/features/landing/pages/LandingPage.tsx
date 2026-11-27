@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { fetchPublicSalon } from '../lib/api'
-import { isBrowserOnline, subscribeOnlineStatus } from '../lib/connectivity'
+import { fetchPublicSalon } from '@/lib/api'
+import { isBrowserOnline, subscribeOnlineStatus } from '@/lib/connectivity'
 import {
   buildLanding,
   landingFailure,
@@ -11,17 +11,17 @@ import {
   LANDING_OFFLINE_NOTICE,
   type LandingService,
   type PublicSalon,
-} from '../lib/publicSalon'
-import { BookingCta } from './components/BookingCta'
-import { DepositSection } from './components/DepositSection'
-import { GallerySection } from './components/GallerySection'
-import { Hero } from './components/Hero'
-import { LoyaltySection } from '@/features/loyalty'
-import { PackagesSection } from './components/PackagesSection'
-import { ServicesSection } from './components/ServicesSection'
-import { SiteFooter } from './components/SiteFooter'
-import { SiteHeader } from './components/SiteHeader'
-import { TeamSection } from './components/TeamSection'
+} from '@/lib/publicSalon'
+import { BookingCta } from '../components/BookingCta'
+import { DepositSection } from '../components/DepositSection'
+import { GallerySection } from '../components/GallerySection'
+import { Hero } from '../components/Hero'
+import { LoyaltySection } from '@/features/loyalty/index'
+import { PackagesSection } from '../components/PackagesSection'
+import { ServicesSection } from '../components/ServicesSection'
+import { SiteFooter } from '../components/SiteFooter'
+import { SiteHeader } from '../components/SiteHeader'
+import { TeamSection } from '../components/TeamSection'
 
 /**
  * Slug the public page shows at `/` when the URL has none: a deployment setting

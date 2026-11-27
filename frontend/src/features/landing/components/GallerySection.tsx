@@ -1,4 +1,4 @@
-import type { PublicPhoto } from '../../lib/publicSalon'
+import type { PublicPhoto } from '@/lib/publicSalon'
 import { GalleryItem } from './GalleryItem'
 
 type GallerySectionProps = {

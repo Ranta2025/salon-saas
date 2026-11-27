@@ -1,4 +1,4 @@
-import type { LandingDeposit } from '../../lib/publicSalon'
+import type { LandingDeposit } from '@/lib/publicSalon'
 
 type DepositSectionProps = {
   deposit: LandingDeposit

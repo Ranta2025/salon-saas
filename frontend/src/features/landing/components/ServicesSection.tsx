@@ -1,5 +1,5 @@
-import { formatCents } from '../../lib/money'
-import type { LandingService } from '../../lib/publicSalon'
+import { formatCents } from '@/lib/money'
+import type { LandingService } from '@/lib/publicSalon'
 import { ServiceCard } from './ServiceCard'
 
 type ServicesSectionProps = {
