@@ -3,7 +3,7 @@
 // consulta); el rango son días LOCALES del salón (D2) y el tope de filas es un
 // campo para que las pruebas lo puedan bajar (D3). El armado del archivo y las
 // frases viven en el dominio: acá solo se juntan permiso, ventana y lectura.
-package app
+package exports
 
 import (
 	"time"

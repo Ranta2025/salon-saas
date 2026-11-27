@@ -10,13 +10,13 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	"salon-saas/internal/exports"
 	"salon-saas/internal/ports"
 )
 
 // ExportHandler agrupa las tres rutas de exportación de F4.
 type ExportHandler struct {
-	Exports     app.ExportService
+	Exports     exports.ExportService
 	Memberships ports.MembershipRepository
 	// Logf registra la línea de D7. nil = log.Printf (y en los tests unitarios
 	// del router se puede capturar sin ensuciar la salida).
@@ -35,7 +35,7 @@ func (h ExportHandler) logExport(kind, salonID, userID string, rows int) {
 
 // writeCSV escribe el archivo con las cabeceras de D6. Son datos personales y
 // de dinero: no se cachean en ningún intermediario y no se adivina el tipo.
-func writeCSV(c *gin.Context, file app.ExportFile) {
+func writeCSV(c *gin.Context, file exports.ExportFile) {
 	// El nombre ya viene saneado (solo [a-z0-9-], guiones y punto): no puede
 	// inyectar una cabecera en Content-Disposition.
 	c.Header("Content-Disposition", `attachment; filename="`+file.Name+`"`)

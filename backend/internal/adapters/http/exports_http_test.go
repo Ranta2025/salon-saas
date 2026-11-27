@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/exports"
 )
 
 // Contrato HTTP de la exportación CSV (F4): las tres rutas, los permisos de D1
@@ -22,7 +22,7 @@ var exportHTTPNow = time.Date(2026, 5, 5, 3, 0, 0, 0, time.UTC)
 type exportHTTPEnv struct {
 	*posEnv
 	exports *mExports
-	svc     *app.ExportService
+	svc     *exports.ExportService
 	logs    []string
 }
 
@@ -44,7 +44,7 @@ func newExportHTTPEnv(t *testing.T) *exportHTTPEnv {
 	t.Helper()
 	base := newPOSEnv()
 	repo := newMExports()
-	svc := &app.ExportService{
+	svc := &exports.ExportService{
 		Exports: repo, Memberships: base.mems, Settings: base.settings,
 		Now: func() time.Time { return exportHTTPNow },
 	}

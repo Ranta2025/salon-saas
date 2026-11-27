@@ -1,4 +1,4 @@
-package app
+package exports
 
 import (
 	"errors"
@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // ExportService (F4): permisos owner/admin (D1), rango obligatorio y de hasta
@@ -24,7 +25,7 @@ type exportEnv struct {
 
 func newExportEnv(t *testing.T) *exportEnv {
 	t.Helper()
-	mems := &fakeMemberships{byKey: map[string]domain.Membership{}}
+	mems := &testutil.FakeMemberships{ByKey: map[string]domain.Membership{}}
 	for _, m := range []domain.Membership{
 		{UserID: "u-owner", SalonID: "s1", Role: domain.RoleOwner},
 		{UserID: "u-admin", SalonID: "s1", Role: domain.RoleAdmin},
@@ -37,7 +38,7 @@ func newExportEnv(t *testing.T) *exportEnv {
 			t.Fatalf("seed membresía: %v", err)
 		}
 	}
-	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{
+	settings := &testutil.FakeSettings{BySalon: map[string]domain.SalonSettings{
 		"s1": {SalonID: "s1", Timezone: "America/Mexico_City", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30},
 		"s2": {SalonID: "s2", Timezone: "America/New_York", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30},
 	}}

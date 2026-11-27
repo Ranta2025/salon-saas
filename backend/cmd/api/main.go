@@ -26,6 +26,7 @@ import (
 	"salon-saas/internal/app"
 	"salon-saas/internal/audit"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/exports"
 	"salon-saas/internal/loyalty"
 	loyaltystore "salon-saas/internal/loyalty/postgres"
 	"salon-saas/internal/ports"
@@ -412,7 +413,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// administración (la autorización vive en el caso de uso). Las lecturas son
 	// métodos nuevos con LIMIT (una sola sentencia por archivo) y el tope de
 	// filas queda en el valor del contrato.
-	exportSvc := app.ExportService{
+	exportSvc := exports.ExportService{
 		Exports: exportRepo, Memberships: mems, Settings: salons,
 	}
 	availabilitySvc := app.AvailabilityService{
