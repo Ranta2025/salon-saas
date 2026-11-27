@@ -10,6 +10,7 @@ import (
 	httpapi "salon-saas/internal/adapters/http"
 	"salon-saas/internal/clients"
 	"salon-saas/internal/domain"
+	poshttpapi "salon-saas/internal/pos/httpapi"
 	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
@@ -155,7 +156,7 @@ func newHistoryEnv() (*httpkit.Env, *fakeHistoryRepo, *fakeHTTPLinks) {
 	saleSvc := env.Deps.Sales.Sales
 	saleSvc.Clients = env.Clients
 	saleSvc.ClientLinks = links
-	env.Deps.Sales = httpapi.SaleHandler{Sales: saleSvc, Memberships: env.Mems}
+	env.Deps.Sales = poshttpapi.SaleHandler{Sales: saleSvc, Memberships: env.Mems}
 
 	env.Router = gin.New()
 	httpapi.RegisterRoutes(env.Router, env.Deps)

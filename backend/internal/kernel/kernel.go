@@ -215,3 +215,27 @@ func FormatCents(cents int) string {
 	}
 	return fmt.Sprintf("%s$%d,%02d", sign, cents/100, cents%100)
 }
+
+// --- Días del calendario ---------------------------------------------------
+
+// OccupancyDayMinutes es la jornada de referencia para la ocupación del panel.
+const OccupancyDayMinutes = 12 * 60
+
+// StartOfUTCDay es la medianoche UTC del día de t (el calendario trabaja en UTC).
+func StartOfUTCDay(t time.Time) time.Time {
+	t = t.UTC()
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+// EndOfUTCDay es la medianoche UTC del día siguiente.
+func EndOfUTCDay(t time.Time) time.Time { return StartOfUTCDay(t).Add(24 * time.Hour) }
+
+// StartOfSalonDay es la medianoche local de la fecha de t en la zona del salón.
+// Si loc es nil, cae al día UTC (compatibilidad y tests sin configuración).
+func StartOfSalonDay(t time.Time, loc *time.Location) time.Time {
+	if loc == nil {
+		return StartOfUTCDay(t)
+	}
+	local := t.In(loc)
+	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+}

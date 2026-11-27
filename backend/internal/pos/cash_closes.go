@@ -1,7 +1,7 @@
 // CashCloseService: cierre de caja. Quien cierra compara lo que el sistema
 // espera (efectivo de las ventas del turno) con lo que contó a mano; la
 // diferencia es el número que se investiga. Solo owner/admin cierran caja.
-package app
+package pos
 
 import (
 	"errors"
@@ -29,7 +29,7 @@ type CashCloseService struct {
 	// Events y Notifier son opcionales (nil = no avisa): el cierre queda
 	// igual en la DB; el realtime es una comodidad, no un requisito.
 	Events   ports.EventPublisher
-	Notifier Notifier
+	Notifier kernel.Notifier
 }
 
 // cashWindow es lo único que el cierre necesita de la caja: el último cierre,
@@ -83,7 +83,7 @@ func (s CashCloseService) CloseCash(actor domain.Membership, salonID string, cou
 	})
 	kernel.Notify(s.Notifier, salonID, "", "Cierre de caja",
 		fmt.Sprintf("Esperado %s · contado %s · diferencia %s",
-			FormatCents(closed.SystemCashCents), FormatCents(closed.CountedCents), FormatCents(closed.DifferenceCents)),
+			kernel.FormatCents(closed.SystemCashCents), kernel.FormatCents(closed.CountedCents), kernel.FormatCents(closed.DifferenceCents)),
 		domain.KindCash)
 	return closed, nil
 }
@@ -129,7 +129,7 @@ func (s CashCloseService) openOfShift(salonID string, now time.Time) (time.Time,
 	if err != nil {
 		return time.Time{}, err
 	}
-	return startOfSalonDay(now, loc), nil
+	return kernel.StartOfSalonDay(now, loc), nil
 }
 
 // inWindow corre fn en la transacción con lock si está configurada; si no, con

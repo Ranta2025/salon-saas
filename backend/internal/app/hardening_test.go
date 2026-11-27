@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/pos"
 	"salon-saas/internal/settings"
 	"salon-saas/internal/team"
+	"salon-saas/internal/testutil"
 )
 
 // B-06: la clave se valida ANTES de hashear (8..72 bytes).
@@ -55,10 +57,10 @@ func TestAuth_login_usuario_inexistente_gasta_tiempo(t *testing.T) {
 // B-04: el precio NO lo pone el cliente, lo pone el catálogo. Y un servicio
 // inactivo no se vende (ya no está en la carta).
 func TestSaleService_precio_del_catalogo_y_servicio_activo(t *testing.T) {
-	sales := &fakeSales{}
-	services := &fakeServices{}
+	sales := &testutil.FakeSales{}
+	services := &testutil.FakeServices{}
 	mems := &fakeMemberships{}
-	svc := SaleService{Sales: sales, Services: services, Memberships: mems}
+	svc := pos.SaleService{Sales: sales, Services: services, Memberships: mems}
 	catalogo(t, services, "s1")
 	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
 	miembro(mems, "prof1", "s1", domain.RoleProfessional)
@@ -103,10 +105,10 @@ func TestSaleService_precio_del_catalogo_y_servicio_activo(t *testing.T) {
 
 // B-12: el professional_id tiene que ser alguien que atiende EN ESE salón.
 func TestSaleService_profesional_debe_ser_del_salon(t *testing.T) {
-	sales := &fakeSales{}
-	services := &fakeServices{}
+	sales := &testutil.FakeSales{}
+	services := &testutil.FakeServices{}
 	mems := &fakeMemberships{}
-	svc := SaleService{Sales: sales, Services: services, Memberships: mems}
+	svc := pos.SaleService{Sales: sales, Services: services, Memberships: mems}
 	catalogo(t, services, "s1")
 	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
 	corte := svcIDByName(t, services, "s1", "Corte")
@@ -160,16 +162,16 @@ func TestBookingService_profesional_debe_ser_del_salon(t *testing.T) {
 // B-09: el cierre corre en la transacción con lock del salón; sin Tx no hay
 // cierre (producción siempre lo configura, los fakes de test pueden no hacerlo).
 func TestCashCloseService_usa_la_transaccion_con_lock(t *testing.T) {
-	sales := &fakeSales{}
+	sales := &testutil.FakeSales{}
 	mems := &fakeMemberships{}
-	closes := &fakeCashCloses{}
+	closes := &testutil.FakeCashCloses{}
 	tx := &fakeSalonTx{closes: closes, sales: sales}
-	svc := CashCloseService{CashCloses: closes, Sales: sales, Memberships: mems, Tx: tx}
+	svc := pos.CashCloseService{CashCloses: closes, Sales: sales, Memberships: mems, Tx: tx}
 	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
 	prof := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
 	_ = prof
 
-	sales.all = append(sales.all, domain.Sale{
+	sales.All = append(sales.All, domain.Sale{
 		ID: "v1", SalonID: "s1", TotalCents: 300000, Method: domain.MethodCash,
 		CreatedAt: time.Now().UTC(),
 	})
@@ -183,8 +185,8 @@ func TestCashCloseService_usa_la_transaccion_con_lock(t *testing.T) {
 	if c.SystemCashCents != 300000 {
 		t.Fatalf("expected cash = 300000, dio %d", c.SystemCashCents)
 	}
-	if len(closes.all) != 1 {
-		t.Fatalf("debe quedar un cierre, hay %d", len(closes.all))
+	if len(closes.All) != 1 {
+		t.Fatalf("debe quedar un cierre, hay %d", len(closes.All))
 	}
 }
 
@@ -246,7 +248,7 @@ func TestStaffService(t *testing.T) {
 
 func TestPublicSalonService(t *testing.T) {
 	salons := &fakeSalons{}
-	services := &fakeServices{}
+	services := &testutil.FakeServices{}
 	svc := settings.PublicSalonService{Salons: salons, Services: services}
 	_ = salons.Save(domain.Salon{ID: "s1", Slug: "navajas", Name: "Navajas de Oro"})
 	activo, _ := domain.NewService("s1", "Corte", 45, 150000, 20)

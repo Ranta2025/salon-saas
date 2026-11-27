@@ -29,7 +29,7 @@ func bookingFixture(t *testing.T) (*BookingService, *fb, *fakeMemberships, *fake
 	if err != nil {
 		t.Fatalf("reserva base: %v", err)
 	}
-	events.all = nil // el alta ya publicó; acá empieza a contarse el PATCH
+	events.All = nil // el alta ya publicó; acá empieza a contarse el PATCH
 	notifier.calls = 0
 	return &svc, bookings, mems, events, notifier, b
 }
@@ -59,7 +59,7 @@ func TestBookingUpdate_cancelar(t *testing.T) {
 	}
 	// El hueco queda libre: la DB también lo ve (status cancelled).
 	var stored domain.Booking
-	for _, x := range bookings.all {
+	for _, x := range bookings.All {
 		if x.ID == b.ID {
 			stored = x
 		}
@@ -178,6 +178,6 @@ func TestBookingUpdate_estado_y_horario_juntos(t *testing.T) {
 		t.Fatalf("patch combinado: %+v", got)
 	}
 	if ev, n := events.typed("booking.updated"); n != 1 || ev.Data.(map[string]any)["status"] != "done" {
-		t.Fatalf("evento: %+v", events.all)
+		t.Fatalf("evento: %+v", events.All)
 	}
 }

@@ -133,7 +133,7 @@ func TestBookWithDeposit_reintentoMismoPayment(t *testing.T) {
 	if creator.charges != 1 {
 		t.Fatalf("un solo cargo: %d", creator.charges)
 	}
-	if got := len(env.bookings.all); got != 1 {
+	if got := len(env.bookings.All); got != 1 {
 		t.Fatalf("un solo turno: %d", got)
 	}
 }
@@ -182,10 +182,10 @@ func TestBookWithDeposit_fallaElCargoCancelaLaReserva(t *testing.T) {
 	if _, payment, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-caida")); err == nil {
 		t.Fatalf("el error del cargo tiene que volver (payment %+v)", payment)
 	}
-	if len(env.bookings.all) != 1 {
-		t.Fatalf("el turno: %+v", env.bookings.all)
+	if len(env.bookings.All) != 1 {
+		t.Fatalf("el turno: %+v", env.bookings.All)
 	}
-	if status := env.bookings.all[0].Status; status != domain.BookingCancelled {
+	if status := env.bookings.All[0].Status; status != domain.BookingCancelled {
 		t.Fatalf("el turno sin cargo se cancela por el camino existente: %q", status)
 	}
 	if n := mailer.count(); n != 0 {
@@ -200,12 +200,12 @@ func TestBookWithDeposit_fallaElCargoCancelaLaReserva(t *testing.T) {
 type atomicCancelBookings struct{ *fb }
 
 func (r *atomicCancelBookings) CancelBookingReleasingClientOp(salonID, bookingID string) error {
-	for i := range r.fb.all {
-		b := r.fb.all[i]
+	for i := range r.fb.All {
+		b := r.fb.All[i]
 		if b.SalonID == salonID && b.ID == bookingID && b.Status == domain.BookingBooked {
 			b.Status = domain.BookingCancelled
 			b.ClientOpID = ""
-			r.fb.all[i] = b
+			r.fb.All[i] = b
 		}
 	}
 	return nil
@@ -223,7 +223,7 @@ func TestBookWithDeposit_reintentoTrasFallaDelCargoEsUnaReservaNueva(t *testing.
 	if _, _, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-retry")); err == nil {
 		t.Fatal("el primer intento debía fallar por el cargo")
 	}
-	first := env.bookings.all[0]
+	first := env.bookings.All[0]
 	if first.Status != domain.BookingCancelled || first.ClientOpID != "" {
 		t.Fatalf("el turno sin cargo se cancela y suelta su clave: %+v", first)
 	}
@@ -269,7 +269,7 @@ func TestBookWithDeposit_reintentoSanaUnaReservaSinSena(t *testing.T) {
 	if _, _, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-sana")); err == nil {
 		t.Fatal("el primer intento debía fallar por el cargo")
 	}
-	first := env.bookings.all[0]
+	first := env.bookings.All[0]
 	if first.Status != domain.BookingBooked {
 		t.Fatalf("precondición: la compensación falló y el turno sigue agendado: %q", first.Status)
 	}
@@ -300,9 +300,9 @@ func TestBookWithDeposit_reintentoDeUnTurnoCanceladoNoDevuelveSena(t *testing.T)
 	if err != nil || payment == nil {
 		t.Fatalf("precondición: reserva con seña: %v %v", payment, err)
 	}
-	for i := range env.bookings.all {
-		if env.bookings.all[i].ID == first.ID {
-			env.bookings.all[i].Status = domain.BookingCancelled
+	for i := range env.bookings.All {
+		if env.bookings.All[i].ID == first.ID {
+			env.bookings.All[i].Status = domain.BookingCancelled
 		}
 	}
 	again, payment2, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-cancelado"))

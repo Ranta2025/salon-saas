@@ -72,7 +72,7 @@ func (e *linkEnv) withMailer() *fakeMailer {
 	e.svc.Mailer = mailer
 	e.svc.Emails = emails
 	e.svc.Links = e.links
-	e.events.all = nil
+	e.events.All = nil
 	e.notifier.calls = 0
 	e.notifier.bodies = nil
 	return mailer
@@ -394,7 +394,7 @@ func TestBookingLink_cancel(t *testing.T) {
 	mailer := env.withMailer()
 	_, at := linkDay()
 	b, token := env.bookWithEmail(t, at(30), "prof1")
-	env.events.all = nil
+	env.events.All = nil
 	notices := &fakeLinkNotifier{}
 	env.svc.Notifier = notices
 
@@ -478,7 +478,7 @@ func TestBookingLink_reschedule(t *testing.T) {
 	mailer := env.withMailer()
 	date, at := linkDay()
 	b, token := env.bookWithEmail(t, at(0), "prof1")
-	env.events.all = nil
+	env.events.All = nil
 	notices := &fakeLinkNotifier{}
 	env.svc.Notifier = notices
 

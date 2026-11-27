@@ -13,6 +13,8 @@ import (
 	"salon-saas/internal/notifications"
 	notificationshttpapi "salon-saas/internal/notifications/httpapi"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/pos"
+	poshttpapi "salon-saas/internal/pos/httpapi"
 	"salon-saas/internal/schedules"
 	scheduleshttpapi "salon-saas/internal/schedules/httpapi"
 	"salon-saas/internal/settings"
@@ -215,9 +217,9 @@ func NewPOSEnv() *Env {
 	notifSvc := notifications.NotificationService{Notifications: env.Notifications, Salons: env.Mems, Events: env.Events}
 	bookSvc := app.BookingService{Bookings: env.Bookings, Memberships: env.Mems, Events: env.Events, Notifier: notifSvc}
 	svcSvc := staffing.ServiceService{Services: env.Services, Memberships: env.Mems, Professionals: env.Professionals, Resources: env.Resources}
-	saleSvc := app.SaleService{Sales: env.Sales, Services: env.Services, Memberships: env.Mems, Events: env.Events}
-	cashSvc := app.CashCloseService{CashCloses: env.Closes, Sales: env.Sales, Memberships: env.Mems, Tx: &CashTx{Closes: env.Closes, Sales: env.Sales}, Events: env.Events, Notifier: notifSvc}
-	dashSvc := app.DashboardService{Sales: env.Sales, Agenda: env.Bookings, Staff: env.Mems, Memberships: env.Mems}
+	saleSvc := pos.SaleService{Sales: env.Sales, Services: env.Services, Memberships: env.Mems, Events: env.Events}
+	cashSvc := pos.CashCloseService{CashCloses: env.Closes, Sales: env.Sales, Memberships: env.Mems, Tx: &CashTx{Closes: env.Closes, Sales: env.Sales}, Events: env.Events, Notifier: notifSvc}
+	dashSvc := pos.DashboardService{Sales: env.Sales, Agenda: env.Bookings, Staff: env.Mems, Memberships: env.Mems}
 	clientSvc := clients.ClientService{Clients: env.Clients, Memberships: env.Mems, Photos: env.Storage, Images: Images{}}
 	meSvc := app.MeService{Users: env.Users, Salons: env.Salons, Members: env.Mems}
 	staffSvc := team.StaffService{Staff: env.Mems, Memberships: env.Mems}
@@ -275,9 +277,9 @@ func NewPOSEnv() *Env {
 		Tenants:       teamhttpapi.TenantsHandler{Tenants: tenSvc, Memberships: env.Mems},
 		Bookings:      httpapi.BookingHandler{Bookings: bookSvc, Memberships: env.Mems},
 		Services:      staffinghttpapi.ServiceHandler{Services: svcSvc, Memberships: env.Mems},
-		Sales:         httpapi.SaleHandler{Sales: saleSvc, Memberships: env.Mems},
-		CashCloses:    httpapi.CashCloseHandler{CashCloses: cashSvc, Memberships: env.Mems},
-		Dashboard:     httpapi.DashboardHandler{Dashboard: dashSvc, Memberships: env.Mems},
+		Sales:         poshttpapi.SaleHandler{Sales: saleSvc, Memberships: env.Mems},
+		CashCloses:    poshttpapi.CashCloseHandler{CashCloses: cashSvc, Memberships: env.Mems},
+		Dashboard:     poshttpapi.DashboardHandler{Dashboard: dashSvc, Memberships: env.Mems},
 		Notifications: notificationshttpapi.NotificationHandler{Notifications: notifSvc, Memberships: env.Mems},
 		Clients:       clientshttpapi.ClientHandler{Clients: clientSvc, Memberships: env.Mems, Photos: env.Signer},
 		Me:            httpapi.MeHandler{Me: meSvc},

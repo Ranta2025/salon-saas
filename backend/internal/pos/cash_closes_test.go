@@ -1,4 +1,4 @@
-package app
+package pos
 
 import (
 	"errors"
@@ -6,23 +6,24 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 func TestCashCloseService_cierra_con_ventana_del_dia(t *testing.T) {
 	sales := &fakeSales{}
-	closes := &fakeCashCloses{}
-	mems := &fakeMemberships{}
+	closes := &testutil.FakeCashCloses{}
+	mems := &testutil.FakeMemberships{}
 	// Zona explícita UTC: la ventana sin cierre previo es la medianoche local,
 	// que en UTC es la medianoche UTC. (Con la default del salón, CDMX, la
 	// ventana arranca a medianoche de CDMX; ver cash_closes_timezone_test.go.)
-	settings := &fakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
+	settings := &testutil.FakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
 		SalonID: "s1", Timezone: "UTC", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}}}
 	svc := CashCloseService{CashCloses: closes, Sales: sales, Memberships: mems, Settings: settings}
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
 
 	now := time.Now().UTC()
-	sales.all = append(sales.all,
+	sales.All = append(sales.All,
 		// Efectivo de hoy: es el que espera el cajón.
 		domain.Sale{ID: "v-cash", SalonID: "s1", TotalCents: 250000, Method: domain.MethodCash, CreatedAt: now},
 		// Tarjeta de hoy: no está en el cajón.
@@ -54,25 +55,25 @@ func TestCashCloseService_cierra_con_ventana_del_dia(t *testing.T) {
 	if !c.ClosedAt.After(c.OpenedAt) && !c.ClosedAt.Equal(c.OpenedAt) {
 		t.Fatalf("cierre no puede ser antes de la apertura: %v", c.ClosedAt)
 	}
-	if len(closes.all) != 1 {
-		t.Fatalf("debe persistir el cierre, hay %d", len(closes.all))
+	if len(closes.All) != 1 {
+		t.Fatalf("debe persistir el cierre, hay %d", len(closes.All))
 	}
 }
 
 func TestCashCloseService_segundo_cierre_arranca_del_anterior(t *testing.T) {
 	sales := &fakeSales{}
-	closes := &fakeCashCloses{}
-	mems := &fakeMemberships{}
+	closes := &testutil.FakeCashCloses{}
+	mems := &testutil.FakeMemberships{}
 	svc := CashCloseService{CashCloses: closes, Sales: sales, Memberships: mems}
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
 
 	now := time.Now().UTC()
 	anterior := now.Add(-2 * time.Hour)
-	closes.all = append(closes.all, domain.CashClose{
+	closes.All = append(closes.All, domain.CashClose{
 		ID: "c0", SalonID: "s1", OpenedAt: anterior.Add(-8 * time.Hour), ClosedAt: anterior,
 		SystemCashCents: 100000, CountedCents: 100000, DifferenceCents: 0,
 	})
-	sales.all = append(sales.all,
+	sales.All = append(sales.All,
 		// Antes de la apertura del turno actual: ya contabilizado en c0.
 		domain.Sale{ID: "v-previo", SalonID: "s1", TotalCents: 100000, Method: domain.MethodCash, CreatedAt: anterior.Add(-time.Hour)},
 		// Turno actual.
@@ -96,15 +97,15 @@ func TestCashCloseService_segundo_cierre_arranca_del_anterior(t *testing.T) {
 
 func TestCashCloseService_permisos_y_validacion(t *testing.T) {
 	sales := &fakeSales{}
-	closes := &fakeCashCloses{}
-	mems := &fakeMemberships{}
+	closes := &testutil.FakeCashCloses{}
+	mems := &testutil.FakeMemberships{}
 	svc := CashCloseService{CashCloses: closes, Sales: sales, Memberships: mems}
 
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
-	admin := miembro(mems, "u-admin", "s1", domain.RoleAdmin)
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	profe := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
-	ajeno := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	admin := testutil.Miembro(mems, "u-admin", "s1", domain.RoleAdmin)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
+	profe := testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	ajeno := testutil.Miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
 
 	for _, actor := range []domain.Membership{recep, profe, ajeno} {
 		if _, err := svc.CloseCash(actor, "s1", 1000, ""); !errors.Is(err, domain.ErrForbidden) {

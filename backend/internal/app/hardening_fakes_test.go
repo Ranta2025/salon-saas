@@ -5,6 +5,7 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil"
 )
 
 // countingHasher cuenta los compares reales y los falsos (B-05: sin usuario en
@@ -22,8 +23,8 @@ func (h *countingHasher) DummyCompare(string) bool {
 // fakeSalonTx simula la transacción con lock por salón: delega en los mismos
 // fakes que el camino sin transacción y anota el lock tomado.
 type fakeSalonTx struct {
-	closes      *fakeCashCloses
-	sales       *fakeSales
+	closes      *testutil.FakeCashCloses
+	sales       *testutil.FakeSales
 	locks       int
 	lastSalonID string
 }

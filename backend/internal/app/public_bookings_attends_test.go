@@ -24,8 +24,8 @@ func TestPublicBooking_no_asigna_quien_no_atiende(t *testing.T) {
 	if _, err := env.book.Book("navajas-oro", in); !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("sin gente que atienda: %v", err)
 	}
-	if len(env.bookings.all) != 0 {
-		t.Fatalf("no debe quedar ningún turno: %+v", env.bookings.all)
+	if len(env.bookings.All) != 0 {
+		t.Fatalf("no debe quedar ningún turno: %+v", env.bookings.All)
 	}
 	// Elegido a mano: 404 (no existe como profesional del salón).
 	for _, id := range []string{"duenio", "admin", "recepcion"} {

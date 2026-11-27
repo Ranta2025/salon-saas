@@ -128,8 +128,8 @@ func TestAvailability_diaCerradoDelSalon(t *testing.T) {
 	if !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("reserva en un día cerrado: %v", err)
 	}
-	if len(env.bookings.all) != 0 {
-		t.Fatalf("no se puede guardar nada: %+v", env.bookings.all)
+	if len(env.bookings.All) != 0 {
+		t.Fatalf("no se puede guardar nada: %+v", env.bookings.All)
 	}
 }
 

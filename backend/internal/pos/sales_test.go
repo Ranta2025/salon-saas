@@ -1,4 +1,4 @@
-package app
+package pos
 
 import (
 	"errors"
@@ -6,10 +6,11 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // Catalogo mínimo para validar ítems contra el catálogo del salón.
-func catalogo(t *testing.T, services *fakeServices, salonID string) {
+func catalogo(t *testing.T, services *testutil.FakeServices, salonID string) {
 	t.Helper()
 	for _, s := range []struct {
 		name  string
@@ -25,7 +26,7 @@ func catalogo(t *testing.T, services *fakeServices, salonID string) {
 	}
 }
 
-func svcIDByName(t *testing.T, services *fakeServices, salonID, name string) string {
+func svcIDByName(t *testing.T, services *testutil.FakeServices, salonID, name string) string {
 	t.Helper()
 	list, err := services.List(salonID, true)
 	if err != nil {
@@ -42,12 +43,12 @@ func svcIDByName(t *testing.T, services *fakeServices, salonID, name string) str
 
 func TestSaleService_register_total_en_servidor(t *testing.T) {
 	sales := &fakeSales{}
-	services := &fakeServices{}
-	mems := &fakeMemberships{}
+	services := &testutil.FakeServices{}
+	mems := &testutil.FakeMemberships{}
 	svc := SaleService{Sales: sales, Services: services, Memberships: mems}
 	catalogo(t, services, "s1")
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	miembro(mems, "prof1", "s1", domain.RoleProfessional)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
+	testutil.Miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	corte := svcIDByName(t, services, "s1", "Corte")
 	brushing := svcIDByName(t, services, "s1", "Brushing")
 
@@ -62,8 +63,8 @@ func TestSaleService_register_total_en_servidor(t *testing.T) {
 	if sale.TotalCents != 380000 {
 		t.Fatalf("total servidor = 380000, dio %d", sale.TotalCents)
 	}
-	if len(sales.all) != 1 || sales.all[0].ID != sale.ID {
-		t.Fatalf("no persistió: %+v", sales.all)
+	if len(sales.All) != 1 || sales.All[0].ID != sale.ID {
+		t.Fatalf("no persistió: %+v", sales.All)
 	}
 	if len(sale.Items) != 2 {
 		t.Fatalf("ítems: %+v", sale.Items)
@@ -72,30 +73,30 @@ func TestSaleService_register_total_en_servidor(t *testing.T) {
 
 func TestSaleService_permisos(t *testing.T) {
 	sales := &fakeSales{}
-	services := &fakeServices{}
-	mems := &fakeMemberships{}
+	services := &testutil.FakeServices{}
+	mems := &testutil.FakeMemberships{}
 	svc := SaleService{Sales: sales, Services: services, Memberships: mems}
 	catalogo(t, services, "s1")
-	miembro(mems, "prof1", "s1", domain.RoleProfessional)
+	testutil.Miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	corte := svcIDByName(t, services, "s1", "Corte")
 	items := []domain.SaleItem{{ServiceID: corte, Qty: 1, UnitPriceCents: 150000}}
 
 	// owner, admin y recepción venden.
 	for _, role := range []domain.Role{domain.RoleOwner, domain.RoleAdmin, domain.RoleReception} {
-		actor := miembro(mems, "u-"+string(role), "s1", role)
+		actor := testutil.Miembro(mems, "u-"+string(role), "s1", role)
 		if _, err := svc.RegisterSale(actor, "s1", "prof1", "Lía", items, domain.MethodCard); err != nil {
 			t.Fatalf("%s debe poder vender: %v", role, err)
 		}
 	}
 	// Profesional y cliente no venden (el POS es de recepción).
 	for _, role := range []domain.Role{domain.RoleProfessional, domain.RoleClient} {
-		actor := miembro(mems, "u-"+string(role), "s1", role)
+		actor := testutil.Miembro(mems, "u-"+string(role), "s1", role)
 		if _, err := svc.RegisterSale(actor, "s1", "prof1", "Lía", items, domain.MethodCard); !errors.Is(err, domain.ErrForbidden) {
 			t.Fatalf("%s no debe vender, dio %v", role, err)
 		}
 	}
 	// Miembro de otro salón: 403 en ambos sentidos.
-	ajeno := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
+	ajeno := testutil.Miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
 	if _, err := svc.RegisterSale(ajeno, "s1", "prof1", "Lía", items, domain.MethodCard); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("cross-salón debe dar Forbidden, dio %v", err)
 	}
@@ -103,12 +104,12 @@ func TestSaleService_permisos(t *testing.T) {
 
 func TestSaleService_rechaza_ventas_invalidas(t *testing.T) {
 	sales := &fakeSales{}
-	services := &fakeServices{}
-	mems := &fakeMemberships{}
+	services := &testutil.FakeServices{}
+	mems := &testutil.FakeMemberships{}
 	svc := SaleService{Sales: sales, Services: services, Memberships: mems}
 	catalogo(t, services, "s1")
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	miembro(mems, "prof1", "s1", domain.RoleProfessional)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
+	testutil.Miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	corte := svcIDByName(t, services, "s1", "Corte")
 
 	// Sin ítems: no hay venta que registrar (no hay venta en $0 fantasma).
@@ -135,21 +136,21 @@ func TestSaleService_rechaza_ventas_invalidas(t *testing.T) {
 	if _, err := svc.RegisterSale(recep, "s1", "prof1", "Lía", []domain.SaleItem{{ServiceID: corte, Qty: 1, UnitPriceCents: 1}}, domain.PaymentMethod("bitcoin")); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("método inválido debe dar Validation, dio %v", err)
 	}
-	if len(sales.all) != 0 {
-		t.Fatalf("ninguna venta inválida debe persistirse, hay %d", len(sales.all))
+	if len(sales.All) != 0 {
+		t.Fatalf("ninguna venta inválida debe persistirse, hay %d", len(sales.All))
 	}
 }
 
 func TestSaleService_list_solo_del_salon(t *testing.T) {
 	sales := &fakeSales{}
-	services := &fakeServices{}
-	mems := &fakeMemberships{}
+	services := &testutil.FakeServices{}
+	mems := &testutil.FakeMemberships{}
 	svc := SaleService{Sales: sales, Services: services, Memberships: mems}
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	profe := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
+	profe := testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
 
 	now := time.Now().UTC()
-	sales.all = append(sales.all,
+	sales.All = append(sales.All,
 		domain.Sale{ID: "v1", SalonID: "s1", TotalCents: 100, Method: domain.MethodCash, CreatedAt: now},
 		domain.Sale{ID: "v2", SalonID: "s2", TotalCents: 999, Method: domain.MethodCash, CreatedAt: now},
 	)
@@ -169,7 +170,7 @@ func TestSaleService_list_solo_del_salon(t *testing.T) {
 		t.Fatalf("fuera de ventana no debe traer nada, dio %d", len(got))
 	}
 	// No-miembro: 403.
-	ajeno := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
+	ajeno := testutil.Miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
 	if _, err := svc.ListSales(ajeno, "s1", now.Add(-time.Hour), now); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("cross-salón debe dar Forbidden, dio %v", err)
 	}
@@ -178,10 +179,10 @@ func TestSaleService_list_solo_del_salon(t *testing.T) {
 // TestPlata_solo_manage_y_recepcion: la regla de dinero vive en una función
 // (puedeVerPlata) y aplica igual a ventas, cierres y panel.
 func TestPlata_solo_manage_y_recepcion(t *testing.T) {
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	sales := &fakeSales{}
-	services := &fakeServices{}
-	closes := &fakeCashCloses{}
+	services := &testutil.FakeServices{}
+	closes := &testutil.FakeCashCloses{}
 	agenda := &fakeAgenda{}
 	staff := fakeStaff{count: 2}
 
@@ -192,10 +193,10 @@ func TestPlata_solo_manage_y_recepcion(t *testing.T) {
 	now := time.Now().UTC()
 	from, to := now.Add(-time.Hour), now.Add(time.Hour)
 
-	profe := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
-	cliente := miembro(mems, "u-cli", "s1", domain.RoleClient)
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	dueña := miembro(mems, "u-due", "s1", domain.RoleOwner)
+	profe := testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	cliente := testutil.Miembro(mems, "u-cli", "s1", domain.RoleClient)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
+	dueña := testutil.Miembro(mems, "u-due", "s1", domain.RoleOwner)
 
 	for _, m := range []domain.Membership{profe, cliente} {
 		if _, err := saleSvc.ListSales(m, "s1", from, to); !errors.Is(err, domain.ErrForbidden) {
@@ -226,14 +227,14 @@ func TestPlata_solo_manage_y_recepcion(t *testing.T) {
 // original, no cobrar dos veces.
 func TestSale_idempotente_por_client_op(t *testing.T) {
 	sales := &fakeSales{}
-	services := &fakeServices{}
-	mems := &fakeMemberships{}
+	services := &testutil.FakeServices{}
+	mems := &testutil.FakeMemberships{}
 	svc := SaleService{Sales: sales, Services: services, Memberships: mems}
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	miembro(mems, "u-prof1", "s1", domain.RoleProfessional)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
+	testutil.Miembro(mems, "u-prof1", "s1", domain.RoleProfessional)
 
 	svc1 := domain.Service{ID: "sv1", SalonID: "s1", Name: "Corte", DurationMin: 45, PriceCents: 3000, CommissionPct: 20, Active: true}
-	services.all = append(services.all, svc1)
+	services.All = append(services.All, svc1)
 	items := []domain.SaleItem{{ServiceID: "sv1", Qty: 1, UnitPriceCents: 3000}}
 
 	first, err := svc.RegisterSaleWithOp(recep, "s1", "u-prof1", "Lía", items, domain.MethodCash, "op-123")
@@ -247,15 +248,15 @@ func TestSale_idempotente_por_client_op(t *testing.T) {
 	if first.ID != second.ID {
 		t.Fatalf("el reintento debe devolver la misma venta: %q vs %q", first.ID, second.ID)
 	}
-	if len(sales.all) != 1 {
-		t.Fatalf("debe guardarse una sola vez, se guardó %d", len(sales.all))
+	if len(sales.All) != 1 {
+		t.Fatalf("debe guardarse una sola vez, se guardó %d", len(sales.All))
 	}
 	// Otra operación distinta sí crea otra venta.
 	if _, err := svc.RegisterSaleWithOp(recep, "s1", "u-prof1", "Lía", items, domain.MethodCash, "op-456"); err != nil {
 		t.Fatalf("op distinta: %v", err)
 	}
-	if len(sales.all) != 2 {
-		t.Fatalf("esperaba 2 ventas, hay %d", len(sales.all))
+	if len(sales.All) != 2 {
+		t.Fatalf("esperaba 2 ventas, hay %d", len(sales.All))
 	}
 }
 
@@ -265,11 +266,11 @@ func TestSale_idempotente_por_client_op(t *testing.T) {
 // original con su foto original.
 func TestSaleService_foto_de_comision_por_item(t *testing.T) {
 	sales := &fakeSales{}
-	services := &fakeServices{}
-	mems := &fakeMemberships{}
+	services := &testutil.FakeServices{}
+	mems := &testutil.FakeMemberships{}
 	svc := SaleService{Sales: sales, Services: services, Memberships: mems}
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	miembro(mems, "prof1", "s1", domain.RoleProfessional)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
+	testutil.Miembro(mems, "prof1", "s1", domain.RoleProfessional)
 
 	corte, err := domain.NewService("s1", "Corte", 45, 150000, 30)
 	if err != nil {
@@ -303,9 +304,9 @@ func TestSaleService_foto_de_comision_por_item(t *testing.T) {
 	if sale.Items[1].CommissionPct == nil || *sale.Items[1].CommissionPct != 0 {
 		t.Fatalf("comisión 0 debe ser foto 0, no NULL: %v", sale.Items[1].CommissionPct)
 	}
-	if len(sales.all) != 1 || len(sales.all[0].Items) != 2 ||
-		sales.all[0].Items[0].CommissionPct == nil || *sales.all[0].Items[0].CommissionPct != 30 {
-		t.Fatalf("la foto debe persistirse con la venta: %+v", sales.all)
+	if len(sales.All) != 1 || len(sales.All[0].Items) != 2 ||
+		sales.All[0].Items[0].CommissionPct == nil || *sales.All[0].Items[0].CommissionPct != 30 {
+		t.Fatalf("la foto debe persistirse con la venta: %+v", sales.All)
 	}
 
 	// El dueño edita el catálogo: las ventas ya creadas no se mueven.
@@ -316,8 +317,8 @@ func TestSaleService_foto_de_comision_por_item(t *testing.T) {
 	if err := services.Save(up); err != nil {
 		t.Fatalf("guardar catálogo: %v", err)
 	}
-	if sales.all[0].Items[0].CommissionPct == nil || *sales.all[0].Items[0].CommissionPct != 30 {
-		t.Fatalf("editar el catálogo no debe tocar la venta vieja: %v", sales.all[0].Items[0].CommissionPct)
+	if sales.All[0].Items[0].CommissionPct == nil || *sales.All[0].Items[0].CommissionPct != 30 {
+		t.Fatalf("editar el catálogo no debe tocar la venta vieja: %v", sales.All[0].Items[0].CommissionPct)
 	}
 	nueva, err := svc.RegisterSale(recep, "s1", "prof1", "Ana", []domain.SaleItem{
 		{ServiceID: corte.ID, Qty: 1, UnitPriceCents: 150000},

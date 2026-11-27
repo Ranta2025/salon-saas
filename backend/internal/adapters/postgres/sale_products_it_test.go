@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/pos"
 	"salon-saas/internal/testutil/itdb"
 )
 
@@ -367,7 +367,7 @@ func TestSaleWithProducts_concurrency_IT(t *testing.T) {
 	mems := Memberships{Pool: pool}
 	owner, _ := mems.Find("u-it-prod-owner", "s-it-prod")
 	idem := seedProducts(t, products, "s-it-prod", productSpec{"Idempotente App", 1000, 5, 0})[0]
-	svc := app.SaleService{
+	svc := pos.SaleService{
 		Sales: Sales{Pool: pool}, Services: Services{Pool: pool}, Memberships: mems,
 		Products: products, ProductSales: sales,
 	}

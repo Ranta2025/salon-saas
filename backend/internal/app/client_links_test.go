@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/pos"
 	"salon-saas/internal/testutil"
 )
 
@@ -100,8 +101,8 @@ func TestBooking_link_best_effort_y_replay(t *testing.T) {
 // guarda la venta; sin client_id no hay vínculo. Un fallo del UPDATE no tumba la
 // venta y el replay no toca el vínculo.
 func TestSale_client_id_y_best_effort(t *testing.T) {
-	sales := &fakeSales{}
-	services := &fakeServices{}
+	sales := &testutil.FakeSales{}
+	services := &testutil.FakeServices{}
 	service, _ := domain.NewService("s1", "Corte", 45, 1000, 10)
 	_ = services.Save(service)
 	mems := &fakeMemberships{}
@@ -111,7 +112,7 @@ func TestSale_client_id_y_best_effort(t *testing.T) {
 	c := clientFixture(t, clients, "s1", "Lía Fernández", "555")
 	ajena := clientFixture(t, clients, "s2", "Ajena", "556")
 	links := &fakeClientLinks{}
-	svc := SaleService{
+	svc := pos.SaleService{
 		Sales: sales, Services: services, Memberships: mems,
 		Clients: clients, ClientLinks: links,
 	}
@@ -138,12 +139,12 @@ func TestSale_client_id_y_best_effort(t *testing.T) {
 	}
 
 	// Ficha de otro salón: 400 del contrato y la venta NO se guarda.
-	antes := len(sales.all)
+	antes := len(sales.All)
 	_, err = svc.RegisterSaleForClient(owner, "s1", "prof1", "X", ajena.ID, items, domain.MethodCash, "")
 	if err == nil || err.Error() != domain.MsgSaleClientInvalid {
 		t.Fatalf("ficha de otro salón: %v", err)
 	}
-	if len(sales.all) != antes {
+	if len(sales.All) != antes {
 		t.Fatalf("una ficha inválida no debe guardar la venta")
 	}
 

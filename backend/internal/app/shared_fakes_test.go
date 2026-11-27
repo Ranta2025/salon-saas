@@ -13,15 +13,15 @@ import (
 // los avisos pasaron a internal/notifications (los _test.go no se importan
 // entre paquetes).
 // fakeEvents guarda lo publicado: los casos de uso no saben que hay websockets.
-type fakeEvents struct{ all []ports.Event }
+type fakeEvents struct{ All []ports.Event }
 
-func (f *fakeEvents) Publish(ev ports.Event) error { f.all = append(f.all, ev); return nil }
+func (f *fakeEvents) Publish(ev ports.Event) error { f.All = append(f.All, ev); return nil }
 
 // typed cuenta los eventos de un tipo y devuelve el último.
 func (f *fakeEvents) typed(t string) (ports.Event, int) {
 	var last ports.Event
 	n := 0
-	for _, ev := range f.all {
+	for _, ev := range f.All {
 		if ev.Type == t {
 			last, n = ev, n+1
 		}
@@ -219,7 +219,7 @@ func (f *fakeResources) bookingList() []domain.Booking {
 	if f.bookings == nil {
 		return nil
 	}
-	return f.bookings.all
+	return f.bookings.All
 }
 
 func (f *fakeResources) unitHasBookings(salonID, unitID string, futureOnly bool) bool {

@@ -9,6 +9,7 @@ import (
 	notificationshttpapi "salon-saas/internal/notifications/httpapi"
 	packageshttpapi "salon-saas/internal/packages/httpapi"
 	"salon-saas/internal/ports"
+	poshttpapi "salon-saas/internal/pos/httpapi"
 	productshttpapi "salon-saas/internal/products/httpapi"
 	scheduleshttpapi "salon-saas/internal/schedules/httpapi"
 	settingshttpapi "salon-saas/internal/settings/httpapi"
@@ -25,9 +26,9 @@ type Deps struct {
 	Tenants       teamhttpapi.TenantsHandler
 	Bookings      BookingHandler
 	Services      staffinghttpapi.ServiceHandler
-	Sales         SaleHandler
-	CashCloses    CashCloseHandler
-	Dashboard     DashboardHandler
+	Sales         poshttpapi.SaleHandler
+	CashCloses    poshttpapi.CashCloseHandler
+	Dashboard     poshttpapi.DashboardHandler
 	Notifications notificationshttpapi.NotificationHandler
 	Clients       clientshttpapi.ClientHandler
 	Me            MeHandler

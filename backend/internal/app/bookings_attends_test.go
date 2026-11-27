@@ -33,8 +33,8 @@ func TestBooking_staff_solo_agenda_para_quien_atiende(t *testing.T) {
 	if _, err := svc.CreateBooking(rec, "s1", "recep2", "Lía", "", start, end); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("recepción como profesional: %v", err)
 	}
-	if len(bookings.all) != 0 {
-		t.Fatalf("no debe quedar ningún turno: %+v", bookings.all)
+	if len(bookings.All) != 0 {
+		t.Fatalf("no debe quedar ningún turno: %+v", bookings.All)
 	}
 	// El dueño-barbero sí entra.
 	_ = mems.Save(domain.Membership{UserID: "barbero", SalonID: "s1", Role: domain.RoleOwner, Attends: true})

@@ -1,10 +1,11 @@
-package app
+package pos
 
 import (
 	"testing"
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // T6: la ventana del cierre de caja es el DÍA DEL SALÓN, no el día UTC. Un
@@ -12,16 +13,16 @@ import (
 // anterior local: la caja abrió a medianoche local, no a medianoche UTC.
 func TestCashCloseService_ventana_en_zona_del_salon(t *testing.T) {
 	sales := &fakeSales{}
-	closes := &fakeCashCloses{}
-	mems := &fakeMemberships{}
-	settings := &fakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
+	closes := &testutil.FakeCashCloses{}
+	mems := &testutil.FakeMemberships{}
+	settings := &testutil.FakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
 		SalonID: "s1", Timezone: "America/Mexico_City", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}}}
 	svc := CashCloseService{CashCloses: closes, Sales: sales, Memberships: mems, Settings: settings}
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
 
 	now := time.Now().UTC()
-	sales.all = append(sales.all, domain.Sale{ID: "v-cash", SalonID: "s1", TotalCents: 120000, Method: domain.MethodCash, CreatedAt: now})
+	sales.All = append(sales.All, domain.Sale{ID: "v-cash", SalonID: "s1", TotalCents: 120000, Method: domain.MethodCash, CreatedAt: now})
 
 	c, err := svc.CloseCash(owner, "s1", 120000, "")
 	if err != nil {
@@ -43,11 +44,11 @@ func TestCashCloseService_ventana_en_zona_del_salon(t *testing.T) {
 	// Un cierre previo manda sobre el día local (sigue contabilizando una vez).
 	// Fixture aparte para no mezclar con el cierre que acaba de guardar el
 	// primer tramo (que es el más reciente).
-	closes2 := &fakeCashCloses{}
+	closes2 := &testutil.FakeCashCloses{}
 	sales2 := &fakeSales{}
 	svc2 := CashCloseService{CashCloses: closes2, Sales: sales2, Memberships: mems, Settings: settings}
 	anterior := now.Add(-90 * time.Minute)
-	closes2.all = append(closes2.all, domain.CashClose{
+	closes2.All = append(closes2.All, domain.CashClose{
 		ID: "c0", SalonID: "s1", OpenedAt: anterior.Add(-time.Hour), ClosedAt: anterior,
 		SystemCashCents: 50000, CountedCents: 50000,
 	})
@@ -62,7 +63,7 @@ func TestCashCloseService_ventana_en_zona_del_salon(t *testing.T) {
 	// Settings ilegibles que no son "no hay fila": el cierre no inventa una
 	// ventana, devuelve el error (no se cuenta plata con datos dudosos).
 	settings.BySalon = nil
-	roto := CashCloseService{CashCloses: &fakeCashCloses{}, Sales: &fakeSales{}, Memberships: mems, Settings: failSettings{}}
+	roto := CashCloseService{CashCloses: &testutil.FakeCashCloses{}, Sales: &fakeSales{}, Memberships: mems, Settings: failSettings{}}
 	if _, err := roto.CloseCash(owner, "s1", 0, ""); err == nil {
 		t.Fatal("un error de settings debe propagarse")
 	}

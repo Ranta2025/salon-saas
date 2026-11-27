@@ -130,8 +130,8 @@ func TestPublicBooking_email_invalido(t *testing.T) {
 			t.Fatalf("%q: el mensaje debe ser limpio, dio %q", bad, err.Error())
 		}
 	}
-	if len(env.bookings.all) != 0 {
-		t.Fatalf("un email inválido no puede agendar: %+v", env.bookings.all)
+	if len(env.bookings.All) != 0 {
+		t.Fatalf("un email inválido no puede agendar: %+v", env.bookings.All)
 	}
 	if len(env.emails.saved) != 0 || env.mailer.count() != 0 {
 		t.Fatal("un email inválido no guarda fila ni manda correo")
@@ -213,7 +213,7 @@ func TestPublicBooking_sin_email_configurado(t *testing.T) {
 	if _, err := env.book.Book("navajas-oro", in); err != nil {
 		t.Fatalf("reserva sin email configurado: %v", err)
 	}
-	if len(env.bookings.all) != 1 {
-		t.Fatalf("la reserva entra igual: %+v", env.bookings.all)
+	if len(env.bookings.All) != 1 {
+		t.Fatalf("la reserva entra igual: %+v", env.bookings.All)
 	}
 }

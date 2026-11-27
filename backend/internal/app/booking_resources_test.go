@@ -15,7 +15,7 @@ type agendaEnv struct {
 	svc      BookingService
 	bookings *fb
 	res      *fakeResources
-	services *fakeServices
+	services *testutil.FakeServices
 	mems     *fakeMemberships
 	owner    domain.Membership
 	ana      domain.Membership
@@ -29,7 +29,7 @@ func newAgendaEnv(t *testing.T) *agendaEnv {
 	t.Helper()
 	mems := &fakeMemberships{}
 	bookings := &fb{}
-	services := &fakeServices{}
+	services := &testutil.FakeServices{}
 	res := &fakeResources{bookings: bookings}
 
 	corte, err := domain.NewService("s1", "Corte con puesto", 60, 100000, 20)

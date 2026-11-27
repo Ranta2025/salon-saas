@@ -19,7 +19,7 @@ type publicEnv struct {
 	staff    *testutil.FakeStaffLister
 	profs    *testutil.FakeProfessionalServices
 	settings *fakeSettings
-	services *fakeServices
+	services *testutil.FakeServices
 	clients  *testutil.FakeClients
 	// F2d1: horario semanal del salón y de las profesionales (sin filas = el
 	// comportamiento de siempre).
@@ -45,7 +45,7 @@ func newPublicEnv(t *testing.T) *publicEnv {
 	settings := &fakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
 		SalonID: "s1", Timezone: "America/Mexico_City", OpenTime: "09:00", CloseTime: "12:00", SlotStepMin: 30,
 	}}}
-	services := &fakeServices{}
+	services := &testutil.FakeServices{}
 	corte, err := domain.NewService("s1", "Corte", 45, 150000, 20)
 	if err != nil {
 		t.Fatalf("servicio: %v", err)
@@ -139,7 +139,7 @@ func TestAvailability_slots(t *testing.T) {
 		t.Fatalf("quedan 10:30 y 11:00 local, dio %+v", day.Slots)
 	}
 	// Una cancelada libera el hueco.
-	env.bookings.all[0], _ = env.bookings.all[0].SetStatus(domain.BookingCancelled)
+	env.bookings.All[0], _ = env.bookings.All[0].SetStatus(domain.BookingCancelled)
 	day, _ = env.avail.Day("navajas-oro", "2026-12-01", env.corte.ID, "prof1")
 	if len(day.Slots) != 5 {
 		t.Fatalf("la cancelada no debe bloquear: %+v", day.Slots)

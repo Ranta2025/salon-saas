@@ -90,8 +90,8 @@ func TestPublicBooking_agota_todos_los_pares_409(t *testing.T) {
 		}
 		seen[key] = true
 	}
-	if len(env.bookings.all) != 0 {
-		t.Fatalf("no puede quedar ningún turno guardado: %+v", env.bookings.all)
+	if len(env.bookings.All) != 0 {
+		t.Fatalf("no puede quedar ningún turno guardado: %+v", env.bookings.All)
 	}
 }
 
@@ -116,8 +116,8 @@ func TestPublicBooking_tres_rechazos_no_alcanzan_si_quedan_pares(t *testing.T) {
 	if len(flaky.attempts) != 4 {
 		t.Fatalf("3 rechazos y el cuarto intento entra, dio %d intentos", len(flaky.attempts))
 	}
-	if b.ResourceUnitID == "" || len(env.bookings.all) != 1 {
-		t.Fatalf("un turno con unidad: %+v (guardados %d)", b, len(env.bookings.all))
+	if b.ResourceUnitID == "" || len(env.bookings.All) != 1 {
+		t.Fatalf("un turno con unidad: %+v (guardados %d)", b, len(env.bookings.All))
 	}
 }
 

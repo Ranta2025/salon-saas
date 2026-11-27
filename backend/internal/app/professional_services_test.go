@@ -21,7 +21,7 @@ type teamFixture struct {
 	users    *fakeUsers
 	members  *fakeMembers
 	profs    *testutil.FakeProfessionalServices
-	services *fakeServices
+	services *testutil.FakeServices
 	corte    domain.Service
 	keratina domain.Service
 }
@@ -53,7 +53,7 @@ func newTeamFixture(t *testing.T) *teamFixture {
 		{ID: "u-prof", Name: "Caro", Role: domain.RoleProfessional, Attends: true},
 	}}}
 	profs := &testutil.FakeProfessionalServices{Staff: staff}
-	services := &fakeServices{}
+	services := &testutil.FakeServices{}
 	corte, err := domain.NewService("s1", "Corte", 45, 150000, 20)
 	if err != nil {
 		t.Fatalf("servicio: %v", err)
@@ -176,8 +176,8 @@ func TestPublicBooking_asigna_quien_hace_el_servicio(t *testing.T) {
 	if corteBooking.ServiceID != env.corte.ID || keratinaBooking.ServiceID != keratina.ID {
 		t.Fatalf("el turno guarda el servicio reservado: %q %q", corteBooking.ServiceID, keratinaBooking.ServiceID)
 	}
-	if len(env.bookings.all) != 2 {
-		t.Fatalf("dos turnos guardados, hay %d", len(env.bookings.all))
+	if len(env.bookings.All) != 2 {
+		t.Fatalf("dos turnos guardados, hay %d", len(env.bookings.All))
 	}
 }
 
@@ -199,8 +199,8 @@ func TestPublicBooking_servicio_sin_profesional_409(t *testing.T) {
 	if !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("sin gente que haga el servicio esperaba 409, dio %v", err)
 	}
-	if len(env.bookings.all) != 0 {
-		t.Fatalf("el 409 no puede dejar un turno guardado: %+v", env.bookings.all)
+	if len(env.bookings.All) != 0 {
+		t.Fatalf("el 409 no puede dejar un turno guardado: %+v", env.bookings.All)
 	}
 
 	// Con profesional explícito que no hace ese servicio: 400 con el motivo,
@@ -212,8 +212,8 @@ func TestPublicBooking_servicio_sin_profesional_409(t *testing.T) {
 	if !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("profesional que no hace el servicio: %v", err)
 	}
-	if len(env.bookings.all) != 0 {
-		t.Fatalf("tampoco acá se guarda un turno: %+v", env.bookings.all)
+	if len(env.bookings.All) != 0 {
+		t.Fatalf("tampoco acá se guarda un turno: %+v", env.bookings.All)
 	}
 }
 
@@ -285,7 +285,7 @@ func TestMemberService_setServices(t *testing.T) {
 
 	// El servicio de otro salón tampoco entra (aislamiento por salón).
 	var otroSalon domain.Service
-	for _, s := range fx.services.all {
+	for _, s := range fx.services.All {
 		if s.SalonID == "s2" {
 			otroSalon = s
 		}
@@ -433,7 +433,7 @@ func TestMemberService_list_con_oficio_y_servicios(t *testing.T) {
 // S-F2c-5: crear un servicio no lo asigna a nadie; con professional_ids se
 // asigna solo a quien atiende en el salón.
 func TestServiceService_create_professional_ids(t *testing.T) {
-	services := &fakeServices{}
+	services := &testutil.FakeServices{}
 	mems := &fakeMemberships{}
 	staff := &testutil.FakeStaffLister{BySalon: map[string][]domain.StaffMember{"s1": {
 		{ID: "u-prof", Name: "Caro", Role: domain.RoleProfessional},

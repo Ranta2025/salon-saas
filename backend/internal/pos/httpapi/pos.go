@@ -2,9 +2,10 @@ package httpapi
 
 import (
 	"net/http"
-	"salon-saas/internal/app"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/pos"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,7 +16,7 @@ import (
 // SaleHandler: POS. El total que manda el cliente NO se lee: ni siquiera hay
 // campo para él en el DTO de entrada.
 type SaleHandler struct {
-	Sales       app.SaleService
+	Sales       pos.SaleService
 	Memberships ports.MembershipRepository
 }
 
@@ -82,7 +83,7 @@ func (h SaleHandler) Create(c *gin.Context) {
 		} `json:"products"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	items := make([]domain.SaleItem, 0, len(in.Items))
@@ -106,7 +107,7 @@ func (h SaleHandler) Create(c *gin.Context) {
 		sale, err = h.Sales.RegisterSaleWithProducts(actor, salonID, in.ProfessionalID, in.ClientName, in.ClientID, items, products, domain.PaymentMethod(in.Method), in.ClientOpID)
 	}
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	// client_id viaja en la respuesta: el vínculo REAL de la venta ("" si no quedó
@@ -127,7 +128,7 @@ func (h SaleHandler) List(c *gin.Context) {
 	}
 	list, err := h.Sales.ListSales(actor, salonID, from, to)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -140,7 +141,7 @@ func (h SaleHandler) List(c *gin.Context) {
 // --- Cierre de caja ---
 
 type CashCloseHandler struct {
-	CashCloses  app.CashCloseService
+	CashCloses  pos.CashCloseService
 	Memberships ports.MembershipRepository
 }
 
@@ -179,12 +180,12 @@ func (h CashCloseHandler) Create(c *gin.Context) {
 		Note         string `json:"note"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	cc, err := h.CashCloses.CloseCash(actor, salonID, in.CountedCents, in.Note)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"close_id": cc.ID, "expected_cash": cc.SystemCashCents})
@@ -199,7 +200,7 @@ func (h CashCloseHandler) List(c *gin.Context) {
 	}
 	list, err := h.CashCloses.ListCloses(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -212,7 +213,7 @@ func (h CashCloseHandler) List(c *gin.Context) {
 // --- Dashboard ---
 
 type DashboardHandler struct {
-	Dashboard   app.DashboardService
+	Dashboard   pos.DashboardService
 	Memberships ports.MembershipRepository
 }
 
@@ -235,7 +236,7 @@ func (h DashboardHandler) Get(c *gin.Context) {
 	}
 	d, err := h.Dashboard.Today(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	top := make([]gin.H, 0, len(d.TopServices))

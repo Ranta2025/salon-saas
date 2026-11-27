@@ -7,6 +7,7 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/team"
+	"salon-saas/internal/testutil"
 )
 
 // --- Fakes: implementan ports sin Postgres ni bcrypt. Para unit test alcanzan. ---
@@ -166,4 +167,47 @@ func TestTenants_Create_Add(t *testing.T) {
 	if err := svc.AddMember(barb, "u-x", s.ID, domain.RoleClient); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("profesional no debe agregar, dio %v", err)
 	}
+}
+
+// miembro siembra y devuelve la membership del actor (lo que el handler ya cargó).
+func miembro(m *fakeMemberships, userID, salonID string, role domain.Role) domain.Membership {
+	_ = m.Save(domain.Membership{UserID: userID, SalonID: salonID, Role: role})
+	got, err := m.Find(userID, salonID)
+	if err != nil {
+		panic(err)
+	}
+	return got
+}
+
+// catalogo deja el catálogo mínimo del salón (Corte y Brushing) para los casos
+// de uso que validan ítems contra él.
+func catalogo(t *testing.T, services *testutil.FakeServices, salonID string) {
+	t.Helper()
+	for _, s := range []struct {
+		name  string
+		price int
+	}{{"Corte", 150000}, {"Brushing", 80000}} {
+		svc, err := domain.NewService(salonID, s.name, 45, s.price, 20)
+		if err != nil {
+			t.Fatalf("catálogo: %v", err)
+		}
+		if err := services.Save(svc); err != nil {
+			t.Fatalf("catálogo save: %v", err)
+		}
+	}
+}
+
+func svcIDByName(t *testing.T, services *testutil.FakeServices, salonID, name string) string {
+	t.Helper()
+	list, err := services.List(salonID, true)
+	if err != nil {
+		t.Fatalf("listar catálogo: %v", err)
+	}
+	for _, s := range list {
+		if s.Name == name {
+			return s.ID
+		}
+	}
+	t.Fatalf("no hay servicio %q en %s", name, salonID)
+	return ""
 }

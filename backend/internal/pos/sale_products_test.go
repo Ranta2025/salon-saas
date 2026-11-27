@@ -1,4 +1,4 @@
-package app
+package pos
 
 import (
 	"errors"
@@ -37,9 +37,9 @@ type ventaEnv struct {
 	sales    *fakeSales
 	productS *testutil.FakeProductSales
 	inv      *testutil.FakeProducts
-	services *fakeServices
-	mems     *fakeMemberships
-	events   *fakeEvents
+	services *testutil.FakeServices
+	mems     *testutil.FakeMemberships
+	events   *testutil.FakeEvents
 	notifier *testutil.FakeStockNotifier
 	svc      SaleService
 }
@@ -48,14 +48,14 @@ func newVentaEnv(t *testing.T) *ventaEnv {
 	t.Helper()
 	inv := &testutil.FakeProducts{}
 	sales := &fakeSales{}
-	mems := &fakeMemberships{}
-	services := &fakeServices{}
-	events := &fakeEvents{}
+	mems := &testutil.FakeMemberships{}
+	services := &testutil.FakeServices{}
+	events := &testutil.FakeEvents{}
 	notifier := &testutil.FakeStockNotifier{}
 	productS := &testutil.FakeProductSales{Inv: inv, Sales: sales}
 	catalogo(t, services, "s1")
-	miembro(mems, "recep", "s1", domain.RoleReception)
-	miembro(mems, "prof", "s1", domain.RoleProfessional)
+	testutil.Miembro(mems, "recep", "s1", domain.RoleReception)
+	testutil.Miembro(mems, "prof", "s1", domain.RoleProfessional)
 	return &ventaEnv{
 		sales: sales, productS: productS, inv: inv, services: services,
 		mems: mems, events: events, notifier: notifier,
@@ -86,8 +86,8 @@ func TestSaleServiceWithProducts_productsOnly(t *testing.T) {
 	if sale.TotalCents != 130000 {
 		t.Fatalf("total = %d, quería 130000", sale.TotalCents)
 	}
-	if len(env.sales.all) != 1 || len(env.productS.All) != 1 {
-		t.Fatalf("no guardó la venta: %+v %+v", env.sales.all, env.productS.All)
+	if len(env.sales.All) != 1 || len(env.productS.All) != 1 {
+		t.Fatalf("no guardó la venta: %+v %+v", env.sales.All, env.productS.All)
 	}
 	if env.productS.All[0].ProductsCents != 130000 || len(env.productS.All[0].Products) != 2 {
 		t.Fatalf("líneas de producto guardadas: %+v", env.productS.All[0])
@@ -113,8 +113,8 @@ func TestSaleServiceWithProducts_productsOnly(t *testing.T) {
 		t.Fatalf("un movimiento `sale` por línea: %d", saleMoves)
 	}
 	// El evento sale.created sigue saliendo con el total real.
-	if len(env.events.all) != 1 || env.events.all[0].Type != "sale.created" {
-		t.Fatalf("evento: %+v", env.events.all)
+	if len(env.events.All) != 1 || env.events.All[0].Type != "sale.created" {
+		t.Fatalf("evento: %+v", env.events.All)
 	}
 }
 
@@ -145,7 +145,7 @@ func TestSaleServiceWithProducts_mixedAndSnapshot(t *testing.T) {
 	}
 
 	// Cambiar el precio después NO toca la venta guardada.
-	owner := miembro(env.mems, "owner", "s1", domain.RoleOwner)
+	owner := testutil.Miembro(env.mems, "owner", "s1", domain.RoleOwner)
 	svc := products.ProductService{Products: env.inv, Memberships: env.mems}
 	if _, err := svc.Update(owner, "s1", shampoo.ID, "Shampoo", 90000, 0, true); err != nil {
 		t.Fatalf("cambiar precio: %v", err)
@@ -191,8 +191,8 @@ func TestSaleServiceWithProducts_lineCap(t *testing.T) {
 	if err == nil || err.Error() != domain.MsgProductLines {
 		t.Fatalf("51 líneas: %v", err)
 	}
-	if len(env.sales.all) != 0 || len(env.productS.All) != 0 {
-		t.Fatalf("no se guarda nada: %+v", env.sales.all)
+	if len(env.sales.All) != 0 || len(env.productS.All) != 0 {
+		t.Fatalf("no se guarda nada: %+v", env.sales.All)
 	}
 }
 
@@ -203,7 +203,7 @@ func TestSaleServiceWithProducts_invalidAndNoStock(t *testing.T) {
 	recep, _ := env.mems.Find("recep", "s1")
 	ajeno := producto(t, env.inv, "s2", "Ajeno", 1000, 10, 0)
 	inactivo := producto(t, env.inv, "s1", "Viejo", 1000, 10, 0)
-	owner := miembro(env.mems, "owner", "s1", domain.RoleOwner)
+	owner := testutil.Miembro(env.mems, "owner", "s1", domain.RoleOwner)
 	if _, err := (products.ProductService{Products: env.inv, Memberships: env.mems}).Update(owner, "s1", inactivo.ID, "Viejo", 1000, 0, false); err != nil {
 		t.Fatalf("desactivar: %v", err)
 	}
@@ -225,8 +225,8 @@ func TestSaleServiceWithProducts_invalidAndNoStock(t *testing.T) {
 	if got, _ := env.inv.FindByID("s1", casi.ID); got.Stock != 1 {
 		t.Fatalf("el stock no cambia: %d", got.Stock)
 	}
-	if len(env.sales.all) != 0 || len(env.productS.All) != 0 {
-		t.Fatalf("no se guarda la venta fallida: %+v", env.sales.all)
+	if len(env.sales.All) != 0 || len(env.productS.All) != 0 {
+		t.Fatalf("no se guarda la venta fallida: %+v", env.sales.All)
 	}
 }
 
@@ -252,8 +252,8 @@ func TestSaleServiceWithProducts_idempotent(t *testing.T) {
 	if got, _ := env.inv.FindByID("s1", shampoo.ID); got.Stock != 3 {
 		t.Fatalf("descontó dos veces: stock %d", got.Stock)
 	}
-	if len(env.sales.all) != 1 {
-		t.Fatalf("una sola venta: %d", len(env.sales.all))
+	if len(env.sales.All) != 1 {
+		t.Fatalf("una sola venta: %d", len(env.sales.All))
 	}
 }
 
@@ -265,7 +265,7 @@ func TestSaleServiceWithProducts_permissions(t *testing.T) {
 	lines := []domain.SaleProduct{env.line(shampoo.ID, 1)}
 	recep, _ := env.mems.Find("recep", "s1")
 	prof, _ := env.mems.Find("prof", "s1")
-	other := miembro(env.mems, "otro", "s2", domain.RoleOwner)
+	other := testutil.Miembro(env.mems, "otro", "s2", domain.RoleOwner)
 
 	for _, actor := range []domain.Membership{prof, other} {
 		if _, err := env.svc.RegisterSaleWithProducts(actor, "s1", "prof", "Lía", "", nil, lines, domain.MethodCash, ""); !errors.Is(err, domain.ErrForbidden) {
@@ -274,7 +274,7 @@ func TestSaleServiceWithProducts_permissions(t *testing.T) {
 	}
 	// Owner y admin también venden.
 	for _, role := range []domain.Role{domain.RoleOwner, domain.RoleAdmin} {
-		actor := miembro(env.mems, "u-"+string(role), "s1", role)
+		actor := testutil.Miembro(env.mems, "u-"+string(role), "s1", role)
 		if _, err := env.svc.RegisterSaleWithProducts(actor, "s1", "prof", "Lía", "", nil, lines, domain.MethodCash, ""); err != nil {
 			t.Fatalf("%s vende: %v", role, err)
 		}
@@ -296,13 +296,13 @@ func TestSaleServiceWithProducts_lowStockNotice(t *testing.T) {
 		t.Fatalf("aviso: %+v", env.notifier.All)
 	}
 	var updated bool
-	for _, ev := range env.events.all {
+	for _, ev := range env.events.All {
 		if ev.Type == "product.updated" {
 			updated = true
 		}
 	}
 	if !updated {
-		t.Fatalf("falta product.updated: %+v", env.events.all)
+		t.Fatalf("falta product.updated: %+v", env.events.All)
 	}
 	// Segunda venta: ya estaba bajo, no avisa de nuevo.
 	if _, err := env.svc.RegisterSaleWithProducts(recep, "s1", "prof", "Lía", "", nil,
@@ -325,7 +325,7 @@ func TestSaleService_withoutProducts_untouched(t *testing.T) {
 	if err != nil {
 		t.Fatalf("venta clásica: %v", err)
 	}
-	if sale.TotalCents != 150000 || len(env.sales.all) != 1 || len(env.productS.All) != 0 {
-		t.Fatalf("la venta clásica no toca productos: %+v %+v", env.sales.all, env.productS.All)
+	if sale.TotalCents != 150000 || len(env.sales.All) != 1 || len(env.productS.All) != 0 {
+		t.Fatalf("la venta clásica no toca productos: %+v %+v", env.sales.All, env.productS.All)
 	}
 }

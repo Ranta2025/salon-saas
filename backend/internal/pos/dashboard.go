@@ -1,6 +1,6 @@
 // DashboardService: el panel del día. Solo lee agregados; no escribe nada.
 // Ocupación = minutos reservados / (profesionales * jornada de referencia).
-package app
+package pos
 
 import (
 	"math"
@@ -35,8 +35,8 @@ func (s DashboardService) Today(actor domain.Membership, salonID string) (Dashbo
 	if !kernel.PuedeVerPlata(m) {
 		return Dashboard{}, domain.ErrForbidden
 	}
-	from := startOfUTCDay(time.Now().UTC())
-	to := endOfUTCDay(from)
+	from := kernel.StartOfUTCDay(time.Now().UTC())
+	to := kernel.EndOfUTCDay(from)
 
 	revenue, err := s.Sales.SumCents(salonID, from, to, "")
 	if err != nil {
@@ -71,7 +71,7 @@ func occupancyRate(bookedMinutes, professionals int) float64 {
 	if professionals <= 0 || bookedMinutes <= 0 {
 		return 0
 	}
-	capacity := professionals * occupancyDayMinutes
+	capacity := professionals * kernel.OccupancyDayMinutes
 	rate := math.Round(float64(bookedMinutes)/float64(capacity)*10000) / 10000
 	if rate > 1 {
 		return 1 // sobre-agenda: se reporta tope 100%, no 130%

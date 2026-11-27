@@ -17,7 +17,7 @@
 //
 // La comisión y la nómina NO cambian (D6): las líneas de producto no generan
 // comisión; la base sale solo de `sale_items`.
-package app
+package pos
 
 import (
 	"errors"

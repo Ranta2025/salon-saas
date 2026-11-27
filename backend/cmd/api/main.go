@@ -39,6 +39,8 @@ import (
 	"salon-saas/internal/packages"
 	packageshttpapi "salon-saas/internal/packages/httpapi"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/pos"
+	poshttpapi "salon-saas/internal/pos/httpapi"
 	"salon-saas/internal/products"
 	productshttpapi "salon-saas/internal/products/httpapi"
 	"salon-saas/internal/schedules"
@@ -315,7 +317,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	resourceSvc := staffing.ResourceService{
 		Resources: resourceRepo, Services: servicesRepo, Memberships: mems,
 	}
-	saleSvc := app.SaleService{
+	saleSvc := pos.SaleService{
 		Sales: salesRepo, Services: servicesRepo, Memberships: mems, Events: hub,
 		Clients: clientsRepo, ClientLinks: clientLinks,
 		Products: productsRepo, ProductSales: saleProductsRepo, Notifier: notifSvc,
@@ -361,11 +363,11 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	authSvc.TwoFactor = twoFactorSvc
 	// Tx: el cierre corre en una transacción con advisory lock por salón (B-09).
 	// Settings: la ventana del cierre es el día LOCAL del salón (su zona), no UTC.
-	cashCloseSvc := app.CashCloseService{
+	cashCloseSvc := pos.CashCloseService{
 		CashCloses: closesRepo, Sales: salesRepo, Memberships: mems, Tx: closesRepo,
 		Settings: salons, Events: hub, Notifier: notifSvc,
 	}
-	dashSvc := app.DashboardService{Sales: salesRepo, Agenda: bookings, Staff: mems, Memberships: mems}
+	dashSvc := pos.DashboardService{Sales: salesRepo, Agenda: bookings, Staff: mems, Memberships: mems}
 	clientSvc := clients.ClientService{
 		Clients:     clientsRepo,
 		Memberships: mems,
@@ -598,9 +600,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Tenants:       teamhttpapi.TenantsHandler{Tenants: tenSvc, Memberships: mems},
 		Bookings:      httpapi.BookingHandler{Bookings: bookSvc, Memberships: mems},
 		Services:      staffinghttpapi.ServiceHandler{Services: svcSvc, Memberships: mems},
-		Sales:         httpapi.SaleHandler{Sales: saleSvc, Memberships: mems},
-		CashCloses:    httpapi.CashCloseHandler{CashCloses: cashCloseSvc, Memberships: mems},
-		Dashboard:     httpapi.DashboardHandler{Dashboard: dashSvc, Memberships: mems},
+		Sales:         poshttpapi.SaleHandler{Sales: saleSvc, Memberships: mems},
+		CashCloses:    poshttpapi.CashCloseHandler{CashCloses: cashCloseSvc, Memberships: mems},
+		Dashboard:     poshttpapi.DashboardHandler{Dashboard: dashSvc, Memberships: mems},
 		Notifications: notificationshttpapi.NotificationHandler{Notifications: notifSvc, Memberships: mems},
 		Clients:       clientshttpapi.ClientHandler{Clients: clientSvc, Memberships: mems, Photos: photoSigner, History: clientHistorySvc},
 		Me:            httpapi.MeHandler{Me: meSvc},

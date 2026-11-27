@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/pos"
 )
 
 // B-03: una venta de 2.000.000.000 centavos NO puede entrar (el dominio la
@@ -78,7 +78,7 @@ func TestSales_IT_sumas_grandes_no_rompen(t *testing.T) {
 		t.Fatalf("membership: %v", err)
 	}
 	owner, _ := mems.Find("u-it-pos", "s-it-pos")
-	dash := app.DashboardService{Sales: repo, Agenda: Bookings{Pool: pool}, Staff: mems, Memberships: mems}
+	dash := pos.DashboardService{Sales: repo, Agenda: Bookings{Pool: pool}, Staff: mems, Memberships: mems}
 	if _, err := dash.Today(owner, "s-it-pos"); err != nil {
 		t.Fatalf("dashboard con ventas grandes: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestCashCloses_IT_concurrentes_cuentan_una_vez(t *testing.T) {
 	}
 	owner, _ := mems.Find("u-it-pos", "s-it-pos")
 
-	svc := app.CashCloseService{CashCloses: cashRepo, Sales: repo, Memberships: mems, Tx: cashRepo}
+	svc := pos.CashCloseService{CashCloses: cashRepo, Sales: repo, Memberships: mems, Tx: cashRepo}
 
 	var wg sync.WaitGroup
 	closes := make([]domain.CashClose, 2)

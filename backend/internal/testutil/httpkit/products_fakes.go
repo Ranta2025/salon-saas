@@ -2,10 +2,11 @@ package httpkit
 
 import (
 	httpapi "salon-saas/internal/adapters/http"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/notifications"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/pos"
+	poshttpapi "salon-saas/internal/pos/httpapi"
 	"salon-saas/internal/products"
 	productshttpapi "salon-saas/internal/products/httpapi"
 	"sort"
@@ -174,12 +175,12 @@ func NewProductsEnv() (*Env, *Products) {
 	env := NewPOSEnv()
 	inv := &Products{}
 	notifSvc := notifications.NotificationService{Notifications: env.Notifications, Salons: env.Mems, Events: env.Events}
-	saleSvc := app.SaleService{
+	saleSvc := pos.SaleService{
 		Sales: env.Sales, Services: env.Services, Memberships: env.Mems, Events: env.Events,
 		Products: inv, ProductSales: &ProductSales{Invitations: inv, Sales: env.Sales}, Notifier: notifSvc,
 	}
 	productSvc := products.ProductService{Products: inv, Memberships: env.Mems, Events: env.Events, Notifier: notifSvc}
-	env.Deps.Sales = httpapi.SaleHandler{Sales: saleSvc, Memberships: env.Mems}
+	env.Deps.Sales = poshttpapi.SaleHandler{Sales: saleSvc, Memberships: env.Mems}
 	env.Deps.Products = productshttpapi.ProductHandler{Products: productSvc, Memberships: env.Mems}
 	env.Router = gin.New()
 	httpapi.RegisterRoutes(env.Router, env.Deps)

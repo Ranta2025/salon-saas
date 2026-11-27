@@ -129,8 +129,8 @@ func TestPublicBooking_si_falla_la_ficha_la_reserva_entra(t *testing.T) {
 	if err != nil {
 		t.Fatalf("la reserva no puede fallar por la ficha: %v", err)
 	}
-	if b.ID == "" || len(env.bookings.all) != 1 {
-		t.Fatalf("la reserva tiene que quedar agendada: %+v", env.bookings.all)
+	if b.ID == "" || len(env.bookings.All) != 1 {
+		t.Fatalf("la reserva tiene que quedar agendada: %+v", env.bookings.All)
 	}
 	if got := len(env.clients.Clients); got != 0 {
 		t.Fatalf("la ficha falló, no debería haber quedado nada: %d", got)

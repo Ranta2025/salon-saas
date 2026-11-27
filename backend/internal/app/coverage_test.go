@@ -62,9 +62,9 @@ func (v fakeBookingTxView) Update(b domain.Booking) error {
 func (t *fakeBookingTx) InSalonTx(salonID string, fn func(ports.BookingTx) error) error {
 	t.txs++
 	t.lastSalon = salonID
-	snapshot := append([]domain.Booking(nil), t.bookings.all...)
+	snapshot := append([]domain.Booking(nil), t.bookings.All...)
 	if err := fn(fakeBookingTxView{parent: t}); err != nil {
-		t.bookings.all = snapshot // rollback
+		t.bookings.All = snapshot // rollback
 		return err
 	}
 	return nil
@@ -79,7 +79,7 @@ type coverEnv struct {
 	hours    *testutil.FakeWeeklyHours
 	profs    *testutil.FakeProfessionalServices
 	staff    *testutil.FakeStaffLister
-	services *fakeServices
+	services *testutil.FakeServices
 	mems     *fakeMemberships
 	notifier *fakeNotifier
 	events   *fakeEvents
@@ -106,7 +106,7 @@ func newCoverEnv(t *testing.T) *coverEnv {
 		SalonID: "s1", Timezone: "America/Mexico_City",
 		OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}}}
-	services := &fakeServices{}
+	services := &testutil.FakeServices{}
 	corte, err := domain.NewService("s1", "Corte", 45, 150000, 20)
 	if err != nil {
 		t.Fatalf("servicio: %v", err)
@@ -476,7 +476,7 @@ func TestCoverage_reassign_absence_candidate_rules(t *testing.T) {
 				t.Fatalf("%s: %v (esperaba %q)", c.name, conflict, c.msg)
 			}
 			// Ningún pedido inválido deja un turno movido.
-			for _, b := range env.bookings.all {
+			for _, b := range env.bookings.All {
 				if b.ProfessionalID != "ana" {
 					t.Fatalf("turno movido por un pedido inválido: %+v", b)
 				}

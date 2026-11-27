@@ -19,8 +19,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/pos"
 )
 
 // commissionFixtures migra, limpia y deja un salón con recepción + profesional.
@@ -86,8 +86,8 @@ func foto(t *testing.T, ctx context.Context, pool *pgxpool.Pool, saleID string) 
 }
 
 // saleService arma el caso de uso REAL contra la DB real.
-func saleService(pool *pgxpool.Pool) app.SaleService {
-	return app.SaleService{
+func saleService(pool *pgxpool.Pool) pos.SaleService {
+	return pos.SaleService{
 		Sales:       Sales{Pool: pool},
 		Services:    Services{Pool: pool},
 		Memberships: Memberships{Pool: pool},

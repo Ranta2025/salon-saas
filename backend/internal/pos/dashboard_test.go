@@ -1,4 +1,4 @@
-package app
+package pos
 
 import (
 	"errors"
@@ -6,17 +6,18 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 func TestDashboardService_today(t *testing.T) {
 	sales := &fakeSales{}
 	agenda := &fakeAgenda{}
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	svc := DashboardService{Sales: sales, Agenda: agenda, Staff: fakeStaff{count: 2}, Memberships: mems}
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
 
 	now := time.Now().UTC()
-	sales.all = append(sales.all,
+	sales.All = append(sales.All,
 		domain.Sale{ID: "v1", SalonID: "s1", TotalCents: 120000, Method: domain.MethodCash, CreatedAt: now},
 		domain.Sale{ID: "v2", SalonID: "s1", TotalCents: 80000, Method: domain.MethodCard, CreatedAt: now},
 		// De ayer: no suma al día de hoy.
@@ -24,7 +25,7 @@ func TestDashboardService_today(t *testing.T) {
 		// De otro salón.
 		domain.Sale{ID: "v-otro", SalonID: "s2", TotalCents: 900000, Method: domain.MethodCash, CreatedAt: now},
 	)
-	sales.top = []domain.TopService{{ServiceID: "svc-1", Name: "Corte", Qty: 3, RevenueCents: 450000}}
+	sales.Top = []domain.TopService{{ServiceID: "svc-1", Name: "Corte", Qty: 3, RevenueCents: 450000}}
 
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	agenda.bookings = []domain.Booking{
@@ -65,9 +66,9 @@ func TestDashboardService_today(t *testing.T) {
 func TestDashboardService_ocupacion_sin_profesionales(t *testing.T) {
 	sales := &fakeSales{}
 	agenda := &fakeAgenda{}
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	svc := DashboardService{Sales: sales, Agenda: agenda, Staff: fakeStaff{count: 0}, Memberships: mems}
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
 
 	d, err := svc.Today(owner, "s1")
 	if err != nil {
@@ -85,10 +86,10 @@ func TestDashboardService_ocupacion_sin_profesionales(t *testing.T) {
 }
 
 func TestDashboardService_permisos(t *testing.T) {
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	svc := DashboardService{Sales: &fakeSales{}, Agenda: &fakeAgenda{}, Staff: fakeStaff{count: 1}, Memberships: mems}
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	ajeno := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
+	ajeno := testutil.Miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
 
 	// Recepción ve el panel de su salón.
 	if _, err := svc.Today(recep, "s1"); err != nil {

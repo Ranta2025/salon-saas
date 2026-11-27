@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/pos"
+	"salon-saas/internal/testutil"
 )
 
 // Los casos de uso que ya existían (reserva, venta, cierre) publican su evento
@@ -27,7 +29,7 @@ func TestBookingService_publica_booking_created(t *testing.T) {
 	}
 	ev, count := events.typed("booking.created")
 	if count != 1 {
-		t.Fatalf("esperaba 1 booking.created, dio %d (%+v)", count, events.all)
+		t.Fatalf("esperaba 1 booking.created, dio %d (%+v)", count, events.All)
 	}
 	if ev.SalonID != "s1" {
 		t.Fatalf("el evento debe ir al salón de la reserva, dio %q", ev.SalonID)
@@ -57,16 +59,16 @@ func TestBookingService_solape_no_publica_evento(t *testing.T) {
 	}
 	after, count := events.typed("booking.created")
 	if count != 1 || after.Type != before.Type {
-		t.Fatalf("un alta rechazada no publica evento, dio %d (%+v)", count, events.all)
+		t.Fatalf("un alta rechazada no publica evento, dio %d (%+v)", count, events.All)
 	}
 }
 
 func TestSaleService_publica_sale_created(t *testing.T) {
-	sales := &fakeSales{}
-	services := &fakeServices{}
+	sales := &testutil.FakeSales{}
+	services := &testutil.FakeServices{}
 	mems := &fakeMemberships{}
 	events := &fakeEvents{}
-	svc := SaleService{Sales: sales, Services: services, Memberships: mems, Events: events}
+	svc := pos.SaleService{Sales: sales, Services: services, Memberships: mems, Events: events}
 	catalogo(t, services, "s1")
 	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
 	miembro(mems, "prof1", "s1", domain.RoleProfessional)
@@ -79,7 +81,7 @@ func TestSaleService_publica_sale_created(t *testing.T) {
 	}
 	ev, count := events.typed("sale.created")
 	if count != 1 {
-		t.Fatalf("esperaba 1 sale.created, dio %d (%+v)", count, events.all)
+		t.Fatalf("esperaba 1 sale.created, dio %d (%+v)", count, events.All)
 	}
 	data, ok := ev.Data.(map[string]any)
 	if !ok || data["id"] != sale.ID || data["total_cents"] != 300000 {
@@ -88,12 +90,12 @@ func TestSaleService_publica_sale_created(t *testing.T) {
 }
 
 func TestCashCloseService_publica_cash_closed_y_avisa(t *testing.T) {
-	closes := &fakeCashCloses{}
-	sales := &fakeSales{}
+	closes := &testutil.FakeCashCloses{}
+	sales := &testutil.FakeSales{}
 	mems := &fakeMemberships{}
 	events := &fakeEvents{}
 	notifier := &fakeNotifier{}
-	svc := CashCloseService{CashCloses: closes, Sales: sales, Memberships: mems, Events: events, Notifier: notifier}
+	svc := pos.CashCloseService{CashCloses: closes, Sales: sales, Memberships: mems, Events: events, Notifier: notifier}
 	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
 
 	close, err := svc.CloseCash(owner, "s1", 10000, "sin novedad")
@@ -102,7 +104,7 @@ func TestCashCloseService_publica_cash_closed_y_avisa(t *testing.T) {
 	}
 	ev, count := events.typed("cash_closed")
 	if count != 1 || ev.SalonID != "s1" {
-		t.Fatalf("esperaba 1 cash_closed de s1, dio %d (%+v)", count, events.all)
+		t.Fatalf("esperaba 1 cash_closed de s1, dio %d (%+v)", count, events.All)
 	}
 	data, ok := ev.Data.(map[string]any)
 	if !ok || data["id"] != close.ID || data["difference_cents"] != 10000 {

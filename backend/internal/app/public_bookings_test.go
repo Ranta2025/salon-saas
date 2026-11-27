@@ -38,7 +38,7 @@ func TestPublicBooking_con_profesional(t *testing.T) {
 	}
 	// Publica el evento para que el calendario del salón se actualice solo.
 	if ev, n := env.events.typed("booking.created"); n != 1 {
-		t.Fatalf("esperaba un booking.created, hubo %d (%+v)", n, env.events.all)
+		t.Fatalf("esperaba un booking.created, hubo %d (%+v)", n, env.events.All)
 	} else if data, ok := ev.Data.(map[string]any); !ok || data["id"] != b.ID {
 		t.Fatalf("payload del evento: %+v", ev.Data)
 	}
@@ -121,8 +121,8 @@ func TestPublicBooking_validacion(t *testing.T) {
 	if _, err := env.book.Book("no-existe", base()); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("slug inexistente: %v", err)
 	}
-	if len(env.bookings.all) != 0 {
-		t.Fatalf("ningún intento inválido puede quedar agendado: %+v", env.bookings.all)
+	if len(env.bookings.All) != 0 {
+		t.Fatalf("ningún intento inválido puede quedar agendado: %+v", env.bookings.All)
 	}
 }
 
@@ -144,7 +144,7 @@ func TestPublicBooking_idempotente(t *testing.T) {
 	if first.ID != second.ID {
 		t.Fatalf("el reintento debe devolver la misma reserva: %q vs %q", first.ID, second.ID)
 	}
-	if len(env.bookings.all) != 1 {
-		t.Fatalf("debe haber una sola reserva, hay %d", len(env.bookings.all))
+	if len(env.bookings.All) != 1 {
+		t.Fatalf("debe haber una sola reserva, hay %d", len(env.bookings.All))
 	}
 }

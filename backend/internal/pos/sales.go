@@ -1,7 +1,7 @@
 // SaleService: ventas del POS. Reglas: quién puede vender, y el total SIEMPRE
 // se calcula acá (nunca se acepta del cliente). Cada ítem se valida contra el
 // catálogo del propio salón: no se puede vender un servicio de otro tenant.
-package app
+package pos
 
 import (
 	"errors"
@@ -34,7 +34,7 @@ type SaleService struct {
 	// Notifier es opcional (nil = no avisa): el aviso de stock bajo de una
 	// venta se deja DESPUÉS del commit y un fallo al avisar no cambia la
 	// respuesta de la venta (F6, D8).
-	Notifier Notifier
+	Notifier kernel.Notifier
 }
 
 // puedeVender: recepción y quien administra (el profesional cobra en caja...
