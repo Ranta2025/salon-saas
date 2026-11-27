@@ -8,7 +8,9 @@ import {
   canEditSettings,
   canManageBooking,
   canManageMembers,
+  canManageReviews,
   canViewDeposits,
+  canViewReviews,
   isManager,
   panelHomePath,
   roleLabel,
@@ -107,4 +109,22 @@ test('the deposit policy is edited by owner and admin only (reception reads it)'
   assert.equal(canEditDepositPolicy('reception'), false)
   assert.equal(canEditDepositPolicy('professional'), false)
   assert.equal(canEditDepositPolicy(null), false)
+})
+
+// ---------- F13 (D6/D8): reviews of the salon ----------
+
+test('the reviews panel is seen by owner, admin and reception; a professional never', () => {
+  assert.equal(canViewReviews('owner'), true)
+  assert.equal(canViewReviews('admin'), true)
+  assert.equal(canViewReviews('reception'), true)
+  assert.equal(canViewReviews('professional'), false)
+  assert.equal(canViewReviews(null), false)
+})
+
+test('hiding a review and the review settings belong to owner and admin only', () => {
+  assert.equal(canManageReviews('owner'), true)
+  assert.equal(canManageReviews('admin'), true)
+  assert.equal(canManageReviews('reception'), false)
+  assert.equal(canManageReviews('professional'), false)
+  assert.equal(canManageReviews(null), false)
 })

@@ -221,3 +221,20 @@ export function canViewDeposits(role: Role | null | undefined): boolean {
 export function canEditDepositPolicy(role: Role | null | undefined): boolean {
   return isManager(role)
 }
+
+/**
+ * Reviews of the salon (contract F13, D6/D8): owner, admin and reception read the
+ * list, which carries what clients wrote. A professional gets 403 from the server,
+ * so the page shows `ReviewsNotice` and the menu entry stays hidden.
+ */
+export function canViewReviews(role: Role | null | undefined): boolean {
+  return isManager(role) || role === 'reception'
+}
+
+/**
+ * Hiding or showing a review and the review settings (`PUT /review-settings`) are
+ * owner and admin only (D6). Reception reads the list but never hides anything.
+ */
+export function canManageReviews(role: Role | null | undefined): boolean {
+  return isManager(role)
+}

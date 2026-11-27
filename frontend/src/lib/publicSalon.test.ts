@@ -12,6 +12,8 @@ import {
   LANDING_OFFLINE_NOTICE,
   loyaltySentence,
   refundLabel,
+  reviewsAverageLabel,
+  reviewsCountLabel,
   normalizePublicSalon,
   telHref,
   toLandingServices,
@@ -583,4 +585,142 @@ test('buildLanding without `deposit` renders no deposit section and no nav link'
     assert.equal(model.nav.some((link) => link.href === '#sena'), false)
     assert.equal(JSON.stringify(model).includes('pago simulado'), false)
   }
+})
+
+// ---------- F13 (D7): public reviews of the landing, additive and optional ----------
+
+const REVIEWS_PAYLOAD = {
+  average: 4.6,
+  count: 12,
+  items: [
+    { rating: 5, comment: 'Excelente, volveré', author: 'Lía G.', date: '2026-11-04T12:00:00Z' },
+    { rating: 4, comment: '', author: 'Ana P.', date: '2026-11-02' },
+  ],
+}
+
+test('normalizePublicSalon reads `reviews` {average, count, items} without touching the rest', () => {
+  const salon = parsed({ ...full, reviews: REVIEWS_PAYLOAD })
+  assert.deepEqual(salon.reviews, {
+    average: 4.6,
+    count: 12,
+    items: [
+      { rating: 5, comment: 'Excelente, volveré', author: 'Lía G.', date: '2026-11-04T12:00:00Z' },
+      { rating: 4, comment: '', author: 'Ana P.', date: '2026-11-02' },
+    ],
+  })
+  // The field is ADDITIVE: every other key of the payload is exactly as before.
+  assert.deepEqual(salon.salon, full.salon)
+  assert.equal(salon.services.length, 2)
+  assert.deepEqual(salon.team, [{ name: 'Ana', trade: 'Estilista' }, { name: 'Beto', trade: '' }])
+  assert.deepEqual(salon.packages.length, 2)
+})
+
+test('normalizePublicSalon leaves `reviews` null when it is missing, null or unusable (never invented)', () => {
+  assert.equal(parsed(full).reviews, null)
+  assert.equal(parsed(payload).reviews, null)
+  assert.equal(parsed({ ...full, reviews: null }).reviews, null)
+  for (const bad of [
+    'nope',
+    [],
+    {},
+    { average: 4.6, count: 0, items: [] },
+    { count: 12, items: [] },
+    { average: 4.6, items: [] },
+    { average: 0, count: 12, items: [] },
+    { average: 5.1, count: 12, items: [] },
+    { average: '4.6', count: 12, items: [] },
+    { average: 4.6, count: 12.5, items: [] },
+    { average: 4.6, count: '12', items: [] },
+    { average: 4.6, count: 12 },
+  ]) {
+    assert.equal(parsed({ ...full, reviews: bad }).reviews, null, JSON.stringify(bad))
+  }
+})
+
+test('normalizePublicSalon keeps at most the 6 most recent reviews and drops an unusable row', () => {
+  const items = Array.from({ length: 8 }, (_unused, index) => ({
+    rating: 5,
+    comment: `Reseña ${index + 1}`,
+    author: `Persona ${index + 1}`,
+    date: '2026-11-04',
+  }))
+  const salon = parsed({
+    ...full,
+    reviews: {
+      average: 5,
+      count: 8,
+      items: [items[0], { rating: 0, comment: 'x', author: 'Mal', date: '' }, ...items.slice(1)],
+    },
+  })
+  assert.equal(salon.reviews?.items.length, 6)
+  assert.deepEqual(
+    salon.reviews?.items.map((item) => item.comment),
+    ['Reseña 1', 'Reseña 2', 'Reseña 3', 'Reseña 4', 'Reseña 5', 'Reseña 6'],
+  )
+  // The average and the count are the ones the SERVER computed: they are not recounted.
+  assert.equal(salon.reviews?.average, 5)
+  assert.equal(salon.reviews?.count, 8)
+})
+
+test('the reviews of the landing normalize to one decimal and a Spanish count', () => {
+  assert.equal(reviewsAverageLabel(4.25), '4.3')
+  assert.equal(reviewsAverageLabel(4.6), '4.6')
+  assert.equal(reviewsAverageLabel(5), '5.0')
+  assert.equal(reviewsCountLabel(1), '1 reseña')
+  assert.equal(reviewsCountLabel(12), '12 reseñas')
+})
+
+test('buildLanding shows the reviews section ONLY from the payload `reviews` (no new nav link)', () => {
+  const model = buildLanding(parsed({ ...full, reviews: REVIEWS_PAYLOAD }))
+  assert.deepEqual(model.reviews, {
+    average: 4.6,
+    count: 12,
+    averageLabel: '4.6',
+    countLabel: '12 reseñas',
+    items: [
+      { rating: 5, comment: 'Excelente, volveré', author: 'Lía G.', date: '2026-11-04T12:00:00Z' },
+      { rating: 4, comment: '', author: 'Ana P.', date: '2026-11-02' },
+    ],
+  })
+  // The section is additive: `sections` and `nav` are exactly the ones of F16/F9/F11.
+  assert.deepEqual(model.sections, {
+    services: true,
+    team: true,
+    packages: true,
+    loyalty: false,
+    deposit: false,
+    gallery: true,
+  })
+  assert.deepEqual(
+    model.nav.map((link) => link.label),
+    ['Servicios', 'Equipo', 'Paquetes', 'Galería'],
+  )
+})
+
+test('buildLanding without `reviews` renders no reviews section and invents nothing', () => {
+  for (const raw of [full, { ...full, reviews: null }]) {
+    const model = buildLanding(parsed(raw))
+    assert.equal(model.reviews, null)
+    assert.equal(JSON.stringify(model).includes('reseña'), false)
+  }
+})
+
+test('buildLanding puts the reviews of the payload first in the model, up to six', () => {
+  const items = Array.from({ length: 9 }, (_unused, index) => ({
+    rating: 3,
+    comment: `Comentario ${index + 1}`,
+    author: `P ${index + 1}`,
+    date: '2026-11-04',
+  }))
+  const model = buildLanding(parsed({ ...full, reviews: { average: 3, count: 9, items } }))
+  assert.equal(model.reviews?.items.length, 6)
+  assert.equal(model.reviews?.countLabel, '9 reseñas')
+})
+
+test('the service worker never caches the public review link (GET nor POST)', () => {
+  const worker = loadWorker(WORKER_SOURCE)
+  assert.equal(intercepted(worker, 'https://salon.test/api/v1/public/reviews/tok123'), false)
+  assert.equal(intercepted(worker, 'https://salon.test/api/v1/public/reviews/tok123', 'POST'), false)
+  // The path is named in the worker, like the money paths of F11: not cached by accident.
+  assert.ok(WORKER_SOURCE.includes('/api/v1/public/reviews/'))
 })

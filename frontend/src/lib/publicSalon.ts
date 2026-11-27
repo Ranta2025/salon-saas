@@ -70,13 +70,38 @@ export type PublicLoyalty = {
 /**
  * Deposit policy as the public payload sends it (F11, D11): the rule, never an
  * amount of a service (that travels per service, in `deposit_cents`).
- */
-export type PublicDeposit = {
+ */export type PublicDeposit = {
   percent: number
   holdMinutes: number
   refundHours: number
   /** The gateway is the simulated bank: the page says so (D11, D13). */
   simulated: boolean
+}
+
+/**
+ * One review of the landing (F13, D7): plain text, the author exactly as the server
+ * decided it (first name and the initial of the last name, D5) and the date it was
+ * written. Nothing else: no email, no phone, no turno.
+ */
+export type PublicReviewItem = {
+  /** 1..5. */
+  rating: number
+  comment: string
+  author: string
+  /** `YYYY-MM-DD` or an ISO date; may be empty (the section hides the line). */
+  date: string
+}
+
+/**
+ * Reviews of the public page (F13, D7): ADDITIVE key and OMITTED when the salon has
+ * no visible review. `average` and `count` are the ones the SERVER computed over
+ * every visible review; `items` are at most the 6 most recent visible ones.
+ */
+export type PublicReviews = {
+  /** One decimal, for example 4.6. */
+  average: number
+  count: number
+  items: PublicReviewItem[]
 }
 
 export type PublicSalon = {
@@ -96,6 +121,13 @@ export type PublicSalon = {
    * change; a missing field and `null` mean the same.
    */
   loyalty?: PublicLoyalty | null
+  /**
+   * `reviews` (F13, D7): the reviews of the salon, present ONLY when there is at
+   * least one visible one. `null` when the API did not send it, so the landing
+   * renders no section instead of an empty one. Optional so a payload built by hand
+   * (the profile preview) needs no change.
+   */
+  reviews?: PublicReviews | null
   /**
    * `hours` of the public salon (F2d1): the open days only, already expanded by
    * the server. `null` means the API did not send a usable field, so the landing
@@ -269,6 +301,52 @@ function normalizeLoyalty(value: unknown): PublicLoyalty | null {
   return { visitsRequired: visits, rewardServiceName: name }
 }
 
+/** Reviews of the landing are capped by the contract (D7: the 6 most recent). */
+export const MAX_LANDING_REVIEWS = 6
+
+/** One review; a row without a rating 1..5 or without an author is dropped. */
+function normalizePublicReview(value: unknown): PublicReviewItem | null {
+  if (!isRecord(value)) {
+    return null
+  }
+  const rating = integer(value['rating'])
+  const author = text(value['author'])
+  if (rating === null || rating < 1 || rating > 5 || author === '') {
+    return null
+  }
+  return { rating, comment: text(value['comment']), author, date: text(value['date']) }
+}
+
+/**
+ * `reviews` of the public payload; anything that is not a usable summary is `null`.
+ * The average is NOT recomputed here: the server owns it (D7). A count of zero means
+ * «no visible reviews», so the section is not rendered and the key is as if omitted.
+ */
+function normalizeReviews(value: unknown): PublicReviews | null {
+  if (!isRecord(value)) {
+    return null
+  }
+  const count = integer(value['count'])
+  const average = value['average']
+  if (count === null || count < 1) {
+    return null
+  }
+  if (typeof average !== 'number' || !Number.isFinite(average) || average < 1 || average > 5) {
+    return null
+  }
+  if (!Array.isArray(value['items'])) {
+    // The average and the count are the server's, but a summary with no rows at all
+    // is not the documented payload: the section is not rendered for it.
+    return null
+  }
+  return {
+    // The server sends one decimal already: this only removes float noise.
+    average: Math.round(average * 10) / 10,
+    count,
+    items: rowsOf(value['items'], normalizePublicReview).slice(0, MAX_LANDING_REVIEWS),
+  }
+}
+
 function rowsOf<T>(raw: unknown, read: (row: unknown) => T | null): T[] {
   const out: T[] = []
   for (const row of Array.isArray(raw) ? raw : []) {
@@ -324,6 +402,7 @@ export function normalizePublicSalon(raw: unknown, apiBase = ''): PublicSalon | 
     packages: rowsOf(raw['packages'], normalizePackage),
     loyalty: normalizeLoyalty(raw['loyalty']),
     deposit: normalizeDeposit(raw['deposit']),
+    reviews: normalizeReviews(raw['reviews']),
     hours: hours.length > 0 ? hours : null,
   }
 }
@@ -422,6 +501,31 @@ export type LandingDeposit = {
 
 export type NavLink = { href: string; label: string }
 
+/** «4.6»: the average the server computed, always with one decimal. */
+export function reviewsAverageLabel(average: number): string {
+  return average.toFixed(1)
+}
+
+/** «1 reseña» / «12 reseñas». */
+export function reviewsCountLabel(count: number): string {
+  return count === 1 ? '1 reseña' : `${count} reseñas`
+}
+
+/**
+ * Section «Reseñas» of the landing (F13, D7). Rendered ONLY when the payload carries
+ * `reviews`; the average, the count and the rows are the ones the SERVER sent, never
+ * recounted here (an occluded review disappears from the web and from the average).
+ */
+export type LandingReviews = {
+  average: number
+  count: number
+  /** `4.6`. */
+  averageLabel: string
+  /** «12 reseñas». */
+  countLabel: string
+  items: PublicReviewItem[]
+}
+
 export type LandingModel = {
   name: string
   description: string | null
@@ -440,6 +544,8 @@ export type LandingModel = {
   loyalty: LandingLoyalty | null
   /** `null` = the salon charges no deposit: the section is not rendered (F11, D11). */
   deposit: LandingDeposit | null
+  /** `null` = there are no visible reviews: the section is not rendered (F13, D7). */
+  reviews: LandingReviews | null
   /** First gallery photo, used behind the hero; null = a hero without photo. */
   heroPhoto: PublicPhoto | null
   sections: {
@@ -472,6 +578,7 @@ export function buildLanding(data: PublicSalon): LandingModel {
   const gallery = data.gallery
   const program = data.loyalty ?? null
   const policy = data.deposit ?? null
+  const reviews = data.reviews ?? null
   const sections = {
     services: services.length > 0,
     team: data.team.length > 0,
@@ -542,6 +649,19 @@ export function buildLanding(data: PublicSalon): LandingModel {
             sentence: depositSentence(policy.percent),
             holdLabel: holdLabel(policy.holdMinutes),
             refundLabel: refundLabel(policy.refundHours),
+          },
+    // F13 (D7): driven only by the payload `reviews`; null renders no section. It is
+    // deliberately NOT part of `sections`/`nav`: the public page gained no new menu
+    // entry, so the landing keeps the navigation it already had.
+    reviews:
+      reviews === null
+        ? null
+        : {
+            average: reviews.average,
+            count: reviews.count,
+            averageLabel: reviewsAverageLabel(reviews.average),
+            countLabel: reviewsCountLabel(reviews.count),
+            items: reviews.items,
           },
     heroPhoto: gallery[0] ?? null,
     sections,

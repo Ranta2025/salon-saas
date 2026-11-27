@@ -10,6 +10,9 @@
  *   /api/v1/payments/ (the callback of the gateway) and /api/v1/public/deposits/
  *   (the state of a payment) are never cached nor answered from a cache, with any
  *   method: a payment is online only and a stale answer would lie about money
+ * - EXCEPT the public review link of F13 (D8): /api/v1/public/reviews/ carries a
+ *   single-use token, so it is never intercepted nor cached with any method: a
+ *   cached GET or a replayed POST would lie about a review already sent
  * - never intercepts or caches non-GET requests: mutations are queued by the app
  *   (`src/lib/offlineQueue.ts`) so the server keeps deduplicating by client_op_id
  * - cache-first for same-origin static assets (JS/CSS/fonts/images)
@@ -17,7 +20,7 @@
 
 // Bump this value on every deploy that changes the worker or the precache list:
 // `activate` deletes every cache that is not part of the current version.
-const VERSION = 'salon-v5'
+const VERSION = 'salon-v6'
 const SHELL_CACHE = `${VERSION}-shell`
 const STATIC_CACHE = `${VERSION}-static`
 const API_CACHE = `${VERSION}-api`
@@ -146,16 +149,18 @@ function isPublicApiPath(pathname) {
 }
 
 /**
- * Money paths (F11, D13-d): the simulated bank, the callback of the payment gateway
- * and the public state of a deposit. They are never cached, never answered from a
- * cache and never intercepted, whatever the method (`/api/v1/public/deposits/` is
- * also covered by `isPublicApiPath`, and it is named here on purpose).
+ * Money paths (F11, D13-d) and the public review link (F13, D8): never cached, never
+ * answered from a cache and never intercepted, whatever the method
+ * (`/api/v1/public/deposits/` and `/api/v1/public/reviews/` are also covered by
+ * `isPublicApiPath`, and they are named here on purpose: a review carries a
+ * single-use token and a payment is online only).
  */
 function isNeverCachedApiPath(pathname) {
   return (
     pathname.startsWith('/api/v1/simbank/') ||
     pathname.startsWith('/api/v1/payments/') ||
-    pathname.startsWith('/api/v1/public/deposits/')
+    pathname.startsWith('/api/v1/public/deposits/') ||
+    pathname.startsWith('/api/v1/public/reviews/')
   )
 }
 
