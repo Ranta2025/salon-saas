@@ -1,9 +1,9 @@
 import { Navigate } from 'react-router-dom'
-import { activeRole, panelHomePath } from '../lib/permissions'
+import { activeRole, panelHomePath } from '@/lib/permissions'
 import { DashboardPage } from './DashboardPage'
-import { LoadingState } from './components/Feedback'
-import { PageHeader } from './components/PageHeader'
-import { useSalon } from './SalonContext'
+import { LoadingState } from '@/app/components/Feedback'
+import { PageHeader } from '@/app/components/PageHeader'
+import { useSalon } from '@/app/SalonContext'
 
 /**
  * Index of `/panel`. A professional has no dashboard — the API answers 403 — so
