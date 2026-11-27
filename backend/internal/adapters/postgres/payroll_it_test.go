@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // payrollFixtures deja el escenario de la nómina limpio: dos salones en la zona
@@ -64,36 +65,17 @@ func payrollFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 	return pool, ctx
 }
 
-// paySaleItem es una línea a insertar por SQL: pct nil = fila ANTERIOR a F3.1
-// (commission_pct NULL), que la nómina estima con la tarifa actual.
-type paySaleItem struct {
-	serviceID string
-	qty       int
-	priceCent int
-	pct       *int
-}
+// paySaleItem y insertPaySale son los helpers compartidos de itdb, con el
+// nombre que ya usaban los IT de este paquete.
+type paySaleItem = itdb.PaySaleItem
 
-// insertPaySale inserta la venta con su created_at EXACTO y sus líneas.
 func insertPaySale(t *testing.T, ctx context.Context, pool *pgxpool.Pool,
 	id, salonID, profID string, at time.Time, total int, items ...paySaleItem) {
 	t.Helper()
-	if _, err := pool.Exec(ctx,
-		`INSERT INTO sales(id,salon_id,professional_id,client_name,total_cents,method,created_at)
-		 VALUES($1,$2,$3,'Clienta',$4,'cash',$5)`,
-		id, salonID, profID, total, at.UTC()); err != nil {
-		t.Fatalf("venta %s: %v", id, err)
-	}
-	for i, it := range items {
-		if _, err := pool.Exec(ctx,
-			`INSERT INTO sale_items(id,sale_id,service_id,qty,unit_price_cents,commission_pct)
-			 VALUES($1,$2,$3,$4,$5,$6)`,
-			id+"-li"+string(rune('a'+i)), id, it.serviceID, it.qty, it.priceCent, it.pct); err != nil {
-			t.Fatalf("línea %s: %v", id, err)
-		}
-	}
+	itdb.InsertPaySale(t, ctx, pool, id, salonID, profID, at, total, items...)
 }
 
-func intPtr(v int) *int { return &v }
+func intPtr(v int) *int { return itdb.IntPtr(v) }
 
 // payrollCatalog crea el catálogo de los dos salones y devuelve los servicios.
 func payrollCatalog(t *testing.T, pool *pgxpool.Pool) (corte, color, gratis domain.Service) {
@@ -156,34 +138,34 @@ func TestPayrollIT_agregados_por_profesional(t *testing.T) {
 	//      inicio de la ventana: entra.
 	insertPaySale(t, ctx, pool, "sale-pay-1", "s-it-pay", "u-it-pay-a",
 		time.Date(2026, 3, 1, 6, 0, 0, 0, time.UTC), 999,
-		paySaleItem{serviceID: corte.ID, qty: 3, priceCent: 333, pct: intPtr(10)})
+		paySaleItem{ServiceID: corte.ID, Qty: 3, PriceCent: 333, Pct: intPtr(10)})
 	//  (2) 1 × 1000 al 30% (foto) + 2 × 500 con la foto en NULL (legacy) -> la
 	//      tarifa ACTUAL del corte es 10: 30000 + 10000 = 40000 -> 400 centavos y
 	//      la fila queda estimada.
 	insertPaySale(t, ctx, pool, "sale-pay-2", "s-it-pay", "u-it-pay-a",
 		time.Date(2026, 3, 31, 23, 59, 0, 0, time.UTC), 2000,
-		paySaleItem{serviceID: color.ID, qty: 1, priceCent: 1000, pct: intPtr(30)},
-		paySaleItem{serviceID: corte.ID, qty: 2, priceCent: 500, pct: nil})
+		paySaleItem{ServiceID: color.ID, Qty: 1, PriceCent: 1000, Pct: intPtr(30)},
+		paySaleItem{ServiceID: corte.ID, Qty: 2, PriceCent: 500, Pct: nil})
 	//  (3) 1 × 500 al 0%: 0 centavos, pero cuenta como venta.
 	insertPaySale(t, ctx, pool, "sale-pay-3", "s-it-pay", "u-it-pay-a",
 		time.Date(2026, 3, 15, 18, 0, 0, 0, time.UTC), 500,
-		paySaleItem{serviceID: gratis.ID, qty: 1, priceCent: 500, pct: intPtr(0)})
+		paySaleItem{ServiceID: gratis.ID, Qty: 1, PriceCent: 500, Pct: intPtr(0)})
 	// Bordes que NO entran: exactamente el fin de la ventana y antes del inicio.
 	insertPaySale(t, ctx, pool, "sale-pay-4", "s-it-pay", "u-it-pay-a",
 		time.Date(2026, 4, 1, 6, 0, 0, 0, time.UTC), 9999,
-		paySaleItem{serviceID: corte.ID, qty: 1, priceCent: 9999, pct: intPtr(10)})
+		paySaleItem{ServiceID: corte.ID, Qty: 1, PriceCent: 9999, Pct: intPtr(10)})
 	insertPaySale(t, ctx, pool, "sale-pay-5", "s-it-pay", "u-it-pay-a",
 		time.Date(2026, 2, 28, 23, 0, 0, 0, time.UTC), 5000,
-		paySaleItem{serviceID: corte.ID, qty: 1, priceCent: 5000, pct: intPtr(10)})
+		paySaleItem{ServiceID: corte.ID, Qty: 1, PriceCent: 5000, Pct: intPtr(10)})
 	// Beto: 1 × 2000 al 10% -> 20000 -> 200 centavos. Después se da de baja: sus
 	// ventas siguen contando.
 	insertPaySale(t, ctx, pool, "sale-pay-6", "s-it-pay", "u-it-pay-b",
 		time.Date(2026, 3, 10, 18, 0, 0, 0, time.UTC), 2000,
-		paySaleItem{serviceID: corte.ID, qty: 1, priceCent: 2000, pct: intPtr(10)})
+		paySaleItem{ServiceID: corte.ID, Qty: 1, PriceCent: 2000, Pct: intPtr(10)})
 	// El salón 2 tiene su propia venta grande: no puede aparecer en el salón 1.
 	insertPaySale(t, ctx, pool, "sale-pay-7", "s-it-pay2", "u-it-pay-c",
 		time.Date(2026, 3, 15, 18, 0, 0, 0, time.UTC), 999999,
-		paySaleItem{serviceID: svc2.ID, qty: 1, priceCent: 999999, pct: intPtr(90)})
+		paySaleItem{ServiceID: svc2.ID, Qty: 1, PriceCent: 999999, Pct: intPtr(90)})
 
 	// Beto dado de baja DESPUÉS de vender (ended_at): el histórico no se toca.
 	if _, err := pool.Exec(ctx,
@@ -256,8 +238,8 @@ func TestPayrollIT_foto_vs_estimado(t *testing.T) {
 	// 1 × 1000 al 20% (foto) + 1 × 1000 sin foto.
 	insertPaySale(t, ctx, pool, "sale-pay-foto", "s-it-pay", "u-it-pay-a",
 		time.Date(2026, 3, 10, 18, 0, 0, 0, time.UTC), 2000,
-		paySaleItem{serviceID: corte.ID, qty: 1, priceCent: 1000, pct: intPtr(20)},
-		paySaleItem{serviceID: corte.ID, qty: 1, priceCent: 1000, pct: nil})
+		paySaleItem{ServiceID: corte.ID, Qty: 1, PriceCent: 1000, Pct: intPtr(20)},
+		paySaleItem{ServiceID: corte.ID, Qty: 1, PriceCent: 1000, Pct: nil})
 
 	repo := PayrollSales{Pool: pool}
 	before, err := repo.CommissionTotals("s-it-pay", from, to)

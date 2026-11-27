@@ -44,6 +44,7 @@ import (
 	notifstore "salon-saas/internal/notifications/postgres"
 	"salon-saas/internal/packages"
 	packageshttpapi "salon-saas/internal/packages/httpapi"
+	packagespostgres "salon-saas/internal/packages/postgres"
 	"salon-saas/internal/payroll"
 	payrollhttpapi "salon-saas/internal/payroll/httpapi"
 	"salon-saas/internal/ports"
@@ -271,8 +272,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	// F8: catálogo de paquetes y paquetes comprados por cada clienta (con su libro
 	// de saldo). Comprar escribe la venta, el paquete y el movimiento en UNA
 	// transacción; consumir es un UPDATE condicional más su movimiento.
-	packagesRepo := pgstore.Packages{Pool: pool}
-	clientPackagesRepo := pgstore.ClientPackages{Pool: pool}
+	packagesRepo := packagespostgres.Packages{Pool: pool}
+	clientPackagesRepo := packagespostgres.ClientPackages{Pool: pool}
 	// F9: fidelidad (programa del salón y vales entregados; migración 033).
 	loyaltyProgramsRepo := loyaltystore.LoyaltyPrograms{Pool: pool}
 	loyaltyRewardsRepo := loyaltystore.LoyaltyRewards{Pool: pool}

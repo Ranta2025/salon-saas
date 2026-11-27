@@ -55,10 +55,10 @@ func febSales(t *testing.T, ctx context.Context, pool *pgxpool.Pool, corte domai
 	t.Helper()
 	insertPaySale(t, ctx, pool, "sale-pr-1", "s-it-pay", "u-it-pay-a",
 		time.Date(2026, 2, 10, 18, 0, 0, 0, time.UTC), 2000,
-		paySaleItem{serviceID: corte.ID, qty: 2, priceCent: 1000, pct: intPtr(10)})
+		paySaleItem{ServiceID: corte.ID, Qty: 2, PriceCent: 1000, Pct: intPtr(10)})
 	insertPaySale(t, ctx, pool, "sale-pr-2", "s-it-pay", "u-it-pay-a",
 		time.Date(2026, 2, 20, 18, 0, 0, 0, time.UTC), 500,
-		paySaleItem{serviceID: corte.ID, qty: 1, priceCent: 500, pct: nil})
+		paySaleItem{ServiceID: corte.ID, Qty: 1, PriceCent: 500, Pct: nil})
 }
 
 // La creación congela: editar el catálogo, cargar ventas del período y cambiar
@@ -94,7 +94,7 @@ func TestPayrollRunsIT_crear_congela_la_foto(t *testing.T) {
 	// Más ventas del período, con ids propios.
 	insertPaySale(t, ctx, pool, "sale-pr-3", "s-it-pay", "u-it-pay-a",
 		time.Date(2026, 2, 25, 18, 0, 0, 0, time.UTC), 4000,
-		paySaleItem{serviceID: corte.ID, qty: 2, priceCent: 2000, pct: intPtr(10)})
+		paySaleItem{ServiceID: corte.ID, Qty: 2, PriceCent: 2000, Pct: intPtr(10)})
 	if _, err := pool.Exec(ctx,
 		`INSERT INTO member_pay(salon_id,user_id,fixed_cents,fixed_period,commission_enabled)
 		 VALUES('s-it-pay','u-it-pay-a',70000,'month',true)
@@ -185,7 +185,7 @@ func TestPayrollRunsIT_periodo_solape_y_borrado(t *testing.T) {
 	// (con una venta de marzo para que haya algo que liquidar).
 	insertPaySale(t, ctx, pool, "sale-pr-mar", "s-it-pay", "u-it-pay-a",
 		time.Date(2026, 3, 3, 18, 0, 0, 0, time.UTC), 1000,
-		paySaleItem{serviceID: corte.ID, qty: 1, priceCent: 1000, pct: intPtr(10)})
+		paySaleItem{ServiceID: corte.ID, Qty: 1, PriceCent: 1000, Pct: intPtr(10)})
 	if _, err := svc.Create(owner, "s-it-pay", "fortnight", "2026-03-03"); err != nil {
 		t.Fatalf("períodos adyacentes: %v", err)
 	}
@@ -387,7 +387,7 @@ func TestPayrollRunsIT_ajuste_pago_e_inmutabilidad(t *testing.T) {
 	// Enero está libre (la de febrero ya está pagada) y tiene una venta propia.
 	insertPaySale(t, ctx, pool, "sale-pr-ene", "s-it-pay", "u-it-pay-a",
 		time.Date(2026, 1, 5, 18, 0, 0, 0, time.UTC), 1000,
-		paySaleItem{serviceID: corte.ID, qty: 1, priceCent: 1000, pct: intPtr(10)})
+		paySaleItem{ServiceID: corte.ID, Qty: 1, PriceCent: 1000, Pct: intPtr(10)})
 	run2, err := svc.Create(owner, "s-it-pay", "fortnight", "2026-01-03")
 	if err != nil {
 		t.Fatalf("crear enero: %v", err)
@@ -412,7 +412,7 @@ func TestPayrollRunsIT_ajuste_pago_e_inmutabilidad(t *testing.T) {
 	// 8 pagos simultáneos sobre una corrida abierta: uno gana y siete 409.
 	insertPaySale(t, ctx, pool, "sale-pr-ene2", "s-it-pay", "u-it-pay-a",
 		time.Date(2026, 1, 20, 18, 0, 0, 0, time.UTC), 1000,
-		paySaleItem{serviceID: corte.ID, qty: 1, priceCent: 1000, pct: intPtr(10)})
+		paySaleItem{ServiceID: corte.ID, Qty: 1, PriceCent: 1000, Pct: intPtr(10)})
 	run3, err := svc.Create(owner, "s-it-pay", "fortnight", "2026-01-20")
 	if err != nil {
 		t.Fatalf("crear la quincena 16-28/2: %v", err)
@@ -464,7 +464,7 @@ func TestPayrollRunsIT_tenant_listado_y_export(t *testing.T) {
 	}
 	insertPaySale(t, ctx, pool, "sale-pr-otro", "s-it-pay2", "u-it-pay-c",
 		time.Date(2026, 2, 12, 18, 0, 0, 0, time.UTC), 1000,
-		paySaleItem{serviceID: svc2.ID, qty: 1, priceCent: 1000, pct: intPtr(10)})
+		paySaleItem{ServiceID: svc2.ID, Qty: 1, PriceCent: 1000, Pct: intPtr(10)})
 	owner2 := payrollRunActor(t, pool, "u-it-pay-c", "s-it-pay2")
 
 	mine, err := svc.Create(owner, "s-it-pay", "month", "2026-02-10")

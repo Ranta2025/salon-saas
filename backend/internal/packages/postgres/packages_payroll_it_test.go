@@ -9,7 +9,7 @@
 //	    comisión no cambia (un paquete no tiene líneas de servicio).
 //
 // Se saltea sin SALON_IT=1.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -17,8 +17,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/payroll"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // payrollVentasMain es el CTE `ventas` TAL COMO ESTÁ en `main` (F6/D6): la
@@ -61,7 +63,7 @@ func TestPackagesPayrollIT_ventas_excludes_package_sales(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner := domain.Membership{UserID: "u-it-pkg-owner", SalonID: "s-it-pkg", Role: domain.RoleOwner}
-	if err := (Memberships{Pool: pool}).Save(owner); err != nil {
+	if err := (pgstore.Memberships{Pool: pool}).Save(owner); err != nil {
 		t.Fatal(err)
 	}
 	// Marzo de 2026 en Auckland (NZDT +13): [28/2 11:00Z, 31/3 11:00Z).
@@ -70,18 +72,18 @@ func TestPackagesPayrollIT_ventas_excludes_package_sales(t *testing.T) {
 	at := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
 
 	// Datos SIN paquetes: dos ventas de servicios y una venta de solo productos.
-	insertPaySale(t, ctx, pool, "sale-pkgpay-1", "s-it-pkg", "u-it-pkg-prof", at, 30000,
-		paySaleItem{serviceID: f.svcA.ID, qty: 2, priceCent: 15000, pct: intPtr(10)})
-	insertPaySale(t, ctx, pool, "sale-pkgpay-2", "s-it-pkg", "u-it-pkg-prof", at.Add(time.Hour), 5000,
-		paySaleItem{serviceID: f.svcB.ID, qty: 1, priceCent: 5000, pct: intPtr(20)})
-	insertPaySale(t, ctx, pool, "sale-pkgpay-3", "s-it-pkg", "u-it-pkg-prof", at.Add(2*time.Hour), 7000)
+	itdb.InsertPaySale(t, ctx, pool, "sale-pkgpay-1", "s-it-pkg", "u-it-pkg-prof", at, 30000,
+		itdb.PaySaleItem{ServiceID: f.svcA.ID, Qty: 2, PriceCent: 15000, Pct: itdb.IntPtr(10)})
+	itdb.InsertPaySale(t, ctx, pool, "sale-pkgpay-2", "s-it-pkg", "u-it-pkg-prof", at.Add(time.Hour), 5000,
+		itdb.PaySaleItem{ServiceID: f.svcB.ID, Qty: 1, PriceCent: 5000, Pct: itdb.IntPtr(20)})
+	itdb.InsertPaySale(t, ctx, pool, "sale-pkgpay-3", "s-it-pkg", "u-it-pkg-prof", at.Add(2*time.Hour), 7000)
 	if _, err := pool.Exec(ctx, `UPDATE sales SET products_cents=7000 WHERE id='sale-pkgpay-3'`); err != nil {
 		t.Fatal(err)
 	}
 
-	repo := PayrollSales{Pool: pool}
+	repo := pgstore.PayrollSales{Pool: pool}
 	svc := payroll.PayrollService{
-		Pay: PayModels{Pool: pool}, Sales: repo, Memberships: Memberships{Pool: pool}, Settings: Salons{Pool: pool},
+		Pay: pgstore.PayModels{Pool: pool}, Sales: repo, Memberships: pgstore.Memberships{Pool: pool}, Settings: pgstore.Salons{Pool: pool},
 		Now: func() time.Time { return time.Date(2026, 4, 15, 0, 0, 0, 0, time.UTC) },
 	}
 	previewLine := func() payroll.PayrollLine {
@@ -155,7 +157,7 @@ func TestPackagesPayrollIT_ventas_excludes_package_sales(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT total_cents, packages_cents FROM sales WHERE id=$1`, order.Sale.ID).Scan(&total, &pkgCents); err != nil || total != 60000 || pkgCents != 60000 {
 		t.Fatalf("la venta del paquete: %d/%d %v", total, pkgCents, err)
 	}
-	if sum, err := (Sales{Pool: pool}).SumCents("s-it-pkg", from, to, ""); err != nil || sum != 30000+5000+7000+60000 {
+	if sum, err := (pgstore.Sales{Pool: pool}).SumCents("s-it-pkg", from, to, ""); err != nil || sum != 30000+5000+7000+60000 {
 		t.Fatalf("SumCents (caja/dashboard) debe incluir el paquete: %d %v", sum, err)
 	}
 }

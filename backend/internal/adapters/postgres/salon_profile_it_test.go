@@ -12,27 +12,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 func f16Fixtures(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	pool := itPool(t)
-	t.Cleanup(pool.Close)
-	ctx := context.Background()
-	applyMigrations(t, pool)
-	for _, q := range []string{
-		`DELETE FROM salons WHERE id LIKE 's-it-f16%'`,
-		`DELETE FROM users WHERE id LIKE 'u-it-f16%'`,
-		`INSERT INTO users(id,name,email,pass_hash) VALUES('u-it-f16-ana','Ana F16','f16ana@test.com','x')`,
-		`INSERT INTO users(id,name,email,pass_hash) VALUES('u-it-f16-bea','Bea F16','f16bea@test.com','x')`,
-		`INSERT INTO salons(id,slug,name) VALUES('s-it-f16','s-it-f16','Salón F16')`,
-		`INSERT INTO salons(id,slug,name) VALUES('s-it-f162','s-it-f162','Salón F16 Dos')`,
-	} {
-		if _, err := pool.Exec(ctx, q); err != nil {
-			t.Fatalf("fixture: %v", err)
-		}
-	}
-	return pool
+	return itdb.F16Fixtures(t)
 }
 
 func TestSalonProfiles_roundTrip(t *testing.T) {

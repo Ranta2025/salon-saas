@@ -3,7 +3,7 @@
 // (saldo >= 1 y vigente) más su movimiento en la misma transacción, así que bajo
 // cualquier cantidad de pedidos simultáneos `sessions_left = Σ delta`, nunca
 // queda negativo y cada sesión se consume UNA sola vez.
-package pgstore
+package postgres
 
 import (
 	"errors"

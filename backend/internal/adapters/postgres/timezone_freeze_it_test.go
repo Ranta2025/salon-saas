@@ -66,7 +66,7 @@ func seedBoundarySales(t *testing.T, ctx context.Context, pool *pgxpool.Pool,
 	}
 	for _, s := range sales {
 		insertPaySale(t, ctx, pool, prefix+"-"+s.suffix, salonID, profID, s.at, 1000,
-			paySaleItem{serviceID: serviceID, qty: 1, priceCent: 1000, pct: intPtr(10)})
+			paySaleItem{ServiceID: serviceID, Qty: 1, PriceCent: 1000, Pct: intPtr(10)})
 	}
 }
 

@@ -20,8 +20,10 @@ import (
 	"sort"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"salon-saas/internal/domain"
 )
 
 // migrationsDir es backend/migrations visto desde internal/<feature>/postgres.
@@ -217,4 +219,76 @@ func MigrationsDir(t *testing.T) string {
 		t.Fatalf("no encuentro las migraciones en %s: %v", migrationsDir, err)
 	}
 	return migrationsDir
+}
+
+// F16Fixtures deja listos los dos salones de la vidriera pública (F16) con sus
+// usuarias. Es SQL puro, así que vive acá: lo usan los IT de ajustes y la
+// vidriera pública.
+func F16Fixtures(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	pool := Pool(t)
+	t.Cleanup(pool.Close)
+	ctx := context.Background()
+	ApplyMigrations(t, pool)
+	for _, q := range []string{
+		`DELETE FROM salons WHERE id LIKE 's-it-f16%'`,
+		`DELETE FROM users WHERE id LIKE 'u-it-f16%'`,
+		`INSERT INTO users(id,name,email,pass_hash) VALUES('u-it-f16-ana','Ana F16','f16ana@test.com','x')`,
+		`INSERT INTO users(id,name,email,pass_hash) VALUES('u-it-f16-bea','Bea F16','f16bea@test.com','x')`,
+		`INSERT INTO salons(id,slug,name) VALUES('s-it-f16','s-it-f16','Salón F16')`,
+		`INSERT INTO salons(id,slug,name) VALUES('s-it-f162','s-it-f162','Salón F16 Dos')`,
+	} {
+		if _, err := pool.Exec(ctx, q); err != nil {
+			t.Fatalf("fixture: %v", err)
+		}
+	}
+	return pool
+}
+
+// PaySaleItem es una línea a insertar por SQL: Pct nil = fila ANTERIOR a F3.1
+// (commission_pct NULL), que la nómina estima con la tarifa actual.
+type PaySaleItem struct {
+	ServiceID string
+	Qty       int
+	PriceCent int
+	Pct       *int
+}
+
+// InsertPaySale inserta la venta con su created_at EXACTO y sus líneas. Es SQL
+// puro y lo comparten los IT de nómina y los de paquetes.
+func InsertPaySale(t *testing.T, ctx context.Context, pool *pgxpool.Pool,
+	id, salonID, profID string, at time.Time, total int, items ...PaySaleItem) {
+	t.Helper()
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO sales(id,salon_id,professional_id,client_name,total_cents,method,created_at)
+		 VALUES($1,$2,$3,'Clienta',$4,'cash',$5)`,
+		id, salonID, profID, total, at.UTC()); err != nil {
+		t.Fatalf("venta %s: %v", id, err)
+	}
+	for i, it := range items {
+		if _, err := pool.Exec(ctx,
+			`INSERT INTO sale_items(id,sale_id,service_id,qty,unit_price_cents,commission_pct)
+			 VALUES($1,$2,$3,$4,$5,$6)`,
+			id+"-li"+string(rune('a'+i)), id, it.ServiceID, it.Qty, it.PriceCent, it.Pct); err != nil {
+			t.Fatalf("línea %s: %v", id, err)
+		}
+	}
+}
+
+// IntPtr devuelve el puntero a v: los IT arman con él los valores anulables.
+func IntPtr(v int) *int { return &v }
+
+// NewPhoto arma una foto de galería ya guardada en el storage: la usan los IT
+// de ajustes y la vidriera pública.
+func NewPhoto(t *testing.T, salon string) domain.SalonPhoto {
+	t.Helper()
+	p, err := domain.NewSalonPhoto(salon, domain.PhotoTypeWebP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err = p.StoredAt(salon + "/gallery/" + p.ID + ".webp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }

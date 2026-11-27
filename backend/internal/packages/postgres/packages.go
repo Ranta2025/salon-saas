@@ -1,4 +1,4 @@
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -37,7 +38,7 @@ func (r Packages) Create(p domain.ServicePackage) error {
 		`INSERT INTO service_packages(id,salon_id,name,service_id,sessions,price_cents,validity_days,active,created_at)
 		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
 		p.ID, p.SalonID, p.Name, p.ServiceID, p.Sessions, p.PriceCents, p.ValidityDays, p.Active, p.CreatedAt)
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // Save REEMPLAZA nombre, precio, vigencia (NULL incluida) y estado. El WHERE con
@@ -48,7 +49,7 @@ func (r Packages) Save(p domain.ServicePackage) error {
 		 WHERE salon_id=$1 AND id=$2`,
 		p.SalonID, p.ID, p.Name, p.PriceCents, p.ValidityDays, p.Active)
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
@@ -61,7 +62,7 @@ func (r Packages) FindByID(salonID, id string) (domain.ServicePackage, error) {
 		`SELECT `+packageColumns+` FROM service_packages WHERE salon_id=$1 AND id=$2`, salonID, id)
 	p, err := scanServicePackage(row.Scan)
 	if err != nil {
-		return domain.ServicePackage{}, notFound(err)
+		return domain.ServicePackage{}, pgstore.NotFound(err)
 	}
 	return p, nil
 }
@@ -126,7 +127,7 @@ func scanClientPackage(scan func(dest ...any) error) (domain.ClientPackage, erro
 // packageWriteError traduce el error de escribir. Un interbloqueo (40P01) o una
 // serialización perdida (40001) son una carrera perdida, no un 500: la
 // transacción ya se deshizo y reintentar es seguro.
-func packageWriteError(err error) error { return BusyError(err, domain.MsgPackageBusy) }
+func packageWriteError(err error) error { return pgstore.BusyError(err, domain.MsgPackageBusy) }
 
 // Purchase escribe la compra en UNA transacción: la venta (sin líneas), el
 // paquete de la clienta y el movimiento `purchase`. El INSERT del paquete es un
@@ -135,13 +136,13 @@ func packageWriteError(err error) error { return BusyError(err, domain.MsgPackag
 // client_op_id repetido lo frena el índice único de `sales` (ErrAlreadyExists) y
 // no deja nada escrito.
 func (r ClientPackages) Purchase(o domain.PackagePurchaseOrder) error {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 
 	s, cp, m := o.Sale, o.ClientPackage, o.Movement
 	if _, err := tx.Exec(ctx,
@@ -174,7 +175,7 @@ func (r ClientPackages) Purchase(o domain.PackagePurchaseOrder) error {
 
 // insertPackageMovement escribe una fila del libro (append-only). Las columnas
 // opcionales viajan como NULL cuando no hay valor ("" en Go).
-func insertPackageMovement(ctx context.Context, q querier, m domain.PackageMovement) error {
+func insertPackageMovement(ctx context.Context, q pgstore.Querier, m domain.PackageMovement) error {
 	_, err := q.Exec(ctx,
 		`INSERT INTO package_movements(id,salon_id,client_package_id,delta,reason,note,professional_id,client_op_id,actor,created_at)
 		 VALUES($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),$10)`,
@@ -194,7 +195,7 @@ func (r ClientPackages) FindPurchaseByOp(salonID, clientOpID string) (domain.Cli
 		`SELECT id FROM sales WHERE salon_id=$1 AND client_op_id=$2 AND client_op_id <> ''`,
 		salonID, clientOpID).Scan(&saleID)
 	if err != nil {
-		return domain.ClientPackage{}, notFound(err)
+		return domain.ClientPackage{}, pgstore.NotFound(err)
 	}
 	row := r.Pool.QueryRow(ctx,
 		`SELECT `+clientPackageColumns+` `+clientPackageFrom+`
@@ -242,7 +243,7 @@ func (r ClientPackages) ListMovements(salonID, clientID, clientPackageID string)
 	if err := r.Pool.QueryRow(ctx,
 		`SELECT 1 FROM client_packages WHERE salon_id=$1 AND client_id=$2 AND id=$3`,
 		salonID, clientID, clientPackageID).Scan(&one); err != nil {
-		return nil, notFound(err)
+		return nil, pgstore.NotFound(err)
 	}
 	rows, err := r.Pool.Query(ctx,
 		`SELECT id, delta, reason, COALESCE(note,''), COALESCE(professional_id,''), created_at
@@ -283,13 +284,13 @@ func (r ClientPackages) ListMovements(salonID, clientID, clientPackageID string)
 // justo la última sesión; (3) el 23505 del INSERT del movimiento, que deshace
 // también el descuento.
 func (r ClientPackages) Redeem(q domain.PackageRedeemRequest) (domain.ClientPackage, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return domain.ClientPackage{}, err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 
 	if q.ClientOpID != "" {
 		if cp, done, err := r.replayRedeem(ctx, tx, q); err != nil || done {
@@ -336,7 +337,7 @@ func (r ClientPackages) Redeem(q domain.PackageRedeemRequest) (domain.ClientPack
 		if q.ClientOpID != "" && errors.Is(err, domain.ErrAlreadyExists) {
 			// Un pedido gemelo ganó la carrera: la transacción se deshace (con
 			// su descuento) y se devuelve el estado que dejó el ganador.
-			rollbackTx(tx)
+			pgstore.RollbackTx(tx)
 			return r.replayAfterRace(q)
 		}
 		return domain.ClientPackage{}, err
@@ -354,7 +355,7 @@ func (r ClientPackages) Redeem(q domain.PackageRedeemRequest) (domain.ClientPack
 // replayRedeem mira si el client_op_id ya se usó. done=true es «ya está
 // resuelto»: devuelve el estado actual de ESTE paquete (sin descontar) o el 409
 // de un id usado para otra cosa.
-func (r ClientPackages) replayRedeem(ctx context.Context, q querier, req domain.PackageRedeemRequest) (domain.ClientPackage, bool, error) {
+func (r ClientPackages) replayRedeem(ctx context.Context, q pgstore.Querier, req domain.PackageRedeemRequest) (domain.ClientPackage, bool, error) {
 	var usedBy string
 	err := q.QueryRow(ctx,
 		`SELECT client_package_id FROM package_movements WHERE salon_id=$1 AND client_op_id=$2`,
@@ -363,7 +364,7 @@ func (r ClientPackages) replayRedeem(ctx context.Context, q querier, req domain.
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.ClientPackage{}, false, nil
 		}
-		return domain.ClientPackage{}, false, pgError(err)
+		return domain.ClientPackage{}, false, pgstore.PGError(err)
 	}
 	if usedBy != req.ClientPackageID {
 		return domain.ClientPackage{}, true, domain.NewMessage(domain.ErrAlreadyExists, domain.MsgPackageOpReused)
@@ -381,7 +382,7 @@ func (r ClientPackages) replayRedeem(ctx context.Context, q querier, req domain.
 
 // replayAfterRace resuelve el repetido FUERA de la transacción ya deshecha.
 func (r ClientPackages) replayAfterRace(req domain.PackageRedeemRequest) (domain.ClientPackage, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	cp, done, err := r.replayRedeem(ctx, r.Pool, req)
 	if err != nil {
@@ -394,13 +395,13 @@ func (r ClientPackages) replayAfterRace(req domain.PackageRedeemRequest) (domain
 }
 
 // readClientPackage lee UN paquete con el scope completo (salón y clienta).
-func readClientPackage(ctx context.Context, q querier, salonID, clientID, id string) (domain.ClientPackage, error) {
+func readClientPackage(ctx context.Context, q pgstore.Querier, salonID, clientID, id string) (domain.ClientPackage, error) {
 	row := q.QueryRow(ctx,
 		`SELECT `+clientPackageColumns+` `+clientPackageFrom+`
 		 WHERE cp.salon_id=$1 AND cp.client_id=$2 AND cp.id=$3`, salonID, clientID, id)
 	cp, err := scanClientPackage(row.Scan)
 	if err != nil {
-		return domain.ClientPackage{}, notFound(err)
+		return domain.ClientPackage{}, pgstore.NotFound(err)
 	}
 	return cp, nil
 }
@@ -411,7 +412,7 @@ func readClientPackage(ctx context.Context, q querier, salonID, clientID, id str
 // bloquea la fila (FOR UPDATE) para que el motivo no cambie bajo sus pies;
 // retry=true dice que el paquete SÍ se puede consumir (un ajuste concurrente
 // devolvió saldo) y quien llama repite el UPDATE, que ya no puede fallar.
-func explainFailedRedeem(ctx context.Context, q querier, req domain.PackageRedeemRequest) (retry bool, err error) {
+func explainFailedRedeem(ctx context.Context, q pgstore.Querier, req domain.PackageRedeemRequest) (retry bool, err error) {
 	var left int
 	var expires *time.Time
 	err = q.QueryRow(ctx,
@@ -437,13 +438,13 @@ func explainFailedRedeem(ctx context.Context, q querier, req domain.PackageRedee
 // Adjust mueve el saldo con un UPDATE condicional (el resultado queda en
 // 0..sessions_total) y escribe el movimiento `adjust` en la misma transacción.
 func (r ClientPackages) Adjust(a domain.PackageAdjustRequest) (domain.ClientPackage, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return domain.ClientPackage{}, err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 
 	tag, err := tx.Exec(ctx,
 		`UPDATE client_packages SET sessions_left = sessions_left + $4
@@ -462,7 +463,7 @@ func (r ClientPackages) Adjust(a domain.PackageAdjustRequest) (domain.ClientPack
 			if errors.Is(err, pgx.ErrNoRows) {
 				return domain.ClientPackage{}, domain.ErrNotFound
 			}
-			return domain.ClientPackage{}, pgError(err)
+			return domain.ClientPackage{}, pgstore.PGError(err)
 		}
 		return domain.ClientPackage{}, domain.NewMessage(domain.ErrAlreadyExists, domain.MsgPackageAdjustRange)
 	}

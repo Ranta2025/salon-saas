@@ -3,7 +3,7 @@
 // compra en UNA transacción, el invariante sessions_left = Σ delta, el UPDATE
 // condicional del consumo, la idempotencia por los índices únicos y el
 // aislamiento por salón.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/testutil/itdb"
 )
@@ -32,10 +33,10 @@ type pkgFix struct {
 // servicios y una clienta por salón (más una segunda en el salón 1).
 func pkgFixtures(t *testing.T) *pkgFix {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
 	ctx := context.Background()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 	for _, q := range []string{
 		`DELETE FROM salons WHERE id LIKE 's-it-pkg%'`,
 		`DELETE FROM users WHERE id LIKE 'u-it-pkg%'`,
@@ -54,7 +55,7 @@ func pkgFixtures(t *testing.T) *pkgFix {
 			t.Fatalf("fixture: %v", err)
 		}
 	}
-	mems := Memberships{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
 	for _, m := range []domain.Membership{
 		{UserID: "u-it-pkg-prof", SalonID: "s-it-pkg", Role: domain.RoleProfessional, Attends: true},
 		{UserID: "u-it-pkg-prof2", SalonID: "s-it-pkg2", Role: domain.RoleProfessional, Attends: true},
@@ -64,7 +65,7 @@ func pkgFixtures(t *testing.T) *pkgFix {
 		}
 	}
 	f := &pkgFix{pool: pool, ctx: ctx, catalog: Packages{Pool: pool}, owned: ClientPackages{Pool: pool}}
-	services := Services{Pool: pool}
+	services := pgstore.Services{Pool: pool}
 	mk := func(salon, name string) domain.Service {
 		s, err := domain.NewService(salon, name, 45, 15000, 10)
 		if err != nil {
@@ -76,7 +77,7 @@ func pkgFixtures(t *testing.T) *pkgFix {
 		return s
 	}
 	f.svcA, f.svcB, f.svcOther = mk("s-it-pkg", "Corte A"), mk("s-it-pkg", "Tinte B"), mk("s-it-pkg2", "Corte Ajeno")
-	clients := Clients{Pool: pool}
+	clients := pgstore.Clients{Pool: pool}
 	mc := func(salon, name string) domain.Client {
 		c, err := domain.NewClient(salon, name, "", "", "")
 		if err != nil {
@@ -406,7 +407,7 @@ func TestPackagesIT_purchase_replay_by_op(t *testing.T) {
 		t.Fatalf("op de otro salón: %v", err)
 	}
 	// Una venta del POS (sin paquete) con ese op id: el id ya se usó para OTRA cosa.
-	if err := (Sales{Pool: f.pool}).Save(domain.Sale{
+	if err := (pgstore.Sales{Pool: f.pool}).Save(domain.Sale{
 		ID: domain.NewID(), SalonID: "s-it-pkg", ProfessionalID: "u-it-pkg-prof", ClientName: "Mostrador",
 		Items: []domain.SaleItem{{ServiceID: f.svcA.ID, Qty: 1, UnitPriceCents: 100}}, TotalCents: 100,
 		Method: domain.MethodCash, ClientOpID: "op-pos", CreatedAt: now,

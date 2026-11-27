@@ -12,19 +12,12 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 func newPhoto(t *testing.T, salon string) domain.SalonPhoto {
 	t.Helper()
-	p, err := domain.NewSalonPhoto(salon, domain.PhotoTypeWebP)
-	if err != nil {
-		t.Fatal(err)
-	}
-	p, err = p.StoredAt(salon + "/gallery/" + p.ID + ".webp")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return p
+	return itdb.NewPhoto(t, salon)
 }
 
 func resetGallery(t *testing.T) SalonGallery {

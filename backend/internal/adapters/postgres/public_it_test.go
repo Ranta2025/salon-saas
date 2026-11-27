@@ -2,20 +2,23 @@
 // saltea sin SALON_IT=1: la descripción del servicio, el filtro de la carta por
 // profesional ACTIVA y reservable (la regla de la disponibilidad, con SQL real),
 // el equipo, la galería y los paquetes de la vidriera.
-package pgstore
+package pgstore_test
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
+	packagespostgres "salon-saas/internal/packages/postgres"
 	"salon-saas/internal/settings"
+	"salon-saas/internal/testutil/itdb"
 )
 
 func TestServices_descriptionRoundTrip(t *testing.T) {
-	pool := f16Fixtures(t)
-	repo := Services{Pool: pool}
+	pool := itdb.F16Fixtures(t)
+	repo := pgstore.Services{Pool: pool}
 	svc, err := domain.NewService("s-it-f16", "Corte F16", 30, 1000, 10)
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +66,7 @@ func TestServices_descriptionRoundTrip(t *testing.T) {
 
 // La vidriera completa con repos reales.
 func TestPublicSalon_realRepos(t *testing.T) {
-	pool := f16Fixtures(t)
+	pool := itdb.F16Fixtures(t)
 	ctx := context.Background()
 	for _, q := range []string{
 		`INSERT INTO users(id,name,email,pass_hash) VALUES('u-it-f16-rec','Rita F16','f16rec@test.com','x')`,
@@ -74,7 +77,7 @@ func TestPublicSalon_realRepos(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	mems := Memberships{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
 	for _, m := range []domain.Membership{
 		{UserID: "u-it-f16-ana", SalonID: "s-it-f16", Role: domain.RoleProfessional, Attends: true, Trade: "Estilista"},
 		{UserID: "u-it-f16-bea", SalonID: "s-it-f16", Role: domain.RoleOwner, Attends: true},
@@ -90,7 +93,7 @@ func TestPublicSalon_realRepos(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	services := Services{Pool: pool}
+	services := pgstore.Services{Pool: pool}
 	mk := func(salon, name string, active bool, description string) domain.Service {
 		s, _ := domain.NewService(salon, name, 45, 15000, 10)
 		s, _ = s.WithDescription(description)
@@ -108,7 +111,7 @@ func TestPublicSalon_realRepos(t *testing.T) {
 	inactivo := mk("s-it-f16", "Inactivo", false, "")
 	ajeno := mk("s-it-f162", "Del otro salón", true, "")
 
-	ps := ProfessionalServices{Pool: pool}
+	ps := pgstore.ProfessionalServices{Pool: pool}
 	for user, ids := range map[string][]string{
 		"u-it-f16-ana": {zeta.ID, inactivo.ID},
 		"u-it-f16-bea": {alfa.ID},
@@ -135,18 +138,18 @@ func TestPublicSalon_realRepos(t *testing.T) {
 	}
 
 	// Galería y paquetes.
-	gallery := SalonGallery{Pool: pool}
-	photo := newPhoto(t, "s-it-f16")
+	gallery := pgstore.SalonGallery{Pool: pool}
+	photo := itdb.NewPhoto(t, "s-it-f16")
 	if err := gallery.Add(photo, 12); err != nil {
 		t.Fatal(err)
 	}
 	if err := gallery.SetCaption("s-it-f16", photo.ID, "El local"); err != nil {
 		t.Fatal(err)
 	}
-	if err := gallery.Add(newPhoto(t, "s-it-f162"), 12); err != nil {
+	if err := gallery.Add(itdb.NewPhoto(t, "s-it-f162"), 12); err != nil {
 		t.Fatal(err)
 	}
-	catalog := Packages{Pool: pool}
+	catalog := packagespostgres.Packages{Pool: pool}
 	ten := 90
 	mkPkg := func(name, svc string, active bool, validity *int) {
 		p, err := domain.NewServicePackage("s-it-f16", name, svc, 5, 60000, validity)
@@ -162,8 +165,8 @@ func TestPublicSalon_realRepos(t *testing.T) {
 	mkPkg("Pack apagado", zeta.ID, false, nil)
 	mkPkg("Pack de servicio inactivo", inactivo.ID, true, nil)
 
-	salons := Salons{Pool: pool}
-	profiles := SalonProfiles{Pool: pool}
+	salons := pgstore.Salons{Pool: pool}
+	profiles := pgstore.SalonProfiles{Pool: pool}
 	if err := profiles.SaveProfile(domain.SalonProfile{SalonID: "s-it-f16", Name: "Salón F16", Description: "Somos F16", Phone: "555", Instagram: "f16"}); err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +174,7 @@ func TestPublicSalon_realRepos(t *testing.T) {
 		t.Fatal(err)
 	}
 	pub := settings.PublicSalonService{
-		Salons: salons, Services: services, Settings: salons, Hours: WeeklyHours{Pool: pool},
+		Salons: salons, Services: services, Settings: salons, Hours: pgstore.WeeklyHours{Pool: pool},
 		Profiles: profiles, Staff: mems, Professionals: ps, Gallery: gallery, Packages: catalog,
 	}
 	got, err := pub.Public("s-it-f16")
