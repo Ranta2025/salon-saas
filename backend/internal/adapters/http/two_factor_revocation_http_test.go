@@ -25,6 +25,7 @@ import (
 	"salon-saas/internal/adapters/realtime"
 	"salon-saas/internal/adapters/security"
 	"salon-saas/internal/app"
+	auditsvc "salon-saas/internal/audit"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -118,7 +119,7 @@ func newTFRevHTTP(t *testing.T) *tfRevHTTP {
 	tfSvc := app.TwoFactorService{
 		Repo: repo, Users: env.users, Hasher: security.BcryptHasher{}, Tokens: tokens,
 		Challenges: tokens, Box: box, Memberships: env.mems,
-		Audit: app.AuditService{Events: &maudit{}, Users: env.users}, Now: clock.Now,
+		Audit: auditsvc.AuditService{Events: &maudit{}, Users: env.users}, Now: clock.Now,
 		Gate: gate,
 	}
 	d := env.d

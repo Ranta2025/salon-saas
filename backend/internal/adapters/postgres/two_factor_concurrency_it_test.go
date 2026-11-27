@@ -17,6 +17,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"salon-saas/internal/adapters/security"
 	"salon-saas/internal/app"
+	"salon-saas/internal/audit"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/testutil/itdb"
@@ -95,7 +96,7 @@ func tfStackFor(t *testing.T) *tfStack {
 	svc := app.TwoFactorService{
 		Repo: cnt, Users: Users{Pool: pool}, Hasher: security.BcryptHasher{Cost: bcrypt.MinCost},
 		Tokens: jwtIssuer, Challenges: jwtIssuer, Box: box, Memberships: Memberships{Pool: pool},
-		Audit: app.AuditService{Events: Audit{Pool: pool}, Users: Users{Pool: pool}},
+		Audit: audit.AuditService{Events: Audit{Pool: pool}, Users: Users{Pool: pool}},
 	}
 	return &tfStack{tfFix: f, svc: svc, counter: cnt, box: box, pass: "clave-secreta-1"}
 }

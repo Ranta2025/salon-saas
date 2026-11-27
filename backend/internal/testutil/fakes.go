@@ -11,6 +11,9 @@ package testutil
 
 import (
 	"errors"
+	"sort"
+	"strings"
+	"sync"
 	"testing"
 
 	"salon-saas/internal/domain"
@@ -266,3 +269,95 @@ func WantMsg(t *testing.T, err error, kind error, text string) {
 		t.Fatalf("error %q (%v), quería %q de la familia %v", err.Error(), err, text, kind)
 	}
 }
+
+// FakeUsers es el repositorio de cuentas en memoria: índice por email en
+// minúsculas (la misma normalización que el registro) y búsqueda por id.
+type FakeUsers struct{ ByEmail map[string]domain.User }
+
+func (f *FakeUsers) Save(u domain.User) error {
+	if f.ByEmail == nil {
+		f.ByEmail = map[string]domain.User{}
+	}
+	f.ByEmail[strings.ToLower(u.Email)] = u
+	return nil
+}
+
+func (f *FakeUsers) FindByEmail(email string) (domain.User, error) {
+	u, ok := f.ByEmail[strings.ToLower(email)]
+	if !ok {
+		return domain.User{}, domain.ErrNotFound
+	}
+	return u, nil
+}
+
+// FindByID: lo usa GET /me (el token trae el userID, no el email).
+func (f *FakeUsers) FindByID(id string) (domain.User, error) {
+	for _, u := range f.ByEmail {
+		if u.ID == id {
+			return u, nil
+		}
+	}
+	return domain.User{}, domain.ErrNotFound
+}
+
+var _ ports.UserRepository = (*FakeUsers)(nil)
+
+// FakeAudit es el registro de auditoría en memoria: scope por salón, orden
+// (created_at, id) DESC, cursor estricto y el filtro de acción de
+// domain.AuditActionMatches.
+type FakeAudit struct {
+	Mu        sync.Mutex
+	Rows      []domain.AuditEvent
+	AppendErr error
+	// ListCalls cuenta las lecturas (el permiso va ANTES de tocar la base).
+	ListCalls   int
+	AppendCalls int
+	LastQuery   domain.AuditQuery
+}
+
+func (f *FakeAudit) Append(e domain.AuditEvent) error {
+	f.Mu.Lock()
+	defer f.Mu.Unlock()
+	f.AppendCalls++
+	if f.AppendErr != nil {
+		return f.AppendErr
+	}
+	f.Rows = append(f.Rows, e)
+	return nil
+}
+
+func (f *FakeAudit) List(salonID string, q domain.AuditQuery) ([]domain.AuditEvent, error) {
+	f.Mu.Lock()
+	defer f.Mu.Unlock()
+	f.ListCalls++
+	f.LastQuery = q
+	var out []domain.AuditEvent
+	for _, e := range f.Rows {
+		if e.SalonID != salonID || !domain.AuditActionMatches(q.Action, e.Action) {
+			continue
+		}
+		if q.Before != nil {
+			b := q.Before
+			if e.CreatedAt.After(b.CreatedAt) || (e.CreatedAt.Equal(b.CreatedAt) && e.ID >= b.ID) {
+				continue
+			}
+		}
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.After(out[j].CreatedAt)
+		}
+		return out[i].ID > out[j].ID
+	})
+	if q.Limit > 0 && len(out) > q.Limit {
+		out = out[:q.Limit]
+	}
+	return out, nil
+}
+
+var _ ports.AuditRepository = (*FakeAudit)(nil)
+
+// ErrAuditDown simula el registro de auditoría caído (un error que no debe
+// tumbar la operación de negocio).
+var ErrAuditDown = errors.New("audit down")

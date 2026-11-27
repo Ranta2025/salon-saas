@@ -24,6 +24,7 @@ import (
 	"salon-saas/internal/adapters/simbank"
 	"salon-saas/internal/adapters/storage"
 	"salon-saas/internal/app"
+	"salon-saas/internal/audit"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/loyalty"
 	loyaltystore "salon-saas/internal/loyalty/postgres"
@@ -311,7 +312,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	}
 	// F10: auditoría. Escribir (middleware, tras un 2xx) resuelve el nombre del
 	// actor con el repositorio de usuarios; leer el registro es solo owner/admin.
-	auditSvc := app.AuditService{Events: auditRepo, Users: users, Memberships: mems}
+	auditSvc := audit.AuditService{Events: auditRepo, Users: users, Memberships: mems}
 	// F10b: 2FA TOTP opcional (migración 035). El secreto se guarda cifrado con una
 	// clave derivada de JWT_SECRET (rotarlo obliga a re-enrolar el 2FA). Un usuario
 	// sin 2FA activo entra por el login de siempre; con 2FA, el login devuelve un

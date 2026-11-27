@@ -18,6 +18,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"salon-saas/internal/adapters/security"
 	"salon-saas/internal/app"
+	auditsvc "salon-saas/internal/audit"
 	"salon-saas/internal/domain"
 )
 
@@ -48,7 +49,7 @@ func newTFHTTP(t *testing.T) *tfHTTP {
 	tfSvc := app.TwoFactorService{
 		Repo: repo, Users: env.users, Hasher: security.BcryptHasher{}, Tokens: tokens,
 		Challenges: tokens, Box: box, Memberships: env.mems,
-		Audit: app.AuditService{Events: audit, Users: env.users}, Now: clock.Now,
+		Audit: auditsvc.AuditService{Events: audit, Users: env.users}, Now: clock.Now,
 	}
 	d := env.d
 	d.Auth = AuthHandler{Auth: app.AuthService{Users: env.users, Hasher: security.BcryptHasher{}, Tokens: tokens, TwoFactor: tfSvc}}

@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	"salon-saas/internal/audit"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -47,7 +47,7 @@ var auditEntityParams = map[string]string{
 }
 
 type AuditHandler struct {
-	Service     app.AuditService
+	Service     audit.AuditService
 	Memberships ports.MembershipRepository
 	// Logf recibe los fallos de escritura (nil = log.Printf).
 	Logf func(string, ...any)

@@ -9,7 +9,7 @@
 //     cuándo: sin valores antes/después ni datos personales.
 //   - Leerlo: SOLO owner/admin (CanManage), y el permiso va ANTES de mirar los
 //     parámetros o tocar la base. Toda consulta va scopeada por salon_id.
-package app
+package audit
 
 import (
 	"time"

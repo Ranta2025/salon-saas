@@ -148,3 +148,13 @@ func Notify(n Notifier, salonID, userID, title, body string, kind domain.Notific
 	}
 	_, _ = n.Create(salonID, userID, title, body, kind)
 }
+
+// AuditRecorder es lo MÍNIMO que necesitan otros casos de uso (2FA) para dejar un
+// evento de auditoría: lo implementa el módulo audit. Con la interfaz acá, el
+// módulo audit puede vivir aparte sin que el resto dependa de él.
+type AuditRecorder interface {
+	// Enabled dice si hay registro configurado (sin repositorio no hay auditoría).
+	Enabled() bool
+	// Record deja el evento; un error del registro no tumba la operación.
+	Record(salonID, actorUserID, action, entityID string) error
+}

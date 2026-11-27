@@ -1,4 +1,4 @@
-package app
+package audit
 
 import (
 	"errors"
@@ -8,13 +8,14 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 type auditEnv struct {
 	svc   AuditService
-	mems  *fakeMemberships
-	users *fakeUsers
-	repo  *fakeAudit
+	mems  *testutil.FakeMemberships
+	users *testutil.FakeUsers
+	repo  *testutil.FakeAudit
 	clock time.Time
 
 	owner, admin, recep, prof, client, other, removed domain.Membership
@@ -23,20 +24,20 @@ type auditEnv struct {
 func newAuditEnv(t *testing.T) *auditEnv {
 	t.Helper()
 	e := &auditEnv{
-		mems: &fakeMemberships{}, users: &fakeUsers{}, repo: &fakeAudit{},
+		mems: &testutil.FakeMemberships{}, users: &testutil.FakeUsers{}, repo: &testutil.FakeAudit{},
 		clock: time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC),
 	}
 	e.svc = AuditService{Events: e.repo, Users: e.users, Memberships: e.mems, Now: func() time.Time { return e.clock }}
-	e.owner = miembro(e.mems, "owner", "s1", domain.RoleOwner)
-	e.admin = miembro(e.mems, "admin", "s1", domain.RoleAdmin)
-	e.recep = miembro(e.mems, "recep", "s1", domain.RoleReception)
-	e.prof = miembro(e.mems, "prof", "s1", domain.RoleProfessional)
-	e.client = miembro(e.mems, "client", "s1", domain.RoleClient)
-	e.other = miembro(e.mems, "owner2", "s2", domain.RoleOwner)
-	e.removed = miembro(e.mems, "removed", "s1", domain.RoleAdmin)
+	e.owner = testutil.Miembro(e.mems, "owner", "s1", domain.RoleOwner)
+	e.admin = testutil.Miembro(e.mems, "admin", "s1", domain.RoleAdmin)
+	e.recep = testutil.Miembro(e.mems, "recep", "s1", domain.RoleReception)
+	e.prof = testutil.Miembro(e.mems, "prof", "s1", domain.RoleProfessional)
+	e.client = testutil.Miembro(e.mems, "client", "s1", domain.RoleClient)
+	e.other = testutil.Miembro(e.mems, "owner2", "s2", domain.RoleOwner)
+	e.removed = testutil.Miembro(e.mems, "removed", "s1", domain.RoleAdmin)
 	at := e.clock.Add(-time.Hour)
 	e.removed.EndedAt = &at
-	e.mems.byKey["removed|s1"] = e.removed
+	e.mems.ByKey["removed|s1"] = e.removed
 	_ = e.users.Save(domain.User{ID: "owner", Name: "Olga Dueña", Email: "olga@mail.com"})
 	return e
 }
@@ -63,17 +64,17 @@ func TestAuditRecord_snapshotsActorName(t *testing.T) {
 	if err := e.svc.Record("s1", "owner", "member.update", "m-9"); err != nil {
 		t.Fatal(err)
 	}
-	if len(e.repo.rows) != 1 {
-		t.Fatalf("esperaba 1 evento, hay %d", len(e.repo.rows))
+	if len(e.repo.Rows) != 1 {
+		t.Fatalf("esperaba 1 evento, hay %d", len(e.repo.Rows))
 	}
-	ev := e.repo.rows[0]
+	ev := e.repo.Rows[0]
 	if ev.ActorName != "Olga Dueña" || ev.ActorUserID != "owner" || ev.SalonID != "s1" ||
 		ev.Action != "member.update" || ev.EntityID != "m-9" || !ev.CreatedAt.Equal(e.clock) || ev.ID == "" {
 		t.Fatalf("evento inesperado: %+v", ev)
 	}
 	// El nombre es una FOTO: renombrar después no cambia lo ya guardado.
 	_ = e.users.Save(domain.User{ID: "owner", Name: "Otro Nombre", Email: "olga@mail.com"})
-	if e.repo.rows[0].ActorName != "Olga Dueña" {
+	if e.repo.Rows[0].ActorName != "Olga Dueña" {
 		t.Fatal("el snapshot no debe cambiar")
 	}
 }
@@ -83,20 +84,20 @@ func TestAuditRecord_unknownActorRecordsEmptyName(t *testing.T) {
 	if err := e.svc.Record("s1", "fantasma", "settings.update", ""); err != nil {
 		t.Fatalf("un actor sin resolver no debe fallar: %v", err)
 	}
-	if len(e.repo.rows) != 1 || e.repo.rows[0].ActorName != "" || e.repo.rows[0].EntityID != "" {
-		t.Fatalf("esperaba 1 evento con nombre vacío: %+v", e.repo.rows)
+	if len(e.repo.Rows) != 1 || e.repo.Rows[0].ActorName != "" || e.repo.Rows[0].EntityID != "" {
+		t.Fatalf("esperaba 1 evento con nombre vacío: %+v", e.repo.Rows)
 	}
 	// Sin repositorio de usuarios tampoco falla.
 	e.svc.Users = nil
-	if err := e.svc.Record("s1", "owner", "settings.update", ""); err != nil || len(e.repo.rows) != 2 {
-		t.Fatalf("sin Users debe registrar igual: %v %d", err, len(e.repo.rows))
+	if err := e.svc.Record("s1", "owner", "settings.update", ""); err != nil || len(e.repo.Rows) != 2 {
+		t.Fatalf("sin Users debe registrar igual: %v %d", err, len(e.repo.Rows))
 	}
 }
 
 func TestAuditRecord_writerErrorIsReturned(t *testing.T) {
 	e := newAuditEnv(t)
-	e.repo.appendErr = errAuditDown
-	if err := e.svc.Record("s1", "owner", "member.add", ""); !errors.Is(err, errAuditDown) {
+	e.repo.AppendErr = testutil.ErrAuditDown
+	if err := e.svc.Record("s1", "owner", "member.add", ""); !errors.Is(err, testutil.ErrAuditDown) {
 		t.Fatalf("el error del repositorio debe volver al llamador: %v", err)
 	}
 }
@@ -114,8 +115,8 @@ func TestAuditRecord_invalidInputWritesNothing(t *testing.T) {
 			t.Errorf("esperaba error para %+v", c)
 		}
 	}
-	if len(e.repo.rows) != 0 || e.repo.appendCalls != 0 {
-		t.Fatalf("una entrada inválida no escribe: %d filas, %d llamadas", len(e.repo.rows), e.repo.appendCalls)
+	if len(e.repo.Rows) != 0 || e.repo.AppendCalls != 0 {
+		t.Fatalf("una entrada inválida no escribe: %d filas, %d llamadas", len(e.repo.Rows), e.repo.AppendCalls)
 	}
 }
 
@@ -153,8 +154,8 @@ func TestAuditList_onlyOwnerAdmin_andBeforeAnything(t *testing.T) {
 			t.Errorf("%s: esperaba 403, obtuve %v", name, err)
 		}
 	}
-	if e.repo.listCalls != 0 {
-		t.Fatalf("el permiso va antes de la base: %d lecturas", e.repo.listCalls)
+	if e.repo.ListCalls != 0 {
+		t.Fatalf("el permiso va antes de la base: %d lecturas", e.repo.ListCalls)
 	}
 	for name, m := range map[string]domain.Membership{"dueña": e.owner, "admin": e.admin} {
 		p, err := e.svc.List(m, "s1", "", "", "")
@@ -169,8 +170,8 @@ func TestAuditList_onlyOwnerAdmin_andBeforeAnything(t *testing.T) {
 	if err := e.svc.RequireViewer(e.admin, "s1"); err != nil {
 		t.Fatalf("RequireViewer admin: %v", err)
 	}
-	if e.repo.listCalls != 2 {
-		t.Fatalf("RequireViewer no debe leer la base: %d lecturas", e.repo.listCalls)
+	if e.repo.ListCalls != 2 {
+		t.Fatalf("RequireViewer no debe leer la base: %d lecturas", e.repo.ListCalls)
 	}
 }
 
@@ -191,14 +192,14 @@ func TestAuditList_limitDefaultAndBounds(t *testing.T) {
 	if err != nil || len(p.Events) != 1 || p.NextCursor == "" {
 		t.Fatalf("mínimo 1: %d %v", len(p.Events), err)
 	}
-	calls := e.repo.listCalls
+	calls := e.repo.ListCalls
 	for _, l := range []string{"0", "101", "-1", "abc", "1.5"} {
 		_, err := e.svc.List(e.owner, "s1", l, "", "")
 		if !isMsg(err, domain.ErrValidation, "El limite debe ser entre 1 y 100") {
 			t.Errorf("limit=%q: %v", l, err)
 		}
 	}
-	if e.repo.listCalls != calls {
+	if e.repo.ListCalls != calls {
 		t.Fatal("un límite inválido no toca la base")
 	}
 }
@@ -278,14 +279,14 @@ func TestAuditList_sameTimestampTiesBrokenByID(t *testing.T) {
 func TestAuditList_invalidCursor(t *testing.T) {
 	e := newAuditEnv(t)
 	e.seed("s1", 3, "a.b")
-	calls := e.repo.listCalls
+	calls := e.repo.ListCalls
 	for _, c := range []string{"basura", "AAAA", "!!", strings.Repeat("A", 500)} {
 		_, err := e.svc.List(e.owner, "s1", "", c, "")
 		if !isMsg(err, domain.ErrValidation, "Cursor invalido") {
 			t.Errorf("cursor %q: %v", c, err)
 		}
 	}
-	if e.repo.listCalls != calls {
+	if e.repo.ListCalls != calls {
 		t.Fatal("un cursor inválido no toca la base")
 	}
 }

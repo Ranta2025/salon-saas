@@ -17,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"salon-saas/internal/app"
+	auditsvc "salon-saas/internal/audit"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/loyalty"
 )
@@ -42,7 +43,7 @@ func newMWEnv(t *testing.T, users *mu) *mwEnv {
 	e := &mwEnv{repo: &maudit{}}
 	e.repo.log = &e.order
 	h := AuditHandler{
-		Service: app.AuditService{Events: e.repo, Users: users},
+		Service: auditsvc.AuditService{Events: e.repo, Users: users},
 		Logf:    func(f string, a ...any) { e.logs = append(e.logs, fmt.Sprintf(f, a...)) },
 	}
 	e.r = gin.New()
@@ -272,7 +273,7 @@ func newAudWorld(t *testing.T) *audWorld {
 		Memberships: env.mems,
 	}
 	env.d.Audit = AuditHandler{
-		Service: app.AuditService{
+		Service: auditsvc.AuditService{
 			Events: w.repo, Users: env.users, Memberships: env.mems,
 			Now: func() time.Time { return audClock },
 		},

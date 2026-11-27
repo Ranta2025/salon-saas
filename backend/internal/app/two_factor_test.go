@@ -8,14 +8,16 @@ import (
 	"testing"
 	"time"
 
+	auditsvc "salon-saas/internal/audit"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 type tfEnv struct {
 	svc    TwoFactorService
 	repo   *fakeTwoFactorRepo
 	clock  *fakeClock
-	audit  *fakeAudit
+	audit  *testutil.FakeAudit
 	users  *fakeUsers
 	mems   *fakeMemberships
 	userID string
@@ -44,12 +46,12 @@ func newTFEnv(t *testing.T) *tfEnv {
 		t.Fatal(err)
 	}
 	repo := newFakeTwoFactorRepo(clock.Now)
-	audit := &fakeAudit{}
+	audit := &testutil.FakeAudit{}
 	return &tfEnv{
 		svc: TwoFactorService{
 			Repo: repo, Users: users, Hasher: fakeHasher{}, Tokens: fakeTokens{},
 			Challenges: fakeChallenges{}, Box: box, Memberships: mems,
-			Audit: AuditService{Events: audit, Users: users}, Now: clock.Now,
+			Audit: auditsvc.AuditService{Events: audit, Users: users}, Now: clock.Now,
 		},
 		repo: repo, clock: clock, audit: audit, users: users, mems: mems, userID: u.ID, box: box,
 	}
@@ -87,9 +89,9 @@ func (e *tfEnv) enabled(t *testing.T) []string {
 		t.Fatalf("enable: %v", err)
 	}
 	e.clock.Add(2 * domain.TOTPPeriodSeconds * time.Second)
-	e.audit.mu.Lock()
-	e.audit.rows = nil
-	e.audit.mu.Unlock()
+	e.audit.Mu.Lock()
+	e.audit.Rows = nil
+	e.audit.Mu.Unlock()
 	return codes
 }
 
@@ -176,7 +178,7 @@ func TestTwoFactorEnable(t *testing.T) {
 	if on, _ := e.svc.Status(e.userID); on {
 		t.Fatal("un código malo no activa")
 	}
-	if len(e.audit.rows) != 0 {
+	if len(e.audit.Rows) != 0 {
 		t.Fatal("sin activación no hay auditoría")
 	}
 
@@ -227,20 +229,20 @@ func TestTwoFactorEnableAuditsEachActiveSalon(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := map[string]string{}
-	for _, ev := range e2.audit.rows {
+	for _, ev := range e2.audit.Rows {
 		if ev.ActorUserID != e2.userID || ev.ActorName != "Ana Pérez" || ev.EntityID != "" {
 			t.Errorf("evento: %+v", ev)
 		}
 		got[ev.SalonID] = ev.Action
 	}
-	if len(e2.audit.rows) != 2 || got["s-1"] != "auth.2fa_enabled" || got["s-2"] != "auth.2fa_enabled" {
-		t.Errorf("un evento por salón ACTIVO (no el dado de baja): %+v", e2.audit.rows)
+	if len(e2.audit.Rows) != 2 || got["s-1"] != "auth.2fa_enabled" || got["s-2"] != "auth.2fa_enabled" {
+		t.Errorf("un evento por salón ACTIVO (no el dado de baja): %+v", e2.audit.Rows)
 	}
 }
 
 func TestTwoFactorAuditBestEffort(t *testing.T) {
 	e := newTFEnv(t)
-	e.audit.appendErr = errAuditDown
+	e.audit.AppendErr = testutil.ErrAuditDown
 	if _, err := e.svc.Setup(e.userID); err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +252,7 @@ func TestTwoFactorAuditBestEffort(t *testing.T) {
 	if on, _ := e.svc.Status(e.userID); !on {
 		t.Error("debería quedar activado")
 	}
-	if e.audit.appendCalls == 0 {
+	if e.audit.AppendCalls == 0 {
 		t.Error("tenía que intentar escribir")
 	}
 	e.clock.Add(90 * time.Second)
@@ -268,8 +270,8 @@ func TestTwoFactorNoSalonsNoAuditEvent(t *testing.T) {
 	if _, err := e.svc.Enable(e.userID, e.code(t, 0)); err != nil {
 		t.Fatal(err)
 	}
-	if e.audit.appendCalls != 0 {
-		t.Errorf("sin salones no se escribe evento: %d", e.audit.appendCalls)
+	if e.audit.AppendCalls != 0 {
+		t.Errorf("sin salones no se escribe evento: %d", e.audit.AppendCalls)
 	}
 }
 
@@ -479,7 +481,7 @@ func TestTwoFactorDisable(t *testing.T) {
 	if on, _ := e.svc.Status(e.userID); !on {
 		t.Fatal("un código malo no desactiva")
 	}
-	if len(e.audit.rows) != 0 {
+	if len(e.audit.Rows) != 0 {
 		t.Fatal("sin desactivar no hay auditoría")
 	}
 	// Con un código de recuperación (una sola vez).
@@ -496,11 +498,11 @@ func TestTwoFactorDisable(t *testing.T) {
 		t.Error("desactivado")
 	}
 	got := map[string]string{}
-	for _, ev := range e.audit.rows {
+	for _, ev := range e.audit.Rows {
 		got[ev.SalonID] = ev.Action
 	}
-	if len(e.audit.rows) != 2 || got["s-1"] != "auth.2fa_disabled" || got["s-2"] != "auth.2fa_disabled" {
-		t.Errorf("auditoría: %+v", e.audit.rows)
+	if len(e.audit.Rows) != 2 || got["s-1"] != "auth.2fa_disabled" || got["s-2"] != "auth.2fa_disabled" {
+		t.Errorf("auditoría: %+v", e.audit.Rows)
 	}
 	// Y el login vuelve a ser el de siempre.
 	if _, req, _ := e.svc.ChallengeFor(e.userID); req {

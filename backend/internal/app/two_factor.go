@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -53,7 +54,7 @@ type TwoFactorService struct {
 	// cambio de contraseña no se puede canjear.
 	Gate ports.SessionGate
 	// Audit: el servicio de auditoría existente (Events nil = apagada).
-	Audit AuditService
+	Audit kernel.AuditRecorder
 	// Now es el reloj (nil = time.Now); solo para el paso TOTP: el bloqueo lo
 	// calcula la base con now().
 	Now func() time.Time
