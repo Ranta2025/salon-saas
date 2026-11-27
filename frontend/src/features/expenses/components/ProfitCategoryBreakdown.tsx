@@ -1,5 +1,5 @@
-import { formatCents } from '../../lib/money'
-import type { ProfitCategoryRow } from '../../lib/profit'
+import { formatCents } from '@/lib/money'
+import type { ProfitCategoryRow } from '../lib/profit'
 
 /** Breakdown of the expenses by category (contract F3b), with the bar of each one. */
 export function ProfitCategoryBreakdown({ rows }: { rows: readonly ProfitCategoryRow[] }) {

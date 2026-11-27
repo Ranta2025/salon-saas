@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, API_BASE } from './api.ts'
-import { todayInTimeZone, addDaysToDateValue } from './datetime.ts'
+import { ApiError, API_BASE } from '../../../lib/api.ts'
+import { todayInTimeZone, addDaysToDateValue } from '../../../lib/datetime.ts'
 import {
   canManageExpenses,
   checkExpenseRange,
@@ -35,7 +35,7 @@ import {
   ZERO_AMOUNT_MESSAGE,
   type Expense,
 } from './expenses.ts'
-import { clearToken, setToken } from './session.ts'
+import { clearToken, setToken } from '../../../lib/session.ts'
 
 type Call = { url: string; method: string; body: string | undefined; headers: Record<string, string> }
 

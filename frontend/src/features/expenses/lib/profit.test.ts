@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, API_BASE } from './api.ts'
+import { ApiError, API_BASE } from '../../../lib/api.ts'
 import { EXPENSE_CATEGORY_LABELS } from './expenses.ts'
 import {
   canViewProfit,
@@ -19,7 +19,7 @@ import {
   profitPeriodLabel,
   type ProfitReport,
 } from './profit.ts'
-import { clearToken, setToken } from './session.ts'
+import { clearToken, setToken } from '../../../lib/session.ts'
 
 type Call = { url: string; method: string; body: string | undefined; headers: Record<string, string> }
 

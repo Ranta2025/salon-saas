@@ -3,8 +3,8 @@ import {
   profitDayBarLabel,
   shortDateLabel,
   type ProfitDayBar,
-} from '../../lib/profit'
-import { formatCents } from '../../lib/money'
+} from '../lib/profit'
+import { formatCents } from '@/lib/money'
 
 /** Same red as `.field__error` / `.notice--error`: no stylesheet change here. */
 const NEGATIVE_COLOR = '#8c1d33'

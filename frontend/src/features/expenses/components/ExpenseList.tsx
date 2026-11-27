@@ -5,8 +5,8 @@ import {
   EXPENSE_CATEGORY_LABELS,
   TRUNCATED_NOTICE,
   type Expense,
-} from '../../lib/expenses'
-import { formatCents, sumCents } from '../../lib/money'
+} from '../lib/expenses'
+import { formatCents, sumCents } from '@/lib/money'
 
 type ExpenseListProps = {
   expenses: readonly Expense[]

@@ -9,10 +9,10 @@
  * breaks the page nor invents a number.
  */
 
-import { ApiError, request } from './api.ts'
-import { addDaysToDateValue } from './datetime.ts'
-import { amountInputFromCents, isValidPayrollDate } from './payroll.ts'
-import { isManager, type Role } from './permissions.ts'
+import { ApiError, request } from '../../../lib/api.ts'
+import { addDaysToDateValue } from '../../../lib/datetime.ts'
+import { amountInputFromCents, isValidPayrollDate } from '../../../lib/payroll.ts'
+import { isManager, type Role } from '../../../lib/permissions.ts'
 
 /** Fixed categories of the contract (D3); the order is the one of the selector. */
 export type ExpenseCategory = 'rent' | 'supplies' | 'utilities' | 'other'

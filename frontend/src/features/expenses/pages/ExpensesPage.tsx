@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { describeApiError, type ApiErrorNotice } from '../lib/api'
-import { TIME_ZONE, todayInTimeZone } from '../lib/datetime'
+import { describeApiError, type ApiErrorNotice } from '@/lib/api'
+import { TIME_ZONE, todayInTimeZone } from '@/lib/datetime'
 import {
   canManageExpenses,
   checkExpenseRange,
@@ -14,15 +14,15 @@ import {
   type ExpensePayload,
   type ExpenseRange,
 } from '../lib/expenses'
-import { subscribeOfflineData } from '../lib/offlineData'
-import { activeRole } from '../lib/permissions'
-import { fetchSettings } from '../lib/settings'
-import { useSalon } from './SalonContext'
-import { ExpenseForm } from './components/ExpenseForm'
-import { ExpenseList } from './components/ExpenseList'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { ManagerOnlyNotice } from './components/ManagerOnlyNotice'
-import { PageHeader } from './components/PageHeader'
+import { subscribeOfflineData } from '@/lib/offlineData'
+import { activeRole } from '@/lib/permissions'
+import { fetchSettings } from '@/lib/settings'
+import { useSalon } from '@/app/SalonContext'
+import { ExpenseForm } from '../components/ExpenseForm'
+import { ExpenseList } from '../components/ExpenseList'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { ManagerOnlyNotice } from '@/app/components/ManagerOnlyNotice'
+import { PageHeader } from '@/app/components/PageHeader'
 
 /**
  * `/panel/gastos` (contract F3b): the expenses of the salon for a range of local

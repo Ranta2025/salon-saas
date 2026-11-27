@@ -9,7 +9,7 @@ import {
   type ExpenseDraft,
   type ExpenseField,
   type ExpensePayload,
-} from '../../lib/expenses'
+} from '../lib/expenses'
 
 const EMPTY_DRAFT: ExpenseDraft = { category: '', amount: '', spent_on: '', description: '' }
 

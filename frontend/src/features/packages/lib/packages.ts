@@ -18,7 +18,7 @@
 import { ApiError, NetworkError, request } from '../../../lib/api.ts'
 import { toDateInputValue, TIME_ZONE } from '../../../lib/datetime.ts'
 import { isBrowserOnline } from '../../../lib/connectivity.ts'
-import { expenseAmountInputFromCents, parseExpenseAmountToCents } from '../../../lib/expenses.ts'
+import { expenseAmountInputFromCents, parseExpenseAmountToCents } from '../../expenses/lib/expenses.ts'
 import { newClientOpId } from '../../../lib/offlineQueue.ts'
 import { SALE_METHODS, type SaleMethod } from '../../../types.ts'
 

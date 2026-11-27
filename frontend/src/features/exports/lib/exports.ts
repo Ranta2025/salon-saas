@@ -28,7 +28,7 @@ import {
   INVALID_RANGE_MESSAGE as EXPENSE_INVALID_RANGE_MESSAGE,
   MAX_RANGE_DAYS,
   type ExpenseRange,
-} from '../../../lib/expenses.ts'
+} from '../../expenses/lib/expenses.ts'
 import {
   csvDownloadFilename,
   EXPORT_ERROR_MESSAGE,

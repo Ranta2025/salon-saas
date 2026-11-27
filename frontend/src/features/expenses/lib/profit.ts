@@ -10,16 +10,16 @@
  * back to the exact sum of the days, so the footer and the bars always agree.
  */
 
-import { request } from './api.ts'
+import { request } from '../../../lib/api.ts'
 import { EXPENSE_CATEGORY_LABELS, type ExpenseCategory } from './expenses.ts'
-import { formatCents } from './money.ts'
+import { formatCents } from '../../../lib/money.ts'
 import {
   INVALID_PERIOD_MESSAGE,
   isValidPayrollDate,
   payPeriodLabel,
   type PayPeriodKind,
-} from './payroll.ts'
-import { isManager, type Role } from './permissions.ts'
+} from '../../../lib/payroll.ts'
+import { isManager, type Role } from '../../../lib/permissions.ts'
 
 /** Periods the server derives in the zone of the salon (D7: `day` is new). */
 export type ProfitKind = 'day' | 'week' | 'month'

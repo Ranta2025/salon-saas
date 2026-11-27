@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { describeApiError, type ApiErrorNotice } from '../lib/api'
-import { TIME_ZONE, todayInTimeZone } from '../lib/datetime'
-import { formatCents } from '../lib/money'
-import { subscribeOfflineData } from '../lib/offlineData'
-import { activeRole } from '../lib/permissions'
+import { describeApiError, type ApiErrorNotice } from '@/lib/api'
+import { TIME_ZONE, todayInTimeZone } from '@/lib/datetime'
+import { formatCents } from '@/lib/money'
+import { subscribeOfflineData } from '@/lib/offlineData'
+import { activeRole } from '@/lib/permissions'
 import {
   canViewProfit,
   checkProfitInput,
@@ -19,13 +19,13 @@ import {
   type ProfitKind,
   type ProfitReport,
 } from '../lib/profit'
-import { fetchSettings } from '../lib/settings'
-import { useSalon } from './SalonContext'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { ManagerOnlyNotice } from './components/ManagerOnlyNotice'
-import { PageHeader } from './components/PageHeader'
-import { ProfitCategoryBreakdown } from './components/ProfitCategoryBreakdown'
-import { ProfitDayBars } from './components/ProfitDayBars'
+import { fetchSettings } from '@/lib/settings'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { ManagerOnlyNotice } from '@/app/components/ManagerOnlyNotice'
+import { PageHeader } from '@/app/components/PageHeader'
+import { ProfitCategoryBreakdown } from '../components/ProfitCategoryBreakdown'
+import { ProfitDayBars } from '../components/ProfitDayBars'
 
 /** Same red as `.field__error`: a loss is never painted as a win (contract F3b). */
 const NEGATIVE_COLOR = '#8c1d33'
