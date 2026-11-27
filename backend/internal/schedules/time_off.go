@@ -10,7 +10,7 @@
 // dueño/administración carga y borra; solo quien atiende tiene ausencias (F2a).
 // Crear una ausencia NO cancela turnos: devuelve los que se pisan para que el
 // salón los reasigne (F2d3) o los cancele a mano.
-package app
+package schedules
 
 import (
 	"errors"
@@ -145,14 +145,14 @@ func (s TimeOffService) conflicts(salonID, userID string, startsAt, endsAt time.
 	if err != nil {
 		return nil, err
 	}
-	return bookedOverlaps(window, userID, startsAt, endsAt), nil
+	return BookedOverlaps(window, userID, startsAt, endsAt), nil
 }
 
-// bookedOverlaps filtra de una ventana de agenda los turnos `booked` de esa
+// BookedOverlaps filtra de una ventana de agenda los turnos `booked` de esa
 // persona que se pisan con [startsAt, endsAt), ordenados por inicio. Lo comparten
 // el alta de una ausencia (F2d2, los turnos en conflicto) y el "Reasignar todo"
 // de F2d3: la misma definición de "turno que hay que mover".
-func bookedOverlaps(window []domain.Booking, userID string, startsAt, endsAt time.Time) []domain.Booking {
+func BookedOverlaps(window []domain.Booking, userID string, startsAt, endsAt time.Time) []domain.Booking {
 	out := make([]domain.Booking, 0, len(window))
 	for _, b := range window {
 		if b.ProfessionalID != userID || b.Status != domain.BookingBooked {
@@ -178,18 +178,18 @@ func (s TimeOffService) member(actor domain.Membership, salonID string) (domain.
 	return m, nil
 }
 
-// timeOffRange carga las ausencias de un salón que pisan [from, to). Repo nil =
+// TimeOffRange carga las ausencias de un salón que pisan [from, to). Repo nil =
 // no hay ausencias en este entorno (como el horario semanal: nil es "sin
 // configuración", no un dato faltante).
-func timeOffRange(repo ports.TimeOffRepository, salonID string, from, to time.Time) ([]domain.TimeOff, error) {
+func TimeOffRange(repo ports.TimeOffRepository, salonID string, from, to time.Time) ([]domain.TimeOff, error) {
 	if repo == nil {
 		return nil, nil
 	}
 	return repo.ListRange(salonID, from, to)
 }
 
-// awayAny dice si esa persona está ausente en algún momento de [start, end).
-func awayAny(absences []domain.TimeOff, professionalID string, start, end time.Time) bool {
+// AwayAny dice si esa persona está ausente en algún momento de [start, end).
+func AwayAny(absences []domain.TimeOff, professionalID string, start, end time.Time) bool {
 	for _, off := range absences {
 		if off.UserID == professionalID && off.Overlaps(start, end) {
 			return true
@@ -198,9 +198,9 @@ func awayAny(absences []domain.TimeOff, professionalID string, start, end time.T
 	return false
 }
 
-// awaySet es awayAny para todo el equipo de una vez: la reserva pública lo
+// AwaySet es AwayAny para todo el equipo de una vez: la reserva pública lo
 // pregunta una sola vez por turno.
-func awaySet(absences []domain.TimeOff, start, end time.Time) map[string]bool {
+func AwaySet(absences []domain.TimeOff, start, end time.Time) map[string]bool {
 	if len(absences) == 0 {
 		return nil
 	}

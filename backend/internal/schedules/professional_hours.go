@@ -4,7 +4,7 @@
 // Reglas (S-F2d1-2): sin tramos propios la persona sigue el horario del salón;
 // con tramos, un día sin tramo es día libre. Los lee owner/admin o la propia
 // persona (cada una ve su horario); solo owner/admin los edita.
-package app
+package schedules
 
 import (
 	"strings"

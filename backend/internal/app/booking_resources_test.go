@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // agendaEnv: agenda de staff (calendario) + equipamiento, para probar la
@@ -81,7 +82,7 @@ func (e *agendaEnv) seedUnidad(t *testing.T, professionalID, unitID string, star
 // el horario nuevo; si no, toma otra libre; si no hay ninguna, 409.
 func TestBooking_reschedule_con_unidad(t *testing.T) {
 	env := newAgendaEnv(t)
-	day := at(1, 0, 0)
+	day := testutil.At(1, 0, 0)
 	b := env.seedUnidad(t, "ana", env.unitA, day.Add(10*time.Hour), day.Add(11*time.Hour))
 
 	// Mover a las 12: la unidad A sigue libre -> se conserva.
@@ -117,7 +118,7 @@ func TestBooking_reschedule_con_unidad(t *testing.T) {
 // S-F2e-4: cancelar libera la unidad (la EXCLUDE solo mira las reservadas).
 func TestBooking_cancelar_libera_unidad(t *testing.T) {
 	env := newAgendaEnv(t)
-	day := at(1, 0, 0)
+	day := testutil.At(1, 0, 0)
 	b := env.seedUnidad(t, "ana", env.unitA, day.Add(10*time.Hour), day.Add(11*time.Hour))
 
 	busy, err := env.res.OccupiedUnits("s1", day.Add(9*time.Hour), day.Add(12*time.Hour), "")
@@ -138,7 +139,7 @@ func TestBooking_cancelar_libera_unidad(t *testing.T) {
 // como siempre, aunque todo el equipo esté tomado.
 func TestBooking_sin_unidad_no_necesita_equipo(t *testing.T) {
 	env := newAgendaEnv(t)
-	day := at(1, 0, 0)
+	day := testutil.At(1, 0, 0)
 	env.seedUnidad(t, "bea", env.unitA, day.Add(14*time.Hour), day.Add(15*time.Hour))
 	env.seedUnidad(t, "bea", env.unitB, day.Add(15*time.Hour), day.Add(16*time.Hour))
 

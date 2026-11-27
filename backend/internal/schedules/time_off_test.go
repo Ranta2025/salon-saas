@@ -1,4 +1,4 @@
-package app
+package schedules
 
 // F2d2: el caso de uso de las ausencias. Reglas probadas acá (sin DB ni HTTP):
 // quién las ve, qué motivo ve cada rol, quién las carga y borra, las
@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 type timeOffEnv struct {
 	svc       TimeOffService
-	timeOff   *fakeTimeOff
-	bookings  *fb
-	mems      *fakeMemberships
+	timeOff   *testutil.FakeTimeOff
+	bookings  *testutil.FakeBookings
+	mems      *testutil.FakeMemberships
 	owner     domain.Membership
 	admin     domain.Membership
 	reception domain.Membership
@@ -29,7 +30,7 @@ type timeOffEnv struct {
 // profesionales; s2 con una profesional. Los turnos viven en el fake de siempre.
 func newTimeOffEnv(t *testing.T) *timeOffEnv {
 	t.Helper()
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	env := &timeOffEnv{
 		mems:      mems,
 		owner:     domain.Membership{UserID: "u-own", SalonID: "s1", Role: domain.RoleOwner, Attends: true},
@@ -44,17 +45,14 @@ func newTimeOffEnv(t *testing.T) *timeOffEnv {
 			t.Fatalf("membership: %v", err)
 		}
 	}
-	env.timeOff = &fakeTimeOff{}
-	env.bookings = &fb{}
+	env.timeOff = &testutil.FakeTimeOff{}
+	env.bookings = &testutil.FakeBookings{}
 	env.svc = TimeOffService{TimeOff: env.timeOff, Bookings: env.bookings, Memberships: mems}
 	return env
 }
 
 // at arma un instante futuro (las ausencias no pueden haber terminado).
-func at(dayOffset, hour, minute int) time.Time {
-	base := time.Now().UTC().Truncate(time.Hour).Add(time.Duration(dayOffset) * 24 * time.Hour)
-	return base.Add(time.Duration(hour)*time.Hour + time.Duration(minute)*time.Minute)
-}
+func at(dayOffset, hour, minute int) time.Time { return testutil.At(dayOffset, hour, minute) }
 
 // S-F2d2-5: el motivo lo ve dueño/administración y cada profesional el suyo;
 // una compañera no ve el motivo ajeno y recepción no ve ninguno. La ausencia, en
@@ -128,7 +126,7 @@ func TestTimeOff_list_range(t *testing.T) {
 	}
 
 	// La DB caída no se disfraza de "no hay ausencias": el error sube.
-	env.timeOff.readErr = errors.New("db caída")
+	env.timeOff.ReadErr = errors.New("db caída")
 	if _, err := env.svc.List(env.owner, "s1", from, from.Add(24*time.Hour)); err == nil {
 		t.Fatal("la caída de la DB tiene que subir, no devolver una lista vacía")
 	}
@@ -149,7 +147,7 @@ func TestTimeOff_create(t *testing.T) {
 			StartsAt: start, EndsAt: start.Add(45 * time.Minute), Status: status,
 		}
 	}
-	env.bookings.all = []domain.Booking{
+	env.bookings.All = []domain.Booking{
 		booked("b1", "u-pro1", at(1, 10, 0), domain.BookingBooked),
 		// Empieza ANTES de la ausencia y la pisa: tiene que aparecer igual.
 		booked("b2", "u-pro1", at(1, 9, 30), domain.BookingBooked),
@@ -180,7 +178,7 @@ func TestTimeOff_create(t *testing.T) {
 		t.Fatalf("conflictos: %v (esperaba [b2 b1])", ids)
 	}
 	// Crear una ausencia NO cancela turnos (S-F2d2-4).
-	for _, b := range env.bookings.all {
+	for _, b := range env.bookings.All {
 		if b.ID == "b1" && b.Status != domain.BookingBooked {
 			t.Fatalf("el turno existente cambió de estado: %+v", b)
 		}
@@ -227,7 +225,7 @@ func TestTimeOff_create(t *testing.T) {
 		}
 	}
 	// Ninguno de los intentos inválidos dejó filas.
-	if n := len(env.timeOff.all); n != 2 {
+	if n := len(env.timeOff.All); n != 2 {
 		t.Fatalf("las altas inválidas no se guardan, hay %d", n)
 	}
 }
@@ -281,7 +279,7 @@ func TestTimeOff_db_overlap_race_shows_contract_message(t *testing.T) {
 	}
 
 	race := newTimeOffEnv(t)
-	race.timeOff.saveErr = domain.ErrAlreadyExists
+	race.timeOff.SaveErr = domain.ErrAlreadyExists
 	_, got := race.svc.Create(race.owner, "s1", "u-pro1", at(3, 0, 0), at(4, 0, 0), "")
 	if !errors.Is(got, domain.ErrValidation) || errors.Is(got, domain.ErrAlreadyExists) {
 		t.Fatalf("la carrera debe ser un 400 de validación, dio %v", got)

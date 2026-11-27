@@ -9,6 +9,7 @@ import (
 	"salon-saas/internal/domain"
 	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/schedules"
 )
 
 // PublicSalon es la respuesta de GET /public/salons/:slug.
@@ -96,7 +97,7 @@ func (s PublicSalonService) Public(slug string) (PublicSalon, error) {
 	// Horario visible: las filas propias o, si el salón nunca configuró días, la
 	// ventana única expandida a la semana (lo que hoy se mostraba como texto
 	// indicativo).
-	weekly, err := salonWeeklyHours(s.Hours, salon.ID)
+	weekly, err := schedules.SalonWeeklyHours(s.Hours, salon.ID)
 	if err != nil {
 		return PublicSalon{}, err
 	}
@@ -106,7 +107,7 @@ func (s PublicSalonService) Public(slug string) (PublicSalon, error) {
 	}
 	hours := weekly.Days()
 	if !weekly.Custom() {
-		hours = expandedDays(settings)
+		hours = schedules.ExpandedDays(settings)
 	}
 	out := PublicSalon{Salon: salon, Services: services, Hours: hours, Timezone: settings.Timezone,
 		Team: []domain.StaffMember{}, Gallery: []GalleryPhoto{}, Packages: []domain.ServicePackage{},

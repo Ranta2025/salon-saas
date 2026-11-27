@@ -14,6 +14,7 @@ import (
 	"salon-saas/internal/domain"
 	ports "salon-saas/internal/ports"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -145,4 +146,34 @@ func (p *PresentInt) UnmarshalJSON(b []byte) error {
 	}
 	p.Value = &v
 	return nil
+}
+
+// PublicBookingJSON es la reserva tal como la ve el público: el turno y su
+// estado, sin datos de la clienta.
+func PublicBookingJSON(b domain.Booking) gin.H {
+	return gin.H{
+		"id":              b.ID,
+		"professional_id": b.ProfessionalID,
+		"starts_at":       b.StartsAt.Format(time.RFC3339),
+		"ends_at":         b.EndsAt.Format(time.RFC3339),
+		"status":          string(b.Status),
+	}
+}
+
+// BookingJSON es la reserva completa (calendario del salón y PATCH).
+// `service_id` (F2c) es el servicio reservado y puede ser null: el turno que se
+// agenda a mano desde el calendario no exige servicio. `covered_from`
+// (S-F2d3-6) es quién TENÍA el turno antes de que lo cubriera otra persona, o
+// null si nadie lo cubre: solo viaja en el JSON del personal ("Mi agenda" lo usa
+// para avisar "lo cubre otra profesional"), nunca en el público ni en el payload
+// del websocket.
+func BookingJSON(b domain.Booking) gin.H {
+	out := PublicBookingJSON(b)
+	out["client_name"] = b.ClientName
+	out["service_id"] = OptionalID(b.ServiceID)
+	out["covered_from"] = OptionalID(b.CoveredFrom)
+	// resource_unit_id (F2e) es la unidad de equipo que ocupa el turno, o null si
+	// no ocupa ninguna (turno del calendario o servicio sin equipo).
+	out["resource_unit_id"] = OptionalID(b.ResourceUnitID)
+	return out
 }

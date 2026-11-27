@@ -1,10 +1,11 @@
-package app
+package schedules
 
 import (
 	"errors"
 	"testing"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // hoursFixture: equipo con dueño, administración, una profesional, recepción y
@@ -12,14 +13,14 @@ import (
 type hoursFixture struct {
 	salon    SalonHoursService
 	member   ProfessionalHoursService
-	mems     *fakeMemberships
-	hours    *fakeWeeklyHours
-	settings *fakeSettings
+	mems     *testutil.FakeMemberships
+	hours    *testutil.FakeWeeklyHours
+	settings *testutil.FakeSettings
 }
 
 func newHoursFixture(t *testing.T) *hoursFixture {
 	t.Helper()
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	for _, m := range []domain.Membership{
 		{UserID: "u-owner", SalonID: "s1", Role: domain.RoleOwner, Attends: true},
 		{UserID: "u-admin", SalonID: "s1", Role: domain.RoleAdmin},
@@ -32,11 +33,11 @@ func newHoursFixture(t *testing.T) *hoursFixture {
 			t.Fatalf("membresía %s: %v", m.UserID, err)
 		}
 	}
-	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{"s1": {
+	settings := &testutil.FakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
 		SalonID: "s1", Timezone: "America/Mexico_City",
 		OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}}}
-	hours := &fakeWeeklyHours{}
+	hours := &testutil.FakeWeeklyHours{}
 	return &hoursFixture{
 		salon:    SalonHoursService{Hours: hours, Settings: settings, Memberships: mems},
 		member:   ProfessionalHoursService{Hours: hours, Memberships: mems},
@@ -47,7 +48,7 @@ func newHoursFixture(t *testing.T) *hoursFixture {
 }
 
 // member devuelve la membresía tal como la arma el handler desde el token.
-func member(t *testing.T, mems *fakeMemberships, userID, salonID string) domain.Membership {
+func member(t *testing.T, mems *testutil.FakeMemberships, userID, salonID string) domain.Membership {
 	t.Helper()
 	m, err := mems.Find(userID, salonID)
 	if err != nil {

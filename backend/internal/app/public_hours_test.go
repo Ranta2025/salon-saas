@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // S-F2d1-4: la vidriera pública devuelve el horario ya expandido, solo los días
@@ -16,7 +17,7 @@ func TestPublicSalon_hours(t *testing.T) {
 		SalonID: "s1", Timezone: "America/Mexico_City",
 		OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}}}
-	hours := &fakeWeeklyHours{}
+	hours := &testutil.FakeWeeklyHours{}
 	svc := PublicSalonService{Salons: salons, Services: &fakeServices{}, Settings: settings, Hours: hours}
 
 	p, err := svc.Public("navajas-oro")

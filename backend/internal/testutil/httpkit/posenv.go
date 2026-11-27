@@ -11,6 +11,8 @@ import (
 	"salon-saas/internal/notifications"
 	notificationshttpapi "salon-saas/internal/notifications/httpapi"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/schedules"
+	scheduleshttpapi "salon-saas/internal/schedules/httpapi"
 	"salon-saas/internal/staffing"
 	staffinghttpapi "salon-saas/internal/staffing/httpapi"
 	"salon-saas/internal/team"
@@ -220,11 +222,11 @@ func NewPOSEnv() *Env {
 		Settings: env.Settings, Hours: env.Weekly,
 	}
 	settingsSvc := app.SettingsService{Settings: env.Settings, Memberships: env.Mems}
-	salonHoursSvc := app.SalonHoursService{Hours: env.Weekly, Settings: env.Settings, Memberships: env.Mems}
-	professionalHoursSvc := app.ProfessionalHoursService{Hours: env.Weekly, Memberships: env.Mems}
-	timeOffSvc := app.TimeOffService{TimeOff: env.TimeOff, Bookings: env.Bookings, Memberships: env.Mems}
+	salonHoursSvc := schedules.SalonHoursService{Hours: env.Weekly, Settings: env.Settings, Memberships: env.Mems}
+	professionalHoursSvc := schedules.ProfessionalHoursService{Hours: env.Weekly, Memberships: env.Mems}
+	timeOffSvc := schedules.TimeOffService{TimeOff: env.TimeOff, Bookings: env.Bookings, Memberships: env.Mems}
 	// F2d3: cubrir una ausencia (reasignar los turnos de quien falta).
-	coverageSvc := app.CoverageService{
+	coverageSvc := schedules.CoverageService{
 		Bookings: env.Bookings, Memberships: env.Mems, Staff: env.Mems,
 		Professionals: env.Professionals, Hours: env.Weekly, TimeOff: env.TimeOff,
 		Services: env.Services, Settings: env.Settings, Salons: env.Salons,
@@ -279,11 +281,11 @@ func NewPOSEnv() *Env {
 		Public:        httpapi.PublicHandler{Public: publicSvc, Avail: availabilitySvc, Bookings: publicBookingSvc},
 		Settings:      httpapi.SettingsHandler{Settings: settingsSvc, Memberships: env.Mems},
 		Members:       teamhttpapi.MemberHandler{Members: memberSvc, Memberships: env.Mems},
-		Hours: httpapi.HoursHandler{
+		Hours: scheduleshttpapi.HoursHandler{
 			Salon: salonHoursSvc, Professional: professionalHoursSvc, Memberships: env.Mems,
 		},
-		TimeOff:     httpapi.TimeOffHandler{TimeOff: timeOffSvc, Memberships: env.Mems},
-		Absences:    httpapi.AbsenceHandler{Coverage: coverageSvc, Memberships: env.Mems},
+		TimeOff:     scheduleshttpapi.TimeOffHandler{TimeOff: timeOffSvc, Memberships: env.Mems},
+		Absences:    scheduleshttpapi.AbsenceHandler{Coverage: coverageSvc, Memberships: env.Mems},
 		Resources:   staffinghttpapi.ResourceHandler{Resources: staffing.ResourceService{Resources: env.Resources, Services: env.Services, Memberships: env.Mems}, Memberships: env.Mems},
 		Invitations: teamhttpapi.InvitationHandler{Invitations: invitationSvc, Public: invitationPublicSvc, Memberships: env.Mems},
 		WS:          hub.ServeWS,

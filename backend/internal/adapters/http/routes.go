@@ -9,6 +9,7 @@ import (
 	packageshttpapi "salon-saas/internal/packages/httpapi"
 	"salon-saas/internal/ports"
 	productshttpapi "salon-saas/internal/products/httpapi"
+	scheduleshttpapi "salon-saas/internal/schedules/httpapi"
 	staffinghttpapi "salon-saas/internal/staffing/httpapi"
 	teamhttpapi "salon-saas/internal/team/httpapi"
 	waitlisthttpapi "salon-saas/internal/waitlist/httpapi"
@@ -33,11 +34,11 @@ type Deps struct {
 	Settings      SettingsHandler
 	Members       teamhttpapi.MemberHandler
 	// Hours es el horario semanal del salón y de cada profesional (F2d1).
-	Hours HoursHandler
+	Hours scheduleshttpapi.HoursHandler
 	// TimeOff son las ausencias de las profesionales (F2d2).
-	TimeOff TimeOffHandler
+	TimeOff scheduleshttpapi.TimeOffHandler
 	// Absences cubre una ausencia reasignando sus turnos (F2d3).
-	Absences AbsenceHandler
+	Absences scheduleshttpapi.AbsenceHandler
 	// Resources es el equipamiento con capacidad (F2e).
 	Resources staffinghttpapi.ResourceHandler
 	// Invitations son las invitaciones de equipo (F2g1): alta, listado y

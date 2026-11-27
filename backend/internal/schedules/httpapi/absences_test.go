@@ -84,7 +84,7 @@ func newCoverageEnv(t *testing.T, slug string) *coverageEnv {
 	c.ownerTok, c.OwnerID = env.Register(t, "owner@"+slug+".com")
 	c.SalonID = env.Salon(t, c.ownerTok, slug)
 	c.service = env.SeedService(t, c.ownerTok, c.SalonID, "Corte", 150000)
-	salonSettings(env, c.SalonID)
+	httpkit.SalonSettings(env, c.SalonID)
 	// Horario ancho para que el turno del test caiga dentro de la ventana del
 	// salón sin depender de la hora del reloj: 00:00 a 23:59, todos los días.
 	env.Settings.BySalon[c.SalonID] = domain.SalonSettings{
@@ -517,7 +517,7 @@ func TestHTTP_public_and_events_have_no_covered_from(t *testing.T) {
 	env := httpkit.NewPOSEnv()
 	ownerTok, _ := env.Register(t, "owner@mail.com")
 	salonID := env.Salon(t, ownerTok, "sin-campo-publico")
-	salonSettings(env, salonID)
+	httpkit.SalonSettings(env, salonID)
 	svc := env.SeedService(t, ownerTok, salonID, "Corte", 150000)
 	_, profID := env.Register(t, "profe@mail.com")
 	httpkit.SeedProfessional(env, salonID, profID)

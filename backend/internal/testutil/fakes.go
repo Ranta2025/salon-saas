@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
@@ -423,3 +424,10 @@ func (f *FakeStaffLister) ListStaff(salonID string) ([]domain.StaffMember, error
 }
 
 var _ ports.StaffLister = (*FakeStaffLister)(nil)
+
+// At arma un instante futuro redondeado a la hora (los fixtures de ausencias no
+// pueden haber terminado): lo comparten los tests de horarios y los del nudo.
+func At(dayOffset, hour, minute int) time.Time {
+	base := time.Now().UTC().Truncate(time.Hour).Add(time.Duration(dayOffset) * 24 * time.Hour)
+	return base.Add(time.Duration(hour)*time.Hour + time.Duration(minute)*time.Minute)
+}

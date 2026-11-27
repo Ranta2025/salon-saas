@@ -4,9 +4,10 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/schedules"
 )
 
 // HoursHandler: horario semanal del salón y de cada profesional (F2d1).
@@ -17,8 +18,8 @@ import (
 // La autorización vive en los casos de uso (cualquier miembro lee el horario del
 // salón, owner/admin lo edita; cada persona lee el suyo).
 type HoursHandler struct {
-	Salon        app.SalonHoursService
-	Professional app.ProfessionalHoursService
+	Salon        schedules.SalonHoursService
+	Professional schedules.ProfessionalHoursService
 	Memberships  ports.MembershipRepository
 }
 
@@ -60,7 +61,7 @@ func (h HoursHandler) GetSalon(c *gin.Context) {
 	}
 	days, custom, err := h.Salon.Get(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"days": daysJSON(days), "custom": custom})
@@ -82,7 +83,7 @@ func (h HoursHandler) UpdateSalon(c *gin.Context) {
 		} `json:"days"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	days := make([]domain.WeekdayHours, 0, len(in.Days))
@@ -91,7 +92,7 @@ func (h HoursHandler) UpdateSalon(c *gin.Context) {
 	}
 	saved, custom, err := h.Salon.Set(actor, salonID, days)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"days": daysJSON(saved), "custom": custom})
@@ -107,7 +108,7 @@ func (h HoursHandler) GetMember(c *gin.Context) {
 	}
 	segments, custom, err := h.Professional.Get(actor, salonID, c.Param("uid"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"segments": segmentsJSON(segments), "custom": custom})
@@ -130,7 +131,7 @@ func (h HoursHandler) UpdateMember(c *gin.Context) {
 		} `json:"segments"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	segments := make([]domain.HoursSegment, 0, len(in.Segments))
@@ -139,7 +140,7 @@ func (h HoursHandler) UpdateMember(c *gin.Context) {
 	}
 	saved, custom, err := h.Professional.Set(actor, salonID, c.Param("uid"), segments)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"segments": segmentsJSON(saved), "custom": custom})

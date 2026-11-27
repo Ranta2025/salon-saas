@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // seedTimeOff deja una ausencia en la DB fake del entorno público, sin pasar por
@@ -21,7 +22,7 @@ func seedTimeOff(t *testing.T, env *publicEnv, userID string, start, end time.Ti
 		StartsAt: start.UTC(), EndsAt: end.UTC(), Reason: reason,
 		CreatedAt: time.Now().UTC(),
 	}
-	env.timeOff.all = append(env.timeOff.all, off)
+	env.timeOff.All = append(env.timeOff.All, off)
 	return off
 }
 
@@ -177,7 +178,7 @@ func TestPublicBooking_timeOff_auto_assignment(t *testing.T) {
 func TestStaffBooking_ignores_time_off(t *testing.T) {
 	env := wideEnv(t)
 	seedTimeOff(t, env, "prof1", localDay(t, 1, 0, 0), localDay(t, 2, 0, 0), "Vacaciones")
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	reception := domain.Membership{UserID: "u-rec", SalonID: "s1", Role: domain.RoleReception}
 	if err := mems.Save(reception); err != nil {
 		t.Fatalf("membership: %v", err)

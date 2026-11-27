@@ -2,7 +2,7 @@ package httpapi
 
 // AbsenceHandler: cubrir una ausencia (F2d3). Delgado como el resto: parsea,
 // carga el actor y llama al caso de uso. La autorización (solo dueño y
-// administración) vive en app.CoverageService.
+// administración) vive en schedules.CoverageService.
 //
 //	GET  /salons/:id/absences?from&to
 //	POST /salons/:id/absences/:tid/reassign   {"professional_id": "...", "booking_ids": [...]}
@@ -13,13 +13,14 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/schedules"
 )
 
 type AbsenceHandler struct {
-	Coverage    app.CoverageService
+	Coverage    schedules.CoverageService
 	Memberships ports.MembershipRepository
 }
 
@@ -36,7 +37,7 @@ func (h AbsenceHandler) loadActor(c *gin.Context, salonID string) (domain.Member
 // coverageCandidateJSON: el selector de la pantalla necesita id, nombre y por qué
 // no sirve. `available` es reason == "" (lo mismo que devuelve el POST al
 // rechazarla).
-func coverageCandidateJSON(c app.CoverageCandidate) gin.H {
+func coverageCandidateJSON(c schedules.CoverageCandidate) gin.H {
 	return gin.H{
 		"professional_id": c.ProfessionalID,
 		"name":            c.Name,
@@ -46,7 +47,7 @@ func coverageCandidateJSON(c app.CoverageCandidate) gin.H {
 }
 
 // coverageBookingJSON es un turno de la ausencia con sus candidatas.
-func coverageBookingJSON(b app.CoverageBooking) gin.H {
+func coverageBookingJSON(b schedules.CoverageBooking) gin.H {
 	candidates := make([]gin.H, 0, len(b.Candidates))
 	for _, c := range b.Candidates {
 		candidates = append(candidates, coverageCandidateJSON(c))
@@ -56,7 +57,7 @@ func coverageBookingJSON(b app.CoverageBooking) gin.H {
 		"client_name":  b.Booking.ClientName,
 		"starts_at":    b.Booking.StartsAt.UTC().Format(time.RFC3339),
 		"ends_at":      b.Booking.EndsAt.UTC().Format(time.RFC3339),
-		"service_id":   optionalID(b.Booking.ServiceID),
+		"service_id":   httpx.OptionalID(b.Booking.ServiceID),
 		"service_name": b.ServiceName,
 		"candidates":   candidates,
 	}
@@ -81,15 +82,15 @@ func reassignedBookingsJSON(list []domain.Booking) []gin.H {
 // el destino ya tiene ese horario) lleva SIEMPRE la lista de turnos afectados
 // (S-F2d3-3).
 func respondCoverageErr(c *gin.Context, err error) {
-	var conflict *app.CoverageConflict
+	var conflict *schedules.CoverageConflict
 	if errors.As(err, &conflict) {
-		c.JSON(statusOf(conflict.Kind), gin.H{
+		c.JSON(httpx.StatusOf(conflict.Kind), gin.H{
 			"error":    conflict.Text,
 			"bookings": reassignedBookingsJSON(conflict.Bookings),
 		})
 		return
 	}
-	respondErr(c, err)
+	httpx.RespondErr(c, err)
 }
 
 // List: GET /salons/:id/absences?from=RFC3339&to=RFC3339
@@ -144,7 +145,7 @@ func (h AbsenceHandler) ReassignAbsence(c *gin.Context) {
 		BookingIDs     []string `json:"booking_ids"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	result, err := h.Coverage.ReassignAbsence(actor, salonID, c.Param("tid"), in.ProfessionalID, in.BookingIDs)
@@ -173,7 +174,7 @@ func (h AbsenceHandler) ReassignBooking(c *gin.Context) {
 		Reason         string `json:"reason"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	bookingID := c.Param("bid")
@@ -183,7 +184,7 @@ func (h AbsenceHandler) ReassignBooking(c *gin.Context) {
 			respondCoverageErr(c, err)
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"cancelled": true, "booking": bookingJSON(b)})
+		c.JSON(http.StatusOK, gin.H{"cancelled": true, "booking": httpx.BookingJSON(b)})
 		return
 	}
 	result, err := h.Coverage.ReassignBooking(actor, salonID, bookingID, in.ProfessionalID)

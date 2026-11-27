@@ -14,7 +14,7 @@
 //   - La regla de quién puede cubrir es del dominio (domain.CoverageCandidate):
 //     atiende (F2a), está de turno ese día (F2d1), no está ausente (F2d2) y hace
 //     el servicio (F2c).
-package app
+package schedules
 
 import (
 	"context"
@@ -53,7 +53,7 @@ type CoverageService struct {
 	// reasignación es peor que ninguna (S-F2d3-3).
 	Tx       ports.BookingTxRunner
 	Events   ports.EventPublisher
-	Notifier Notifier
+	Notifier kernel.Notifier
 	// Email a la clienta (T12). Opcionales: nil = este entorno no manda correos.
 	Mailer ports.MailSender
 	Emails ports.BookingEmailFinder
@@ -234,7 +234,7 @@ func (s CoverageService) CancelBooking(actor domain.Membership, salonID, booking
 		TS:      time.Now().UTC(),
 	})
 	kernel.Notify(s.Notifier, salonID, "", "Turno cancelado",
-		cancelNoticeBody(cancelled, motivo, salonTimeLabel(s.Settings, salonID, cancelled.StartsAt)),
+		cancelNoticeBody(cancelled, motivo, kernel.SalonTimeLabel(s.Settings, salonID, cancelled.StartsAt)),
 		domain.KindBooking)
 	s.sendCoverMail(salonID, cancelled, "", coverMailCancelled)
 	return cancelled, nil
@@ -369,7 +369,7 @@ func (s CoverageService) absenceBookings(off domain.TimeOff) ([]domain.Booking, 
 	if err != nil {
 		return nil, err
 	}
-	return bookedOverlaps(window, off.UserID, off.StartsAt, off.EndsAt), nil
+	return BookedOverlaps(window, off.UserID, off.StartsAt, off.EndsAt), nil
 }
 
 // announceReassign publica el evento para el calendario, deja el aviso interno y
@@ -382,7 +382,7 @@ func (s CoverageService) announceReassign(salonID string, b domain.Booking, prof
 		Data:    bookingEventData(b),
 		TS:      time.Now().UTC(),
 	})
-	label := salonTimeLabel(s.Settings, salonID, b.StartsAt)
+	label := kernel.SalonTimeLabel(s.Settings, salonID, b.StartsAt)
 	body := b.ClientName + " · " + label
 	if name := strings.TrimSpace(professionalName); name != "" {
 		body += " · ahora la atiende " + name
@@ -527,15 +527,15 @@ func (s CoverageService) loadCandidates(salonID string) (*candidateSet, error) {
 	if err != nil {
 		return nil, err
 	}
-	single, err := singleWindow(settings)
+	single, err := SingleWindow(settings)
 	if err != nil {
 		return nil, err
 	}
-	weekly, err := salonWeeklyHours(s.Hours, salonID)
+	weekly, err := SalonWeeklyHours(s.Hours, salonID)
 	if err != nil {
 		return nil, err
 	}
-	segments, err := memberHours(s.Hours, salonID)
+	segments, err := MemberHours(s.Hours, salonID)
 	if err != nil {
 		return nil, err
 	}
@@ -561,17 +561,17 @@ func (c *candidateSet) name(userID string) string {
 // es la EXCLUDE de la DB (S-F2d3-1).
 func (s CoverageService) candidatesFor(set *candidateSet, b domain.Booking, checkBusy bool) ([]domain.CoverageCandidate, error) {
 	weekday := domain.IsoWeekday(b.StartsAt, set.loc)
-	startMin := localMinutes(b.StartsAt, set.loc)
+	startMin := kernel.LocalMinutes(b.StartsAt, set.loc)
 	endMin := startMin + int(b.EndsAt.Sub(b.StartsAt).Minutes())
 	does, err := s.doesService(set, b)
 	if err != nil {
 		return nil, err
 	}
-	absences, err := timeOffRange(s.TimeOff, set.salonID, b.StartsAt, b.EndsAt)
+	absences, err := TimeOffRange(s.TimeOff, set.salonID, b.StartsAt, b.EndsAt)
 	if err != nil {
 		return nil, err
 	}
-	away := awaySet(absences, b.StartsAt, b.EndsAt)
+	away := AwaySet(absences, b.StartsAt, b.EndsAt)
 	out := make([]domain.CoverageCandidate, 0, len(set.staff))
 	for _, m := range set.staff {
 		fits, err := domain.DayPlan{Single: set.single, Weekly: set.weekly, Segments: set.segments[m.ID]}.

@@ -60,7 +60,7 @@ func newPublicWorld() *publicWorld {
 	}}
 	return &publicWorld{
 		svc: PublicSalonService{
-			Salons: salons, Services: services, Settings: settings, Hours: &fakeWeeklyHours{},
+			Salons: salons, Services: services, Settings: settings, Hours: &testutil.FakeWeeklyHours{},
 			Profiles: profiles, Staff: staff, Professionals: profs, Gallery: gallery, Packages: packages,
 		},
 		salons: salons, services: services, profiles: profiles, staff: staff, profs: profs,

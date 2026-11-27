@@ -7,7 +7,6 @@
 package app
 
 import (
-	"fmt"
 	"time"
 
 	"salon-saas/internal/domain"
@@ -33,33 +32,17 @@ type Notifier = kernel.Notifier
 // Es solo texto: el evento del websocket sigue llevando starts_at en UTC
 // RFC3339, que es el valor que las pantallas formatean por su cuenta.
 func FormatSalonTime(settings domain.SalonSettings, t time.Time) string {
-	loc, err := settings.Location()
-	if err != nil {
-		// Configuración ilegible: se dice UTC explícitamente en vez de mostrar
-		// una hora sin referencia.
-		return t.UTC().Format("02/01 15:04") + " (UTC)"
-	}
-	return t.In(loc).Format("02/01 15:04") + " (" + loc.String() + ")"
+	return kernel.FormatSalonTime(settings, t)
 }
 
 // salonTimeLabel arma ese texto con la configuración del salón. Si la
 // configuración no se puede leer, el aviso sale igual (en UTC): un aviso que se
 // pierde por una fila de settings es peor que una hora con la zona a la vista.
 func salonTimeLabel(repo ports.SalonSettingsRepository, salonID string, t time.Time) string {
-	settings, err := kernel.LoadSalonSettings(repo, salonID)
-	if err != nil {
-		settings = domain.SalonSettings{SalonID: salonID, Timezone: "UTC"}
-	}
-	return FormatSalonTime(settings, t)
+	return kernel.SalonTimeLabel(repo, salonID, t)
 }
 
 // FormatCents pasa centavos a un texto para MOSTRAR ($1.500,00). El dinero
 // sigue siendo int en centavos en todo el sistema: esto es solo el texto de un
 // aviso, nunca un valor que se vuelva a leer para calcular.
-func FormatCents(cents int) string {
-	sign := ""
-	if cents < 0 {
-		sign, cents = "-", -cents
-	}
-	return fmt.Sprintf("%s$%d,%02d", sign, cents/100, cents%100)
-}
+func FormatCents(cents int) string { return kernel.FormatCents(cents) }

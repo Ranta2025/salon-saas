@@ -2,7 +2,7 @@
 // Cualquier miembro lo lee (la agenda lo necesita); solo owner/admin lo edita
 // (los horarios son de gestión). Sin filas propias el salón responde la ventana
 // única de /settings expandida a los 7 días y custom=false.
-package app
+package schedules
 
 import (
 	"salon-saas/internal/domain"
@@ -49,7 +49,7 @@ func (s SalonHoursService) Set(actor domain.Membership, salonID string, days []d
 // current lee el horario tal como lo devuelve la API: las filas propias, o la
 // ventana única expandida cuando el salón nunca configuró días.
 func (s SalonHoursService) current(salonID string) ([]domain.WeekdayHours, bool, error) {
-	weekly, err := salonWeeklyHours(s.Hours, salonID)
+	weekly, err := SalonWeeklyHours(s.Hours, salonID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -60,7 +60,7 @@ func (s SalonHoursService) current(salonID string) ([]domain.WeekdayHours, bool,
 	if err != nil {
 		return nil, false, err
 	}
-	return expandedDays(settings), false, nil
+	return ExpandedDays(settings), false, nil
 }
 
 // member es la autorización de lectura: el salon_id de la ruta no es la

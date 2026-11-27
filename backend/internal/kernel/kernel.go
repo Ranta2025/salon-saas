@@ -169,3 +169,49 @@ const DefaultAppURL = "http://localhost:8081"
 // DateLayout es el formato del DÍA LOCAL del salón ("YYYY-MM-DD"): sin hora y
 // sin zona, porque el día de una cita es del calendario del salón.
 const DateLayout = "2006-01-02"
+
+// --- Ventanas de tiempo y textos de aviso ---------------------------------------
+
+// LocalMinutes es el minuto del día LOCAL (09:00 = 540) de un instante, en la
+// zona del salón. Sirve para comparar un turno contra las ventanas del día.
+func LocalMinutes(t time.Time, loc *time.Location) int {
+	local := t.In(loc)
+	return local.Hour()*60 + local.Minute()
+}
+
+// FormatSalonTime pasa un instante al texto de un aviso en la hora LOCAL del
+// salón y nombra la zona: la hora UTC no la entiende nadie del mostrador.
+//
+// Es solo texto: el evento del websocket sigue llevando el instante en UTC
+// RFC3339, que es el valor que las pantallas formatean por su cuenta.
+func FormatSalonTime(settings domain.SalonSettings, t time.Time) string {
+	loc, err := settings.Location()
+	if err != nil {
+		// Configuración ilegible: se dice UTC explícitamente en vez de mostrar
+		// una hora sin referencia.
+		return t.UTC().Format("02/01 15:04") + " (UTC)"
+	}
+	return t.In(loc).Format("02/01 15:04") + " (" + loc.String() + ")"
+}
+
+// SalonTimeLabel arma ese texto con la configuración del salón. Si la
+// configuración no se puede leer, el aviso sale igual (en UTC): un aviso que se
+// pierde por una fila de settings es peor que una hora sin zona.
+func SalonTimeLabel(repo ports.SalonSettingsRepository, salonID string, t time.Time) string {
+	settings, err := LoadSalonSettings(repo, salonID)
+	if err != nil {
+		settings = domain.SalonSettings{SalonID: salonID, Timezone: "UTC"}
+	}
+	return FormatSalonTime(settings, t)
+}
+
+// FormatCents pasa centavos a un texto para MOSTRAR ($1.500,00). El dinero sigue
+// siendo int en centavos en todo el sistema: esto es solo el texto de un aviso,
+// nunca un valor que se vuelva a leer para calcular.
+func FormatCents(cents int) string {
+	sign := ""
+	if cents < 0 {
+		sign, cents = "-", -cents
+	}
+	return fmt.Sprintf("%s$%d,%02d", sign, cents/100, cents%100)
+}

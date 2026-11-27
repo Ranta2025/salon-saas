@@ -6,9 +6,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/schedules"
 )
 
 // TimeOffHandler: ausencias (vacaciones y días libres puntuales) de cada
@@ -21,7 +22,7 @@ import (
 // La autorización vive en los casos de uso: cualquier miembro lee (con el motivo
 // recortado), solo dueño/administración carga y borra.
 type TimeOffHandler struct {
-	TimeOff     app.TimeOffService
+	TimeOff     schedules.TimeOffService
 	Memberships ports.MembershipRepository
 }
 
@@ -95,7 +96,7 @@ func (h TimeOffHandler) List(c *gin.Context) {
 	}
 	list, err := h.TimeOff.List(actor, salonID, from, to)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -119,7 +120,7 @@ func (h TimeOffHandler) Create(c *gin.Context) {
 		Reason   string `json:"reason"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if strings.TrimSpace(in.StartsAt) == "" || strings.TrimSpace(in.EndsAt) == "" {
@@ -134,7 +135,7 @@ func (h TimeOffHandler) Create(c *gin.Context) {
 	}
 	result, err := h.TimeOff.Create(actor, salonID, c.Param("uid"), startsAt, endsAt, in.Reason)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	conflicts := make([]gin.H, 0, len(result.Conflicts))
@@ -155,7 +156,7 @@ func (h TimeOffHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.TimeOff.Delete(actor, salonID, c.Param("tid")); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)

@@ -30,6 +30,7 @@ import (
 	"salon-saas/internal/domain"
 	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/schedules"
 )
 
 // bookingLinkTimeout acota el envío del correo de cambio de turno. Va en segundo
@@ -466,22 +467,22 @@ func (s BookingLinkService) checkNewTime(got linkedBooking, startsAt time.Time) 
 	}
 
 	// Ventana del salón y de la persona (F2d1), en el día LOCAL del salón.
-	single, err := singleWindow(settings)
+	single, err := schedules.SingleWindow(settings)
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	weekly, err := salonWeeklyHours(s.Hours, got.salon.ID)
+	weekly, err := schedules.SalonWeeklyHours(s.Hours, got.salon.ID)
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	segments, err := memberHours(s.Hours, got.salon.ID)
+	segments, err := schedules.MemberHours(s.Hours, got.salon.ID)
 	if err != nil {
 		return "", time.Time{}, err
 	}
 	weekday := domain.IsoWeekday(startsAt, loc)
 	startMin := localMinutes(startsAt, loc)
 	endMin := startMin + int(endsAt.Sub(startsAt)/time.Minute)
-	salonWindows, err := salonWindow(weekly, single, weekday)
+	salonWindows, err := schedules.SalonWindow(weekly, single, weekday)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -498,11 +499,11 @@ func (s BookingLinkService) checkNewTime(got linkedBooking, startsAt time.Time) 
 	}
 
 	// Ausencias (F2d2): a quien está ausente no se le mueve un turno encima.
-	absences, err := timeOffRange(s.TimeOff, got.salon.ID, startsAt, endsAt)
+	absences, err := schedules.TimeOffRange(s.TimeOff, got.salon.ID, startsAt, endsAt)
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	if awayAny(absences, b.ProfessionalID, startsAt, endsAt) {
+	if schedules.AwayAny(absences, b.ProfessionalID, startsAt, endsAt) {
 		return "", time.Time{}, bookingLinkSlotTaken()
 	}
 

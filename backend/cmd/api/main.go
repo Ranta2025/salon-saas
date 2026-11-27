@@ -39,6 +39,8 @@ import (
 	"salon-saas/internal/ports"
 	"salon-saas/internal/products"
 	productshttpapi "salon-saas/internal/products/httpapi"
+	"salon-saas/internal/schedules"
+	scheduleshttpapi "salon-saas/internal/schedules/httpapi"
 	"salon-saas/internal/staffing"
 	staffinghttpapi "salon-saas/internal/staffing/httpapi"
 	"salon-saas/internal/team"
@@ -392,14 +394,14 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Gallery: salonGalleryRepo, Packages: packagesRepo, Loyalty: loyaltyProgramsRepo,
 	}
 	settingsSvc := app.SettingsService{Settings: salons, Memberships: mems}
-	salonHoursSvc := app.SalonHoursService{Hours: weeklyHours, Settings: salons, Memberships: mems}
-	professionalHoursSvc := app.ProfessionalHoursService{Hours: weeklyHours, Memberships: mems}
+	salonHoursSvc := schedules.SalonHoursService{Hours: weeklyHours, Settings: salons, Memberships: mems}
+	professionalHoursSvc := schedules.ProfessionalHoursService{Hours: weeklyHours, Memberships: mems}
 	// F2d2: las ausencias se cargan desde Equipo y las consultan la agenda (con
 	// los turnos en conflicto) y la disponibilidad pública.
-	timeOffSvc := app.TimeOffService{TimeOff: timeOffRepo, Bookings: bookings, Memberships: mems}
+	timeOffSvc := schedules.TimeOffService{TimeOff: timeOffRepo, Bookings: bookings, Memberships: mems}
 	// F2d3: cubrir una ausencia reasignando los turnos a otra profesional. La
 	// transacción con lock por salón es lo que hace el "todo o nada".
-	coverageSvc := app.CoverageService{
+	coverageSvc := schedules.CoverageService{
 		Bookings: bookings, Memberships: mems, Staff: mems, Professionals: professionals,
 		Hours: weeklyHours, TimeOff: timeOffRepo, Services: servicesRepo,
 		Settings: salons, Salons: salons, Tx: bookings,
@@ -603,11 +605,11 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		BookingLinks:  httpapi.BookingLinkHandler{Links: bookingLinkSvc},
 		Settings:      httpapi.SettingsHandler{Settings: settingsSvc, Memberships: mems},
 		Members:       teamhttpapi.MemberHandler{Members: memberSvc, Memberships: mems},
-		Hours: httpapi.HoursHandler{
+		Hours: scheduleshttpapi.HoursHandler{
 			Salon: salonHoursSvc, Professional: professionalHoursSvc, Memberships: mems,
 		},
-		TimeOff:   httpapi.TimeOffHandler{TimeOff: timeOffSvc, Memberships: mems},
-		Absences:  httpapi.AbsenceHandler{Coverage: coverageSvc, Memberships: mems},
+		TimeOff:   scheduleshttpapi.TimeOffHandler{TimeOff: timeOffSvc, Memberships: mems},
+		Absences:  scheduleshttpapi.AbsenceHandler{Coverage: coverageSvc, Memberships: mems},
 		Resources: staffinghttpapi.ResourceHandler{Resources: resourceSvc, Memberships: mems},
 		Invitations: teamhttpapi.InvitationHandler{
 			Invitations: invitationSvc, Public: invitationPublicSvc, Memberships: mems,

@@ -63,15 +63,7 @@ func (h BookingHandler) Create(c *gin.Context) {
 
 // publicBookingJSON es la forma de la reserva pública: el frontend de la
 // landing solo necesita esto.
-func publicBookingJSON(b domain.Booking) gin.H {
-	return gin.H{
-		"id":              b.ID,
-		"professional_id": b.ProfessionalID,
-		"starts_at":       b.StartsAt.Format(time.RFC3339),
-		"ends_at":         b.EndsAt.Format(time.RFC3339),
-		"status":          string(b.Status),
-	}
-}
+func publicBookingJSON(b domain.Booking) gin.H { return httpx.PublicBookingJSON(b) }
 
 // bookingJSON es la reserva completa (calendario del salón y PATCH).
 // `service_id` (F2c) es el servicio reservado y puede ser null: el turno que se
@@ -80,16 +72,7 @@ func publicBookingJSON(b domain.Booking) gin.H {
 // null si nadie lo cubre: solo viaja en el JSON del personal ("Mi agenda" lo
 // usa para avisar "lo cubre otra profesional"), nunca en el público ni en el
 // payload del websocket.
-func bookingJSON(b domain.Booking) gin.H {
-	out := publicBookingJSON(b)
-	out["client_name"] = b.ClientName
-	out["service_id"] = optionalID(b.ServiceID)
-	out["covered_from"] = optionalID(b.CoveredFrom)
-	// resource_unit_id (F2e) es la unidad de equipo que ocupa el turno, o null
-	// si no ocupa ninguna (turno del calendario o servicio sin equipo).
-	out["resource_unit_id"] = optionalID(b.ResourceUnitID)
-	return out
-}
+func bookingJSON(b domain.Booking) gin.H { return httpx.BookingJSON(b) }
 
 // optionalID serializa un id opcional como texto o null (nunca ""): el
 // frontend distingue "sin servicio" de "servicio vacío".

@@ -12,6 +12,8 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/schedules"
+	"salon-saas/internal/testutil"
 )
 
 // --- fakes nuevos de la capa app ---
@@ -71,10 +73,10 @@ func (t *fakeBookingTx) InSalonTx(salonID string, fn func(ports.BookingTx) error
 var _ ports.BookingTxRunner = (*fakeBookingTx)(nil)
 
 type coverEnv struct {
-	svc      CoverageService
+	svc      schedules.CoverageService
 	bookings *fb
-	timeOff  *fakeTimeOff
-	hours    *fakeWeeklyHours
+	timeOff  *testutil.FakeTimeOff
+	hours    *testutil.FakeWeeklyHours
 	profs    *fakeProfessionalServices
 	staff    *fakeStaffLister
 	services *fakeServices
@@ -132,8 +134,8 @@ func newCoverEnv(t *testing.T) *coverEnv {
 	mems := &fakeMemberships{}
 	env := &coverEnv{
 		bookings:  &fb{},
-		timeOff:   &fakeTimeOff{},
-		hours:     &fakeWeeklyHours{memberSeg: map[string][]domain.HoursSegment{}},
+		timeOff:   &testutil.FakeTimeOff{},
+		hours:     &testutil.FakeWeeklyHours{MemberSeg: map[string][]domain.HoursSegment{}},
 		profs:     profs,
 		staff:     staff,
 		services:  services,
@@ -157,7 +159,7 @@ func newCoverEnv(t *testing.T) *coverEnv {
 		}
 	}
 	env.tx = &fakeBookingTx{bookings: env.bookings}
-	env.svc = CoverageService{
+	env.svc = schedules.CoverageService{
 		Bookings: env.bookings, Memberships: mems, Staff: staff, Professionals: profs,
 		Hours: env.hours, TimeOff: env.timeOff, Services: services, Settings: settings,
 		Salons: salons, Tx: env.tx, Events: env.events, Notifier: env.notifier,
@@ -199,7 +201,7 @@ func seedAbsence(t *testing.T, env *coverEnv, id, userID string, start, end time
 		ID: id, SalonID: "s1", UserID: userID, StartsAt: start.UTC(), EndsAt: end.UTC(),
 		Reason: "Vacaciones", CreatedAt: time.Now().UTC(),
 	}
-	env.timeOff.all = append(env.timeOff.all, off)
+	env.timeOff.All = append(env.timeOff.All, off)
 	return off
 }
 
@@ -231,18 +233,18 @@ func keratinaID(t *testing.T, env *coverEnv) string {
 }
 
 // conflictOf extrae el error con el detalle de la negativa todo-o-nada.
-func conflictOf(t *testing.T, err error) *CoverageConflict {
+func conflictOf(t *testing.T, err error) *schedules.CoverageConflict {
 	t.Helper()
-	var c *CoverageConflict
+	var c *schedules.CoverageConflict
 	if !errors.As(err, &c) {
-		t.Fatalf("esperaba un *CoverageConflict, dio %v", err)
+		t.Fatalf("esperaba un *schedules.CoverageConflict, dio %v", err)
 	}
 	return c
 }
 
 // candidateReason devuelve el motivo con el que la lista marca a una candidata
 // ("" = puede tomar el turno).
-func candidateReason(b CoverageBooking, professionalID string) string {
+func candidateReason(b schedules.CoverageBooking, professionalID string) string {
 	for _, c := range b.Candidates {
 		if c.ProfessionalID == professionalID {
 			return c.Reason
@@ -446,7 +448,7 @@ func TestCoverage_reassign_absence_candidate_rules(t *testing.T) {
 			msg: domain.MsgCoverNotScheduled,
 			setup: func(t *testing.T, env *coverEnv) string {
 				// Bea solo trabaja los miércoles: el martes 1 es su día libre.
-				env.hours.memberSeg["s1|bea"] = []domain.HoursSegment{{Weekday: 3, Start: "09:00", End: "19:00"}}
+				env.hours.MemberSeg["s1|bea"] = []domain.HoursSegment{{Weekday: 3, Start: "09:00", End: "19:00"}}
 				return "bea"
 			},
 		},
@@ -662,32 +664,6 @@ func TestCoverage_preserve_availability_slots(t *testing.T) {
 	}
 	if n := len(slotsOf(t, day.Slots, "prof1")); n != 19 {
 		t.Fatalf("prof1 conserva sus 19 arranques, tiene %d", n)
-	}
-}
-
-// PRESERVE: el listado de ausencias y sus conflictos siguen igual (F2d2), ahora
-// que el filtro de turnos que se pisan vive en un helper compartido.
-func TestCoverage_preserve_time_off_list_and_conflicts(t *testing.T) {
-	env := newTimeOffEnv(t)
-	conflict := domain.Booking{
-		ID: "b-1", SalonID: "s1", ProfessionalID: env.pro1.UserID,
-		StartsAt: at(3, 10, 0), EndsAt: at(3, 11, 0), Status: domain.BookingBooked,
-	}
-	env.bookings.all = append(env.bookings.all,
-		conflict,
-		domain.Booking{ID: "b-2", SalonID: "s1", ProfessionalID: env.pro2.UserID,
-			StartsAt: at(3, 10, 0), EndsAt: at(3, 11, 0), Status: domain.BookingBooked},
-	)
-	res, err := env.svc.Create(env.owner, "s1", env.pro1.UserID, at(3, 9, 0), at(3, 12, 0), "Médico")
-	if err != nil {
-		t.Fatalf("alta de ausencia: %v", err)
-	}
-	if len(res.Conflicts) != 1 || res.Conflicts[0].ID != "b-1" {
-		t.Fatalf("conflictos: %+v (solo los de ESA persona)", res.Conflicts)
-	}
-	list, err := env.svc.List(env.owner, "s1", at(3, 0, 0), at(4, 0, 0))
-	if err != nil || len(list) != 1 || list[0].Reason != "Médico" {
-		t.Fatalf("listado: %+v %v", list, err)
 	}
 }
 

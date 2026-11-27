@@ -12,6 +12,7 @@ import (
 	"salon-saas/internal/domain"
 	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/schedules"
 )
 
 // Slot es un hueco concreto: quién lo atiende y en qué instante (UTC).
@@ -108,15 +109,15 @@ func (s AvailabilityService) DayExcluding(slug, date, serviceID, professionalID,
 	}
 
 	// Horario semanal (F2d1): sin filas todo esto es la ventana única de antes.
-	single, err := singleWindow(settings)
+	single, err := schedules.SingleWindow(settings)
 	if err != nil {
 		return DayAvailability{}, err
 	}
-	weekly, err := salonWeeklyHours(s.Hours, salon.ID)
+	weekly, err := schedules.SalonWeeklyHours(s.Hours, salon.ID)
 	if err != nil {
 		return DayAvailability{}, err
 	}
-	segments, err := memberHours(s.Hours, salon.ID)
+	segments, err := schedules.MemberHours(s.Hours, salon.ID)
 	if err != nil {
 		return DayAvailability{}, err
 	}
@@ -133,7 +134,7 @@ func (s AvailabilityService) DayExcluding(slug, date, serviceID, professionalID,
 	// Ausencias (F2d2): quien está de vacaciones o de día libre no se ofrece ese
 	// día. Una sola query para todo el equipo, con la misma ventana ancha que los
 	// turnos: una ausencia que empezó ayer también cubre la mañana de hoy.
-	absences, err := timeOffRange(s.TimeOff, salon.ID, open.UTC().Add(-24*time.Hour), closeAt.UTC().Add(24*time.Hour))
+	absences, err := schedules.TimeOffRange(s.TimeOff, salon.ID, open.UTC().Add(-24*time.Hour), closeAt.UTC().Add(24*time.Hour))
 	if err != nil {
 		return DayAvailability{}, err
 	}
@@ -165,7 +166,7 @@ func (s AvailabilityService) DayExcluding(slug, date, serviceID, professionalID,
 				// La ausencia manda aunque el hueco esté libre: no está para
 				// atender. El período es semiabierto, así que un turno que
 				// arranca justo cuando termina la ausencia SÍ se ofrece.
-				if awayAny(absences, p.ID, start, end) {
+				if schedules.AwayAny(absences, p.ID, start, end) {
 					continue
 				}
 				slots = append(slots, Slot{ProfessionalID: p.ID, StartsAt: start.UTC(), EndsAt: end.UTC()})

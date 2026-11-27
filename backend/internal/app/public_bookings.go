@@ -14,6 +14,7 @@ import (
 	"salon-saas/internal/domain"
 	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/schedules"
 )
 
 // PublicBookingInput es el body de POST /public/salons/:slug/bookings ya
@@ -178,15 +179,15 @@ func (s PublicBookingService) book(slug string, in PublicBookingInput, out *depo
 	}
 
 	// Horario semanal (F2d1): sin filas todo esto es la ventana única de antes.
-	single, err := singleWindow(settings)
+	single, err := schedules.SingleWindow(settings)
 	if err != nil {
 		return domain.Booking{}, err
 	}
-	weekly, err := salonWeeklyHours(s.Hours, salon.ID)
+	weekly, err := schedules.SalonWeeklyHours(s.Hours, salon.ID)
 	if err != nil {
 		return domain.Booking{}, err
 	}
-	segments, err := memberHours(s.Hours, salon.ID)
+	segments, err := schedules.MemberHours(s.Hours, salon.ID)
 	if err != nil {
 		return domain.Booking{}, err
 	}
@@ -203,7 +204,7 @@ func (s PublicBookingService) book(slug string, in PublicBookingInput, out *depo
 	// entrar completo (400, como siempre). Si el día está cerrado no hay ventana
 	// y tampoco hay nadie con horario: la reserva cae en el 409 de abajo, que es
 	// la misma respuesta que la disponibilidad ({"slots":[]}).
-	salonWindows, err := salonWindow(weekly, single, weekday)
+	salonWindows, err := schedules.SalonWindow(weekly, single, weekday)
 	if err != nil {
 		return domain.Booking{}, err
 	}
@@ -227,11 +228,11 @@ func (s PublicBookingService) book(slug string, in PublicBookingInput, out *depo
 	// Ausencias (F2d2): a quien está ausente no se le asigna el turno, y elegirla
 	// a mano es el mismo 409 que "no trabaja en ese horario" (la disponibilidad
 	// no la ofrece, así que la reserva no puede entrar por atrás).
-	absences, err := timeOffRange(s.TimeOff, salon.ID, startsAt, endsAt)
+	absences, err := schedules.TimeOffRange(s.TimeOff, salon.ID, startsAt, endsAt)
 	if err != nil {
 		return domain.Booking{}, err
 	}
-	away := awaySet(absences, startsAt, endsAt)
+	away := schedules.AwaySet(absences, startsAt, endsAt)
 
 	// Equipo (F2e, S-F2e-4): si el servicio exige un tipo, el turno ocupa UNA
 	// unidad y sin ninguna activa no hay hueco (409, nunca 500).

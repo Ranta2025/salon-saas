@@ -2,6 +2,8 @@ package app
 
 import (
 	"time"
+
+	"salon-saas/internal/kernel"
 )
 
 // Helpers de ventana temporal. El "día del salón" es el día LOCAL del salón
@@ -36,8 +38,5 @@ func salonTimeAt(reference time.Time, minutes int, loc *time.Location) time.Time
 }
 
 // localMinutes es el minuto del día local (09:00 = 540) de un instante, en la
-// zona del salón. Sirve para comparar un turno contra las ventanas del día.
-func localMinutes(t time.Time, loc *time.Location) int {
-	local := t.In(loc)
-	return local.Hour()*60 + local.Minute()
-}
+// zona del salón (vive en el núcleo: kernel.LocalMinutes).
+func localMinutes(t time.Time, loc *time.Location) int { return kernel.LocalMinutes(t, loc) }

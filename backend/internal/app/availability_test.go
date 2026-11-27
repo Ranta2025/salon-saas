@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // publicEnv: fixture de la agenda pública. Un salón en CDMX que abre
@@ -22,9 +23,9 @@ type publicEnv struct {
 	clients  *fakeClients
 	// F2d1: horario semanal del salón y de las profesionales (sin filas = el
 	// comportamiento de siempre).
-	hours *fakeWeeklyHours
+	hours *testutil.FakeWeeklyHours
 	// F2d2: ausencias de las profesionales (vacío = nadie está ausente).
-	timeOff *fakeTimeOff
+	timeOff *testutil.FakeTimeOff
 	// F2e: tipos y unidades de equipo del salón (sin tipos = sin equipamiento).
 	resources *fakeResources
 	corte     domain.Service
@@ -65,8 +66,8 @@ func newPublicEnv(t *testing.T) *publicEnv {
 	events := &fakeEvents{}
 	notifier := &fakeNotifier{}
 	clients := &fakeClients{}
-	hours := &fakeWeeklyHours{}
-	timeOff := &fakeTimeOff{}
+	hours := &testutil.FakeWeeklyHours{}
+	timeOff := &testutil.FakeTimeOff{}
 	resources := &fakeResources{bookings: bookings}
 	return &publicEnv{
 		avail: AvailabilityService{

@@ -6,7 +6,7 @@
 // Mismas reglas de la copia (T12): español, nombre del salón, nombre de la
 // persona, fecha y hora en la ZONA DEL SALÓN (FormatSalonTime), sin ids ni
 // tokens, y el HTML escapa lo que escribe otra persona.
-package app
+package schedules
 
 import (
 	"html"
@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -32,7 +33,7 @@ func coverMail(kind coverMailKind, salonName, clientName, professionalName strin
 	salon := strings.TrimSpace(salonName)
 	name := strings.TrimSpace(clientName)
 	who := strings.TrimSpace(professionalName)
-	when := FormatSalonTime(settings, startsAt)
+	when := kernel.FormatSalonTime(settings, startsAt)
 
 	subject := "Tu turno sigue en pie · " + salon
 	text := []string{
