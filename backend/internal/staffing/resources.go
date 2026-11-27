@@ -15,7 +15,7 @@
 //   - Borrar un tipo se rechaza si un servicio lo usa o si alguna unidad tiene
 //     turnos: el historial no se puede quedar huérfano.
 //   - Leer: cualquier miembro. Escribir: solo dueño/administración.
-package app
+package staffing
 
 import (
 	"errors"

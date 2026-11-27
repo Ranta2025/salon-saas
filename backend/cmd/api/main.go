@@ -34,6 +34,7 @@ import (
 	"salon-saas/internal/packages"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/products"
+	"salon-saas/internal/staffing"
 )
 
 // Timeouts del servidor (B-11): sin ellos un cliente lento ocupa una conexión
@@ -285,10 +286,10 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Services: servicesRepo, Resources: resourceRepo,
 		ClientLinks: clientLinks,
 	}
-	svcSvc := app.ServiceService{
+	svcSvc := staffing.ServiceService{
 		Services: servicesRepo, Memberships: mems, Professionals: professionals, Resources: resourceRepo,
 	}
-	resourceSvc := app.ResourceService{
+	resourceSvc := staffing.ResourceService{
 		Resources: resourceRepo, Services: servicesRepo, Memberships: mems,
 	}
 	saleSvc := app.SaleService{

@@ -1,21 +1,22 @@
-package app
+package staffing
 
 import (
 	"errors"
 	"testing"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // S-F2e-3: el servicio indica qué tipo de equipo usa. Un tipo de OTRO salón es
 // 400 con el mensaje exacto; sin tipo, el servicio sigue como antes.
 func TestServiceService_resource_type(t *testing.T) {
-	mems := &fakeMemberships{}
-	services := &fakeServices{}
-	bookings := &fb{}
+	mems := &testutil.FakeMemberships{}
+	services := &testutil.FakeServices{}
+	bookings := &testutil.FakeBookings{}
 	res := &fakeResources{bookings: bookings}
 	svc := ServiceService{Services: services, Memberships: mems, Resources: res}
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
 
 	rt, err := domain.NewResourceType("s1", "Puesto")
 	if err != nil {
@@ -69,10 +70,10 @@ func TestServiceService_resource_type(t *testing.T) {
 
 // PRESERVE: un servicio sin tipo de equipo se crea y actualiza como antes.
 func TestServiceService_sin_equipo_sigue_igual(t *testing.T) {
-	mems := &fakeMemberships{}
-	services := &fakeServices{}
+	mems := &testutil.FakeMemberships{}
+	services := &testutil.FakeServices{}
 	svc := ServiceService{Services: services, Memberships: mems}
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
 
 	got, err := svc.Create(owner, "s1", "Corte", 30, 100000, 20, nil, "")
 	if err != nil {

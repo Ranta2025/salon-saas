@@ -1,6 +1,6 @@
 // ServiceService: catálogo de servicios del salón. Configurar precios es
 // privilegio de quien configura el salón (owner/admin); el resto solo mira.
-package app
+package staffing
 
 import (
 	"strings"

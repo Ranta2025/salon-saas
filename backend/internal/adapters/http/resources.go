@@ -4,9 +4,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/staffing"
 )
 
 // ResourceHandler: puestos y equipamiento con capacidad (F2e).
@@ -22,7 +22,7 @@ import (
 // autorización (leer cualquier miembro, escribir dueño/administración) vive en
 // ResourceService; acá solo se traduce el error a su status.
 type ResourceHandler struct {
-	Resources   app.ResourceService
+	Resources   staffing.ResourceService
 	Memberships ports.MembershipRepository
 }
 
@@ -42,7 +42,7 @@ func resourceUnitJSON(u domain.ResourceUnit) gin.H {
 }
 
 // resourceTypeJSON es la forma única de un tipo con sus unidades.
-func resourceTypeJSON(v app.ResourceTypeView) gin.H {
+func resourceTypeJSON(v staffing.ResourceTypeView) gin.H {
 	units := make([]gin.H, 0, len(v.Units))
 	for _, u := range v.Units {
 		units = append(units, resourceUnitJSON(u))

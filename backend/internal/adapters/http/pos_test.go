@@ -14,6 +14,7 @@ import (
 	"salon-saas/internal/domain"
 	"salon-saas/internal/notifications"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/staffing"
 )
 
 // Fakes de POS/catálogo con la misma semántica que pgstore: scoping por salón,
@@ -210,7 +211,7 @@ func newPOSEnv() *posEnv {
 	tenSvc := app.TenantService{Salons: env.salons, Memberships: env.mems}
 	notifSvc := notifications.NotificationService{Notifications: env.notifs, Salons: env.mems, Events: env.events}
 	bookSvc := app.BookingService{Bookings: env.bookings, Memberships: env.mems, Events: env.events, Notifier: notifSvc}
-	svcSvc := app.ServiceService{Services: env.services, Memberships: env.mems, Professionals: env.profs, Resources: env.resources}
+	svcSvc := staffing.ServiceService{Services: env.services, Memberships: env.mems, Professionals: env.profs, Resources: env.resources}
 	saleSvc := app.SaleService{Sales: env.sales, Services: env.services, Memberships: env.mems, Events: env.events}
 	cashSvc := app.CashCloseService{CashCloses: env.closes, Sales: env.sales, Memberships: env.mems, Tx: &mCashTx{closes: env.closes, sales: env.sales}, Events: env.events, Notifier: notifSvc}
 	dashSvc := app.DashboardService{Sales: env.sales, Agenda: env.bookings, Staff: env.mems, Memberships: env.mems}
@@ -286,7 +287,7 @@ func newPOSEnv() *posEnv {
 		},
 		TimeOff:     TimeOffHandler{TimeOff: timeOffSvc, Memberships: env.mems},
 		Absences:    AbsenceHandler{Coverage: coverageSvc, Memberships: env.mems},
-		Resources:   ResourceHandler{Resources: app.ResourceService{Resources: env.resources, Services: env.services, Memberships: env.mems}, Memberships: env.mems},
+		Resources:   ResourceHandler{Resources: staffing.ResourceService{Resources: env.resources, Services: env.services, Memberships: env.mems}, Memberships: env.mems},
 		Invitations: InvitationHandler{Invitations: invitationSvc, Public: invitationPublicSvc, Memberships: env.mems},
 		WS:          hub.ServeWS,
 		TokenIssuer: tokens,

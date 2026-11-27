@@ -1,22 +1,23 @@
-package app
+package staffing
 
 import (
 	"errors"
 	"testing"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 func TestServiceService_create_ok_y_permisos(t *testing.T) {
-	services := &fakeServices{}
-	mems := &fakeMemberships{}
+	services := &testutil.FakeServices{}
+	mems := &testutil.FakeMemberships{}
 	svc := ServiceService{Services: services, Memberships: mems}
 
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
-	admin := miembro(mems, "u-admin", "s1", domain.RoleAdmin)
-	profe := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	ajeno := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	admin := testutil.Miembro(mems, "u-admin", "s1", domain.RoleAdmin)
+	profe := testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
+	ajeno := testutil.Miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
 
 	// owner y admin configuran el catálogo.
 	for _, actor := range []domain.Membership{owner, admin} {
@@ -46,10 +47,10 @@ func TestServiceService_create_ok_y_permisos(t *testing.T) {
 }
 
 func TestServiceService_duplicado_activo(t *testing.T) {
-	services := &fakeServices{}
-	mems := &fakeMemberships{}
+	services := &testutil.FakeServices{}
+	mems := &testutil.FakeMemberships{}
 	svc := ServiceService{Services: services, Memberships: mems}
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
 
 	if _, err := svc.Create(owner, "s1", "Corte", 30, 100000, 20, nil, ""); err != nil {
 		t.Fatalf("primero: %v", err)
@@ -62,7 +63,7 @@ func TestServiceService_duplicado_activo(t *testing.T) {
 		}
 	}
 	// Otro salón puede usar el mismo nombre.
-	otro := miembro(mems, "u-otro", "s2", domain.RoleOwner)
+	otro := testutil.Miembro(mems, "u-otro", "s2", domain.RoleOwner)
 	if _, err := svc.Create(otro, "s2", "Corte", 30, 90000, 20, nil, ""); err != nil {
 		t.Fatalf("mismo nombre en otro salón debe entrar: %v", err)
 	}
@@ -81,12 +82,12 @@ func TestServiceService_duplicado_activo(t *testing.T) {
 }
 
 func TestServiceService_update(t *testing.T) {
-	services := &fakeServices{}
-	mems := &fakeMemberships{}
+	services := &testutil.FakeServices{}
+	mems := &testutil.FakeMemberships{}
 	svc := ServiceService{Services: services, Memberships: mems}
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
-	profe := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
-	ajeno := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	profe := testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	ajeno := testutil.Miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
 
 	created, err := svc.Create(owner, "s1", "Corte", 30, 100000, 20, nil, "")
 	if err != nil {
@@ -125,12 +126,12 @@ func TestServiceService_update(t *testing.T) {
 }
 
 func TestServiceService_list(t *testing.T) {
-	services := &fakeServices{}
-	mems := &fakeMemberships{}
+	services := &testutil.FakeServices{}
+	mems := &testutil.FakeMemberships{}
 	svc := ServiceService{Services: services, Memberships: mems}
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
-	profe := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
-	ajeno := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	profe := testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	ajeno := testutil.Miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
 
 	a, _ := svc.Create(owner, "s1", "Corte", 30, 100000, 20, nil, "")
 	if _, err := svc.Create(owner, "s1", "Color", 90, 250000, 25, nil, ""); err != nil {

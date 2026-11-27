@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/staffing"
 )
 
 func strp(v string) *string { return &v }
@@ -154,12 +155,12 @@ func TestSalonProfile_endedMemberLosesAccess(t *testing.T) {
 
 // ---- D2: descripción de servicio ---------------------------------------
 
-func newServiceWorld() (ServiceService, *fakeServices, domain.Membership) {
+func newServiceWorld() (staffing.ServiceService, *fakeServices, domain.Membership) {
 	mems := &fakeMemberships{}
 	_ = mems.Save(domain.Membership{UserID: "owner", SalonID: "s1", Role: domain.RoleOwner})
 	_ = mems.Save(domain.Membership{UserID: "recep", SalonID: "s1", Role: domain.RoleReception})
 	services := &fakeServices{}
-	return ServiceService{Services: services, Memberships: mems}, services, domain.Membership{UserID: "owner", SalonID: "s1"}
+	return staffing.ServiceService{Services: services, Memberships: mems}, services, domain.Membership{UserID: "owner", SalonID: "s1"}
 }
 
 func TestServiceService_CreateDescribed(t *testing.T) {

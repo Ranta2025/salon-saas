@@ -1,26 +1,28 @@
-package app
+package staffing
 
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // resourceEnv: tipos y unidades de equipo con el catálogo y la agenda fake.
 type resourceEnv struct {
 	res      ResourceService
 	repo     *fakeResources
-	services *fakeServices
-	bookings *fb
-	mems     *fakeMemberships
+	services *testutil.FakeServices
+	bookings *testutil.FakeBookings
+	mems     *testutil.FakeMemberships
 	owner    domain.Membership
 }
 
 func newResourceEnv() *resourceEnv {
-	mems := &fakeMemberships{}
-	bookings := &fb{}
-	services := &fakeServices{}
+	mems := &testutil.FakeMemberships{}
+	bookings := &testutil.FakeBookings{}
+	services := &testutil.FakeServices{}
 	repo := &fakeResources{bookings: bookings}
 	return &resourceEnv{
 		res:      ResourceService{Resources: repo, Services: services, Memberships: mems},
@@ -28,7 +30,7 @@ func newResourceEnv() *resourceEnv {
 		services: services,
 		bookings: bookings,
 		mems:     mems,
-		owner:    miembro(mems, "u-owner", "s1", domain.RoleOwner),
+		owner:    testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner),
 	}
 }
 
@@ -59,14 +61,14 @@ func TestResourceService_create_list(t *testing.T) {
 	}
 
 	// Leer: cualquier miembro. Escribir: solo dueño/administración.
-	profe := miembro(env.mems, "u-prof", "s1", domain.RoleProfessional)
+	profe := testutil.Miembro(env.mems, "u-prof", "s1", domain.RoleProfessional)
 	if _, err := env.res.List(profe, "s1"); err != nil {
 		t.Fatalf("el equipo lee el equipamiento: %v", err)
 	}
 	if _, err := env.res.Create(profe, "s1", "Silla", 1); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("profesional no crea equipo: %v", err)
 	}
-	ajeno := miembro(env.mems, "u-ajeno", "s2", domain.RoleOwner)
+	ajeno := testutil.Miembro(env.mems, "u-ajeno", "s2", domain.RoleOwner)
 	if _, err := env.res.Create(ajeno, "s1", "Silla", 1); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("owner de otro salón no crea equipo: %v", err)
 	}
@@ -84,7 +86,7 @@ func TestResourceService_nombre_duplicado(t *testing.T) {
 		t.Fatalf("duplicado case-insensitive: %v", err)
 	}
 	// Mismo nombre en otro salón: no choca (el scope es el salón).
-	miembro(env.mems, "u-otro", "s2", domain.RoleOwner)
+	testutil.Miembro(env.mems, "u-otro", "s2", domain.RoleOwner)
 	other := domain.Membership{UserID: "u-otro", SalonID: "s2", Role: domain.RoleOwner}
 	if _, err := env.res.Create(other, "s2", "Silla de barbería", 1); err != nil {
 		t.Fatalf("mismo nombre en otro salón: %v", err)
@@ -232,7 +234,7 @@ func TestResourceService_add_units_siguiente_numero(t *testing.T) {
 // S-F2e-3: el equipamiento de otro salón no existe (404), se lea o se escriba.
 func TestResourceService_aislamiento_entre_salones(t *testing.T) {
 	env := newResourceEnv()
-	other := miembro(env.mems, "u-otro", "s2", domain.RoleOwner)
+	other := testutil.Miembro(env.mems, "u-otro", "s2", domain.RoleOwner)
 	ajeno, err := env.res.Create(other, "s2", "Puesto", 2)
 	if err != nil {
 		t.Fatalf("crear en s2: %v", err)
@@ -252,4 +254,11 @@ func TestResourceService_aislamiento_entre_salones(t *testing.T) {
 	if err := env.res.DeleteType(env.owner, "s1", ajeno.Type.ID); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("borrar tipo ajeno: %v", err)
 	}
+}
+
+// at devuelve un instante relativo a hoy (la copia vive en los tests de app: los
+// _test.go no se importan entre paquetes).
+func at(dayOffset, hour, minute int) time.Time {
+	base := time.Now().UTC().Truncate(time.Hour).Add(time.Duration(dayOffset) * 24 * time.Hour)
+	return base.Add(time.Duration(hour)*time.Hour + time.Duration(minute)*time.Minute)
 }

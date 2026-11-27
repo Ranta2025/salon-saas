@@ -1,4 +1,4 @@
-package app
+package staffing
 
 import (
 	"strings"
@@ -6,6 +6,7 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil"
 )
 
 // fakeResources: misma semántica que pgstore (scope por salón, ErrNotFound,
@@ -15,7 +16,7 @@ import (
 type fakeResources struct {
 	types    []domain.ResourceType
 	units    []domain.ResourceUnit
-	bookings *fb
+	bookings *testutil.FakeBookings
 }
 
 func (f *fakeResources) CreateType(t domain.ResourceType, units []domain.ResourceUnit) error {
@@ -175,7 +176,7 @@ func (f *fakeResources) bookingList() []domain.Booking {
 	if f.bookings == nil {
 		return nil
 	}
-	return f.bookings.all
+	return f.bookings.All
 }
 
 func (f *fakeResources) unitHasBookings(salonID, unitID string, futureOnly bool) bool {

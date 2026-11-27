@@ -9,6 +9,7 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/staffing"
 )
 
 // fakeProfessionalServices: qué servicios hace cada profesional, en memoria y
@@ -525,7 +526,7 @@ func TestServiceService_create_professional_ids(t *testing.T) {
 		{ID: "u-recep", Name: "Dani", Role: domain.RoleReception},
 	}}}
 	profs := &fakeProfessionalServices{staff: staff}
-	svc := ServiceService{Services: services, Memberships: mems, Professionals: profs}
+	svc := staffing.ServiceService{Services: services, Memberships: mems, Professionals: profs}
 	miembro(mems, "u-owner", "s1", domain.RoleOwner)
 	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
 	miembro(mems, "u-prof", "s1", domain.RoleProfessional)

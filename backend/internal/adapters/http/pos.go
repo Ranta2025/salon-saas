@@ -8,11 +8,12 @@ import (
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/staffing"
 )
 
 // ServiceHandler: catálogo de servicios. Delgado: parsea, carga actor, llama app.
 type ServiceHandler struct {
-	Services    app.ServiceService
+	Services    staffing.ServiceService
 	Memberships ports.MembershipRepository
 }
 
