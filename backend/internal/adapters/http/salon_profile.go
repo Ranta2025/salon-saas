@@ -1,14 +1,13 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"net/http"
-	"strings"
-
-	"github.com/gin-gonic/gin"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+
+	"github.com/gin-gonic/gin"
 )
 
 // SalonProfileHandler: el perfil público del salón (F16, D1).
@@ -105,33 +104,5 @@ func (h SalonProfileHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, salonProfileJSON(p))
 }
 
-// presentText distingue una clave AUSENTE de una clave en `null` (y de un texto):
-// el PUT del perfil exige las claves presentes y `null` explícito significa «sin
-// dato». Un campo ausente no llama a UnmarshalJSON, así que Set queda en false.
-// Un valor que no es string ni null es un error de JSON (400 «body inválido»).
-type presentText struct {
-	Set   bool
-	Value *string
-}
-
-func (p *presentText) UnmarshalJSON(b []byte) error {
-	p.Set = true
-	if strings.TrimSpace(string(b)) == "null" {
-		p.Value = nil
-		return nil
-	}
-	var v string
-	if err := json.Unmarshal(b, &v); err != nil {
-		return err
-	}
-	p.Value = &v
-	return nil
-}
-
-// String es el texto o "" para null/ausente.
-func (p presentText) String() string {
-	if p.Value == nil {
-		return ""
-	}
-	return *p.Value
-}
+// presentText distingue una clave AUSENTE de una clave en `null` (vive en httpx).
+type presentText = httpx.PresentText

@@ -2,9 +2,12 @@ package httpapi
 
 import (
 	"net/http"
+	httpx "salon-saas/internal/adapters/http/httpx"
+	"salon-saas/internal/domain"
+	ports "salon-saas/internal/ports"
+	staffing "salon-saas/internal/staffing"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/domain"
 )
 
 // Servicios con descripción (F16, D2). Los handlers de pos.go (Create, Update,
@@ -16,8 +19,8 @@ import (
 // serviceDescribedJSON es la forma única del servicio con su descripción (null
 // si no tiene): serviceJSON más la clave nueva.
 func serviceDescribedJSON(s domain.Service) gin.H {
-	out := serviceJSON(s)
-	out["description"] = optionalID(s.Description)
+	out := ServiceJSON(s)
+	out["description"] = httpx.OptionalID(s.Description)
 	return out
 }
 
@@ -36,16 +39,16 @@ func (h ServiceHandler) CreateDescribed(c *gin.Context) {
 		ProfessionalIDs []string `json:"professional_ids"`
 		ResourceTypeID  string   `json:"resource_type_id"`
 		// Description es opcional: ausente, null o "" = sin descripción.
-		Description presentText `json:"description"`
+		Description httpx.PresentText `json:"description"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	svc, err := h.Services.CreateDescribed(actor, salonID, in.Name, in.DurationMin, in.PriceCents, in.CommissionPct,
 		in.ProfessionalIDs, in.ResourceTypeID, in.Description.String())
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, serviceDescribedJSON(svc))
@@ -68,10 +71,10 @@ func (h ServiceHandler) UpdateDescribed(c *gin.Context) {
 		ResourceTypeID string `json:"resource_type_id"`
 		// Description: ausente = se CONSERVA la actual (un cliente anterior a F16
 		// no la borra sin querer); null o "" = se quita; con texto, se reemplaza.
-		Description presentText `json:"description"`
+		Description httpx.PresentText `json:"description"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	active := true
@@ -86,7 +89,7 @@ func (h ServiceHandler) UpdateDescribed(c *gin.Context) {
 	svc, err := h.Services.UpdateDescribed(actor, salonID, serviceID, in.Name, in.DurationMin, in.PriceCents,
 		in.CommissionPct, active, in.ResourceTypeID, description)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, serviceDescribedJSON(svc))
@@ -101,7 +104,7 @@ func (h ServiceHandler) ListDescribed(c *gin.Context) {
 	}
 	list, err := h.Services.List(actor, salonID, c.Query("include_inactive") == "true")
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -109,4 +112,30 @@ func (h ServiceHandler) ListDescribed(c *gin.Context) {
 		out = append(out, serviceDescribedJSON(s))
 	}
 	c.JSON(http.StatusOK, gin.H{"services": out})
+}
+
+// ServiceHandler: catálogo de servicios. Delgado: parsea, carga actor, llama app.
+type ServiceHandler struct {
+	Services    staffing.ServiceService
+	Memberships ports.MembershipRepository
+}
+
+func (h ServiceHandler) loadActor(c *gin.Context, salonID string) (domain.Membership, bool) {
+	return httpx.LoadActor(h.Memberships, c, salonID)
+}
+
+// ServiceJSON es la forma única de serializar un servicio: la usan Create,
+// Update y List para que el frontend vea siempre el mismo objeto.
+func ServiceJSON(s domain.Service) gin.H {
+	return gin.H{
+		"id":             s.ID,
+		"salon_id":       s.SalonID,
+		"name":           s.Name,
+		"duration_min":   s.DurationMin,
+		"price_cents":    s.PriceCents,
+		"commission_pct": s.CommissionPct,
+		"active":         s.Active,
+		// resource_type_id (F2e) puede ser null: el servicio no usa equipo.
+		"resource_type_id": httpx.OptionalID(s.ResourceTypeID),
+	}
 }

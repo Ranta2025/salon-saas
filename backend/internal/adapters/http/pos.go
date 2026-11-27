@@ -2,46 +2,13 @@ package httpapi
 
 import (
 	"net/http"
-	"time"
-
-	"github.com/gin-gonic/gin"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
-	"salon-saas/internal/staffing"
+	"time"
+
+	"github.com/gin-gonic/gin"
 )
-
-// ServiceHandler: catálogo de servicios. Delgado: parsea, carga actor, llama app.
-type ServiceHandler struct {
-	Services    staffing.ServiceService
-	Memberships ports.MembershipRepository
-}
-
-func (h ServiceHandler) loadActor(c *gin.Context, salonID string) (domain.Membership, bool) {
-	uid, _ := c.Get("userID")
-	m, err := h.Memberships.Find(uid.(string), salonID)
-	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "sin acceso al salón"})
-		return domain.Membership{}, false
-	}
-	return m, true
-}
-
-// serviceJSON es la forma única de serializar un servicio: la usan Create,
-// Update y List para que el frontend vea siempre el mismo objeto.
-func serviceJSON(s domain.Service) gin.H {
-	return gin.H{
-		"id":             s.ID,
-		"salon_id":       s.SalonID,
-		"name":           s.Name,
-		"duration_min":   s.DurationMin,
-		"price_cents":    s.PriceCents,
-		"commission_pct": s.CommissionPct,
-		"active":         s.Active,
-		// resource_type_id (F2e) puede ser null: el servicio no usa equipo.
-		"resource_type_id": optionalID(s.ResourceTypeID),
-	}
-}
 
 // --- Ventas ---
 

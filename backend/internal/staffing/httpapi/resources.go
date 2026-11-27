@@ -2,11 +2,12 @@ package httpapi
 
 import (
 	"net/http"
-
-	"github.com/gin-gonic/gin"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/staffing"
+
+	"github.com/gin-gonic/gin"
 )
 
 // ResourceHandler: puestos y equipamiento con capacidad (F2e).
@@ -64,7 +65,7 @@ func (h ResourceHandler) List(c *gin.Context) {
 	}
 	types, err := h.Resources.List(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(types))
@@ -86,12 +87,12 @@ func (h ResourceHandler) Create(c *gin.Context) {
 		Count int    `json:"count"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	view, err := h.Resources.Create(actor, salonID, in.Name, in.Count)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, resourceTypeJSON(view))
@@ -108,17 +109,17 @@ func (h ResourceHandler) Rename(c *gin.Context) {
 		Name string `json:"name"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	rt, err := h.Resources.Rename(actor, salonID, c.Param("tid"), in.Name)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	units, err := h.Resources.List(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	for _, v := range units {
@@ -141,12 +142,12 @@ func (h ResourceHandler) AddUnits(c *gin.Context) {
 		Count int `json:"count"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	units, err := h.Resources.AddUnits(actor, salonID, c.Param("tid"), in.Count)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(units))
@@ -169,12 +170,12 @@ func (h ResourceHandler) UpdateUnit(c *gin.Context) {
 		Active *bool  `json:"active"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	got, err := h.Resources.UpdateUnit(actor, salonID, c.Param("uid"), in.Name, in.Active)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := resourceUnitJSON(got.Unit)
@@ -190,7 +191,7 @@ func (h ResourceHandler) DeleteType(c *gin.Context) {
 		return
 	}
 	if err := h.Resources.DeleteType(actor, salonID, c.Param("tid")); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)

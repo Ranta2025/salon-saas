@@ -40,6 +40,7 @@ import (
 	"salon-saas/internal/products"
 	productshttpapi "salon-saas/internal/products/httpapi"
 	"salon-saas/internal/staffing"
+	staffinghttpapi "salon-saas/internal/staffing/httpapi"
 	"syscall"
 	"time"
 
@@ -584,7 +585,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		TwoFactor:     httpapi.TwoFactorHandler{Service: twoFactorSvc},
 		Tenants:       httpapi.TenantsHandler{Tenants: tenSvc, Memberships: mems},
 		Bookings:      httpapi.BookingHandler{Bookings: bookSvc, Memberships: mems},
-		Services:      httpapi.ServiceHandler{Services: svcSvc, Memberships: mems},
+		Services:      staffinghttpapi.ServiceHandler{Services: svcSvc, Memberships: mems},
 		Sales:         httpapi.SaleHandler{Sales: saleSvc, Memberships: mems},
 		CashCloses:    httpapi.CashCloseHandler{CashCloses: cashCloseSvc, Memberships: mems},
 		Dashboard:     httpapi.DashboardHandler{Dashboard: dashSvc, Memberships: mems},
@@ -601,7 +602,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		},
 		TimeOff:   httpapi.TimeOffHandler{TimeOff: timeOffSvc, Memberships: mems},
 		Absences:  httpapi.AbsenceHandler{Coverage: coverageSvc, Memberships: mems},
-		Resources: httpapi.ResourceHandler{Resources: resourceSvc, Memberships: mems},
+		Resources: staffinghttpapi.ResourceHandler{Resources: resourceSvc, Memberships: mems},
 		Invitations: httpapi.InvitationHandler{
 			Invitations: invitationSvc, Public: invitationPublicSvc, Memberships: mems,
 		},

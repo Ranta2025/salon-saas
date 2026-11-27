@@ -9,6 +9,7 @@ import (
 	packageshttpapi "salon-saas/internal/packages/httpapi"
 	"salon-saas/internal/ports"
 	productshttpapi "salon-saas/internal/products/httpapi"
+	staffinghttpapi "salon-saas/internal/staffing/httpapi"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,7 +19,7 @@ type Deps struct {
 	Auth          AuthHandler
 	Tenants       TenantsHandler
 	Bookings      BookingHandler
-	Services      ServiceHandler
+	Services      staffinghttpapi.ServiceHandler
 	Sales         SaleHandler
 	CashCloses    CashCloseHandler
 	Dashboard     DashboardHandler
@@ -36,7 +37,7 @@ type Deps struct {
 	// Absences cubre una ausencia reasignando sus turnos (F2d3).
 	Absences AbsenceHandler
 	// Resources es el equipamiento con capacidad (F2e).
-	Resources ResourceHandler
+	Resources staffinghttpapi.ResourceHandler
 	// Invitations son las invitaciones de equipo (F2g1): alta, listado y
 	// revocación del salón, más el lookup y el canje públicos.
 	Invitations InvitationHandler

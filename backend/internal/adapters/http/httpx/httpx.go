@@ -77,6 +77,37 @@ func LoadActor(memberships ports.MembershipRepository, c *gin.Context, salonID s
 	return m, true
 }
 
+// PresentText distingue una clave AUSENTE de una clave en `null` (y de un
+// texto): los PUT que exigen la clave presente usan Set, y `null` explícito
+// significa «sin dato». Un valor que no es string ni null es body inválido.
+type PresentText struct {
+	Set   bool
+	Value *string
+}
+
+// UnmarshalJSON marca Set sea cual sea el valor.
+func (p *PresentText) UnmarshalJSON(b []byte) error {
+	p.Set = true
+	if strings.TrimSpace(string(b)) == "null" {
+		p.Value = nil
+		return nil
+	}
+	var v string
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	p.Value = &v
+	return nil
+}
+
+// String es el texto o "" para null/ausente.
+func (p PresentText) String() string {
+	if p.Value == nil {
+		return ""
+	}
+	return *p.Value
+}
+
 // OptionalID devuelve nil para un id vacío: así un `professional_id` o un
 // `service_id` opcional sale como null y no como cadena vacía.
 func OptionalID(id string) any {

@@ -12,6 +12,7 @@ import (
 	notificationshttpapi "salon-saas/internal/notifications/httpapi"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/staffing"
+	staffinghttpapi "salon-saas/internal/staffing/httpapi"
 	"testing"
 	"time"
 
@@ -265,7 +266,7 @@ func NewPOSEnv() *Env {
 		Auth:          httpapi.AuthHandler{Auth: authSvc},
 		Tenants:       httpapi.TenantsHandler{Tenants: tenSvc, Memberships: env.Mems},
 		Bookings:      httpapi.BookingHandler{Bookings: bookSvc, Memberships: env.Mems},
-		Services:      httpapi.ServiceHandler{Services: svcSvc, Memberships: env.Mems},
+		Services:      staffinghttpapi.ServiceHandler{Services: svcSvc, Memberships: env.Mems},
 		Sales:         httpapi.SaleHandler{Sales: saleSvc, Memberships: env.Mems},
 		CashCloses:    httpapi.CashCloseHandler{CashCloses: cashSvc, Memberships: env.Mems},
 		Dashboard:     httpapi.DashboardHandler{Dashboard: dashSvc, Memberships: env.Mems},
@@ -281,7 +282,7 @@ func NewPOSEnv() *Env {
 		},
 		TimeOff:     httpapi.TimeOffHandler{TimeOff: timeOffSvc, Memberships: env.Mems},
 		Absences:    httpapi.AbsenceHandler{Coverage: coverageSvc, Memberships: env.Mems},
-		Resources:   httpapi.ResourceHandler{Resources: staffing.ResourceService{Resources: env.Resources, Services: env.Services, Memberships: env.Mems}, Memberships: env.Mems},
+		Resources:   staffinghttpapi.ResourceHandler{Resources: staffing.ResourceService{Resources: env.Resources, Services: env.Services, Memberships: env.Mems}, Memberships: env.Mems},
 		Invitations: httpapi.InvitationHandler{Invitations: invitationSvc, Public: invitationPublicSvc, Memberships: env.Mems},
 		WS:          hub.ServeWS,
 		TokenIssuer: tokens,
