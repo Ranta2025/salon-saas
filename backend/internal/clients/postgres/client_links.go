@@ -5,12 +5,13 @@
 //
 // Todas las queries van scopeadas por salon_id y por id: la ficha de otro salón
 // no se puede vincular aunque el id llegue por el body (D3-c).
-package pgstore
+package postgres
 
 import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 )
 
 // ClientLinks implementa ports.ClientLinkRepository.
@@ -26,7 +27,7 @@ func (r ClientLinks) LinkBookingByID(salonID, bookingID, clientID string) error 
 		 WHERE b.salon_id = $1 AND b.id = $2
 		   AND c.id = $3 AND c.salon_id = b.salon_id`,
 		salonID, bookingID, clientID)
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // LinkBookingByPhone vincula el turno del personal con la ÚNICA ficha del salón
@@ -47,7 +48,7 @@ func (r ClientLinks) LinkBookingByPhone(salonID, bookingID string) error {
 		     WHERE c2.salon_id = b.salon_id AND c2.phone_norm = c.phone_norm
 		   ) = 1`,
 		salonID, bookingID)
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // LinkSaleByID vincula la venta del POS con la ficha elegida a mano. El JOIN
@@ -59,7 +60,7 @@ func (r ClientLinks) LinkSaleByID(salonID, saleID, clientID string) error {
 		 WHERE s.salon_id = $1 AND s.id = $2
 		   AND c.id = $3 AND c.salon_id = s.salon_id`,
 		salonID, saleID, clientID)
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // SaleClientID lee el vínculo real de la venta (scopeado por salón). Sin fila o
@@ -70,10 +71,10 @@ func (r ClientLinks) SaleClientID(salonID, saleID string) (string, error) {
 		`SELECT COALESCE(client_id, '') FROM sales WHERE salon_id = $1 AND id = $2`,
 		salonID, saleID).Scan(&id)
 	if err != nil {
-		if notFound(err) != nil {
+		if pgstore.NotFound(err) != nil {
 			return "", nil
 		}
-		return "", pgError(err)
+		return "", pgstore.PGError(err)
 	}
 	return id, nil
 }

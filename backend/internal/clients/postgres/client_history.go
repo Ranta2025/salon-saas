@@ -5,7 +5,7 @@
 //
 // Todas las queries van scopeadas por salon_id Y client_id: el historial de la
 // ficha de otro salón no existe acá.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 )
 
@@ -43,7 +44,7 @@ func (r ClientHistory) History(salonID, clientID string, now time.Time, limit in
 	if err != nil {
 		return domain.ClientHistoryData{}, err
 	}
-	defer rollbackTx(tx) // no-op si ya commiteó
+	defer pgstore.RollbackTx(tx) // no-op si ya commiteó
 
 	if limit <= 0 {
 		limit = 20
@@ -106,7 +107,7 @@ func (r ClientHistory) History(salonID, clientID string, now time.Time, limit in
 		salonID, clientID).Scan(&data.Spend.SalesCount, &total); err != nil {
 		return domain.ClientHistoryData{}, err
 	}
-	cents, err := bigintToInt(total, "el gasto de la clienta")
+	cents, err := pgstore.BigintToInt(total, "el gasto de la clienta")
 	if err != nil {
 		return domain.ClientHistoryData{}, err
 	}

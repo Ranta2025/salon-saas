@@ -8,8 +8,11 @@ import (
 	"errors"
 	"time"
 
+	"fmt"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"math"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/domain"
 )
@@ -38,6 +41,19 @@ func notFound(err error) error {
 // NotFound es la versión exportada de notFound para los adaptadores que ya
 // viven en su módulo por funcionalidad (`internal/<feature>/postgres`).
 func NotFound(err error) error { return notFound(err) }
+
+// bigintToInt baja una suma de Postgres a int con guarda de overflow: en 64 bits
+// nunca se activa, pero deja el límite explícito en vez de truncar en silencio.
+func bigintToInt(v int64, what string) (int, error) { return BigintToInt(v, what) }
+
+// BigintToInt es la versión exportada de bigintToInt para los adaptadores que
+// ya viven en su módulo por funcionalidad (`internal/<feature>/postgres`).
+func BigintToInt(v int64, what string) (int, error) {
+	if v < 0 || v > math.MaxInt {
+		return 0, fmt.Errorf("%w: %s supera el máximo representable", domain.ErrValidation, what)
+	}
+	return int(v), nil
+}
 
 type Users struct{ Pool *pgxpool.Pool }
 

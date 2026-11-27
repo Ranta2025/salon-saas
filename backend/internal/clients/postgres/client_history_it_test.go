@@ -2,7 +2,7 @@
 // transacción, el gasto suma SOLO las ventas vinculadas, las listas tienen
 // LIMIT 20 y la última visita es el día LOCAL del salón.
 // Corre con: SALON_IT=1 go test ./internal/adapters/postgres/ -run TestClientHistory -v
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -11,10 +11,11 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 func TestClientHistory_foto_gasto_y_dia_local(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	f5Seed(t, pool, "s-f5h", "u-f5h")
 	f5Seed(t, pool, "s-f5i", "u-f5i")

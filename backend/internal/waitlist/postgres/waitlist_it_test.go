@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	clientspostgres "salon-saas/internal/clients/postgres"
 	"strings"
 	"sync"
 	"testing"
@@ -441,7 +442,7 @@ func TestWaitlist_IT_reintento_tope_tres(t *testing.T) {
 func TestWaitlist_IT_migracion_sobre_datos_previos(t *testing.T) {
 	env := newItWaitlistEnv(t)
 	// Datos previos: una ficha y un turno del salón.
-	clients := pgstore.Clients{Pool: env.pool}
+	clients := clientspostgres.Clients{Pool: env.pool}
 	c, err := domain.NewClient(env.salonID, "Clienta Previa", "555", "previa@mail.com", "")
 	if err != nil {
 		t.Fatalf("ficha: %v", err)

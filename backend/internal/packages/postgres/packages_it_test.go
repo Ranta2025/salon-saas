@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	pgstore "salon-saas/internal/adapters/postgres"
+	clientspostgres "salon-saas/internal/clients/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/testutil/itdb"
 )
@@ -77,7 +78,7 @@ func pkgFixtures(t *testing.T) *pkgFix {
 		return s
 	}
 	f.svcA, f.svcB, f.svcOther = mk("s-it-pkg", "Corte A"), mk("s-it-pkg", "Tinte B"), mk("s-it-pkg2", "Corte Ajeno")
-	clients := pgstore.Clients{Pool: pool}
+	clients := clientspostgres.Clients{Pool: pool}
 	mc := func(salon, name string) domain.Client {
 		c, err := domain.NewClient(salon, name, "", "", "")
 		if err != nil {

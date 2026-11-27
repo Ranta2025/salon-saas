@@ -292,3 +292,24 @@ func NewPhoto(t *testing.T, salon string) domain.SalonPhoto {
 	}
 	return p
 }
+
+// SeedTenant deja un usuario y su salón listos para un IT (los ids son fijos y
+// el INSERT es idempotente). Antes vivía en los `_test.go` de pgstore, que no se
+// pueden importar; los paquetes IT de cada funcionalidad lo comparten acá.
+func SeedTenant(t *testing.T, salonID, userID string) {
+	t.Helper()
+	pool := Pool(t)
+	defer pool.Close()
+	ctx := context.Background()
+	_, err := pool.Exec(ctx,
+		`INSERT INTO users(id,name,email,pass_hash) VALUES($1,'Usuario IT',$2,'x')
+		 ON CONFLICT (id) DO NOTHING`, userID, userID+"@test.com")
+	if err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	_, err = pool.Exec(ctx,
+		`INSERT INTO salons(id,slug,name) VALUES($1,$1,'Salón IT') ON CONFLICT (id) DO NOTHING`, salonID)
+	if err != nil {
+		t.Fatalf("seed salon: %v", err)
+	}
+}

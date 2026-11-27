@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	clientspostgres "salon-saas/internal/clients/postgres"
 	"testing"
 	"time"
 
@@ -86,7 +87,7 @@ func loyFixtures(t *testing.T) *loyFix {
 		return s
 	}
 	f.svcA, f.svcB, f.svcOther = mk(loySalon, "Corte A"), mk(loySalon, "Tinte B"), mk(loySalon2, "Corte Ajeno")
-	clients := pgstore.Clients{Pool: pool}
+	clients := clientspostgres.Clients{Pool: pool}
 	mc := func(salon, name string) domain.Client {
 		c, err := domain.NewClient(salon, name, "", "", "")
 		if err != nil {

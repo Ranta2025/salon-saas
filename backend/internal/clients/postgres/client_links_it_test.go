@@ -2,7 +2,7 @@
 // garantía dura: el relleno de la migración es el del contrato, el vínculo
 // sobrevive a un cambio de teléfono y borrar la ficha deja el historial en NULL.
 // Corre con: SALON_IT=1 go test ./internal/adapters/postgres/ -run TestClientLinks -v
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -17,6 +17,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // f5Migration reejecuta el archivo 028 sobre la base ya migrada: es la MISMA
@@ -108,7 +109,7 @@ func f5Digests(t *testing.T, pool *pgxpool.Pool) string {
 
 func f5Seed(t *testing.T, pool *pgxpool.Pool, salon, user string) {
 	t.Helper()
-	seedTenant(t, salon, user)
+	itdb.SeedTenant(t, salon, user)
 	_, _ = pool.Exec(context.Background(), `DELETE FROM sale_items WHERE sale_id IN (SELECT id FROM sales WHERE salon_id=$1)`, salon)
 	_, _ = pool.Exec(context.Background(), `DELETE FROM sales WHERE salon_id=$1`, salon)
 	_, _ = pool.Exec(context.Background(), `DELETE FROM bookings WHERE salon_id=$1`, salon)
@@ -119,7 +120,7 @@ func f5Seed(t *testing.T, pool *pgxpool.Pool, salon, user string) {
 // toca teléfonos vacíos y una segunda pasada no cambia nada. Los datos
 // existentes siguen idénticos (md5 sin las columnas nuevas).
 func TestClientLinks_migracion_y_relleno(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	f5Seed(t, pool, "s-f5a", "u-f5a")
 	f5Seed(t, pool, "s-f5b", "u-f5b")
@@ -197,7 +198,7 @@ func f5Quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + 
 // deja turnos y ventas con client_id NULL (ON DELETE SET NULL). El vínculo de la
 // venta tampoco cruza de salón.
 func TestClientLinks_vinculo_estable_y_borrado(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	f5Seed(t, pool, "s-f5c", "u-f5c")
 	f5Seed(t, pool, "s-f5d", "u-f5d")
@@ -276,7 +277,7 @@ func TestClientLinks_vinculo_estable_y_borrado(t *testing.T) {
 // vínculo, con una venta que no existe o pidiéndola desde otro salón devuelve "":
 // la respuesta de POST /sales nunca afirma una ficha que no quedó guardada.
 func TestClientLinks_SaleClientID_dice_lo_que_quedo_guardado(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	f5Seed(t, pool, "s-f5e", "u-f5e")
 	f5Seed(t, pool, "s-f5f", "u-f5f")

@@ -27,6 +27,7 @@ import (
 	bookingspostgres "salon-saas/internal/bookings/postgres"
 	"salon-saas/internal/clients"
 	clientshttpapi "salon-saas/internal/clients/httpapi"
+	clientspostgres "salon-saas/internal/clients/postgres"
 	"salon-saas/internal/deposits"
 	depositspostgres "salon-saas/internal/deposits/postgres"
 	"salon-saas/internal/domain"
@@ -331,9 +332,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	// Settings: los avisos de turno se formatean en la zona horaria del salón.
 	// F5: el vínculo de turnos/ventas con la ficha es un UPDATE aparte (D1), y
 	// el historial se lee en UNA transacción REPEATABLE READ con tope de 25 s.
-	clientLinks := pgstore.ClientLinks{Pool: pool}
-	clientHistoryRepo := pgstore.ClientHistory{Pool: pool}
-	clientsRepo := pgstore.Clients{Pool: pool}
+	clientLinks := clientspostgres.ClientLinks{Pool: pool}
+	clientHistoryRepo := clientspostgres.ClientHistory{Pool: pool}
+	clientsRepo := clientspostgres.Clients{Pool: pool}
 	bookSvc := bookings.BookingService{
 		Bookings: bookingRepo, Memberships: mems, Settings: salons, Events: hub, Notifier: notifSvc,
 		Services: servicesRepo, Resources: resourceRepo,

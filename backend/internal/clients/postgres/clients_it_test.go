@@ -1,7 +1,7 @@
 // Clientes y fotos contra Postgres real (SALON_IT=1). Lo que importa acá es la
 // garantía dura: nada de un salón se puede leer ni escribir desde otro.
 // Corre con: SALON_IT=1 go test ./internal/adapters/postgres/ -run TestClients -v
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -9,14 +9,15 @@ import (
 	"testing"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 func TestClients_ficha_y_fotos_scopeadas(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	ctx := context.Background()
-	seedTenant(t, "s-cli", "u-cli")
-	seedTenant(t, "s-cli2", "u-cli2")
+	itdb.SeedTenant(t, "s-cli", "u-cli")
+	itdb.SeedTenant(t, "s-cli2", "u-cli2")
 	_, _ = pool.Exec(ctx, `DELETE FROM clients WHERE salon_id IN ('s-cli','s-cli2')`)
 
 	repo := Clients{Pool: pool}
@@ -89,11 +90,11 @@ func TestClients_ficha_y_fotos_scopeadas(t *testing.T) {
 // por nombre, y siempre dentro del salón: el mismo teléfono en otro salón es
 // otra ficha, no una que se pueda reutilizar.
 func TestClients_busqueda_para_la_reserva_publica(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	ctx := context.Background()
-	seedTenant(t, "s-bus", "u-bus")
-	seedTenant(t, "s-bus2", "u-bus2")
+	itdb.SeedTenant(t, "s-bus", "u-bus")
+	itdb.SeedTenant(t, "s-bus2", "u-bus2")
 	_, _ = pool.Exec(ctx, `DELETE FROM clients WHERE salon_id IN ('s-bus','s-bus2')`)
 
 	repo := Clients{Pool: pool}
@@ -158,11 +159,11 @@ func TestClients_busqueda_para_la_reserva_publica(t *testing.T) {
 // La FK compuesta (client_id, salon_id) impide colgar una foto de un cliente de
 // otro salón aunque el código se equivoque: la DB es la última barrera.
 func TestClients_foto_no_cruza_salones(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	ctx := context.Background()
-	seedTenant(t, "s-fk", "u-fk")
-	seedTenant(t, "s-fk2", "u-fk2")
+	itdb.SeedTenant(t, "s-fk", "u-fk")
+	itdb.SeedTenant(t, "s-fk2", "u-fk2")
 	_, _ = pool.Exec(ctx, `DELETE FROM clients WHERE salon_id IN ('s-fk','s-fk2')`)
 
 	repo := Clients{Pool: pool}

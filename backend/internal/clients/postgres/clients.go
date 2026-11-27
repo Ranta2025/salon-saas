@@ -1,9 +1,10 @@
-package pgstore
+package postgres
 
 import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 )
 
@@ -29,7 +30,7 @@ func (r Clients) Save(c domain.Client) error {
 		 ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, phone=EXCLUDED.phone,
 		   email=EXCLUDED.email, notes=EXCLUDED.notes, allergies=EXCLUDED.allergies`,
 		c.ID, c.SalonID, c.Name, c.Phone, c.Email, c.Notes, c.Allergies, c.CreatedAt)
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // FindByPhone resuelve la ficha por teléfono normalizado (solo dígitos, la
@@ -43,7 +44,7 @@ func (r Clients) FindByPhone(salonID, phone string) (domain.Client, error) {
 		 ORDER BY created_at, id LIMIT 1`, salonID, domain.NormalizePhone(phone))
 	c, err := scanClient(row.Scan)
 	if err != nil {
-		return domain.Client{}, notFound(err)
+		return domain.Client{}, pgstore.NotFound(err)
 	}
 	return c, nil
 }
@@ -57,7 +58,7 @@ func (r Clients) FindByName(salonID, name string) (domain.Client, error) {
 		 ORDER BY created_at, id LIMIT 1`, salonID, name)
 	c, err := scanClient(row.Scan)
 	if err != nil {
-		return domain.Client{}, notFound(err)
+		return domain.Client{}, pgstore.NotFound(err)
 	}
 	return c, nil
 }
@@ -67,7 +68,7 @@ func (r Clients) FindByID(salonID, id string) (domain.Client, error) {
 		`SELECT `+clientColumns+` FROM clients WHERE salon_id=$1 AND id=$2`, salonID, id)
 	c, err := scanClient(row.Scan)
 	if err != nil {
-		return domain.Client{}, notFound(err)
+		return domain.Client{}, pgstore.NotFound(err)
 	}
 	return c, nil
 }
@@ -110,7 +111,7 @@ func (r Clients) SavePhoto(p domain.ClientPhoto) error {
 		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		 ON CONFLICT (id) DO NOTHING`,
 		p.ID, p.SalonID, p.ClientID, p.Path, p.Width, p.Height, p.Bytes, p.ContentType, p.CreatedAt)
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 func (r Clients) ListPhotos(salonID, clientID string) ([]domain.ClientPhoto, error) {
@@ -138,7 +139,7 @@ func (r Clients) FindPhoto(salonID, clientID, id string) (domain.ClientPhoto, er
 		 WHERE salon_id=$1 AND client_id=$2 AND id=$3`, salonID, clientID, id)
 	p, err := scanPhoto(row.Scan)
 	if err != nil {
-		return domain.ClientPhoto{}, notFound(err)
+		return domain.ClientPhoto{}, pgstore.NotFound(err)
 	}
 	return p, nil
 }
@@ -151,7 +152,7 @@ func (r Clients) PhotoByID(id string) (domain.ClientPhoto, error) {
 		`SELECT `+photoColumns+` FROM client_photos WHERE id=$1`, id)
 	p, err := scanPhoto(row.Scan)
 	if err != nil {
-		return domain.ClientPhoto{}, notFound(err)
+		return domain.ClientPhoto{}, pgstore.NotFound(err)
 	}
 	return p, nil
 }
@@ -161,7 +162,7 @@ func (r Clients) DeletePhoto(salonID, clientID, id string) error {
 		`DELETE FROM client_photos WHERE salon_id=$1 AND client_id=$2 AND id=$3`,
 		salonID, clientID, id)
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
