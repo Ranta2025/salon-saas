@@ -164,6 +164,45 @@ func TestRequestLogger_redacta_token(t *testing.T) {
 	}
 }
 
+// F13 verifier V1 BLOCKER: the review link token travels as a PATH segment, so the
+// access log must never print it (a token read from the log redeemed the link and
+// posted a review). Matched routes, unmatched ones (trailing slash redirect) and
+// both methods are covered; the route prefix stays so the log is still useful.
+func TestRequestLogger_redactaElTokenDeResenasEnLaRuta(t *testing.T) {
+	const tok = "7eHLkjolJZjCOqtMAteCvVGrKjlxReo-MRsqUkIs2gQ"
+	var buf bytes.Buffer
+	r := gin.New()
+	r.Use(httpapi.RequestLogger(&buf))
+	r.GET("/api/v1/public/reviews/:token", func(c *gin.Context) { c.Status(http.StatusOK) })
+	r.POST("/api/v1/public/reviews/:token", func(c *gin.Context) { c.Status(http.StatusCreated) })
+
+	for _, target := range []struct{ method, path string }{
+		{"GET", "/api/v1/public/reviews/" + tok},
+		{"POST", "/api/v1/public/reviews/" + tok},
+		{"GET", "/api/v1/public/reviews/" + tok + "/"}, // unmatched: redirect or 404
+		{"GET", "/api/v1/public/reviews/" + tok + "?x=1"},
+	} {
+		buf.Reset()
+		r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(target.method, target.path, nil))
+		logged := buf.String()
+		if strings.Contains(logged, tok) {
+			t.Fatalf("%s %s: el token no puede aparecer en el log: %q", target.method, target.path, logged)
+		}
+		// A trailing-slash redirect is answered by gin before the middlewares run, so
+		// it may leave no log line at all; when there is one it keeps the prefix.
+		if logged != "" && !strings.Contains(logged, "/api/v1/public/reviews/") {
+			t.Fatalf("%s %s: el log conserva la ruta: %q", target.method, target.path, logged)
+		}
+	}
+	// Other routes are logged unchanged.
+	buf.Reset()
+	r.GET("/api/v1/public/salons/:slug", func(c *gin.Context) { c.Status(http.StatusOK) })
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/v1/public/salons/mi-salon", nil))
+	if !strings.Contains(buf.String(), "/api/v1/public/salons/mi-salon") {
+		t.Fatalf("el resto de las rutas se loguea igual: %q", buf.String())
+	}
+}
+
 // B-11/H1: un JSON de 2 MB se rechaza antes de parsearlo. El tope es por
 // RUTA, así que da igual el Content-Type que mande el cliente (el bypass por
 // "multipart/form-data" está cubierto en body_limit_test.go).

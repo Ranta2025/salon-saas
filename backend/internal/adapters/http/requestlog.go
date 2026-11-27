@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -55,7 +56,7 @@ func RequestLogger(out io.Writer) gin.HandlerFunc {
 	logger := log.New(out, "", 0)
 	return func(c *gin.Context) {
 		start := time.Now()
-		path := c.Request.URL.Path
+		path := redactPath(c.Request.URL.Path)
 		raw := c.Request.URL.RawQuery
 
 		c.Next()
@@ -66,6 +67,19 @@ func RequestLogger(out io.Writer) gin.HandlerFunc {
 		logger.Printf("%s %s %d %s %s",
 			c.Request.Method, path, c.Writer.Status(), time.Since(start).Round(time.Millisecond), c.ClientIP())
 	}
+}
+
+// reviewLinkPrefix is the only API route whose credential (the single-use review
+// token, F13) travels as a PATH segment instead of the body or the query.
+const reviewLinkPrefix = "/api/v1/public/reviews/"
+
+// redactPath hides what follows reviewLinkPrefix, matched or not (a trailing-slash
+// redirect or a 404 on that prefix still carries the token in the path).
+func redactPath(path string) string {
+	if strings.HasPrefix(path, reviewLinkPrefix) {
+		return reviewLinkPrefix + "***"
+	}
+	return path
 }
 
 // redactQuery reemplaza el valor de los parámetros sensibles por "***".
