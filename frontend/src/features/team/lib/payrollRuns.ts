@@ -19,8 +19,8 @@ import {
   NetworkError,
   UNAUTHORIZED_EVENT,
   request,
-} from './api.ts'
-import { formatCents, parseAmountToCents } from './money.ts'
+} from '../../../lib/api.ts'
+import { formatCents, parseAmountToCents } from '../../../lib/money.ts'
 import {
   isPayPeriodKind,
   PAY_PERIOD_KIND_LABELS,
@@ -28,8 +28,8 @@ import {
   type PayPeriod,
   type PayPeriodKind,
 } from './payroll.ts'
-import { isManager, type Role } from './permissions.ts'
-import { clearToken, getToken } from './session.ts'
+import { isManager, type Role } from '../../../lib/permissions.ts'
+import { clearToken, getToken } from '../../../lib/session.ts'
 
 /** Lifecycle of a run (D6): open runs can change, paid runs cannot. */
 export type PayrollRunStatus = 'open' | 'paid'

@@ -6,7 +6,7 @@
  */
 
 import type { SalonMember } from './members.ts'
-import { isManager, type Role } from './permissions.ts'
+import { isManager, type Role } from '../../../lib/permissions.ts'
 import { isActiveMember } from './teamStatus.ts'
 
 /** Copy of the notice shown when nobody of the team attends clients. */

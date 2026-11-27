@@ -15,7 +15,7 @@ import {
   type TimeOff,
   type TimeOffConflict,
 } from '../lib/timeOff'
-import type { SalonMember } from '@/lib/members'
+import type { SalonMember } from '@/features/team/lib/members'
 import { AbsenceCover } from './AbsenceCover'
 
 type TimeOffCardProps = {

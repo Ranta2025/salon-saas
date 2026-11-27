@@ -13,7 +13,7 @@
 import { request } from '../../../lib/api.ts'
 import { TIME_ZONE, formatTimeOfDay, toDateInputValue } from '../../../lib/datetime.ts'
 import { overlapsRange } from './timeOff.ts'
-import { beginSave, rollbackSave, type OptimisticSave } from '../../../lib/weeklyHours.ts'
+import { beginSave, rollbackSave, type OptimisticSave } from '../../team/lib/weeklyHours.ts'
 import type { Booking } from '../../../types.ts'
 
 /** Sentences of the API (S-F2d3-3), shown verbatim when the server rejects. */

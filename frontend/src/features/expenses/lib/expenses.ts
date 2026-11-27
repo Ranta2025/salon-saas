@@ -11,7 +11,7 @@
 
 import { ApiError, request } from '../../../lib/api.ts'
 import { addDaysToDateValue } from '../../../lib/datetime.ts'
-import { amountInputFromCents, isValidPayrollDate } from '../../../lib/payroll.ts'
+import { amountInputFromCents, isValidPayrollDate } from '../../team/lib/payroll.ts'
 import { isManager, type Role } from '../../../lib/permissions.ts'
 
 /** Fixed categories of the contract (D3); the order is the one of the selector. */

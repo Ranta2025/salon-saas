@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { describeApiError, fetchServices, friendlyApiMessage, type ApiErrorNotice } from '../lib/api'
-import type { SalonRole } from '../lib/me'
-import type { Service } from '../types'
+import { describeApiError, fetchServices, friendlyApiMessage, type ApiErrorNotice } from '@/lib/api'
+import type { SalonRole } from '@/lib/me'
+import type { Service } from '@/types'
 import {
   addMember,
   deactivateMember,
@@ -41,14 +41,14 @@ import {
   normalizeTrade,
   TRADE_MAX_LENGTH,
   TRADE_PLACEHOLDER,
-} from '../lib/tradeServices'
+} from '@/lib/tradeServices'
 import {
   activeRole,
   assignableRoles,
   canAssignRole,
   isManager,
   roleLabel,
-} from '../lib/permissions'
+} from '@/lib/permissions'
 import {
   applyPayModel,
   fetchPayModels,
@@ -59,18 +59,18 @@ import {
   setMemberPayModel,
   type PayModel,
 } from '../lib/payroll'
-import { fetchSalonHours, fetchSettings } from '../lib/settings'
-import { TIME_ZONE, addDaysToDateValue, fromDateInputValue, toDateInputValue } from '../lib/datetime'
+import { fetchSalonHours, fetchSettings } from '@/lib/settings'
+import { TIME_ZONE, addDaysToDateValue, fromDateInputValue, toDateInputValue } from '@/lib/datetime'
 import { fetchTimeOff, type TimeOff } from '@/features/bookings/lib/timeOff'
 import { fetchCoverAbsences, type CoverAbsence } from '@/features/bookings/lib/coverAbsence'
 import type { SalonDay } from '../lib/weeklyHours'
-import { useSalon } from './SalonContext'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { MemberHoursCard } from './components/MemberHoursCard'
-import { PageHeader } from './components/PageHeader'
-import { PayModelCard, type PayModelDraft } from './components/PayModelCard'
-import { TeamInvitations } from './components/TeamInvitations'
-import { TimeOffCard } from '@/features/bookings'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { MemberHoursCard } from '../components/MemberHoursCard'
+import { PageHeader } from '@/app/components/PageHeader'
+import { PayModelCard, type PayModelDraft } from '../components/PayModelCard'
+import { TeamInvitations } from '../components/TeamInvitations'
+import { TimeOffCard } from '@/features/bookings/index'
 
 /** `/panel/equipo`: team of the salon (owner/admin). */
 export function TeamPage() {

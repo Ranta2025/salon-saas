@@ -14,7 +14,7 @@ import {
   serviceResourceTypeId,
   type ResourceType,
 } from '../lib/equipment'
-import { fetchMembers, type SalonMember } from '../lib/members'
+import { fetchMembers, type SalonMember } from '@/features/team/lib/members'
 import {
   bookableMembers,
   NOBODY_DOES_SERVICE_NOTICE,

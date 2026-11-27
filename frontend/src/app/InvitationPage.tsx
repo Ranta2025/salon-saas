@@ -13,7 +13,7 @@ import {
   readInvitationHash,
   validateSignup,
   type InvitationLookup,
-} from '../lib/invitations'
+} from '@/features/team/lib/invitations'
 import { pickSalonId, type SalonRole } from '../lib/me'
 import { TWO_FACTOR_MESSAGES } from '../lib/twofa'
 import {

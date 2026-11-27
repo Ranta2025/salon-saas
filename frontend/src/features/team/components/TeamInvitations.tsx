@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { describeApiError, type ApiErrorNotice } from '../../lib/api'
-import { isValidEmail, normalizeEmail } from '../../lib/email'
-import type { SalonMember } from '../../lib/members'
-import { roleLabel, type Role } from '../../lib/permissions'
+import { describeApiError, type ApiErrorNotice } from '@/lib/api'
+import { isValidEmail, normalizeEmail } from '@/lib/email'
+import type { SalonMember } from '../lib/members'
+import { roleLabel, type Role } from '@/lib/permissions'
 import {
   INVITATION_MAX_PENDING,
   INVITATION_MESSAGES,
@@ -25,8 +25,8 @@ import {
   type InvitationRole,
   type LinkOnceState,
   type PendingInvitation,
-} from '../../lib/invitations'
-import { ErrorNotice, LoadingState } from './Feedback'
+} from '../lib/invitations'
+import { ErrorNotice, LoadingState } from '@/app/components/Feedback'
 
 type TeamInvitationsProps = {
   salonId: string

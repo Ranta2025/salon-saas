@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { describeApiError, type ApiErrorNotice } from '../../lib/api'
-import { formatCents } from '../../lib/money'
-import type { PayPeriod } from '../../lib/payroll'
+import { describeApiError, type ApiErrorNotice } from '@/lib/api'
+import { formatCents } from '@/lib/money'
+import type { PayPeriod } from '../lib/payroll'
 import {
   createPayrollRun,
   EMPTY_RUNS_MESSAGE,
@@ -13,9 +13,9 @@ import {
   runLabel,
   runStatusLabel,
   type PayrollRunSummary,
-} from '../../lib/payrollRuns'
-import { useSalon } from '../SalonContext'
-import { ErrorNotice, LoadingState } from './Feedback'
+} from '../lib/payrollRuns'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState } from '@/app/components/Feedback'
 
 function detailPath(runId: string): string {
   return `/panel/nomina/liquidaciones/${encodeURIComponent(runId)}`

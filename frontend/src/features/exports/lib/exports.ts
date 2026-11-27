@@ -33,7 +33,7 @@ import {
   csvDownloadFilename,
   EXPORT_ERROR_MESSAGE,
   savePayrollRunCsv,
-} from '../../../lib/payrollRuns.ts'
+} from '../../team/lib/payrollRuns.ts'
 import { isManager, type Role } from '../../../lib/permissions.ts'
 import { fetchSettings } from '../../../lib/settings.ts'
 import { clearToken, getToken } from '../../../lib/session.ts'

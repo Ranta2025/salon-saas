@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { describeApiError } from '../../lib/api'
-import { fetchMemberHours, saveMemberHours, type SalonMember } from '../../lib/members'
+import { describeApiError } from '@/lib/api'
+import { fetchMemberHours, saveMemberHours, type SalonMember } from '../lib/members'
 import {
   beginSave,
   breakLabel,
@@ -26,7 +26,7 @@ import {
   type OptimisticSave,
   type SalonDay,
   type Weekday,
-} from '../../lib/weeklyHours'
+} from '../lib/weeklyHours'
 
 type MemberHoursCardProps = {
   salonId: string

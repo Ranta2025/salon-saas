@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { fetchStaff } from '../lib/api'
 import { canOpenMyAgenda } from '@/features/bookings/lib/myAgenda'
-import { canViewOwnCommissions } from '../lib/payroll'
+import { canViewOwnCommissions } from '@/features/team/lib/payroll'
 import {
   activeRole,
   canViewDeposits,

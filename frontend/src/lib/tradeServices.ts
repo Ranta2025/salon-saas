@@ -6,10 +6,10 @@
  * service, so the count of who does each service decides the notices.
  */
 
-import { memberAttends } from './attends.ts'
-import type { SalonMember } from './members.ts'
+import { memberAttends } from '../features/team/lib/attends.ts'
+import type { SalonMember } from '../features/team/lib/members.ts'
 import { isManager, type Role } from './permissions.ts'
-import { isActiveMember } from './teamStatus.ts'
+import { isActiveMember } from '../features/team/lib/teamStatus.ts'
 
 /** Domain limit of `memberships.trade` (contract S-F2c-2). */
 export const TRADE_MAX_LENGTH = 40

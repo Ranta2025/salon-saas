@@ -8,7 +8,7 @@
  * invented by the page.
  */
 
-import { normalizeDays, type SalonDay } from './weeklyHours.ts'
+import { normalizeDays, type SalonDay } from '../features/team/lib/weeklyHours.ts'
 
 export type PublicService = {
   id: string

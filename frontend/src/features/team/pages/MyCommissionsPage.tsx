@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { describeApiError, type ApiErrorNotice } from '../lib/api'
-import { toDateInputValue } from '../lib/datetime'
-import { formatCents } from '../lib/money'
-import { subscribeOfflineData } from '../lib/offlineData'
-import { activeRole, roleLabel } from '../lib/permissions'
+import { describeApiError, type ApiErrorNotice } from '@/lib/api'
+import { toDateInputValue } from '@/lib/datetime'
+import { formatCents } from '@/lib/money'
+import { subscribeOfflineData } from '@/lib/offlineData'
+import { activeRole, roleLabel } from '@/lib/permissions'
 import {
   canViewOwnCommissions,
   checkPayrollInput,
@@ -17,10 +17,10 @@ import {
   type MyCommissions,
   type PayPeriodKind,
 } from '../lib/payroll'
-import { useSalon } from './SalonContext'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { KPICard } from './components/KPICard'
-import { PageHeader } from './components/PageHeader'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { KPICard } from '@/app/components/KPICard'
+import { PageHeader } from '@/app/components/PageHeader'
 
 /**
  * `/panel/mis-comisiones` (S-F3.2-5, D7): the caller's own figures of a period,

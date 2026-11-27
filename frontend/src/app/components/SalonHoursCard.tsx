@@ -10,7 +10,7 @@ import {
   weekDraft,
   type DraftDay,
   type Weekday,
-} from '../../lib/weeklyHours'
+} from '@/features/team/lib/weeklyHours'
 import { LoadingState } from './Feedback'
 
 type SalonHoursCardProps = {

@@ -18,7 +18,7 @@ import {
   isValidPayrollDate,
   payPeriodLabel,
   type PayPeriodKind,
-} from '../../../lib/payroll.ts'
+} from '../../team/lib/payroll.ts'
 import { isManager, type Role } from '../../../lib/permissions.ts'
 
 /** Periods the server derives in the zone of the salon (D7: `day` is new). */

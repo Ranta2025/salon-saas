@@ -10,9 +10,9 @@
  * missing field never breaks a page nor invents a number.
  */
 
-import { request } from './api.ts'
-import { formatCents } from './money.ts'
-import { isManager, type Role } from './permissions.ts'
+import { request } from '../../../lib/api.ts'
+import { formatCents } from '../../../lib/money.ts'
+import { isManager, type Role } from '../../../lib/permissions.ts'
 
 /** Periods the server derives in the zone of the salon (D5). */
 export type PayPeriodKind = 'week' | 'fortnight' | 'month'

@@ -15,11 +15,11 @@
  *   the server: the UI never distinguishes the causes.
  */
 
-import { ApiError, request } from './api.ts'
-import { TIME_ZONE } from './datetime.ts'
-import { isManager, roleLabel, panelHomePath, type Role } from './permissions.ts'
-import { normalizeEmail } from './email.ts'
-import type { SalonRole } from './me.ts'
+import { ApiError, request } from '../../../lib/api.ts'
+import { TIME_ZONE } from '../../../lib/datetime.ts'
+import { isManager, roleLabel, panelHomePath, type Role } from '../../../lib/permissions.ts'
+import { normalizeEmail } from '../../../lib/email.ts'
+import type { SalonRole } from '../../../lib/me.ts'
 
 /** Domain limits of the contract (S-F2g1-1, S-F2g1-3 and the registration policy). */
 export const INVITATION_MAX_PENDING = 50

@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { describeApiError, type ApiErrorNotice } from '../lib/api'
-import { formatCents } from '../lib/money'
+import { describeApiError, type ApiErrorNotice } from '@/lib/api'
+import { formatCents } from '@/lib/money'
 import {
   ESTIMATED_BADGE,
   ESTIMATED_NOTICE,
@@ -38,11 +38,11 @@ import {
   type PayrollRun,
   type PayrollRunLine,
 } from '../lib/payrollRuns'
-import { activeRole } from '../lib/permissions'
-import { useSalon } from './SalonContext'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { ManagerOnlyNotice } from './components/ManagerOnlyNotice'
-import { PageHeader } from './components/PageHeader'
+import { activeRole } from '@/lib/permissions'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { ManagerOnlyNotice } from '@/app/components/ManagerOnlyNotice'
+import { PageHeader } from '@/app/components/PageHeader'
 
 type LineError = { userId: string; message: string }
 

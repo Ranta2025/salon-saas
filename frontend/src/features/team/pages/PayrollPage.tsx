@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { describeApiError, type ApiErrorNotice } from '../lib/api'
-import { formatCents } from '../lib/money'
-import { subscribeOfflineData } from '../lib/offlineData'
-import { activeRole } from '../lib/permissions'
+import { describeApiError, type ApiErrorNotice } from '@/lib/api'
+import { formatCents } from '@/lib/money'
+import { subscribeOfflineData } from '@/lib/offlineData'
+import { activeRole } from '@/lib/permissions'
 import {
   checkPayrollInput,
   ESTIMATED_BADGE,
@@ -19,12 +19,12 @@ import {
   type PayrollLine,
   type PayrollPreview,
 } from '../lib/payroll'
-import { toDateInputValue } from '../lib/datetime'
-import { useSalon } from './SalonContext'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { ManagerOnlyNotice } from './components/ManagerOnlyNotice'
-import { PageHeader } from './components/PageHeader'
-import { PayrollRunsSection } from './components/PayrollRunsSection'
+import { toDateInputValue } from '@/lib/datetime'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { ManagerOnlyNotice } from '@/app/components/ManagerOnlyNotice'
+import { PageHeader } from '@/app/components/PageHeader'
+import { PayrollRunsSection } from '../components/PayrollRunsSection'
 
 /**
  * `/panel/nomina` (S-F3.2-5): preview of the payroll of a period for owner and

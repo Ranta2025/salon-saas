@@ -21,7 +21,7 @@
 import { ApiError, NetworkError, readEmailVerified, request } from './api.ts'
 import { isBrowserOnline } from './connectivity.ts'
 import { EMAIL_INVALID_MESSAGE, isValidEmail, normalizeEmail } from './email.ts'
-import { INVITATION_PASSWORD_MAX_BYTES, INVITATION_PASSWORD_MIN_BYTES } from './invitations.ts'
+import { INVITATION_PASSWORD_MAX_BYTES, INVITATION_PASSWORD_MIN_BYTES } from '../features/team/lib/invitations.ts'
 
 export { readEmailVerified }
 

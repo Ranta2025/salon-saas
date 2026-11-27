@@ -22,7 +22,7 @@ import {
   type ExportCsvFile,
   type ExportKind,
 } from './exports.ts'
-import { EXPORT_ERROR_MESSAGE } from '../../../lib/payrollRuns.ts'
+import { EXPORT_ERROR_MESSAGE } from '../../team/lib/payrollRuns.ts'
 
 type Call = { url: string; method: string; headers: Record<string, string> }
 

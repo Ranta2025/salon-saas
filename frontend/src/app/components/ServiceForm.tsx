@@ -7,7 +7,7 @@ import {
 } from '../../lib/equipment'
 import { formatCents, parseAmountToCents } from '../../lib/money'
 import { normalizeServiceIds } from '../../lib/tradeServices'
-import type { SalonMember } from '../../lib/members'
+import type { SalonMember } from '@/features/team/lib/members'
 import {
   serviceDescriptionBody,
   validateServiceDescription,

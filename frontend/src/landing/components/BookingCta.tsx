@@ -28,7 +28,7 @@ import {
   type BookingPayment,
 } from '@/features/bookings/lib/deposits'
 import { whatsappUrl, type LandingModel, type LandingService } from '../../lib/publicSalon'
-import { weekSummary } from '../../lib/weeklyHours'
+import { weekSummary } from '@/features/team/lib/weeklyHours'
 import { PUBLIC_HOURS_FALLBACK } from '../content'
 import { WaitlistForm } from './WaitlistForm'
 

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError } from './api.ts'
-import { clearToken, setToken } from './session.ts'
+import { ApiError } from '../../../lib/api.ts'
+import { clearToken, setToken } from '../../../lib/session.ts'
 import {
   EMAIL_HINT_FALLBACK,
   INVITATION_MESSAGES,

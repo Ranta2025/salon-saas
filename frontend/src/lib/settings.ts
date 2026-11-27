@@ -5,7 +5,7 @@
  */
 
 import { request } from './api.ts'
-import { normalizeSalonHours, type SalonDay, type SalonHours } from './weeklyHours.ts'
+import { normalizeSalonHours, type SalonDay, type SalonHours } from '../features/team/lib/weeklyHours.ts'
 
 export type SalonSettings = {
   timezone: string

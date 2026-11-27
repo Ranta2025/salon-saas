@@ -4,9 +4,9 @@
  * sees an explanation instead of a 403.
  */
 
-import { request } from './api.ts'
-import type { SalonRole } from './me.ts'
-import { normalizeServiceIds, normalizeTrade } from './tradeServices.ts'
+import { request } from '../../../lib/api.ts'
+import type { SalonRole } from '../../../lib/me.ts'
+import { normalizeServiceIds, normalizeTrade } from '../../../lib/tradeServices.ts'
 import { normalizeMemberHours, type DaySegment, type MemberHours } from './weeklyHours.ts'
 
 export type SalonMember = {

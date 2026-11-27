@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, NetworkError } from './api.ts'
-import { clearToken, setToken } from './session.ts'
+import { ApiError, NetworkError } from '../../../lib/api.ts'
+import { clearToken, setToken } from '../../../lib/session.ts'
 import {
   applyRunLineAdjustment,
   canDeleteRun,

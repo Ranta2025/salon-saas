@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import type { SalonMember } from './members.ts'
+import type { SalonMember } from '../features/team/lib/members.ts'
 import {
   applyMemberServices,
   canEditServices,

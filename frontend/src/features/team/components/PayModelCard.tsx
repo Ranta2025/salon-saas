@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { describeApiError } from '../../lib/api'
-import { parseAmountToCents } from '../../lib/money'
+import { describeApiError } from '@/lib/api'
+import { parseAmountToCents } from '@/lib/money'
 import {
   amountInputFromCents,
   PAY_MODEL_EXPLANATION,
@@ -8,8 +8,8 @@ import {
   PAY_PERIOD_KIND_LABELS,
   type PayModel,
   type PayPeriodKind,
-} from '../../lib/payroll'
-import { roleLabel } from '../../lib/permissions'
+} from '../lib/payroll'
+import { roleLabel } from '@/lib/permissions'
 
 export type PayModelDraft = Pick<
   PayModel,
