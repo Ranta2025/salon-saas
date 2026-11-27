@@ -1,10 +1,11 @@
-package pgstore
+package postgres
 
 import (
 	"context"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -39,7 +40,7 @@ func (r Audit) Append(e domain.AuditEvent) error {
 		`INSERT INTO audit_events(id,salon_id,actor_user_id,actor_name,action,entity_id,created_at)
 		 VALUES($1,$2,$3,NULLIF($4,''),$5,NULLIF($6,''),$7)`,
 		e.ID, e.SalonID, e.ActorUserID, e.ActorName, e.Action, e.EntityID, e.CreatedAt.UTC())
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // List lee una página del salón: del más nuevo al más viejo, ESTRICTAMENTE
@@ -67,19 +68,19 @@ func (r Audit) List(salonID string, q domain.AuditQuery) ([]domain.AuditEvent, e
 		 LIMIT $5`,
 		salonID, q.Action, beforeAt, beforeID, q.Limit)
 	if err != nil {
-		return nil, pgError(err)
+		return nil, pgstore.PGError(err)
 	}
 	defer rows.Close()
 	out := []domain.AuditEvent{}
 	for rows.Next() {
 		var e domain.AuditEvent
 		if err := rows.Scan(&e.ID, &e.SalonID, &e.ActorUserID, &e.ActorName, &e.Action, &e.EntityID, &e.CreatedAt); err != nil {
-			return nil, pgError(err)
+			return nil, pgstore.PGError(err)
 		}
 		e.CreatedAt = e.CreatedAt.UTC()
 		out = append(out, e)
 	}
-	return out, pgError(rows.Err())
+	return out, pgstore.PGError(rows.Err())
 }
 
 var _ ports.AuditRepository = Audit{}

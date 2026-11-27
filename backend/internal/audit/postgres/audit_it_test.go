@@ -4,7 +4,7 @@
 // append-only (UPDATE/DELETE directos fallan, el borrado en cascada de un salón
 // funciona), el orden y el cursor con empates, el filtro de acción (igual a la
 // regla del dominio) y el aislamiento por salón.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 const (
@@ -35,10 +36,10 @@ type audFix struct {
 
 func audFixtures(t *testing.T) *audFix {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
 	ctx := context.Background()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 	for _, q := range []string{
 		`DELETE FROM salons WHERE id LIKE 's-it-aud%'`,
 		`DELETE FROM users WHERE id LIKE 'u-it-aud%'`,
