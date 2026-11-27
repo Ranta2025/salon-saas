@@ -7,14 +7,14 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/finance"
 	"salon-saas/internal/ports"
 )
 
 // ExpenseHandler agrupa las rutas de gastos.
 type ExpenseHandler struct {
-	Expenses    app.ExpenseService
+	Expenses    finance.ExpenseService
 	Memberships ports.MembershipRepository
 }
 

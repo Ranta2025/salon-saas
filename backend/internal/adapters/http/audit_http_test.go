@@ -19,6 +19,7 @@ import (
 	"salon-saas/internal/app"
 	auditsvc "salon-saas/internal/audit"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/finance"
 	"salon-saas/internal/loyalty"
 )
 
@@ -257,7 +258,7 @@ func newAudWorld(t *testing.T) *audWorld {
 		Memberships: env.mems,
 	}
 	env.d.Expenses = ExpenseHandler{
-		Expenses: app.ExpenseService{
+		Expenses: finance.ExpenseService{
 			Expenses: newMExpenses(), Memberships: env.mems, Settings: env.settings,
 			Now: func() time.Time { return audClock },
 		},

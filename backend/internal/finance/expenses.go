@@ -2,7 +2,7 @@
 // Los permisos son de owner/administración (D5) y las fechas se miden en la zona
 // del SALÓN, no en UTC. El adaptador es el que guarda; acá viven las reglas y las
 // frases del contrato.
-package app
+package finance
 
 import (
 	"errors"

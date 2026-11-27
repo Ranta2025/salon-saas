@@ -1,7 +1,7 @@
 // Caso de uso del reporte de ganancia neta (F3b, D1/D2/D5/D6): permisos, el
 // período en la zona del salón, la ventana que pide al repo y el armado del
 // reporte (ceros, neto y totales).
-package app
+package finance
 
 import (
 	"errors"
@@ -10,6 +10,7 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil"
 )
 
 // fakeProfit devuelve la foto sembrada y guarda la ventana que le pidieron.
@@ -36,14 +37,14 @@ var _ ports.ProfitRepository = (*fakeProfit)(nil)
 
 type profitEnv struct {
 	repo     *fakeProfit
-	settings *fakeSettings
-	mems     *fakeMemberships
+	settings *testutil.FakeSettings
+	mems     *testutil.FakeMemberships
 	svc      ProfitService
 }
 
 func newProfitEnv() *profitEnv {
-	mems := &fakeMemberships{byKey: map[string]domain.Membership{}}
-	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{
+	mems := &testutil.FakeMemberships{ByKey: map[string]domain.Membership{}}
+	settings := &testutil.FakeSettings{BySalon: map[string]domain.SalonSettings{
 		"s1": {SalonID: "s1", Timezone: "America/New_York", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30},
 	}}
 	for _, m := range []domain.Membership{
@@ -53,7 +54,7 @@ func newProfitEnv() *profitEnv {
 		{UserID: "u-pro", SalonID: "s1", Role: domain.RoleProfessional, Attends: true},
 		{UserID: "u-otro", SalonID: "s2", Role: domain.RoleOwner},
 	} {
-		mems.byKey[m.UserID+"|"+m.SalonID] = m
+		mems.ByKey[m.UserID+"|"+m.SalonID] = m
 	}
 	repo := &fakeProfit{}
 	return &profitEnv{
@@ -161,7 +162,7 @@ func TestProfitService_periodo_invalido_y_salon_vacio(t *testing.T) {
 	}
 
 	// Salón sin fila de settings: la zona por defecto (CDMX) y un reporte de ceros.
-	delete(e.settings.bySalon, "s1")
+	delete(e.settings.BySalon, "s1")
 	report, err := e.svc.Report(owner, "s1", "day", "2026-03-10")
 	if err != nil {
 		t.Fatalf("salón sin settings: %v", err)

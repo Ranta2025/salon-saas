@@ -27,6 +27,7 @@ import (
 	"salon-saas/internal/audit"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/exports"
+	"salon-saas/internal/finance"
 	"salon-saas/internal/loyalty"
 	loyaltystore "salon-saas/internal/loyalty/postgres"
 	"salon-saas/internal/ports"
@@ -407,8 +408,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F3b: gastos operativos (solo owner/administración) y ganancia neta del
 	// período en la zona del salón. Las fechas de los gastos se miden contra el
 	// día LOCAL del salón, no UTC.
-	expenseSvc := app.ExpenseService{Expenses: expenseRepo, Memberships: mems, Settings: salons}
-	profitSvc := app.ProfitService{Profit: profitRepo, Memberships: mems, Settings: salons}
+	expenseSvc := finance.ExpenseService{Expenses: expenseRepo, Memberships: mems, Settings: salons}
+	profitSvc := finance.ProfitService{Profit: profitRepo, Memberships: mems, Settings: salons}
 	// F4: exportación CSV de ventas, cierres de caja y clientes. Solo dueño y
 	// administración (la autorización vive en el caso de uso). Las lecturas son
 	// métodos nuevos con LIMIT (una sola sentencia por archivo) y el tope de

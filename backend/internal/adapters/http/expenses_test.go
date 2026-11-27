@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/finance"
 )
 
 // expNow es el «hoy» de estos tests: 20/3/2026 12:00 en CDMX.
@@ -36,14 +36,14 @@ func newExpHTTPEnv(t *testing.T) *expHTTPEnv {
 	expenses, profit := newMExpenses(), &mProfit{}
 	d := env.d
 	d.Expenses = ExpenseHandler{
-		Expenses: app.ExpenseService{
+		Expenses: finance.ExpenseService{
 			Expenses: expenses, Memberships: env.mems, Settings: env.settings,
 			Now: func() time.Time { return expNow },
 		},
 		Memberships: env.mems,
 	}
 	d.Profit = ProfitHandler{
-		Profit: app.ProfitService{
+		Profit: finance.ProfitService{
 			Profit: profit, Memberships: env.mems, Settings: env.settings,
 			Now: func() time.Time { return expNow },
 		},

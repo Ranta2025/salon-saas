@@ -7,14 +7,14 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/finance"
 	"salon-saas/internal/ports"
 )
 
 // ProfitHandler agrupa la ruta del panel de ganancias.
 type ProfitHandler struct {
-	Profit      app.ProfitService
+	Profit      finance.ProfitService
 	Memberships ports.MembershipRepository
 }
 

@@ -2,7 +2,7 @@
 // contrato). Deriva el período en la zona del SALÓN y le pide al adaptador UNA
 // sola foto de ingresos, gastos y nómina pagada; el armado del reporte (ceros,
 // neto y totales) es del dominio.
-package app
+package finance
 
 import (
 	"time"

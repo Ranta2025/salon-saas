@@ -1,6 +1,6 @@
 // Casos de uso de los gastos (F3b, D3/D4/D5): permisos owner/admin, tenant
 // isolation, el rango del listado, el PUT que REEMPLAZA y la frase del 404.
-package app
+package finance
 
 import (
 	"errors"
@@ -10,6 +10,7 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil"
 )
 
 // fakeExpenses es el repo de gastos con la MISMA semántica que pgstore: scope
@@ -105,14 +106,14 @@ var expenseNow = time.Date(2026, 3, 20, 18, 0, 0, 0, time.UTC)
 
 type expenseEnv struct {
 	repo     *fakeExpenses
-	settings *fakeSettings
+	settings *testutil.FakeSettings
 	svc      ExpenseService
-	mems     *fakeMemberships
+	mems     *testutil.FakeMemberships
 }
 
 func newExpenseEnv() *expenseEnv {
-	mems := &fakeMemberships{byKey: map[string]domain.Membership{}}
-	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{
+	mems := &testutil.FakeMemberships{ByKey: map[string]domain.Membership{}}
+	settings := &testutil.FakeSettings{BySalon: map[string]domain.SalonSettings{
 		"s1": {SalonID: "s1", Timezone: "America/Mexico_City", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30},
 	}}
 	for _, m := range []domain.Membership{
@@ -123,7 +124,7 @@ func newExpenseEnv() *expenseEnv {
 		{UserID: "u-client", SalonID: "s1", Role: domain.RoleClient},
 		{UserID: "u-otro", SalonID: "s2", Role: domain.RoleOwner},
 	} {
-		mems.byKey[m.UserID+"|"+m.SalonID] = m
+		mems.ByKey[m.UserID+"|"+m.SalonID] = m
 	}
 	repo := newFakeExpenses()
 	return &expenseEnv{
