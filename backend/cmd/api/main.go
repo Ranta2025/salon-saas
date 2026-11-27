@@ -25,6 +25,7 @@ import (
 	"salon-saas/internal/adapters/storage"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/loyalty"
 	"salon-saas/internal/ports"
 )
 
@@ -303,7 +304,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F9: fidelidad «cada N visitas, un servicio de regalo». Usar un vale NO es una
 	// venta: el POS, la caja y la nómina no se tocan. Leer el programa: cualquier
 	// miembro; guardarlo: owner/admin; ficha, entregar y usar: owner/admin/recepción.
-	loyaltySvc := app.LoyaltyService{
+	loyaltySvc := loyalty.LoyaltyService{
 		Programs: loyaltyProgramsRepo, Rewards: loyaltyRewardsRepo, Services: servicesRepo,
 		Clients: clientsRepo, Memberships: mems, Settings: salons,
 	}

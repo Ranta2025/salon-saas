@@ -37,7 +37,7 @@ func (s SaleService) RegisterSaleWithProducts(actor domain.Membership, salonID, 
 	if err != nil {
 		return domain.Sale{}, err
 	}
-	if !puedeVender(m) {
+	if !PuedeVender(m) {
 		return domain.Sale{}, domain.ErrForbidden
 	}
 	// La ficha del POS (F5): tiene que existir EN ESTE salón; si el nombre vino
@@ -71,7 +71,7 @@ func (s SaleService) RegisterSaleWithProducts(actor domain.Membership, salonID, 
 			return domain.Sale{}, err
 		}
 	}
-	if err := ensureProfessional(s.Memberships, salonID, professionalID); err != nil {
+	if err := EnsureProfessional(s.Memberships, salonID, professionalID); err != nil {
 		return domain.Sale{}, err
 	}
 	// (4) Precio del catálogo del salón, nunca del cliente. Los servicios se

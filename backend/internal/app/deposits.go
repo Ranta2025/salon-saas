@@ -357,7 +357,7 @@ func (s DepositService) RequireViewer(actor domain.Membership, salonID string) e
 	if err != nil {
 		return err
 	}
-	if !puedeVender(m) {
+	if !PuedeVender(m) {
 		return domain.ErrForbidden
 	}
 	return nil

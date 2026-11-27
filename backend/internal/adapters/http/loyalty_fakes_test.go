@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/loyalty"
 	"salon-saas/internal/ports"
 )
 
@@ -177,7 +178,7 @@ func newLoyaltyEnv() (*posEnv, *mloyPrograms, *mloyRewards) {
 	env := newPOSEnv()
 	programs := &mloyPrograms{services: env.services}
 	rewards := &mloyRewards{programs: programs, visits: map[string]int{}}
-	svc := app.LoyaltyService{
+	svc := loyalty.LoyaltyService{
 		Programs: programs, Rewards: rewards, Services: env.services, Clients: env.clients,
 		Memberships: env.mems, Settings: env.settings,
 	}

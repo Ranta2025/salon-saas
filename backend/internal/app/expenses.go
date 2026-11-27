@@ -33,7 +33,7 @@ func (s ExpenseService) Create(actor domain.Membership, salonID string, f domain
 	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
 		return domain.Expense{}, err
 	}
-	loc, err := salonLocation(s.Settings, salonID)
+	loc, err := SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return domain.Expense{}, err
 	}
@@ -79,7 +79,7 @@ func (s ExpenseService) Update(actor domain.Membership, salonID, expenseID strin
 	if err != nil {
 		return domain.Expense{}, expenseNotFound(err)
 	}
-	loc, err := salonLocation(s.Settings, salonID)
+	loc, err := SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return domain.Expense{}, err
 	}
@@ -112,10 +112,10 @@ func expenseNotFound(err error) error {
 	return err
 }
 
-// salonLocation resuelve la zona horaria del salón con los defaults de fábrica
+// SalonLocation resuelve la zona horaria del salón con los defaults de fábrica
 // cuando no hay fila de configuración. Es la MISMA lectura que usa la nómina y
 // el reporte de ganancia: no hay una segunda regla de «hoy».
-func salonLocation(repo ports.SalonSettingsRepository, salonID string) (*time.Location, error) {
+func SalonLocation(repo ports.SalonSettingsRepository, salonID string) (*time.Location, error) {
 	settings, err := loadSalonSettings(repo, salonID)
 	if err != nil {
 		return nil, err

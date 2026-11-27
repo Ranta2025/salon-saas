@@ -39,7 +39,7 @@ type SaleService struct {
 // puedeVender: recepción y quien administra (el profesional cobra en caja...
 // o no: el POS es del salón, no de la persona). Se mantiene explícito y en un
 // solo lugar para que el día que cambie, cambie una función.
-func puedeVender(m domain.Membership) bool {
+func PuedeVender(m domain.Membership) bool {
 	return m.CanManage() || m.Role == domain.RoleReception
 }
 
@@ -87,7 +87,7 @@ func (s SaleService) register(actor domain.Membership, salonID, professionalID, 
 	if err != nil {
 		return domain.Sale{}, err
 	}
-	if !puedeVender(m) {
+	if !PuedeVender(m) {
 		return domain.Sale{}, domain.ErrForbidden
 	}
 	// (1.b) La ficha del POS (F5): tiene que existir EN ESTE salón. Se lee antes
@@ -117,7 +117,7 @@ func (s SaleService) register(actor domain.Membership, salonID, professionalID, 
 			return domain.Sale{}, err
 		}
 	}
-	if err := ensureProfessional(s.Memberships, salonID, professionalID); err != nil {
+	if err := EnsureProfessional(s.Memberships, salonID, professionalID); err != nil {
 		return domain.Sale{}, err
 	}
 	// (5) El precio lo pone el catálogo del salón, nunca el cliente, y un

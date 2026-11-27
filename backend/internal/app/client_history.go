@@ -50,9 +50,9 @@ func (s ClientHistoryService) History(actor domain.Membership, salonID, clientID
 		return ClientHistoryView{}, domain.ErrForbidden
 	}
 	if _, err := s.Clients.FindByID(salonID, clientID); err != nil {
-		return ClientHistoryView{}, clientError(err)
+		return ClientHistoryView{}, ClientError(err)
 	}
-	loc, err := salonLocation(s.Settings, salonID)
+	loc, err := SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return ClientHistoryView{}, err
 	}

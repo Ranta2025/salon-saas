@@ -144,7 +144,7 @@ func (s PackageService) Purchase(actor domain.Membership, salonID, clientID, pac
 	if err != nil {
 		return domain.ClientPackage{}, err
 	}
-	if !puedeVender(m) {
+	if !PuedeVender(m) {
 		return domain.ClientPackage{}, domain.ErrForbidden
 	}
 	client, err := s.client(salonID, clientID)
@@ -169,7 +169,7 @@ func (s PackageService) Purchase(actor domain.Membership, salonID, clientID, pac
 	if err != nil {
 		return domain.ClientPackage{}, err
 	}
-	loc, err := salonLocation(s.Settings, salonID)
+	loc, err := SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return domain.ClientPackage{}, err
 	}
@@ -280,7 +280,7 @@ func (s PackageService) Redeem(actor domain.Membership, salonID, clientID, clien
 	if err != nil {
 		return domain.ClientPackage{}, err
 	}
-	if !puedeVender(m) {
+	if !PuedeVender(m) {
 		return domain.ClientPackage{}, domain.ErrForbidden
 	}
 	if !cleanIDs(clientID, clientPackageID) {
@@ -389,7 +389,7 @@ func (s PackageService) client(salonID, clientID string) (domain.Client, error) 
 	}
 	c, err := s.Clients.FindByID(salonID, clientID)
 	if err != nil {
-		return domain.Client{}, clientError(err)
+		return domain.Client{}, ClientError(err)
 	}
 	return c, nil
 }
@@ -451,7 +451,7 @@ func (s PackageService) ensureStaff(salonID, professionalID string) error {
 	if !cleanIDs(professionalID) {
 		return fmt.Errorf("%w: el profesional no pertenece al salón", domain.ErrValidation)
 	}
-	return ensureProfessional(s.Memberships, salonID, professionalID)
+	return EnsureProfessional(s.Memberships, salonID, professionalID)
 }
 
 // ensureFreeName rechaza un nombre que ya usa un paquete ACTIVO del salón, sin
@@ -498,7 +498,7 @@ func (s PackageService) RequireSeller(actor domain.Membership, salonID string) e
 	if err != nil {
 		return err
 	}
-	if !puedeVender(m) {
+	if !PuedeVender(m) {
 		return domain.ErrForbidden
 	}
 	return nil

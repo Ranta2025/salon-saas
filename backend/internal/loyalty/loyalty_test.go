@@ -1,4 +1,4 @@
-package app
+package loyalty
 
 import (
 	"errors"
@@ -7,15 +7,16 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // loyEnv arma un salón s1 (zona de Auckland, lejos de UTC) con todos los roles,
 // un servicio de regalo, una clienta y un reloj fijo.
 type loyEnv struct {
 	svc      LoyaltyService
-	mems     *fakeMemberships
-	services *fakeServices
-	clients  *fakeClients
+	mems     *testutil.FakeMemberships
+	services *testutil.FakeServices
+	clients  *testutil.FakeClients
 	programs *fakeLoyaltyPrograms
 	rewards  *fakeLoyaltyRewards
 	clock    time.Time
@@ -28,13 +29,13 @@ type loyEnv struct {
 func newLoyEnv(t *testing.T) *loyEnv {
 	t.Helper()
 	e := &loyEnv{
-		mems:     &fakeMemberships{},
-		services: &fakeServices{},
-		clients:  &fakeClients{},
+		mems:     &testutil.FakeMemberships{},
+		services: &testutil.FakeServices{},
+		clients:  &testutil.FakeClients{},
 		// 11 de marzo 00:30 en Auckland (NZDT +13) = 10 de marzo 11:30 UTC.
 		clock: time.Date(2026, 3, 10, 11, 30, 0, 0, time.UTC),
 	}
-	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{
+	settings := &testutil.FakeSettings{BySalon: map[string]domain.SalonSettings{
 		"s1": {SalonID: "s1", Timezone: "Pacific/Auckland", OpenTime: "09:00", CloseTime: "18:00", SlotStepMin: 30},
 	}}
 	e.programs = &fakeLoyaltyPrograms{services: e.services}
@@ -44,17 +45,17 @@ func newLoyEnv(t *testing.T) *loyEnv {
 		Memberships: e.mems, Settings: settings,
 		Now: func() time.Time { return e.clock },
 	}
-	e.owner = miembro(e.mems, "owner", "s1", domain.RoleOwner)
-	e.admin = miembro(e.mems, "admin", "s1", domain.RoleAdmin)
-	e.recep = miembro(e.mems, "recep", "s1", domain.RoleReception)
+	e.owner = testutil.Miembro(e.mems, "owner", "s1", domain.RoleOwner)
+	e.admin = testutil.Miembro(e.mems, "admin", "s1", domain.RoleAdmin)
+	e.recep = testutil.Miembro(e.mems, "recep", "s1", domain.RoleReception)
 	_ = e.mems.Save(domain.Membership{UserID: "prof", SalonID: "s1", Role: domain.RoleProfessional, Attends: true})
 	e.prof, _ = e.mems.Find("prof", "s1")
-	e.client = miembro(e.mems, "client", "s1", domain.RoleClient)
-	e.other = miembro(e.mems, "owner2", "s2", domain.RoleOwner)
-	e.removed = miembro(e.mems, "removed", "s1", domain.RoleAdmin)
+	e.client = testutil.Miembro(e.mems, "client", "s1", domain.RoleClient)
+	e.other = testutil.Miembro(e.mems, "owner2", "s2", domain.RoleOwner)
+	e.removed = testutil.Miembro(e.mems, "removed", "s1", domain.RoleAdmin)
 	at := e.clock.Add(-time.Hour)
 	e.removed.EndedAt = &at
-	e.mems.byKey["removed|s1"] = e.removed
+	e.mems.ByKey["removed|s1"] = e.removed
 
 	e.corte = e.newService(t, "s1", "Corte")
 	e.tinte = e.newService(t, "s1", "Tinte")
@@ -171,15 +172,15 @@ func TestLoyaltyService_saveProgram_validation(t *testing.T) {
 	foreign := e.newService(t, "s2", "Ajeno")
 	zero, big := 0, 3651
 
-	wantMsg(t, saveErr(e, 1, e.corte.ID, nil), domain.ErrValidation, "Las visitas necesarias deben ser entre 2 y 50")
-	wantMsg(t, saveErr(e, 51, e.corte.ID, nil), domain.ErrValidation, "Las visitas necesarias deben ser entre 2 y 50")
-	wantMsg(t, saveErr(e, 5, "no-existe", nil), domain.ErrValidation, "Servicio inválido")
-	wantMsg(t, saveErr(e, 5, inactive.ID, nil), domain.ErrValidation, "Servicio inválido")
-	wantMsg(t, saveErr(e, 5, foreign.ID, nil), domain.ErrValidation, "Servicio inválido")
-	wantMsg(t, saveErr(e, 5, "a\x00b", nil), domain.ErrValidation, "Servicio inválido")
-	wantMsg(t, saveErr(e, 5, "a\xffb", nil), domain.ErrValidation, "Servicio inválido")
-	wantMsg(t, saveErr(e, 5, e.corte.ID, &zero), domain.ErrValidation, "La vigencia debe ser entre 1 y 3650 días")
-	wantMsg(t, saveErr(e, 5, e.corte.ID, &big), domain.ErrValidation, "La vigencia debe ser entre 1 y 3650 días")
+	testutil.WantMsg(t, saveErr(e, 1, e.corte.ID, nil), domain.ErrValidation, "Las visitas necesarias deben ser entre 2 y 50")
+	testutil.WantMsg(t, saveErr(e, 51, e.corte.ID, nil), domain.ErrValidation, "Las visitas necesarias deben ser entre 2 y 50")
+	testutil.WantMsg(t, saveErr(e, 5, "no-existe", nil), domain.ErrValidation, "Servicio inválido")
+	testutil.WantMsg(t, saveErr(e, 5, inactive.ID, nil), domain.ErrValidation, "Servicio inválido")
+	testutil.WantMsg(t, saveErr(e, 5, foreign.ID, nil), domain.ErrValidation, "Servicio inválido")
+	testutil.WantMsg(t, saveErr(e, 5, "a\x00b", nil), domain.ErrValidation, "Servicio inválido")
+	testutil.WantMsg(t, saveErr(e, 5, "a\xffb", nil), domain.ErrValidation, "Servicio inválido")
+	testutil.WantMsg(t, saveErr(e, 5, e.corte.ID, &zero), domain.ErrValidation, "La vigencia debe ser entre 1 y 3650 días")
+	testutil.WantMsg(t, saveErr(e, 5, e.corte.ID, &big), domain.ErrValidation, "La vigencia debe ser entre 1 y 3650 días")
 	e.nothingWritten(t, "un dato inválido")
 
 	// Los límites exactos sí pasan; con el programa APAGADO también se valida.
@@ -192,7 +193,7 @@ func TestLoyaltyService_saveProgram_validation(t *testing.T) {
 			t.Fatalf("visitas=%d vigencia=%v: %v", c.visits, c.days, err)
 		}
 	}
-	wantMsg(t, saveErrEnabled(e, false, 1), domain.ErrValidation, "Las visitas necesarias deben ser entre 2 y 50")
+	testutil.WantMsg(t, saveErrEnabled(e, false, 1), domain.ErrValidation, "Las visitas necesarias deben ser entre 2 y 50")
 }
 
 func saveErr(e *loyEnv, visits int, serviceID string, days *int) error {
@@ -254,7 +255,7 @@ func TestLoyaltyService_clientStatus_unknownClient(t *testing.T) {
 	e.saveProgram(t, true, 5, nil)
 	for _, id := range []string{"no-existe", e.otherClient.ID, "", "a\x00b", "a\xffb"} {
 		_, err := e.svc.ClientStatus(e.recep, "s1", id)
-		wantMsg(t, err, domain.ErrNotFound, "Ficha no encontrada")
+		testutil.WantMsg(t, err, domain.ErrNotFound, "Ficha no encontrada")
 	}
 }
 
@@ -372,16 +373,16 @@ func TestLoyaltyService_grant_rules(t *testing.T) {
 	// Nunca guardado y apagado: 409 «no activada», aunque haya visitas.
 	e.setVisits(e.lia.ID, 50)
 	_, err := e.svc.Grant(e.recep, "s1", e.lia.ID, "")
-	wantMsg(t, err, domain.ErrAlreadyExists, "La fidelidad no está activada")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "La fidelidad no está activada")
 	e.saveProgram(t, false, 5, nil)
 	_, err = e.svc.Grant(e.recep, "s1", e.lia.ID, "")
-	wantMsg(t, err, domain.ErrAlreadyExists, "La fidelidad no está activada")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "La fidelidad no está activada")
 
 	// Encendido pero sin visitas suficientes.
 	e.saveProgram(t, true, 5, nil)
 	e.setVisits(e.lia.ID, 4)
 	_, err = e.svc.Grant(e.recep, "s1", e.lia.ID, "")
-	wantMsg(t, err, domain.ErrAlreadyExists, "No hay premios disponibles")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "No hay premios disponibles")
 
 	// Con UN solo hito disponible: el primero entrega y el segundo recibe 409.
 	e.setVisits(e.lia.ID, 5)
@@ -390,7 +391,7 @@ func TestLoyaltyService_grant_rules(t *testing.T) {
 		t.Fatalf("vale: %+v", r)
 	}
 	_, err = e.svc.Grant(e.recep, "s1", e.lia.ID, "")
-	wantMsg(t, err, domain.ErrAlreadyExists, "No hay premios disponibles")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "No hay premios disponibles")
 	if len(e.rewards.rewards) != 1 {
 		t.Fatalf("hay %d vales, quería 1", len(e.rewards.rewards))
 	}
@@ -409,7 +410,7 @@ func TestLoyaltyService_grant_unknownClient(t *testing.T) {
 	e.setVisits(e.otherClient.ID, 50)
 	for _, id := range []string{"no-existe", e.otherClient.ID, "a\x00b", "a\xffb"} {
 		_, err := e.svc.Grant(e.recep, "s1", id, "")
-		wantMsg(t, err, domain.ErrNotFound, "Ficha no encontrada")
+		testutil.WantMsg(t, err, domain.ErrNotFound, "Ficha no encontrada")
 	}
 	if len(e.rewards.rewards) != 0 {
 		t.Fatal("un rechazo entregó un vale")
@@ -458,14 +459,14 @@ func TestLoyaltyService_grant_idempotentByOp(t *testing.T) {
 	other := e.newClient(t, "s1", "Mora")
 	e.setVisits(other.ID, 20)
 	_, err := e.svc.Grant(e.recep, "s1", other.ID, "op-1")
-	wantMsg(t, err, domain.ErrAlreadyExists, "Esa operación ya se usó en otro pedido")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "Esa operación ya se usó en otro pedido")
 	if len(e.rewards.rewards) != 1 {
 		t.Fatalf("el op id reusado entregó un vale")
 	}
 	_, err = e.svc.Grant(e.recep, "s1", e.lia.ID, "a\x00b")
-	wantMsg(t, err, domain.ErrValidation, "El identificador de la operación no es válido")
+	testutil.WantMsg(t, err, domain.ErrValidation, "El identificador de la operación no es válido")
 	_, err = e.svc.Grant(e.recep, "s1", e.lia.ID, strings.Repeat("x", 201))
-	wantMsg(t, err, domain.ErrValidation, "El identificador de la operación no es válido")
+	testutil.WantMsg(t, err, domain.ErrValidation, "El identificador de la operación no es válido")
 }
 
 // --- D7: usar ---------------------------------------------------------------
@@ -502,15 +503,15 @@ func TestLoyaltyService_redeem_rules(t *testing.T) {
 	// Inexistente, de otra clienta/salón o con id sucio: 404.
 	for _, id := range []string{"no-existe", "", "a\x00b", "a\xffb"} {
 		_, err := e.svc.Redeem(e.recep, "s1", e.lia.ID, id, "", "", "")
-		wantMsg(t, err, domain.ErrNotFound, "Premio no encontrado")
+		testutil.WantMsg(t, err, domain.ErrNotFound, "Premio no encontrado")
 	}
 	mora := e.newClient(t, "s1", "Mora")
 	_, err := e.svc.Redeem(e.recep, "s1", mora.ID, r.ID, "", "", "")
-	wantMsg(t, err, domain.ErrNotFound, "Premio no encontrado")
+	testutil.WantMsg(t, err, domain.ErrNotFound, "Premio no encontrado")
 	_, err = e.svc.Redeem(e.recep, "s1", e.otherClient.ID, r.ID, "", "", "")
-	wantMsg(t, err, domain.ErrNotFound, "Ficha no encontrada")
+	testutil.WantMsg(t, err, domain.ErrNotFound, "Ficha no encontrada")
 	_, err = e.svc.Redeem(e.recep, "s1", e.lia.ID, "x\xff", "", "", "")
-	wantMsg(t, err, domain.ErrNotFound, "Premio no encontrado")
+	testutil.WantMsg(t, err, domain.ErrNotFound, "Premio no encontrado")
 	if e.rewards.rewards[0].RedeemedAt != nil {
 		t.Fatal("un rechazo usó el vale")
 	}
@@ -526,7 +527,7 @@ func TestLoyaltyService_redeem_rules(t *testing.T) {
 	}
 	// Ya usado.
 	_, err = e.svc.Redeem(e.recep, "s1", e.lia.ID, r.ID, "", "", "")
-	wantMsg(t, err, domain.ErrAlreadyExists, "Ese premio ya se usó")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "Ese premio ya se usó")
 }
 
 func TestLoyaltyService_redeem_expired(t *testing.T) {
@@ -544,7 +545,7 @@ func TestLoyaltyService_redeem_expired(t *testing.T) {
 	// ... y EXACTO en expires_at ya venció (la misma regla del UPDATE).
 	e.clock = exp
 	_, err := e.svc.Redeem(e.recep, "s1", e.lia.ID, b.ID, "", "", "")
-	wantMsg(t, err, domain.ErrAlreadyExists, "El premio venció")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "El premio venció")
 	if e.rewards.rewards[1].RedeemedAt != nil {
 		t.Fatal("el vale vencido se usó")
 	}
@@ -553,7 +554,7 @@ func TestLoyaltyService_redeem_expired(t *testing.T) {
 func TestLoyaltyService_redeem_professionalAndNote(t *testing.T) {
 	e := newLoyEnv(t)
 	r := e.withReward(t, nil)
-	foreign := miembro(e.mems, "prof2", "s2", domain.RoleProfessional)
+	foreign := testutil.Miembro(e.mems, "prof2", "s2", domain.RoleProfessional)
 	_ = foreign
 	for _, pid := range []string{"nadie", "prof2", "recep", "a\x00b"} {
 		_, err := e.svc.Redeem(e.recep, "s1", e.lia.ID, r.ID, pid, "", "")
@@ -578,7 +579,7 @@ func TestLoyaltyService_redeem_disabledProgram(t *testing.T) {
 	r := e.withReward(t, nil)
 	e.saveProgram(t, false, 2, nil)
 	_, err := e.svc.Redeem(e.recep, "s1", e.lia.ID, r.ID, "", "", "")
-	wantMsg(t, err, domain.ErrAlreadyExists, "La fidelidad no está activada")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "La fidelidad no está activada")
 	if len(e.rewards.rewards) != 1 || e.rewards.rewards[0].RedeemedAt != nil {
 		t.Fatal("el vale no se conservó intacto")
 	}
@@ -606,10 +607,10 @@ func TestLoyaltyService_redeem_idempotentByOp(t *testing.T) {
 	}
 	// El mismo id para OTRO vale es 409 y no usa el vale.
 	_, err = e.svc.Redeem(e.recep, "s1", e.lia.ID, b.ID, "", "", "op-1")
-	wantMsg(t, err, domain.ErrAlreadyExists, "Esa operación ya se usó en otro pedido")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "Esa operación ya se usó en otro pedido")
 	if e.rewards.rewards[1].RedeemedAt != nil {
 		t.Fatal("el op id reusado usó otro vale")
 	}
 	_, err = e.svc.Redeem(e.recep, "s1", e.lia.ID, b.ID, "", "", "a\x00b")
-	wantMsg(t, err, domain.ErrValidation, "El identificador de la operación no es válido")
+	testutil.WantMsg(t, err, domain.ErrValidation, "El identificador de la operación no es válido")
 }

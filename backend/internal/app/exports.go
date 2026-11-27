@@ -58,7 +58,7 @@ func (s ExportService) Sales(actor domain.Membership, salonID, from, to string) 
 	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
 		return ExportFile{}, err
 	}
-	loc, err := salonLocation(s.Settings, salonID)
+	loc, err := SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return ExportFile{}, err
 	}
@@ -85,7 +85,7 @@ func (s ExportService) CashCloses(actor domain.Membership, salonID, from, to str
 	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
 		return ExportFile{}, err
 	}
-	loc, err := salonLocation(s.Settings, salonID)
+	loc, err := SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return ExportFile{}, err
 	}
@@ -114,7 +114,7 @@ func (s ExportService) Clients(actor domain.Membership, salonID string) (ExportF
 	if _, err := manageActor(s.Memberships, actor, salonID); err != nil {
 		return ExportFile{}, err
 	}
-	loc, err := salonLocation(s.Settings, salonID)
+	loc, err := SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return ExportFile{}, err
 	}

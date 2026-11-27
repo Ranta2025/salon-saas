@@ -56,7 +56,7 @@ func (s ClientService) Get(actor domain.Membership, salonID, clientID string) (d
 	}
 	c, err := s.Clients.FindByID(salonID, clientID)
 	if err != nil {
-		return domain.Client{}, clientError(err)
+		return domain.Client{}, ClientError(err)
 	}
 	return c, nil
 }
@@ -70,7 +70,7 @@ func (s ClientService) Update(actor domain.Membership, salonID, clientID, name, 
 	}
 	c, err := s.Clients.FindByID(salonID, clientID)
 	if err != nil {
-		return domain.Client{}, clientError(err)
+		return domain.Client{}, ClientError(err)
 	}
 	updated, err := c.Updated(name, phone, email, notes, allergies)
 	if err != nil {
@@ -82,10 +82,10 @@ func (s ClientService) Update(actor domain.Membership, salonID, clientID, name, 
 	return updated, nil
 }
 
-// clientError traduce la falta de la ficha al mensaje del contrato F5: una
+// ClientError traduce la falta de la ficha al mensaje del contrato F5: una
 // ficha de otro salón es «Ficha no encontrada» (404), nunca un 500 ni un 403
 // que confirme que existe.
-func clientError(err error) error {
+func ClientError(err error) error {
 	if errors.Is(err, domain.ErrNotFound) {
 		return domain.NewMessage(domain.ErrNotFound, domain.MsgClientNotFound)
 	}

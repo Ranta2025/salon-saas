@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/loyalty"
 )
 
 // --- Middleware solo (router mínimo) -----------------------------------------------
@@ -264,7 +265,7 @@ func newAudWorld(t *testing.T) *audWorld {
 	programs := &mloyPrograms{services: env.services}
 	rewards := &mloyRewards{programs: programs, visits: map[string]int{}}
 	env.d.Loyalty = LoyaltyHandler{
-		Loyalty: app.LoyaltyService{
+		Loyalty: loyalty.LoyaltyService{
 			Programs: programs, Rewards: rewards, Services: env.services, Clients: env.clients,
 			Memberships: env.mems, Settings: env.settings,
 		},

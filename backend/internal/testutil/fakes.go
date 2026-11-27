@@ -11,6 +11,7 @@ package testutil
 
 import (
 	"errors"
+	"testing"
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
@@ -253,4 +254,15 @@ func Miembro(m *FakeMemberships, userID, salonID string, role domain.Role) domai
 		panic(err)
 	}
 	return got
+}
+
+// WantMsg exige el error de contrato: la familia (errors.Is) Y el texto exacto.
+func WantMsg(t *testing.T, err error, kind error, text string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("se esperaba el error %q", text)
+	}
+	if !errors.Is(err, kind) || err.Error() != text {
+		t.Fatalf("error %q (%v), quería %q de la familia %v", err.Error(), err, text, kind)
+	}
 }

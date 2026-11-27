@@ -1,4 +1,4 @@
-package app
+package loyalty
 
 import (
 	"sort"
@@ -7,6 +7,7 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil"
 )
 
 // Fakes de fidelidad (F9) con la misma semántica que pgstore: scope por salón,
@@ -15,7 +16,7 @@ import (
 
 type fakeLoyaltyPrograms struct {
 	mu        sync.Mutex
-	services  *fakeServices
+	services  *testutil.FakeServices
 	rows      map[string]domain.LoyaltyProgram
 	saveCalls int
 }

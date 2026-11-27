@@ -236,7 +236,7 @@ func (s WaitlistService) List(actor domain.Membership, salonID string) ([]domain
 	if _, err := s.staffActor(actor, salonID); err != nil {
 		return nil, err
 	}
-	loc, err := salonLocation(s.Settings, salonID)
+	loc, err := SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +307,7 @@ func (s WaitlistService) RunOnce(ctx context.Context, now time.Time) (notified, 
 		}
 		// La zona del salón se lee UNA vez por grupo (el email la usa para
 		// mostrar el día local con su nombre).
-		loc := s.salonLocation(g.SalonID)
+		loc := s.SalonLocation(g.SalonID)
 		for _, n := range notices {
 			if ctx.Err() != nil {
 				// Apagado en medio del lote: lo reclamado y no enviado vuelve
@@ -481,8 +481,8 @@ func (s WaitlistService) staffActor(actor domain.Membership, salonID string) (do
 
 // salonLocation es la zona del salón (nil = UTC y un salón sin configuración
 // legible no rompe la pantalla ni el barrido).
-func (s WaitlistService) salonLocation(salonID string) *time.Location {
-	loc, err := salonLocation(s.Settings, salonID)
+func (s WaitlistService) SalonLocation(salonID string) *time.Location {
+	loc, err := SalonLocation(s.Settings, salonID)
 	if err != nil {
 		return time.UTC
 	}

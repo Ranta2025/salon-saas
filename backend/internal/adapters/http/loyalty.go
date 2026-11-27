@@ -19,13 +19,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/loyalty"
 	"salon-saas/internal/ports"
 )
 
 type LoyaltyHandler struct {
-	Loyalty     app.LoyaltyService
+	Loyalty     loyalty.LoyaltyService
 	Memberships ports.MembershipRepository
 }
 
