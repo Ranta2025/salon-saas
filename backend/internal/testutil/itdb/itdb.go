@@ -27,6 +27,21 @@ import (
 // migrationsDir es backend/migrations visto desde internal/<feature>/postgres.
 const migrationsDir = "../../../migrations"
 
+// migrationLockKey es el advisory lock que serializa las migraciones: `go test`
+// corre los paquetes EN PARALELO y varios paquetes IT migran la MISMA base, así
+// que sin el lock dos ALTER TABLE simultáneos se pisan ("tuple concurrently
+// updated"). Es de test: no toca el runner de producción.
+const migrationLockKey = 4001342
+
+// LockMigrations toma el advisory lock de las migraciones y devuelve cómo
+// soltarlo. Lo usan los paquetes IT que migran con su propio runner (pgstore).
+func LockMigrations(ctx context.Context, pool *pgxpool.Pool) (func(), error) {
+	if _, err := pool.Exec(ctx, "SELECT pg_advisory_lock($1)", migrationLockKey); err != nil {
+		return nil, err
+	}
+	return func() { _, _ = pool.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", migrationLockKey) }, nil
+}
+
 // Pool abre el pool de la base de integración. Sin SALON_IT saltea el test.
 func Pool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
@@ -49,6 +64,11 @@ func Pool(t *testing.T) *pgxpool.Pool {
 // condición real de cada boot.
 func ApplyMigrations(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
+	unlock, err := LockMigrations(context.Background(), pool)
+	if err != nil {
+		t.Fatalf("lock de migraciones: %v", err)
+	}
+	defer unlock()
 	entries, err := os.ReadDir(migrationsDir)
 	if err != nil {
 		t.Fatalf("leer migraciones: %v", err)
@@ -98,6 +118,12 @@ func migrate() error {
 		return err
 	}
 	defer pool.Close()
+	ctx := context.Background()
+	unlock, err := LockMigrations(ctx, pool)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	entries, err := os.ReadDir(migrationsDir)
 	if err != nil {
 		return err
@@ -114,7 +140,7 @@ func migrate() error {
 		if err != nil {
 			return err
 		}
-		if _, err := pool.Exec(context.Background(), string(sql)); err != nil {
+		if _, err := pool.Exec(ctx, string(sql)); err != nil {
 			return fmt.Errorf("aplicar %s: %w", f, err)
 		}
 	}

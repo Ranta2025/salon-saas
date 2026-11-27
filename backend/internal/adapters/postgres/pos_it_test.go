@@ -8,48 +8,21 @@ package pgstore
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
-	"sort"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
-// applyMigrations replica el runner de cmd/api (main.migrate): todos los .sql en
-// orden léxico. Se corre DOS veces en cada test para probar de paso que son
-// re-ejecutables, que es la condición real de cada boot.
+// applyMigrations aplica las migraciones con el runner compartido de los tests de
+// integración (itdb): dos pasadas, en orden léxico y bajo el advisory lock para
+// que los paquetes IT que corren en paralelo no se pisen.
 func applyMigrations(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	dir := filepath.Join("..", "..", "..", "migrations")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("leer migraciones: %v", err)
-	}
-	var files []string
-	for _, e := range entries {
-		if !e.IsDir() && filepath.Ext(e.Name()) == ".sql" {
-			files = append(files, filepath.Join(dir, e.Name()))
-		}
-	}
-	sort.Strings(files)
-	if len(files) == 0 {
-		t.Fatalf("no hay migraciones en %s", dir)
-	}
-	for pass := 1; pass <= 2; pass++ {
-		for _, f := range files {
-			sql, err := os.ReadFile(f)
-			if err != nil {
-				t.Fatalf("leer %s: %v", f, err)
-			}
-			if _, err := pool.Exec(context.Background(), string(sql)); err != nil {
-				t.Fatalf("aplicar %s (pasada %d): %v", f, pass, err)
-			}
-		}
-	}
+	itdb.ApplyMigrations(t, pool)
 }
 
 // posFixtures deja el escenario limpio y devuelve el pool. Ids fijos (mismo

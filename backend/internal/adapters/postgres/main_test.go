@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"salon-saas/internal/testutil/itdb"
 )
 
 func TestMain(m *testing.M) {
@@ -37,5 +38,13 @@ func migrateForTests() error {
 		return err
 	}
 	defer pool.Close()
-	return Migrate(context.Background(), pool, filepath.Join("..", "..", "..", "migrations"))
+	ctx := context.Background()
+	// Varios paquetes IT migran la MISMA base en paralelo: el lock evita que dos
+	// ALTER TABLE simultáneos se pisen.
+	unlock, err := itdb.LockMigrations(ctx, pool)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return Migrate(ctx, pool, filepath.Join("..", "..", "..", "migrations"))
 }
