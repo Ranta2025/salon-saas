@@ -132,8 +132,8 @@ claves son obligatorias.
 
 - Falta una clave (o viene `null`) → `400`
   (`Faltan datos de las reseñas: activadas y demora`).
-- `delay_hours` fuera de `1..72` o no entero → `400`
-  (`La demora debe ser entre 1 y 72 horas`).
+- `delay_hours` fuera de `1..72` → `400` (`La demora debe ser entre 1 y 72 horas`);
+  un valor no entero (`24.5`) o de otro tipo → `400` (`body inválido`).
 - Un tipo equivocado → `400` (`body inválido`).
 
 Responde `200` con la configuración guardada. Con `enabled:false` el barrido no

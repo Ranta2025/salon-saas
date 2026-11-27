@@ -644,3 +644,17 @@ func TestRunOnce_sendErrorDoesNotMarkDelivered(t *testing.T) {
 		t.Fatal("el reintento no marcó entregado")
 	}
 }
+
+// F13 verifier V1 advisory: Go's JSON decoder turns invalid UTF-8 into U+FFFD BEFORE
+// ValidateComment sees it, so the replacement character itself must be rejected
+// (the documented 400 for invalid UTF-8), not stored.
+func TestValidateComment_rejectsTheReplacementCharacterInvalidUTF8BecomesInJSON(t *testing.T) {
+	for _, in := range []string{"a\uFFFDb", "\uFFFD", "bien \uFFFD"} {
+		if _, err := ValidateComment(in); err == nil {
+			t.Fatalf("%q debe ser un 400", in)
+		}
+	}
+	if got, err := ValidateComment("ñandú ✓ 😀"); err != nil || got != "ñandú ✓ 😀" {
+		t.Fatalf("el texto válido sigue entrando: %q %v", got, err)
+	}
+}

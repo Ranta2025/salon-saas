@@ -158,7 +158,8 @@ func ValidateComment(raw string) (string, error) {
 	}
 	for _, r := range raw {
 		control := (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f || (r >= 0x80 && r <= 0x9f)
-		if control || r == '\u2028' || r == '\u2029' {
+		// U+FFFD: Go's JSON decoder replaces invalid UTF-8 with it before this runs.
+		if control || r == '\u2028' || r == '\u2029' || r == utf8.RuneError {
 			return "", domain.NewMessage(domain.ErrValidation, MsgCommentInvalid)
 		}
 	}
