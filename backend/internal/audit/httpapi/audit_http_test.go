@@ -15,6 +15,7 @@ import (
 	audithttpapi "salon-saas/internal/audit/httpapi"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/finance"
+	financehttpapi "salon-saas/internal/finance/httpapi"
 	"salon-saas/internal/loyalty"
 	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
 	"salon-saas/internal/notifications"
@@ -262,7 +263,7 @@ func newAudWorld(t *testing.T) *audWorld {
 		Products:    products.ProductService{Products: inv, Memberships: env.Mems, Events: env.Events, Notifier: notifSvc},
 		Memberships: env.Mems,
 	}
-	env.Deps.Expenses = httpapi.ExpenseHandler{
+	env.Deps.Expenses = financehttpapi.ExpenseHandler{
 		Expenses: finance.ExpenseService{
 			Expenses: httpkit.NewExpenses(), Memberships: env.Mems, Settings: env.Settings,
 			Now: func() time.Time { return audClock },

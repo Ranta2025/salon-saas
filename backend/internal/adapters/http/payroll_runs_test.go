@@ -59,14 +59,14 @@ func (e *runHTTPEnv) runsPath(path string) string { return e.url(e.Salon, "/payr
 // runJSONKeys es la forma EXACTA del detalle congelada en el contrato.
 func runJSONKeys(t *testing.T, what string, run map[string]any) {
 	t.Helper()
-	sameKeys(t, what, run, "id", "kind", "from", "to", "status", "created_at", "paid_at", "totals", "lines")
+	httpkit.SameKeys(t, what, run, "id", "kind", "from", "to", "status", "created_at", "paid_at", "totals", "lines")
 	totals, _ := run["totals"].(map[string]any)
-	sameKeys(t, what+" totals", totals,
+	httpkit.SameKeys(t, what+" totals", totals,
 		"commission_cents", "fixed_cents", "adjustment_cents", "total_cents")
 	lines, _ := run["lines"].([]any)
 	for _, l := range lines {
 		line, _ := l.(map[string]any)
-		sameKeys(t, what+" line", line,
+		httpkit.SameKeys(t, what+" line", line,
 			"user_id", "name", "active", "sales_count", "sales_total_cents",
 			"commission_cents", "fixed_cents", "adjustment_cents", "adjustment_note",
 			"total_cents", "estimated")
@@ -122,7 +122,7 @@ func TestHTTP_payroll_runs_ciclo(t *testing.T) {
 	if len(list.Runs) != 1 {
 		t.Fatalf("listado: %+v", list.Runs)
 	}
-	sameKeys(t, "resumen", list.Runs[0],
+	httpkit.SameKeys(t, "resumen", list.Runs[0],
 		"id", "kind", "from", "to", "status", "created_at", "paid_at", "lines_count", "totals")
 	if list.Runs[0]["lines_count"] != float64(1) || list.Runs[0]["status"] != "open" {
 		t.Fatalf("resumen: %+v", list.Runs[0])

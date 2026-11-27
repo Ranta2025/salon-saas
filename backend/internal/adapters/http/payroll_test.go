@@ -7,7 +7,6 @@ import (
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	httpkit "salon-saas/internal/testutil/httpkit"
-	"sort"
 	"testing"
 	"time"
 
@@ -100,29 +99,6 @@ func (e *payEnv) do(t *testing.T, method, path, body, email string) *httptest.Re
 
 // keys devuelve el conjunto ordenado de claves de un objeto JSON: la forma de la
 // respuesta se compara entera, no por partes.
-func keys(t *testing.T, v map[string]any) []string {
-	t.Helper()
-	out := make([]string, 0, len(v))
-	for k := range v {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func sameKeys(t *testing.T, what string, got map[string]any, want ...string) {
-	t.Helper()
-	sort.Strings(want)
-	g := keys(t, got)
-	if len(g) != len(want) {
-		t.Fatalf("%s: claves %v, esperaba %v", what, g, want)
-	}
-	for i := range want {
-		if g[i] != want[i] {
-			t.Fatalf("%s: claves %v, esperaba %v", what, g, want)
-		}
-	}
-}
 
 // Matriz de permisos de D7 sobre las CUATRO rutas.
 func TestHTTP_payroll_permisos_por_rol(t *testing.T) {
@@ -297,7 +273,7 @@ func TestHTTP_pay_models_listado(t *testing.T) {
 	}
 	byUser := map[string]map[string]any{}
 	for _, m := range out.PayModels {
-		sameKeys(t, "pay_model", m,
+		httpkit.SameKeys(t, "pay_model", m,
 			"user_id", "name", "role", "active", "fixed_cents", "fixed_period", "commission_enabled")
 		byUser[m["user_id"].(string)] = m
 	}
@@ -348,7 +324,7 @@ func TestHTTP_pay_model_update(t *testing.T) {
 	}
 	var got map[string]any
 	httpkit.MustJSON(t, w.Body.Bytes(), &got)
-	sameKeys(t, "pay_model", got,
+	httpkit.SameKeys(t, "pay_model", got,
 		"user_id", "name", "role", "active", "fixed_cents", "fixed_period", "commission_enabled")
 	if got["user_id"] != ana || got["fixed_cents"] != float64(150000) ||
 		got["fixed_period"] != "fortnight" || got["commission_enabled"] != false || got["active"] != true {
@@ -445,10 +421,10 @@ func TestHTTP_payroll_preview(t *testing.T) {
 	}
 	var out map[string]any
 	httpkit.MustJSON(t, w.Body.Bytes(), &out)
-	sameKeys(t, "preview", out, "period", "lines", "totals")
+	httpkit.SameKeys(t, "preview", out, "period", "lines", "totals")
 
 	period := out["period"].(map[string]any)
-	sameKeys(t, "period", period, "kind", "from", "to", "closed")
+	httpkit.SameKeys(t, "period", period, "kind", "from", "to", "closed")
 	if period["kind"] != "month" || period["from"] != "2026-03-01" || period["to"] != "2026-03-31" || period["closed"] != false {
 		t.Fatalf("período: %+v", period)
 	}
@@ -458,7 +434,7 @@ func TestHTTP_payroll_preview(t *testing.T) {
 		t.Fatalf("esperaba 3 líneas, dio %d: %s", len(lines), w.Body.String())
 	}
 	for _, raw := range lines {
-		sameKeys(t, "line", raw.(map[string]any),
+		httpkit.SameKeys(t, "line", raw.(map[string]any),
 			"user_id", "name", "active", "sales_count", "sales_total_cents",
 			"commission_cents", "fixed_cents", "total_cents", "estimated")
 	}
@@ -480,7 +456,7 @@ func TestHTTP_payroll_preview(t *testing.T) {
 	}
 
 	totals := out["totals"].(map[string]any)
-	sameKeys(t, "totals", totals, "commission_cents", "fixed_cents", "total_cents")
+	httpkit.SameKeys(t, "totals", totals, "commission_cents", "fixed_cents", "total_cents")
 	if totals["commission_cents"] != float64(699) || totals["fixed_cents"] != float64(100000) ||
 		totals["total_cents"] != float64(100699) {
 		t.Fatalf("totales: %+v", totals)
@@ -522,9 +498,9 @@ func TestHTTP_payroll_me(t *testing.T) {
 	}
 	var out map[string]any
 	httpkit.MustJSON(t, w.Body.Bytes(), &out)
-	sameKeys(t, "me", out, "period", "sales_count", "sales_total_cents", "commission_cents", "estimated")
+	httpkit.SameKeys(t, "me", out, "period", "sales_count", "sales_total_cents", "commission_cents", "estimated")
 	period := out["period"].(map[string]any)
-	sameKeys(t, "period", period, "kind", "from", "to", "closed")
+	httpkit.SameKeys(t, "period", period, "kind", "from", "to", "closed")
 	if period["from"] != "2026-03-01" || period["to"] != "2026-03-31" {
 		t.Fatalf("período: %+v", period)
 	}
@@ -597,7 +573,7 @@ func TestHTTP_payroll_preserva_ventas_dashboard_caja_y_equipo(t *testing.T) {
 	}
 	var salesOut map[string]any
 	httpkit.MustJSON(t, w.Body.Bytes(), &salesOut)
-	sameKeys(t, "sales", salesOut, "sales")
+	httpkit.SameKeys(t, "sales", salesOut, "sales")
 	if _, ok := salesOut["sales"].([]any); !ok {
 		t.Fatalf("sales debe ser un array: %s", w.Body.String())
 	}
@@ -609,7 +585,7 @@ func TestHTTP_payroll_preserva_ventas_dashboard_caja_y_equipo(t *testing.T) {
 	}
 	var dash map[string]any
 	httpkit.MustJSON(t, w.Body.Bytes(), &dash)
-	sameKeys(t, "dashboard", dash, "revenue_today", "appointments_today", "occupancy_rate", "top_services")
+	httpkit.SameKeys(t, "dashboard", dash, "revenue_today", "appointments_today", "occupancy_rate", "top_services")
 
 	// POST /cash-closes: 201 con la forma de siempre.
 	w = e.do(t, "POST", e.url(e.Salon, "/cash-closes"), `{"counted_cents":0,"note":""}`, "duena@pay.com")
@@ -618,7 +594,7 @@ func TestHTTP_payroll_preserva_ventas_dashboard_caja_y_equipo(t *testing.T) {
 	}
 	var closeOut map[string]any
 	httpkit.MustJSON(t, w.Body.Bytes(), &closeOut)
-	sameKeys(t, "cash_close", closeOut, "close_id", "expected_cash")
+	httpkit.SameKeys(t, "cash_close", closeOut, "close_id", "expected_cash")
 
 	// GET /members: misma forma por miembro (la nómina no la cambió).
 	w = e.do(t, "GET", e.url(e.Salon, "/members"), "", "duena@pay.com")
@@ -633,7 +609,7 @@ func TestHTTP_payroll_preserva_ventas_dashboard_caja_y_equipo(t *testing.T) {
 		t.Fatalf("esperaba 5 miembros, dio %d", len(members.Members))
 	}
 	for _, m := range members.Members {
-		sameKeys(t, "member", m, "id", "name", "email", "role", "attends",
+		httpkit.SameKeys(t, "member", m, "id", "name", "email", "role", "attends",
 			"trade", "service_ids", "active", "ended_at")
 	}
 }

@@ -30,16 +30,16 @@ func TestHTTP_profit_forma_y_totales(t *testing.T) {
 	}
 	var got map[string]any
 	httpkit.MustJSON(t, w.Body.Bytes(), &got)
-	sameKeys(t, "reporte", got, "period", "totals", "days", "expenses_by_category")
+	httpkit.SameKeys(t, "reporte", got, "period", "totals", "days", "expenses_by_category")
 
 	period := got["period"].(map[string]any)
-	sameKeys(t, "period", period, "kind", "from", "to")
+	httpkit.SameKeys(t, "period", period, "kind", "from", "to")
 	if period["kind"] != "week" || period["from"] != "2026-03-02" || period["to"] != "2026-03-08" {
 		t.Fatalf("period = %v", period)
 	}
 
 	totals := got["totals"].(map[string]any)
-	sameKeys(t, "totals", totals, "revenue_cents", "expenses_cents", "payroll_cents", "net_cents")
+	httpkit.SameKeys(t, "totals", totals, "revenue_cents", "expenses_cents", "payroll_cents", "net_cents")
 	if totals["revenue_cents"] != float64(75000) || totals["expenses_cents"] != float64(410000) ||
 		totals["payroll_cents"] != float64(30000) || totals["net_cents"] != float64(-365000) {
 		t.Fatalf("totals = %v", totals)
@@ -50,7 +50,7 @@ func TestHTTP_profit_forma_y_totales(t *testing.T) {
 		t.Fatalf("días = %d, esperaba 7 (todos, con ceros)", len(days))
 	}
 	first := days[0].(map[string]any)
-	sameKeys(t, "day", first, "date", "revenue_cents", "expenses_cents", "payroll_cents", "net_cents")
+	httpkit.SameKeys(t, "day", first, "date", "revenue_cents", "expenses_cents", "payroll_cents", "net_cents")
 	if first["date"] != "2026-03-02" || first["revenue_cents"] != float64(50000) ||
 		first["expenses_cents"] != float64(10000) || first["net_cents"] != float64(40000) {
 		t.Fatalf("primer día = %v", first)
@@ -82,7 +82,7 @@ func TestHTTP_profit_forma_y_totales(t *testing.T) {
 		t.Fatalf("categorías = %v", cats)
 	}
 	c0 := cats[0].(map[string]any)
-	sameKeys(t, "categoría", c0, "category", "total_cents")
+	httpkit.SameKeys(t, "categoría", c0, "category", "total_cents")
 	if c0["category"] != "other" || c0["total_cents"] != float64(400000) {
 		t.Fatalf("categorías = %v", cats)
 	}

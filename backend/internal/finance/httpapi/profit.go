@@ -5,11 +5,12 @@ package httpapi
 
 import (
 	"net/http"
-
-	"github.com/gin-gonic/gin"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/finance"
 	"salon-saas/internal/ports"
+
+	"github.com/gin-gonic/gin"
 )
 
 // ProfitHandler agrupa la ruta del panel de ganancias.
@@ -19,7 +20,7 @@ type ProfitHandler struct {
 }
 
 func (h ProfitHandler) loadActor(c *gin.Context, salonID string) (domain.Membership, bool) {
-	return loadActor(h.Memberships, c, salonID)
+	return httpx.LoadActor(h.Memberships, c, salonID)
 }
 
 // profitDayJSON es la fila diaria del reporte.
@@ -43,7 +44,7 @@ func (h ProfitHandler) Get(c *gin.Context) {
 	}
 	report, err := h.Profit.Report(actor, salonID, c.Query("kind"), c.Query("date"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	days := make([]gin.H, 0, len(report.Days))

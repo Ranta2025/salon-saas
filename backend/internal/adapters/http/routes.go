@@ -3,6 +3,7 @@ package httpapi
 import (
 	audithttpapi "salon-saas/internal/audit/httpapi"
 	exportshttpapi "salon-saas/internal/exports/httpapi"
+	financehttpapi "salon-saas/internal/finance/httpapi"
 	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
 	"salon-saas/internal/ports"
 
@@ -43,10 +44,10 @@ type Deps struct {
 	// pago, borrado y CSV). Solo owner/admin: lo aplica el caso de uso.
 	PayrollRuns PayrollRunHandler
 	// Expenses son los gastos operativos de F3b (F3b del contrato Fase 6).
-	Expenses ExpenseHandler
+	Expenses financehttpapi.ExpenseHandler
 	// Profit es el reporte de ganancia neta de F3b (ingresos - gastos - nómina
 	// pagada). Solo owner/admin: lo aplica el caso de uso.
-	Profit ProfitHandler
+	Profit financehttpapi.ProfitHandler
 	// Exports son las tres exportaciones CSV de F4 (ventas, cierres de caja y
 	// clientes). Solo owner/admin: lo aplica el caso de uso.
 	Exports exportshttpapi.ExportHandler

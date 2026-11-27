@@ -10,6 +10,7 @@ import (
 	httpapi "salon-saas/internal/adapters/http"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/finance"
+	financehttpapi "salon-saas/internal/finance/httpapi"
 	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
@@ -37,14 +38,14 @@ func newExpHTTPEnv(t *testing.T) *expHTTPEnv {
 	env := httpkit.NewPOSEnv()
 	expenses, profit := httpkit.NewExpenses(), &httpkit.Profit{}
 	d := env.Deps
-	d.Expenses = httpapi.ExpenseHandler{
+	d.Expenses = financehttpapi.ExpenseHandler{
 		Expenses: finance.ExpenseService{
 			Expenses: expenses, Memberships: env.Mems, Settings: env.Settings,
 			Now: func() time.Time { return expNow },
 		},
 		Memberships: env.Mems,
 	}
-	d.Profit = httpapi.ProfitHandler{
+	d.Profit = financehttpapi.ProfitHandler{
 		Profit: finance.ProfitService{
 			Profit: profit, Memberships: env.Mems, Settings: env.Settings,
 			Now: func() time.Time { return expNow },
@@ -186,7 +187,7 @@ func TestHTTP_expenses_ciclo_y_forma(t *testing.T) {
 	}
 	var got map[string]any
 	httpkit.MustJSON(t, w.Body.Bytes(), &got)
-	sameKeys(t, "expense", got,
+	httpkit.SameKeys(t, "expense", got,
 		"id", "category", "amount_cents", "spent_on", "description", "created_at", "created_by")
 	if got["category"] != "rent" || got["amount_cents"] != float64(150000) ||
 		got["spent_on"] != "2026-03-19" || got["description"] != "Alquiler" ||
@@ -205,7 +206,7 @@ func TestHTTP_expenses_ciclo_y_forma(t *testing.T) {
 	}
 	var list map[string]any
 	httpkit.MustJSON(t, w.Body.Bytes(), &list)
-	sameKeys(t, "listado", list, "expenses", "truncated")
+	httpkit.SameKeys(t, "listado", list, "expenses", "truncated")
 	if list["truncated"] != false {
 		t.Fatalf("truncated = %v", list["truncated"])
 	}

@@ -4,12 +4,13 @@ package httpapi
 
 import (
 	"net/http"
-	"time"
-
-	"github.com/gin-gonic/gin"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/finance"
 	"salon-saas/internal/ports"
+	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 // ExpenseHandler agrupa las rutas de gastos.
@@ -19,7 +20,7 @@ type ExpenseHandler struct {
 }
 
 func (h ExpenseHandler) loadActor(c *gin.Context, salonID string) (domain.Membership, bool) {
-	return loadActor(h.Memberships, c, salonID)
+	return httpx.LoadActor(h.Memberships, c, salonID)
 }
 
 // expenseJSON es la forma única de serializar un gasto (contrato congelado para
@@ -73,11 +74,11 @@ func (h ExpenseHandler) Create(c *gin.Context) {
 	}
 	var in expenseBody
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if in.Category == nil || in.AmountCents == nil || in.SpentOn == nil {
-		respondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgExpenseMissingCreate))
+		httpx.RespondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgExpenseMissingCreate))
 		return
 	}
 	description := ""
@@ -86,7 +87,7 @@ func (h ExpenseHandler) Create(c *gin.Context) {
 	}
 	e, err := h.Expenses.Create(actor, salonID, in.fields(description))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, expenseJSON(e))
@@ -101,7 +102,7 @@ func (h ExpenseHandler) List(c *gin.Context) {
 	}
 	list, truncated, err := h.Expenses.List(actor, salonID, c.Query("from"), c.Query("to"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -121,16 +122,16 @@ func (h ExpenseHandler) Update(c *gin.Context) {
 	}
 	var in expenseBody
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if in.Category == nil || in.AmountCents == nil || in.SpentOn == nil || in.Description == nil {
-		respondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgExpenseMissingUpdate))
+		httpx.RespondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgExpenseMissingUpdate))
 		return
 	}
 	e, err := h.Expenses.Update(actor, salonID, c.Param("eid"), in.fields(*in.Description))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, expenseJSON(e))
@@ -144,7 +145,7 @@ func (h ExpenseHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.Expenses.Delete(actor, salonID, c.Param("eid")); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)

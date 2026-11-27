@@ -30,3 +30,27 @@ func WantHTTP(t *testing.T, w *httptest.ResponseRecorder, code int, text string)
 		t.Fatalf("esperaba %d %q, dio %d %s", code, text, w.Code, w.Body.String())
 	}
 }
+
+func Keys(t *testing.T, v map[string]any) []string {
+	t.Helper()
+	out := make([]string, 0, len(v))
+	for k := range v {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func SameKeys(t *testing.T, what string, got map[string]any, want ...string) {
+	t.Helper()
+	sort.Strings(want)
+	g := Keys(t, got)
+	if len(g) != len(want) {
+		t.Fatalf("%s: claves %v, esperaba %v", what, g, want)
+	}
+	for i := range want {
+		if g[i] != want[i] {
+			t.Fatalf("%s: claves %v, esperaba %v", what, g, want)
+		}
+	}
+}

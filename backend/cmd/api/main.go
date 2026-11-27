@@ -26,6 +26,7 @@ import (
 	exportshttpapi "salon-saas/internal/exports/httpapi"
 	exportsstore "salon-saas/internal/exports/postgres"
 	"salon-saas/internal/finance"
+	financehttpapi "salon-saas/internal/finance/httpapi"
 	financestore "salon-saas/internal/finance/postgres"
 	"salon-saas/internal/loyalty"
 	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
@@ -605,8 +606,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		PayrollRuns: httpapi.PayrollRunHandler{
 			Runs: payrollRunSvc, Memberships: mems,
 		},
-		Expenses: httpapi.ExpenseHandler{Expenses: expenseSvc, Memberships: mems},
-		Profit:   httpapi.ProfitHandler{Profit: profitSvc, Memberships: mems},
+		Expenses: financehttpapi.ExpenseHandler{Expenses: expenseSvc, Memberships: mems},
+		Profit:   financehttpapi.ProfitHandler{Profit: profitSvc, Memberships: mems},
 		Exports:  exportshttpapi.ExportHandler{Exports: exportSvc, Memberships: mems},
 		// F6: productos e inventario del POS (cinco rutas + `products` en POST /sales).
 		Products: httpapi.ProductHandler{Products: productSvc, Memberships: mems},
