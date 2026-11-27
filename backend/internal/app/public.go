@@ -31,6 +31,19 @@ type PublicSalon struct {
 	// Loyalty (F9, D8): el programa de fidelidad SOLO si está activado y su
 	// servicio de regalo sigue activo; nil en cualquier otro caso.
 	Loyalty *PublicLoyalty
+	// Deposit (F11, D11): la política de señas SOLO si está activada; nil si el
+	// salón no cobra seña. La landing muestra el aviso «Pago simulado» y, por
+	// servicio, el monto que el servidor calcula con la fórmula de D4.
+	Deposit *PublicDeposit
+}
+
+// PublicDeposit es lo único de la política de señas que ve el público (D11).
+// `simulated` no viaja acá: la web lo agrega porque el adaptador de hoy es el
+// banco simulado.
+type PublicDeposit struct {
+	Percent     int
+	HoldMinutes int
+	RefundHours int
 }
 
 // PublicLoyalty es lo único del programa de fidelidad que ve el público: cada
@@ -59,6 +72,8 @@ type PublicSalonService struct {
 	Packages      ports.PackageRepository
 	// Loyalty (F9, D8) es opcional: nil = el payload lleva `loyalty: null`.
 	Loyalty ports.LoyaltyProgramRepository
+	// Deposits (F11, D11) es opcional: nil = el payload lleva `deposit: null`.
+	Deposits ports.DepositPolicyRepository
 }
 
 // Public resuelve el salón por slug y devuelve su vidriera. Es la única query
@@ -161,6 +176,24 @@ func (s PublicSalonService) Public(slug string) (PublicSalon, error) {
 			// Additive section: a failing loyalty query (e.g. migration 033 not yet
 			// applied during a rolling deploy) degrades to `loyalty: null` and never
 			// takes the whole public page down.
+		}
+	}
+	// F11 (D11): la seña SOLO si la política está activada. Sin fila (nunca
+	// guardada) o con la seña apagada el payload lleva `deposit: null`, igual que
+	// hoy. Es una sección aditiva: un fallo de la consulta no tumba la landing.
+	if s.Deposits != nil {
+		policy, err := s.Deposits.Find(salon.ID)
+		switch {
+		case err == nil:
+			if policy.Enabled {
+				out.Deposit = &PublicDeposit{
+					Percent: policy.Percent, HoldMinutes: policy.HoldMinutes, RefundHours: policy.RefundHours,
+				}
+			}
+		case errors.Is(err, domain.ErrNotFound):
+			// Nunca guardada: sin seña.
+		default:
+			// Sección aditiva: `deposit: null`.
 		}
 	}
 	return out, nil

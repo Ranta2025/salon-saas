@@ -65,6 +65,16 @@ type config struct {
 	// AppURL es la base pública del frontend: con ella se arma el enlace de la
 	// invitación de equipo (F2g1), "<APP_URL>/invitacion#<token>".
 	AppURL string
+	// PaymentSimSecret es PAYMENT_SIM_SECRET (F11, D12): el secreto que firma el
+	// callback del banco simulado. Vacío = NoopGateway: no se pueden activar
+	// señas, las rutas del banco y el callback no existen y el trabajo no corre.
+	PaymentSimSecret string
+	// PaymentCallbackURL es la URL del callback del comercio que el banco
+	// simulado llama (F11, D12). Por defecto, el loopback de esta misma API.
+	PaymentCallbackURL string
+	// DepositInterval es la cadencia del barrido de señas (F11, D9), en duración
+	// de Go: 60s por defecto. CERO lo deshabilita; negativo es error de arranque.
+	DepositInterval time.Duration
 }
 
 // loadConfig lee la configuración desde getenv (os.Getenv en producción; un
@@ -138,6 +148,31 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return config{}, err
 	}
 	cfg.AppURL = appURL
+	// F11/D12: PAYMENT_SIM_SECRET. Ausente = NoopGateway (todo apagado). Presente
+	// pero muy corto es un secreto que se rompe por fuerza bruta: en release se
+	// exige el mismo mínimo que JWT_SECRET.
+	cfg.PaymentSimSecret = strings.TrimSpace(getenv("PAYMENT_SIM_SECRET"))
+	if cfg.PaymentSimSecret != "" && !isDevMode(cfg.GinMode) && len(cfg.PaymentSimSecret) < minJWTSecretLen {
+		return config{}, fmt.Errorf("PAYMENT_SIM_SECRET debe tener al menos %d caracteres en release (tiene %d)", minJWTSecretLen, len(cfg.PaymentSimSecret))
+	}
+	// PAYMENT_CALLBACK_URL: el banco simulado llama a esta API por loopback si no
+	// se configura otra cosa (D12).
+	callbackDefault := "http://127.0.0.1:" + cfg.Port + "/api/v1/payments/callback"
+	callbackURL, err := parseAppURL(envOr(getenv, "PAYMENT_CALLBACK_URL", callbackDefault))
+	if err != nil {
+		return config{}, fmt.Errorf("PAYMENT_CALLBACK_URL debe ser una URL http(s) absoluta (por ejemplo %s): %w", callbackDefault, err)
+	}
+	cfg.PaymentCallbackURL = callbackURL
+	// DEPOSIT_INTERVAL: el barrido de señas (F11, D9). CERO deshabilita la tarea;
+	// negativo o ilegible es error de configuración, no un default silencioso.
+	deposit, err := time.ParseDuration(envOr(getenv, "DEPOSIT_INTERVAL", "60s"))
+	if err != nil {
+		return config{}, fmt.Errorf("DEPOSIT_INTERVAL debe ser una duración de Go (por ejemplo 60s o 2s; 0 lo deshabilita): %w", err)
+	}
+	if deposit < 0 {
+		return config{}, fmt.Errorf("DEPOSIT_INTERVAL no puede ser negativo (0 deshabilita la tarea, dio %s)", deposit)
+	}
+	cfg.DepositInterval = deposit
 	// Con endpoint S3, el bucket no puede quedar vacío (S3_BUCKET="" explícito).
 	if cfg.S3Endpoint != "" && strings.TrimSpace(cfg.S3Bucket) == "" {
 		return config{}, fmt.Errorf("S3_BUCKET es obligatoria cuando S3_ENDPOINT está definida")

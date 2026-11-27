@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"salon-saas/internal/app"
+	"salon-saas/internal/domain"
 )
 
 // PublicHandler: las tres rutas de la landing, SIN auth.
@@ -32,14 +33,24 @@ func (h PublicHandler) GetSalon(c *gin.Context) {
 	}
 	services := make([]gin.H, 0, len(p.Services))
 	for _, s := range p.Services {
-		services = append(services, gin.H{
+		svc := gin.H{
 			"id":           s.ID,
 			"name":         s.Name,
 			"duration_min": s.DurationMin,
 			"price_cents":  s.PriceCents,
 			// description (F16, D2): null si el servicio no tiene.
 			"description": optionalID(s.Description),
-		})
+		}
+		// deposit_cents (F11, D11): el monto de la seña de ESTE servicio, con la
+		// misma fórmula de D4 que el servidor usa al reservar. La clave es ADITIVA
+		// y solo aparece con la seña activa: sin seña el payload es el de hoy,
+		// byte a byte (la landing no dibuja la línea).
+		if p.Deposit != nil {
+			if amount := domain.DepositAmountCents(s.PriceCents, p.Deposit.Percent); amount > 0 {
+				svc["deposit_cents"] = amount
+			}
+		}
+		services = append(services, svc)
 	}
 	// Equipo: SOLO nombre y oficio. Ni ids, ni email, ni rol, ni pagos.
 	team := make([]gin.H, 0, len(p.Team))
@@ -77,7 +88,25 @@ func (h PublicHandler) GetSalon(c *gin.Context) {
 	if p.Loyalty != nil {
 		loyalty = gin.H{"visits_required": p.Loyalty.VisitsRequired, "reward_service_name": p.Loyalty.RewardServiceName}
 	}
-	c.JSON(http.StatusOK, gin.H{
+	// deposit (F11, D11): ADITIVA y solo con la seña activada. `simulated` es
+	// verdadero porque el adaptador de hoy es el banco simulado: la landing
+	// muestra el aviso «Pago simulado».
+	//
+	// Con la seña apagada la clave NO viaja y el payload queda idéntico al de hoy
+	// (byte a byte): el test de forma del payload público (`public_test.go`) fija
+	// el conjunto exacto de claves y no se toca. El frontend trata la clave
+	// ausente como `null` (publicSalon.ts), así que «si no, null» de D11 se cumple
+	// sin agregar una clave nueva al payload de un salón sin seña.
+	var deposit any
+	if p.Deposit != nil {
+		deposit = gin.H{
+			"percent":      p.Deposit.Percent,
+			"hold_minutes": p.Deposit.HoldMinutes,
+			"refund_hours": p.Deposit.RefundHours,
+			"simulated":    true,
+		}
+	}
+	body := gin.H{
 		"salon": gin.H{
 			"id":          p.Salon.ID,
 			"slug":        p.Salon.Slug,
@@ -95,7 +124,11 @@ func (h PublicHandler) GetSalon(c *gin.Context) {
 		"packages": packages,
 		"hours":    hours,
 		"loyalty":  loyalty,
-	})
+	}
+	if deposit != nil {
+		body["deposit"] = deposit
+	}
+	c.JSON(http.StatusOK, body)
 }
 
 // Availability: GET /api/v1/public/salons/:slug/availability?date=&service_id=
@@ -144,7 +177,7 @@ func (h PublicHandler) CreateBooking(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "starts_at inválido (RFC3339)"})
 		return
 	}
-	b, err := h.Bookings.Book(c.Param("slug"), app.PublicBookingInput{
+	b, payment, err := h.Bookings.BookWithDeposit(c.Param("slug"), app.PublicBookingInput{
 		ServiceID:      in.ServiceID,
 		ProfessionalID: in.ProfessionalID,
 		ClientName:     in.ClientName,
@@ -157,5 +190,18 @@ func (h PublicHandler) CreateBooking(c *gin.Context) {
 		respondErr(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"booking": publicBookingJSON(b)})
+	body := gin.H{"booking": publicBookingJSON(b)}
+	// payment (F11, D8): clave ADITIVA que solo aparece cuando la política está
+	// activa y el monto es > 0. El id del cargo viaja en el fragmento de la URL
+	// de la página del banco, nunca en un log del servidor.
+	if payment != nil {
+		body["payment"] = gin.H{
+			"deposit_id":   payment.DepositID,
+			"amount_cents": payment.AmountCents,
+			"expires_at":   payment.ExpiresAt.UTC().Format(time.RFC3339),
+			"pay_url":      payment.PayURL,
+			"simulated":    true,
+		}
+	}
+	c.JSON(http.StatusCreated, body)
 }

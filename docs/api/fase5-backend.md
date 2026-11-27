@@ -3799,3 +3799,177 @@ token llegó a ese correo).
 - Activar o desactivar el 2FA no cierra las sesiones abiertas (el reinicio de contraseña
   sí).
 - Sin bloqueo por cuenta en el login por contraseña.
+
+## Fase 6 — F11: seña online con banco simulado
+
+Cobrar una seña al reservar online, con el cobro detrás del puerto
+`ports.PaymentGateway` y un **banco simulado** como adaptador de hoy (un
+adaptador real de otro proveedor no toca el resto). El estado del pago lo fija
+**solo el servidor**, por el callback firmado del banco: **el navegador nunca
+decide si se pagó**.
+
+Todo el dinero de la seña vive en tablas propias (`booking_deposits`,
+`deposit_events`, `deposit_policies` y las del banco `simbank_charges` /
+`simbank_refunds`). **No** se toca ningún estado del turno, el POS, la caja, la
+nómina, la ganancia ni los exportes: la seña **no se descuenta sola** en el POS
+(recepción la descuenta a mano al cobrar el turno; la pantalla «Señas» se lo
+recuerda).
+
+### Máquina de estados
+
+```
+pending --(callback approved, vigente)--> paid --(reserva cancelada, quedan >= refund_hours)--> refunded
+   |                                          \--(reserva cancelada, quedan menos horas)-----> forfeited
+   |--(barrido: expires_at vencido)--> expired
+   \--(pago tardío: approved vencida/cancelada)--> refunded      (el turno NO revive)
+```
+
+`refunded` y `forfeited` son finales. Cada transición es **un** `UPDATE`
+condicional por el estado de origen, con su evento en `deposit_events` en la
+misma transacción y bajo `pg_advisory_xact_lock(hashtext('deposit:<id>'))`. La
+guarda final del callback es el índice único de `deposit_events.bank_event_id`:
+un evento del banco se aplica **una sola vez** (un reenvío responde `200
+{"ok":true}` sin efecto).
+
+### Política — `GET/PUT /api/v1/salons/:id/deposit-policy`
+
+`GET`: cualquier miembro activo. `PUT`: solo dueño/administración, con el
+permiso **antes** de leer el cuerpo y auditado como `deposit.policy`.
+
+```json
+{"enabled": true, "percent": 30, "hold_minutes": 30, "refund_hours": 24}
+```
+
+Las **cuatro** claves son obligatorias. `percent` 10..100, `hold_minutes` 5..120,
+`refund_hours` 0..168. Una política nunca guardada responde `{"enabled":false,
+"percent":null,"hold_minutes":null,"refund_hours":null}`. Errores exactos:
+`Faltan datos de la sena: activada, porcentaje, espera y devolucion`, `El
+porcentaje debe ser entre 10 y 100`, `La espera debe ser entre 5 y 120 minutos`,
+`La devolucion debe ser entre 0 y 168 horas`. Activar la seña sin banco
+configurado es `409 El cobro de senas no esta disponible en este servidor`.
+
+Monto (enteros, nunca floats): `amount_cents = (price_cents * percent + 50) / 100`
+(mitad hacia arriba), mínimo 1 centavo. Precio 0 = no hay seña.
+
+### Reserva pública — `POST /api/v1/public/salons/:slug/bookings`
+
+Con la política activa y monto > 0, el `201` agrega **`payment`** (clave
+aditiva) y la reserva queda `booked` reteniendo el cupo:
+
+```json
+{"booking": {...},
+ "payment": {"deposit_id": "…", "amount_cents": 4500,
+             "expires_at": "2026-12-01T15:30:00Z",
+             "pay_url": "http://localhost:8081/pagar#<charge_id>",
+             "simulated": true}}
+```
+
+El mismo `client_op_id` devuelve el **mismo** `payment` (un solo cargo). Con la
+política apagada, ausente o precio 0, la respuesta y el correo son exactamente
+los de antes (sin la clave `payment` y con la confirmación por email como
+siempre). Con seña **la confirmación no sale al reservar**: sale cuando el banco
+confirma el pago. Si el cargo no se puede crear, la reserva se cancela por el
+camino existente y el cliente recibe el error de servidor de siempre.
+
+`GET /api/v1/public/salons/:slug` agrega (aditivo) `deposit: {percent,
+hold_minutes, refund_hours, simulated:true}` **solo** con la seña activa (con la
+seña apagada la clave no viaja: el payload queda idéntico al de hoy y el
+frontend la lee como `null`, D11), y `deposit_cents` por servicio, calculado por
+el servidor con la misma fórmula.
+
+### Estado público del pago — `POST /api/v1/public/deposits/lookup`
+
+Pública; el **id del cargo es la credencial** (43 caracteres base64url) y viaja
+en el cuerpo. `200 {"status","amount_cents","expires_at","starts_at"}`; un
+formato inválido o un cargo desconocido dan el mismo `404 Pago no encontrado`.
+
+### Callback del comercio — `POST /api/v1/payments/callback`
+
+Pública, firmada, cuerpo máximo **8 KB**. Es la primera ruta pública no GET
+firmada de la API.
+
+Cabecera `X-Simbank-Signature: t=<unix>,v1=<hex>` = HMAC-SHA256 de `"<t>.<cuerpo>"`
+con `PAYMENT_SIM_SECRET`; se acepta solo dentro de ±300 s y la comparación es en
+tiempo constante. Cuerpo:
+
+```json
+{"event_id":"simbank-<charge>-<intento>","charge_id":"…","reference":"<booking_id>",
+ "kind":"approved|declined|insufficient","amount_cents":4500}
+```
+
+Cualquier rechazo de la firma es `400 Firma invalida` (firma mala, sin cabecera,
+formato malo, `t` fuera de ventana, cuerpo alterado). `approved` vigente ->
+`paid` + correo de confirmación; `declined`/`insufficient` -> se registra el
+intento y la seña sigue `pending`; `approved` sobre una seña vencida o cancelada
+-> se pide el reembolso al banco (idempotente por cargo), `refunded` y evento
+`late_payment_refunded`, sin reactivar la reserva. Monto distinto -> `400 Monto
+invalido` sin efecto. Cualquier otra falla -> `500` sin detalles (el banco
+reintenta).
+
+### Banco simulado — `POST /api/v1/simbank/charges/{lookup,pay}`
+
+Públicas, con su propio limitador por IP. `lookup {charge_id}` -> `{amount_cents,
+description, status, expires_at, simulated:true}`. `pay {charge_id, card:{number,
+exp,cvc,name}}` decide con las reglas de tarjeta del dominio y **nunca guarda ni
+loguea el número** (solo `last4` y marca):
+
+| Tarjeta | Resultado |
+|---|---|
+| `4242424242424242` | aprobada |
+| `4000000000000002` | `Tarjeta rechazada` |
+| `4000000000009995` | `Fondos insuficientes` |
+| otra con Luhn válido | rechazada |
+| Luhn/formato/vencimiento/CVC inválido | `400 Datos de tarjeta invalidos` **sin crear intento** |
+
+Cargo vencido -> `409 El pago vencio`; ya aprobado -> `409 Este pago ya se
+aprobo`; más de 5 intentos rechazados -> `429 Demasiados intentos` (el intento se
+incrementa con un `UPDATE` condicional). El `pay` exitoso llama al callback del
+comercio por HTTP (`PAYMENT_CALLBACK_URL`, timeout 5 s, 3 intentos) con un
+`event_id` determinista por (cargo, intento).
+
+### Pantalla «Señas» — `GET /api/v1/salons/:id/deposits?status=&limit=&before=`
+
+Solo dueño/administración/recepción (**403 antes de leer los parámetros** para
+profesional, clienta, miembro dado de baja u otro salón). Del más nuevo al más
+viejo, con cursor opaco como la auditoría:
+
+```json
+{"deposits":[{"id","booking_id","client_name","starts_at","amount_cents","status","paid_at","settled_at"}],
+ "next_cursor": null}
+```
+
+Sin escrituras manuales en esta versión.
+
+### Trabajo periódico (`DEPOSIT_INTERVAL`, 60 s por defecto)
+
+(a) señas `pending` con `expires_at <= now` -> `expired` + evento, y la reserva se
+cancela por el camino existente (`SetStatus(cancelled)` bajo el lock de la
+agenda). (b) señas `paid` cuya reserva quedó `cancelled`: si faltan al menos
+`refund_hours` horas para el turno se reembolsan (`refunded`); si faltan menos se
+pierden (`forfeited`). `done` y `no_show` **nunca** reembolsan. Carrera
+barrido↔callback: gana el primero que hace el `UPDATE` condicional; el otro cae
+en el pago tardío.
+
+### Configuración
+
+`PAYMENT_SIM_SECRET` (vacío = `NoopGateway`: rutas y callback `404`, política no
+activables, barrido apagado), `PAYMENT_CALLBACK_URL` y `DEPOSIT_INTERVAL`. Ver
+`docs/ops/environment.md`.
+
+### Migración `037_deposits.sql`
+
+`deposit_policies`, `booking_deposits` (UNIQUE por `booking_id` y por
+`(salon_id, client_op_id)`), `deposit_events` (append-only con el trigger de 034 y
+UNIQUE parcial de `bank_event_id`), `simbank_charges` y `simbank_refunds`
+(UNIQUE por cargo). **No toca ninguna tabla existente** y es idempotente.
+
+### Límites conocidos de v1 (D1/D14)
+
+- La seña **no** se descuenta en el POS y **no** entra en los totales de ventas,
+  caja, nómina ni ganancia: el dinero cobrado online queda fuera de esos números
+  (se muestra en «Señas» para descontarlo a mano).
+- No hay cobro real, 3-D Secure, reembolsos parciales ni manuales, conciliación
+  contra el banco, ni seña en las reservas del panel o de los enlaces F1.
+- El reembolso no avisa por correo a la clienta.
+- Si el callback no llega tras los 3 intentos, el cobro queda decidido en el banco
+  y la seña pendiente vence por el barrido (limitación de la simulación).

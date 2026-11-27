@@ -184,3 +184,26 @@ La confirmación viaja en segundo plano: un SMTP lento o caído no demora ni
 tumba la reserva. Un recordatorio que no se pudo enviar se reintenta en ticks
 posteriores (hasta 3 intentos; después de 5 minutos de un reclamo sin
 respuesta vuelve a estar disponible).
+
+## Seña online y banco simulado (`PAYMENT_SIM_SECRET`, `PAYMENT_CALLBACK_URL`, `DEPOSIT_INTERVAL`)
+
+La seña (F11) se cobra a través del puerto `ports.PaymentGateway`; el adaptador de
+hoy es un **banco simulado** (paquete `internal/adapters/simbank`, montado en el
+mismo binario bajo `/api/v1/simbank/`). No se cobra dinero real: la página
+`/pagar` lo avisa con un cartel permanente.
+
+| Variable | Default | Qué hace |
+|---|---|---|
+| `PAYMENT_SIM_SECRET` | vacío (sin Docker) / un valor de DESARROLLO en Compose | Secreto HMAC del banco simulado. **Vacío = `NoopGateway`**: no se pueden activar señas, las rutas del banco y el callback responden **404** y el barrido no corre. En release exige al menos 32 caracteres (igual que `JWT_SECRET`). El valor del compose es SOLO para desarrollo: **no sirve para producción**. |
+| `PAYMENT_CALLBACK_URL` | `http://127.0.0.1:<PORT>/api/v1/payments/callback` (en Compose: `http://api:8080/api/v1/payments/callback`) | A dónde llama el banco simulado para avisar el resultado del pago. Es una URL absoluta http(s); timeout de 5 s y 3 intentos con espera corta. |
+| `DEPOSIT_INTERVAL` | `60s` | Cada cuánto barre las señas pendientes vencidas (cancela la reserva) y las pagadas de reservas canceladas (reembolsa o pierde la seña según la ventana). Duración de Go. **`0` deshabilita la tarea**; un valor negativo o ilegible impide arrancar. |
+
+Rotar `PAYMENT_SIM_SECRET` invalida los callbacks en vuelo (el comercio rechaza
+la firma y el banco reintenta): el cambio se hace con el barrido detenido y sin
+pagos a medias. El secreto no se loguea nunca, y el número de tarjeta tampoco:
+la base solo guarda `last4` y la marca.
+
+Los tres valores viajan en `docker-compose.yml` (servicio `api`). Para probar el
+circuito completo en local: activá la seña en `/panel/senas`, reservá desde la
+landing, pagá en `/pagar` con `4242 4242 4242 4242` y mirá el correo de
+confirmación en Mailpit. Con `DEPOSIT_INTERVAL=1s` se ve el barrido en acción.

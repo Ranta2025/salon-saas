@@ -6,6 +6,8 @@ package main
 import (
 	"context"
 	"time"
+
+	"salon-saas/internal/app"
 )
 
 // reminderRunner es lo que la tarea necesita de ReminderService (los tests usan
@@ -86,5 +88,54 @@ func runWaitlistPass(ctx context.Context, runner waitlistRunner, logf func(strin
 	notified, failed := runner.RunOnce(ctx, time.Now().UTC())
 	if notified > 0 || failed > 0 {
 		logf("lista de espera: avisados=%d fallidos=%d", notified, failed)
+	}
+}
+
+// depositRunner es lo que la tarea de señas necesita (F11, D9): el caso de uso
+// real o un doble en los tests.
+type depositRunner interface {
+	Sweep(limit int) (app.DepositSweepResult, error)
+}
+
+// depositSweepLimit es el tamaño de página de cada tick del barrido de señas.
+const depositSweepLimit = 50
+
+// runDeposits barre las señas cada interval hasta que ctx se cancele (F11, D9).
+// Mismo patrón que runWaitlist: comparte el contexto del shutdown, con
+// interval <= 0 no arranca (DEPOSIT_INTERVAL=0 deshabilita la tarea) y sin banco
+// configurado main ni siquiera la arranca (D12).
+func runDeposits(ctx context.Context, runner depositRunner, interval time.Duration, logf func(string, ...any)) {
+	if ctx.Err() != nil || interval <= 0 {
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			runDepositPass(runner, logf)
+		}
+	}
+}
+
+// runDepositPass es UNA pasada con recuperación de panic: un fallo de un tick no
+// puede llevarse la goroutine ni los ticks siguientes. Solo se loguean
+// contadores: nunca cargos, firmas ni datos de la clienta.
+func runDepositPass(runner depositRunner, logf func(string, ...any)) {
+	defer func() {
+		if r := recover(); r != nil {
+			logf("señas: panic recuperado: %v", r)
+		}
+	}()
+	res, err := runner.Sweep(depositSweepLimit)
+	if err != nil {
+		logf("señas: barrido fallido: %v", err)
+		return
+	}
+	if res.Expired > 0 || res.Cancelled > 0 || res.Refunded > 0 || res.Forfeited > 0 || res.Failed > 0 {
+		logf("señas: vencidas=%d canceladas=%d devueltas=%d perdidas=%d fallidas=%d",
+			res.Expired, res.Cancelled, res.Refunded, res.Forfeited, res.Failed)
 	}
 }

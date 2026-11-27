@@ -21,6 +21,7 @@ import (
 	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/adapters/realtime"
 	"salon-saas/internal/adapters/security"
+	"salon-saas/internal/adapters/simbank"
 	"salon-saas/internal/adapters/storage"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
@@ -40,6 +41,16 @@ const (
 	maxJSONBody = 1 << 20
 	// authRateLimit: intentos por IP por minuto en login y registro.
 	authRateLimit = 20
+	// publicDepositLookupLimit: sondeos por IP por minuto del estado público de
+	// un pago (F11, D8): /pago-resultado consulta cada 3 s hasta 60 s.
+	publicDepositLookupLimit = 60
+	// paymentCallbackRateLimit: entregas del callback del banco por IP por minuto
+	// (F11, D7). NO usa el cubo de /auth (20/min): el banco simulado entrega desde
+	// 127.0.0.1 con 3 intentos por pago, así que 20/min se agota con ~7 pagos en
+	// un minuto y un callback rechazado deja el cobro decidido en el banco y la
+	// seña pendiente hasta que vence (dinero perdido de la clienta). La ruta ya
+	// está autenticada por la firma HMAC: el límite es solo antiinundación.
+	paymentCallbackRateLimit = 120
 )
 
 func main() {
@@ -118,6 +129,17 @@ func main() {
 		go runWaitlist(stopCtx, deps.Waitlist.Service, cfg.WaitlistInterval, log.Printf)
 	} else {
 		log.Print("lista de espera: deshabilitada (WAITLIST_INTERVAL=0)")
+	}
+	// Señas (F11/D9/D12): sin banco configurado el trabajo no corre (no se puede
+	// cobrar ni devolver nada) y con DEPOSIT_INTERVAL=0 queda deshabilitado.
+	switch {
+	case cfg.PaymentSimSecret == "":
+		log.Print("señas: deshabilitadas (PAYMENT_SIM_SECRET vacío: NoopGateway)")
+	case cfg.DepositInterval <= 0:
+		log.Print("señas: barrido deshabilitado (DEPOSIT_INTERVAL=0)")
+	default:
+		log.Printf("señas: barrido cada %s", cfg.DepositInterval)
+		go runDeposits(stopCtx, deps.Deposits.Deposits, cfg.DepositInterval, log.Printf)
 	}
 
 	errCh := make(chan error, 1)
@@ -459,6 +481,37 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Emails: bookingEmails, Mailer: mailer, Settings: salons,
 		Links: bookingLinks, AppURL: cfg.AppURL,
 	}
+	// F11: la seña online (migración 037). El banco simulado SOLO se construye con
+	// PAYMENT_SIM_SECRET: sin secreto queda el NoopGateway (D12), no se pueden
+	// activar señas, las rutas del banco y el callback no se montan y el barrido
+	// no corre. Con secreto, el banco es un adaptador más del mismo puerto.
+	depositPoliciesRepo := pgstore.DepositPolicies{Pool: pool}
+	depositRepo := pgstore.Deposits{Pool: pool}
+	var gateway ports.PaymentGateway = ports.NoopGateway{}
+	var simbankHandler *simbank.Handler
+	if cfg.PaymentSimSecret != "" {
+		bank := &simbank.Bank{Pool: pool, Secret: cfg.PaymentSimSecret, CallbackURL: cfg.PaymentCallbackURL}
+		gateway = bank
+		simbankHandler = &simbank.Handler{Bank: bank}
+	}
+	// El barrido cancela la reserva por el camino EXISTENTE de la agenda
+	// (SetStatus(cancelled) bajo el lock `booking-write:`): no reimplementa turnos.
+	depositsSvc := app.DepositService{
+		Policies: depositPoliciesRepo, Deposits: depositRepo, Gateway: gateway,
+		Bookings: pgstore.BookingCanceller{Bookings: bookings},
+		Notices:  depositRepo, Mailer: mailer, Links: bookingLinks,
+		Settings: salons, Memberships: mems, AppURL: cfg.AppURL,
+	}
+	depositPolicySvc := app.DepositPolicyService{
+		Policies: depositPoliciesRepo, Memberships: mems, Gateway: gateway,
+	}
+	// El payload público (D11) lee la misma política de señas.
+	publicSvc.Deposits = depositPoliciesRepo
+	var simbankLookup, simbankPay, paymentsCallback gin.HandlerFunc
+	if simbankHandler != nil {
+		simbankLookup, simbankPay = simbankHandler.Lookup, simbankHandler.Pay
+		paymentsCallback = httpapi.PaymentsHandler{Deposits: depositsSvc}.Callback
+	}
 	publicBookingSvc := app.PublicBookingService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems, Bookings: bookings,
 		Professionals: professionals, Hours: weeklyHours, TimeOff: timeOffRepo,
@@ -470,6 +523,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		// F1: un token nuevo por cada email enviado; solo para turnos con email.
 		Links: bookingLinks, AppURL: cfg.AppURL,
 	}
+	// F11/D8: con seña activa la reserva pública crea el cargo y devuelve
+	// `payment`; sin seña responde y manda el correo exactamente como hoy.
+	publicBookingSvc.Deposits = depositsSvc
 	// F1: las cuatro rutas públicas del enlace (lookup, horarios, cancelar y
 	// reprogramar). Toma el MISMO lock `booking-write:<salón>` de Book y Update en
 	// UNA transacción: dos pedidos con el mismo token no pueden ganar los dos.
@@ -552,6 +608,23 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		// personal). El barrido periódico se arranca en main con el mismo
 		// servicio (deps.Waitlist.Service).
 		Waitlist: httpapi.WaitlistHandler{Service: waitlistSvc, Memberships: mems},
+		// F11: la política de señas (D3) y la pantalla «Señas» (D10); el callback
+		// del banco (D7) y sus dos rutas (D6) existen SOLO con PAYMENT_SIM_SECRET
+		// (D12: sin secreto responden 404, porque no se montan).
+		DepositPolicy:    httpapi.DepositPolicyHandler{Policy: depositPolicySvc, Memberships: mems},
+		Deposits:         httpapi.DepositHandler{Deposits: depositsSvc, Memberships: mems},
+		PaymentsCallback: paymentsCallback,
+		SimbankLookup:    simbankLookup,
+		SimbankPay:       simbankPay,
+		// Cada ruta nueva tiene SU PROPIO cubo por IP, como el resto de las
+		// escrituras sin sesión: una inundación de una no gasta el cupo de otra.
+		SimbankLimit:         httpapi.RateLimitFor(authRateLimit, time.Minute, "POST", "/api/v1/simbank/"),
+		PaymentCallbackLimit: httpapi.RateLimitFor(paymentCallbackRateLimit, time.Minute, "POST", "/api/v1/payments/"),
+		// La consulta pública del pago la usa el sondeo de /pago-resultado (cada
+		// 3 s hasta 60 s = 20 pedidos por persona): con el cubo de /auth (20/min)
+		// el último sondeo quedaría afuera, así que tiene su propio cubo más
+		// holgado (60/min por IP).
+		PublicDepositLookupLimit: httpapi.RateLimitFor(publicDepositLookupLimit, time.Minute, "POST", "/api/v1/public/deposits/"),
 		// F15: recuperar contraseña y verificar email (tres rutas públicas bajo
 		// /auth/ y el reenvío autenticado).
 		Recovery: httpapi.AccountRecoveryHandler{Recovery: recoverySvc, Verif: verificationSvc},

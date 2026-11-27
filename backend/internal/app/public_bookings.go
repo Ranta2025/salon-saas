@@ -69,12 +69,57 @@ type PublicBookingService struct {
 	Links ports.BookingLinkRepository
 	// AppURL es la base del enlace (APP_URL).
 	AppURL string
+	// Deposits es la seña online (F11, D8): nil = este entorno no cobra señas y la
+	// reserva responde y manda el correo exactamente como hoy.
+	Deposits DepositCreator
 }
+
+// DepositCreator es lo que la reserva pública necesita de la seña (F11, D8). Lo
+// implementa app.DepositService; nil = sin señas.
+type DepositCreator interface {
+	// CreateForBooking crea (o devuelve) la seña del turno. nil SIN error = el
+	// salón no cobra seña (sin política, apagada o precio 0): la reserva sigue
+	// como hoy.
+	CreateForBooking(order domain.DepositOrder) (*domain.BookingDeposit, error)
+}
+
+// PublicPayment es el `payment` ADITIVO del 201 de la reserva pública (D8): el
+// depósito, el monto, hasta cuándo se retiene el cupo y la página del banco con
+// el id del cargo en el fragmento.
+type PublicPayment struct {
+	DepositID   string
+	AmountCents int
+	ExpiresAt   time.Time
+	PayURL      string
+	Simulated   bool
+}
+
+// depositOutcome transporta la seña creada hacia el handler sin cambiar la firma
+// de Book (los llamadores de hoy siguen recibiendo (Booking, error)).
+type depositOutcome struct{ payment *PublicPayment }
 
 // Book agenda un turno público. Errores: 404 (slug/profesional inexistente),
 // 400 (datos faltantes, servicio inactivo, fuera de horario, en el pasado) y
 // 409 (hueco tomado, sin profesional libre).
 func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.Booking, error) {
+	return s.book(slug, in, nil)
+}
+
+// BookWithDeposit es la reserva pública CON seña (F11, D8): el mismo camino que
+// Book más la seña cuando la política está activa y el monto es > 0. En ese caso
+// la confirmación por correo NO sale acá: sale cuando el banco confirma el pago
+// (D7). Si el cargo no se puede crear, la reserva se cancela por el camino
+// existente y el cliente recibe el error de servidor de hoy.
+func (s PublicBookingService) BookWithDeposit(slug string, in PublicBookingInput) (domain.Booking, *PublicPayment, error) {
+	out := &depositOutcome{}
+	b, err := s.book(slug, in, out)
+	if err != nil {
+		return b, nil, err
+	}
+	return b, out.payment, nil
+}
+
+func (s PublicBookingService) book(slug string, in PublicBookingInput, out *depositOutcome) (domain.Booking, error) {
 	salon, err := s.Salons.FindBySlug(strings.TrimSpace(slug))
 	if err != nil {
 		return domain.Booking{}, err
@@ -88,6 +133,11 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 	if opID != "" {
 		existing, err := s.Bookings.FindByClientOpID(salon.ID, opID)
 		if err == nil {
+			// F11/D8: el mismo client_op_id devuelve el MISMO payment (un solo
+			// cargo). Es una LECTURA: si no hay seña no se crea nada acá.
+			if out != nil {
+				out.payment = s.replayPayment(salon.ID, existing.ID)
+			}
 			return existing, nil
 		}
 		if !errors.Is(err, domain.ErrNotFound) {
@@ -256,6 +306,9 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 		// devuelve la reserva que sí entró.
 		if opID != "" {
 			if existing, rerr := s.Bookings.FindByClientOpID(salon.ID, opID); rerr == nil {
+				if out != nil {
+					out.payment = s.replayPayment(salon.ID, existing.ID)
+				}
 				return existing, nil
 			}
 		}
@@ -316,8 +369,85 @@ func (s PublicBookingService) Book(slug string, in PublicBookingInput) (domain.B
 		}
 	}
 	// La confirmación sale en segundo plano: la respuesta 201 no espera al SMTP.
-	s.sendBookingConfirmation(salon.Name, b, clientEmail, settings, link)
+	// F11 (D8): con seña activa el correo NO sale acá —sale cuando el banco la
+	// confirma (D7)— y sin seña sale exactamente como hoy.
+	if out == nil {
+		s.sendBookingConfirmation(salon.Name, b, clientEmail, settings, link)
+		return b, nil
+	}
+	payment, err := s.createDeposit(salon.ID, b, service)
+	if err != nil {
+		// El cargo no se pudo crear: la reserva se cancela por el camino
+		// existente y el cliente recibe el error de servidor que ya conoce.
+		s.cancelDepositBooking(b)
+		return domain.Booking{}, err
+	}
+	out.payment = payment
+	if payment == nil {
+		// Política apagada, ausente o precio 0: respuesta y correo de hoy.
+		s.sendBookingConfirmation(salon.Name, b, clientEmail, settings, link)
+	}
 	return b, nil
+}
+
+// createDeposit pide la seña del turno (D4/D8). nil = no hay seña que cobrar.
+func (s PublicBookingService) createDeposit(salonID string, b domain.Booking, service domain.Service) (*PublicPayment, error) {
+	if s.Deposits == nil {
+		return nil, nil
+	}
+	deposit, err := s.Deposits.CreateForBooking(domain.DepositOrder{
+		SalonID:     salonID,
+		BookingID:   b.ID,
+		PriceCents:  service.PriceCents,
+		ClientOpID:  b.ClientOpID,
+		Description: service.Name,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if deposit == nil {
+		return nil, nil
+	}
+	return &PublicPayment{
+		DepositID:   deposit.ID,
+		AmountCents: deposit.AmountCents,
+		ExpiresAt:   deposit.ExpiresAt,
+		PayURL:      strings.TrimRight(s.AppURL, "/") + "/pagar#" + deposit.ChargeID,
+		Simulated:   true,
+	}, nil
+}
+
+// replayPayment devuelve la seña YA creada de un turno, si existe (D8: el
+// reintento devuelve el MISMO payment). Es solo lectura: con PriceCents 0 el
+// caso de uso no crea ningún cargo.
+func (s PublicBookingService) replayPayment(salonID, bookingID string) *PublicPayment {
+	if s.Deposits == nil {
+		return nil
+	}
+	deposit, err := s.Deposits.CreateForBooking(domain.DepositOrder{SalonID: salonID, BookingID: bookingID})
+	if err != nil || deposit == nil {
+		return nil
+	}
+	return &PublicPayment{
+		DepositID:   deposit.ID,
+		AmountCents: deposit.AmountCents,
+		ExpiresAt:   deposit.ExpiresAt,
+		PayURL:      strings.TrimRight(s.AppURL, "/") + "/pagar#" + deposit.ChargeID,
+		Simulated:   true,
+	}
+}
+
+// cancelDepositBooking deshace el turno cuando el cargo no se pudo crear: la
+// MISMA regla del panel (SetStatus(cancelled)) y el MISMO repositorio, que toma
+// el lock `booking-write:<salón>`. Best-effort: el error del cargo manda.
+func (s PublicBookingService) cancelDepositBooking(b domain.Booking) {
+	cancelled, err := b.SetStatus(domain.BookingCancelled)
+	if err != nil {
+		return
+	}
+	if err := s.Bookings.Update(cancelled); err != nil {
+		log.Printf("reserva pública: cancelar el turno %s del salón %s sin seña: %v", b.ID, b.SalonID, err)
+	}
 }
 
 // upsertClient deja la ficha del visitante en el salón de la reserva. Busca

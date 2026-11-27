@@ -800,6 +800,7 @@ func TestAuditRoutes_exactlyTheD2ListIsWrapped(t *testing.T) {
 		"settings.update":    "PUT /salons/:id/settings",
 		"profile.update":     "PUT /salons/:id/profile",
 		"loyalty.program":    "PUT /salons/:id/loyalty-program",
+		"deposit.policy":     "PUT /salons/:id/deposit-policy",
 		"product.adjust":     "POST /salons/:id/products/:pid/adjust",
 	}
 	var keys []string

@@ -84,6 +84,28 @@ type Deps struct {
 	// (canjear el enlace y reenviarlo). El anti-enumeración y la seguridad del
 	// token viven en el caso de uso.
 	Recovery AccountRecoveryHandler
+	// DepositPolicy es la política de señas del salón (F11, D3): GET cualquier
+	// miembro activo, PUT solo owner/admin.
+	DepositPolicy DepositPolicyHandler
+	// Deposits es la pantalla «Señas» (F11, D10) y la consulta pública del estado
+	// de un pago (D8). La autorización vive en el caso de uso.
+	Deposits DepositHandler
+	// PaymentsCallback es el POST público y firmado del banco (F11, D7). nil = sin
+	// banco configurado: la ruta NO existe y responde 404 (D12).
+	PaymentsCallback gin.HandlerFunc
+	// SimbankLookup y SimbankPay son las dos rutas públicas del banco simulado
+	// (F11, D6). nil = sin banco: no existen (D12).
+	SimbankLookup gin.HandlerFunc
+	SimbankPay    gin.HandlerFunc
+	// SimbankLimit limita por IP las rutas del banco (cubo propio). nil = sin
+	// límite (tests unitarios del router).
+	SimbankLimit gin.HandlerFunc
+	// PaymentCallbackLimit limita por IP el callback del banco (cubo propio: un
+	// reintento del banco no puede gastar el cupo de otra ruta).
+	PaymentCallbackLimit gin.HandlerFunc
+	// PublicDepositLookupLimit limita por IP la consulta pública del pago (cubo
+	// propio, como el resto de las escrituras sin sesión).
+	PublicDepositLookupLimit gin.HandlerFunc
 	// PublicWaitlistLeaveLimit limita por IP la baja de la lista (D5): tiene SU
 	// PROPIO cubo, con el mismo valor que /auth, como el de los enlaces de turno
 	// (nil = sin límite, como en los tests unitarios del router).
@@ -141,6 +163,36 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 		publicBooking = append([]gin.HandlerFunc{d.PublicBookingLimit}, publicBooking...)
 	}
 	v1.POST("/public/salons/:slug/bookings", publicBooking...)
+
+	// F11: el banco simulado (D6). Sus dos rutas son públicas y tienen SU PROPIO
+	// cubo por IP; sin banco configurado no existen (D12: 404).
+	if d.SimbankLookup != nil && d.SimbankPay != nil {
+		simbank := func(h gin.HandlerFunc) []gin.HandlerFunc {
+			if d.SimbankLimit == nil {
+				return []gin.HandlerFunc{h}
+			}
+			return []gin.HandlerFunc{d.SimbankLimit, h}
+		}
+		v1.POST("/simbank/charges/lookup", simbank(d.SimbankLookup)...)
+		v1.POST("/simbank/charges/pay", simbank(d.SimbankPay)...)
+	}
+	// F11: el callback del banco (D7). Es la primera ruta pública no GET firmada:
+	// cuerpo máximo 8 KB, firma verificada por el adaptador y 200 en el reenvío.
+	// Sin banco configurado la ruta NO existe (D12: 404).
+	if d.PaymentsCallback != nil {
+		callback := []gin.HandlerFunc{d.PaymentsCallback}
+		if d.PaymentCallbackLimit != nil {
+			callback = append([]gin.HandlerFunc{d.PaymentCallbackLimit}, callback...)
+		}
+		v1.POST("/payments/callback", callback...)
+	}
+	// F11: el estado público de un pago (D8). El id del cargo es la credencial y
+	// va en el CUERPO (nunca en la ruta ni en el query), con su propio cubo por IP.
+	publicDepositLookup := []gin.HandlerFunc{d.Deposits.Lookup}
+	if d.PublicDepositLookupLimit != nil {
+		publicDepositLookup = append([]gin.HandlerFunc{d.PublicDepositLookupLimit}, publicDepositLookup...)
+	}
+	v1.POST("/public/deposits/lookup", publicDepositLookup...)
 
 	// F7: el alta de la lista de espera comparte el limitador de la reserva
 	// pública (D4: es la misma escritura sin sesión bajo el prefijo
@@ -352,6 +404,14 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	// F10: el registro de auditoría. Solo owner/admin (el permiso va ANTES de los
 	// parámetros, en el caso de uso). Leerlo NO se audita.
 	authed.GET("/salons/:id/audit-log", d.Audit.List)
+
+	// F11: política de señas (D3) y pantalla «Señas» (D10). Leer la política:
+	// cualquier miembro activo; guardarla: owner/admin, envuelta en la auditoría
+	// como `deposit.policy`. El permiso de las dos escrituras va ANTES del cuerpo
+	// y de los parámetros (vive en el caso de uso).
+	authed.GET("/salons/:id/deposit-policy", d.DepositPolicy.Get)
+	authed.PUT("/salons/:id/deposit-policy", audit("deposit.policy"), d.DepositPolicy.Put)
+	authed.GET("/salons/:id/deposits", d.Deposits.List)
 
 	// Bandeja de avisos. Listar va por salón; marcar leída no (el aviso ya sabe
 	// de qué salón es y el alcance sale de las memberships del usuario).

@@ -52,6 +52,17 @@ services:
       # como "<APP_URL>/invitacion#<token>" (F2g1). Con el compose, la web está
       # en WEB_PORT (8081).
       APP_URL: ${APP_URL:-http://localhost:8081}
+      # Seña online (F11): el secreto del BANCO SIMULADO. Este valor es SOLO para
+      # desarrollo (lo lee cualquiera que abra este archivo): en producción se
+      # configura uno propio o se deja vacío para apagar las señas (NoopGateway:
+      # no se pueden activar, las rutas del banco y el callback responden 404 y el
+      # barrido no corre). NO USAR ESTE VALOR EN PRODUCCIÓN.
+      PAYMENT_SIM_SECRET: ${PAYMENT_SIM_SECRET:-desarrollo-solo-simbank-no-produccion}
+      # A dónde llama el banco simulado: por defecto, el callback de esta API
+      # dentro de la red del compose (el puerto interno de la API).
+      PAYMENT_CALLBACK_URL: ${PAYMENT_CALLBACK_URL:-http://api:8080/api/v1/payments/callback}
+      # Cada cuánto barre las señas vencidas y las canceladas (0 lo deshabilita).
+      DEPOSIT_INTERVAL: ${DEPOSIT_INTERVAL:-60s}
     ports:
       - "${API_PORT:-8080}:${PORT:-8080}"
     volumes:
