@@ -187,3 +187,39 @@ func TestLoadConfig_app_url(t *testing.T) {
 		}
 	}
 }
+
+// F13/D3: REVIEW_INTERVAL por defecto 300s, 0 la deshabilita y un negativo (o un
+// valor ilegible) impide arrancar. Es el MISMO contrato de DEPOSIT_INTERVAL.
+func TestLoadConfig_reviewInterval(t *testing.T) {
+	base := map[string]string{"JWT_SECRET": "secreto", "GIN_MODE": "debug"}
+	cfg, err := loadConfig(loadEnv(base))
+	if err != nil {
+		t.Fatalf("default: %v", err)
+	}
+	if cfg.ReviewInterval != 300*time.Second {
+		t.Fatalf("default = %s, esperaba 300s", cfg.ReviewInterval)
+	}
+	base["REVIEW_INTERVAL"] = "0"
+	cfg, err = loadConfig(loadEnv(base))
+	if err != nil || cfg.ReviewInterval != 0 {
+		t.Fatalf("0 deshabilita: %s %v", cfg.ReviewInterval, err)
+	}
+	base["REVIEW_INTERVAL"] = "5s"
+	cfg, err = loadConfig(loadEnv(base))
+	if err != nil || cfg.ReviewInterval != 5*time.Second {
+		t.Fatalf("5s: %s %v", cfg.ReviewInterval, err)
+	}
+	for _, bad := range []string{"-1s", "-5m", "cada rato", ""} {
+		base["REVIEW_INTERVAL"] = bad
+		if bad == "" {
+			// Vacío es el default (envOr), no un error.
+			if cfg, err := loadConfig(loadEnv(base)); err != nil || cfg.ReviewInterval != 300*time.Second {
+				t.Fatalf("vacío = default: %s %v", cfg.ReviewInterval, err)
+			}
+			continue
+		}
+		if _, err := loadConfig(loadEnv(base)); err == nil || !strings.Contains(err.Error(), "REVIEW_INTERVAL") {
+			t.Fatalf("REVIEW_INTERVAL=%q debe fallar, dio %v", bad, err)
+		}
+	}
+}

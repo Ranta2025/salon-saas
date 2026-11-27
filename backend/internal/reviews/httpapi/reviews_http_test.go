@@ -5,6 +5,8 @@ package httpapi_test
 
 import (
 	"encoding/json"
+	"errors"
+	"math"
 	"net/http"
 	"strings"
 	"testing"
@@ -466,4 +468,118 @@ func TestPanelReviews_requiresSession(t *testing.T) {
 			t.Fatalf("%s %s: %d %s", r.method, r.path, code, body)
 		}
 	}
+}
+
+// --- D7: la sección de la web pública ---------------------------------------------
+
+// publicSalon lee el payload público del salón de la prueba.
+func (w *rvWorld) publicSalon(t *testing.T, slug string) map[string]any {
+	t.Helper()
+	code, body := w.call("GET", "/api/v1/public/salons/"+slug, "", "")
+	if code != http.StatusOK {
+		t.Fatalf("público %s: %d %s", slug, code, body)
+	}
+	var out map[string]any
+	httpkit.MustJSON(t, []byte(body), &out)
+	return out
+}
+
+// D7: `reviews` es ADITIVA, OMITIDA sin reseñas visibles, con el promedio de UNA
+// decimal sobre TODAS las visibles y como máximo los 6 renglones más recientes.
+func TestPublicSalonPayload_reviewsSection(t *testing.T) {
+	w := newRVWorld(t)
+	// Sin reseñas la clave NO viaja: el payload es el de hoy, byte a byte.
+	if got := w.publicSalon(t, "rv-uno"); hasKey(got, "reviews") {
+		t.Fatalf("sin reseñas no debe viajar `reviews`: %v", got["reviews"])
+	}
+	base := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
+	ratings := []int{5, 3, 4, 4, 5, 2, 3}
+	sum := 0
+	for i, rating := range ratings {
+		sum += rating
+		w.addReview(t, w.salon, "pub-"+string(rune('a'+i)), rating, false, base.Add(time.Duration(i)*time.Hour))
+	}
+	// Una oculta de 1 estrella: no cuenta ni se muestra.
+	w.addReview(t, w.salon, "pub-oculta", 1, true, base.Add(20*time.Hour))
+
+	got := w.publicSalon(t, "rv-uno")
+	raw, ok := got["reviews"].(map[string]any)
+	if !ok {
+		t.Fatalf("falta `reviews`: %v", got)
+	}
+	if strings.Join(httpkit.KeysOf(raw), ",") != "average,count,items" {
+		t.Fatalf("claves de reviews: %v", httpkit.KeysOf(raw))
+	}
+	if raw["count"] != float64(7) {
+		t.Fatalf("count: %v (la oculta no cuenta)", raw["count"])
+	}
+	want := math.Round(float64(sum)/float64(len(ratings))*10) / 10
+	if raw["average"] != want {
+		t.Fatalf("average: %v, esperaba %v (una decimal, sobre TODAS las visibles)", raw["average"], want)
+	}
+	items, _ := raw["items"].([]any)
+	if len(items) != 6 {
+		t.Fatalf("items: %d, esperaba los 6 más recientes", len(items))
+	}
+	first, _ := items[0].(map[string]any)
+	if strings.Join(httpkit.KeysOf(first), ",") != "author,comment,date,rating" {
+		t.Fatalf("claves del renglón público: %v", httpkit.KeysOf(first))
+	}
+	if first["rating"] != float64(3) || first["author"] != "Lía G." || first["date"] != "2026-11-01" {
+		t.Fatalf("renglón: %v", first)
+	}
+	// Ningún dato del turno ni del correo en la web pública.
+	if strings.Contains(mustJSON(t, got), "@") || strings.Contains(mustJSON(t, got), "b-pub") {
+		t.Fatal("la web pública filtra datos del turno")
+	}
+
+	// Ocultar desde el panel la de 2 estrellas: desaparece de la web Y del
+	// promedio (la regla del usuario).
+	code, body := w.call("POST", w.path("/reviews/pub-f/hide"), "", w.owner)
+	if code != http.StatusOK {
+		t.Fatalf("ocultar: %d %s", code, body)
+	}
+	raw = w.publicSalon(t, "rv-uno")["reviews"].(map[string]any)
+	if raw["count"] != float64(6) {
+		t.Fatalf("tras ocultar, count: %v", raw["count"])
+	}
+	if raw["average"] != 4.0 {
+		t.Fatalf("tras ocultar, average: %v (24/6 = 4.0)", raw["average"])
+	}
+	// Y mostrarla la devuelve.
+	if code, body := w.call("POST", w.path("/reviews/pub-f/unhide"), "", w.owner); code != http.StatusOK {
+		t.Fatalf("mostrar: %d %s", code, body)
+	}
+	if raw := w.publicSalon(t, "rv-uno")["reviews"].(map[string]any); raw["count"] != float64(7) {
+		t.Fatalf("tras mostrar, count: %v", raw["count"])
+	}
+}
+
+// D7: si la consulta de reseñas falla, la landing NO se cae: el 200 sale igual y
+// la clave se omite (degradar, nunca 500).
+func TestPublicSalonPayload_reviewsFailureDegrades(t *testing.T) {
+	w := newRVWorld(t)
+	w.addReview(t, w.salon, "pub-a", 5, false, time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC))
+	w.env.Reviews.VisibleErr = errors.New("la tabla no existe todavía")
+	got := w.publicSalon(t, "rv-uno")
+	if hasKey(got, "reviews") {
+		t.Fatalf("con la consulta caída no debe viajar `reviews`: %v", got["reviews"])
+	}
+	if !hasKey(got, "salon") || !hasKey(got, "services") {
+		t.Fatalf("el resto del payload se perdió: %v", got)
+	}
+}
+
+func hasKey(m map[string]any, key string) bool {
+	_, ok := m[key]
+	return ok
+}
+
+func mustJSON(t *testing.T, v any) string {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
 }

@@ -183,6 +183,19 @@ func main() {
 		go runDeposits(stopCtx, deps.Deposits.Deposits, cfg.DepositInterval, log.Printf)
 	}
 
+	// Reseñas posvisita (F13/D3): el barrido pide la reseña de los turnos
+	// atendidos. Sin correo configurado no se pide nada (no habría a dónde
+	// mandarlo) y con REVIEW_INTERVAL=0 queda deshabilitado.
+	switch {
+	case deps.Reviews.Service.Mailer == nil:
+		log.Print("reseñas: deshabilitadas (SMTP_HOST vacío)")
+	case cfg.ReviewInterval <= 0:
+		log.Print("reseñas: barrido deshabilitado (REVIEW_INTERVAL=0)")
+	default:
+		log.Printf("reseñas: barrido cada %s", cfg.ReviewInterval)
+		go runReviews(stopCtx, deps.Reviews.Service, cfg.ReviewInterval, log.Printf)
+	}
+
 	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("api escuchando en :%s", cfg.Port)
@@ -561,6 +574,10 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	}
 	// El payload público (D11) lee la misma política de señas.
 	publicSvc.Deposits = depositPoliciesRepo
+	// F13/D7: la vidriera pública suma `reviews` (aditivo, omitido si no hay
+	// reseñas visibles). El caso de uso es el mismo que atiende el panel: así una
+	// reseña oculta desaparece de la web y del promedio.
+	publicSvc.Reviews = reviewsSvc
 	var simbankLookup, simbankPay, paymentsCallback gin.HandlerFunc
 	if simbankHandler != nil {
 		simbankLookup, simbankPay = simbankHandler.Lookup, simbankHandler.Pay

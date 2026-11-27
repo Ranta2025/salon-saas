@@ -37,6 +37,11 @@ type PublicSalon struct {
 	// salón no cobra seña. La landing muestra el aviso «Pago simulado» y, por
 	// servicio, el monto que el servidor calcula con la fórmula de D4.
 	Deposit *PublicDeposit
+	// Reviews (F13, D7): las reseñas VISIBLES del salón. nil = no se muestra la
+	// sección: sin reseñas visibles, con la consulta caída o con el puerto sin
+	// cablear. El promedio y el total los calcula el servidor sobre TODAS las
+	// visibles; los renglones son los 6 más recientes.
+	Reviews *ports.PublicReviews
 }
 
 // PublicDeposit es lo único de la política de señas que ve el público (D11).
@@ -76,6 +81,10 @@ type PublicSalonService struct {
 	Loyalty ports.LoyaltyProgramRepository
 	// Deposits (F11, D11) es opcional: nil = el payload lleva `deposit: null`.
 	Deposits ports.DepositPolicyRepository
+	// Reviews (F13, D7) es opcional: nil = el payload NO lleva `reviews`. Es una
+	// interfaz de una sola función a propósito: la sección es aditiva y el resto
+	// de la vidriera no cambia.
+	Reviews ports.PublicReviewReader
 }
 
 // Public resuelve el salón por slug y devuelve su vidriera. Es la única query
@@ -196,6 +205,17 @@ func (s PublicSalonService) Public(slug string) (PublicSalon, error) {
 			// Nunca guardada: sin seña.
 		default:
 			// Sección aditiva: `deposit: null`.
+		}
+	}
+	// F13 (D7): las reseñas VISIBLES. La regla del usuario manda: lo que se oculta
+	// en el panel desaparece de la web y del promedio (los dos los calcula el
+	// servidor). Es una sección ADITIVA: sin reseñas visibles, con la consulta
+	// caída (una migración sin aplicar en un deploy en curso) o con el puerto sin
+	// cablear, el payload es el de hoy y la landing no dibuja nada.
+	if s.Reviews != nil {
+		summary, err := s.Reviews.PublicSummary(salon.ID)
+		if err == nil && summary.Count > 0 {
+			out.Reviews = &summary
 		}
 	}
 	return out, nil

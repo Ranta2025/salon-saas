@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/ports"
 	"salon-saas/internal/testutil"
 )
 
@@ -236,5 +237,57 @@ func TestPublicSalon_optionalDepsNil(t *testing.T) {
 	}
 	if _, err := svc.Public("no-existe"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("slug inexistente: %v", err)
+	}
+}
+
+// --- F13 (D7): la sección de reseñas -------------------------------------------
+
+// fakePublicReviews es el puerto opcional que la vidriera recibe del módulo de
+// reseñas: acá se prueba SOLO el cableado (la regla del promedio vive en
+// internal/reviews).
+type fakePublicReviews struct {
+	summary ports.PublicReviews
+	err     error
+	calls   int
+}
+
+func (f *fakePublicReviews) PublicSummary(salonID string) (ports.PublicReviews, error) {
+	f.calls++
+	if f.err != nil {
+		return ports.PublicReviews{}, f.err
+	}
+	return f.summary, nil
+}
+
+// Con reseñas visibles la vidriera trae la sección; sin el puerto cableado o sin
+// reseñas, nil (la clave no viaja y el payload es el de siempre).
+func TestPublicSalon_reviewsSection(t *testing.T) {
+	w := newPublicWorld()
+	p, err := w.svc.Public("uno")
+	if err != nil || p.Reviews != nil {
+		t.Fatalf("sin puerto: %+v %v", p.Reviews, err)
+	}
+	reader := &fakePublicReviews{summary: ports.PublicReviews{
+		Average: 4.5, Count: 3,
+		Items: []ports.PublicReview{{Rating: 5, Comment: "Genial", Author: "Lía G.", Date: "2026-11-01"}},
+	}}
+	w.svc.Reviews = reader
+	p, err = w.svc.Public("uno")
+	if err != nil || p.Reviews == nil || p.Reviews.Average != 4.5 || p.Reviews.Count != 3 {
+		t.Fatalf("con reseñas: %+v %v", p.Reviews, err)
+	}
+	if len(p.Reviews.Items) != 1 || p.Reviews.Items[0].Author != "Lía G." {
+		t.Fatalf("renglones: %+v", p.Reviews.Items)
+	}
+	// Sin reseñas VISIBLES (count 0) la sección no se muestra.
+	w.svc.Reviews = &fakePublicReviews{}
+	if p, err = w.svc.Public("uno"); err != nil || p.Reviews != nil {
+		t.Fatalf("sin visibles: %+v %v", p.Reviews, err)
+	}
+	// Un fallo de la consulta degrada: la landing sale igual sin la sección.
+	w.svc.Reviews = &fakePublicReviews{err: errors.New("tabla sin migrar")}
+	p, err = w.svc.Public("uno")
+	if err != nil || p.Reviews != nil || p.Salon.ID != "s1" || p.Timezone == "" {
+		t.Fatalf("fallo degradado: %+v %v", p.Reviews, err)
 	}
 }

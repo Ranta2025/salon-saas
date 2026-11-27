@@ -104,6 +104,24 @@ func (h PublicSalonHandler) GetSalon(c *gin.Context) {
 			"simulated":    true,
 		}
 	}
+	// reviews (F13, D7): ADITIVA y solo con al menos una reseña visible. La clave
+	// se OMITE cuando no hay ninguna (o la consulta falló) para que el payload de
+	// un salón sin reseñas sea el de hoy, byte a byte: el test de forma exacta
+	// (`public_test.go`) fija el conjunto de claves. El frontend trata la clave
+	// ausente como «sin sección» (publicSalon.ts).
+	var reviews any
+	if p.Reviews != nil {
+		items := make([]gin.H, 0, len(p.Reviews.Items))
+		for _, item := range p.Reviews.Items {
+			items = append(items, gin.H{
+				"rating":  item.Rating,
+				"comment": item.Comment,
+				"author":  item.Author,
+				"date":    item.Date,
+			})
+		}
+		reviews = gin.H{"average": p.Reviews.Average, "count": p.Reviews.Count, "items": items}
+	}
 	body := gin.H{
 		"salon": gin.H{
 			"id":          p.Salon.ID,
@@ -125,6 +143,9 @@ func (h PublicSalonHandler) GetSalon(c *gin.Context) {
 	}
 	if deposit != nil {
 		body["deposit"] = deposit
+	}
+	if reviews != nil {
+		body["reviews"] = reviews
 	}
 	c.JSON(http.StatusOK, body)
 }

@@ -237,6 +237,10 @@ func NewPOSEnv() *Env {
 	publicSvc := settings.PublicSalonService{
 		Salons: env.Salons, Services: env.Services,
 		Settings: env.Settings, Hours: env.Weekly,
+		// F13/D7: la sección aditiva de reseñas de la landing. Va el CASO DE USO
+		// (no el doble) porque el promedio con una decimal se redondea ahí, igual
+		// que en el binario.
+		Reviews: reviewsSvc,
 	}
 	settingsSvc := settings.SettingsService{Settings: env.Settings, Memberships: env.Mems}
 	salonHoursSvc := schedules.SalonHoursService{Hours: env.Weekly, Settings: env.Settings, Memberships: env.Mems}

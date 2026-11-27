@@ -139,3 +139,44 @@ func runDepositPass(runner depositRunner, logf func(string, ...any)) {
 			res.Expired, res.Cancelled, res.Refunded, res.Forfeited, res.Failed)
 	}
 }
+
+// reviewRunner es lo que la tarea de reseñas necesita (F13, D3): el caso de uso
+// real o un doble en los tests.
+type reviewRunner interface {
+	RunOnce(ctx context.Context, now time.Time) (sent, failed int)
+}
+
+// runReviews barre los turnos atendidos que ya pueden pedir reseña cada interval
+// hasta que ctx se cancele (F13/D3). Mismo patrón que runWaitlist: comparte el
+// contexto del shutdown y con interval <= 0 no arranca (REVIEW_INTERVAL=0
+// deshabilita la tarea). Sin correo configurado main ni siquiera la arranca.
+func runReviews(ctx context.Context, runner reviewRunner, interval time.Duration, logf func(string, ...any)) {
+	if ctx.Err() != nil || interval <= 0 {
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			runReviewPass(ctx, runner, logf)
+		}
+	}
+}
+
+// runReviewPass es UNA pasada con recuperación de panic: un envío que revienta no
+// puede llevarse la goroutine ni los ticks siguientes. Solo se loguean
+// contadores: nunca direcciones ni cuerpos de correo.
+func runReviewPass(ctx context.Context, runner reviewRunner, logf func(string, ...any)) {
+	defer func() {
+		if r := recover(); r != nil {
+			logf("reseñas: panic recuperado: %v", r)
+		}
+	}()
+	sent, failed := runner.RunOnce(ctx, time.Now().UTC())
+	if sent > 0 || failed > 0 {
+		logf("reseñas: pedidos enviados=%d fallidos=%d", sent, failed)
+	}
+}

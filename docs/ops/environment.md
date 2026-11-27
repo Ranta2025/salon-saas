@@ -90,6 +90,11 @@ REMINDER_INTERVAL=60s
 # avisos por email.
 WAITLIST_INTERVAL=60s
 
+# Cada cuánto la API pide las reseñas de los turnos atendidos (F13). Duración de
+# Go: 300s por defecto. 0 la DESHABILITA; un valor negativo o ilegible impide
+# arrancar.
+REVIEW_INTERVAL=300s
+
 # De qué peers se acepta X-Forwarded-For (IP del cliente para el rate limit y
 # el log). Vacío = no se confía en nadie: la IP es el peer directo.
 # "private" = loopback + rangos privados (comportamiento de la fase 5).
@@ -172,6 +177,7 @@ push.
 | `SMTP_TLS` | `none` | `none` (plano, Mailpit/relay interno), `starttls` (587) o `tls` (TLS implícito, 465). Un valor desconocido impide arrancar. |
 | `REMINDER_INTERVAL` | `60s` | Cada cuánto se mira la cola de recordatorios. Es una duración de Go: `60s`, `2s` para probar. Tiene que ser > 0. |
 | `WAITLIST_INTERVAL` | `60s` | Cada cuánto se barre la lista de espera (F7) y se avisa a quien esperaba un turno de un día que se liberó. Duración de Go (`60s`, `2s` para probar). **`0` deshabilita la tarea**; un valor negativo o ilegible impide arrancar. |
+| `REVIEW_INTERVAL` | `300s` | Cada cuánto se piden las reseñas posvisita (F13, D3): turnos `done` de salones con las reseñas activas, con correo, terminados entre la demora configurada (1..72 h) y 14 días atrás. Duración de Go (`5m`, `2s` para probar). **`0` deshabilita la tarea**; un valor negativo o ilegible impide arrancar. Con `SMTP_HOST` vacío la tarea no pide nada (no se puede mandar el enlace). |
 
 Abrí `http://localhost:8025` (Mailpit) para ver lo que se envió. Con la API
 corriendo fuera de Docker, el Mailpit del stack escucha en `127.0.0.1:1025`
@@ -207,3 +213,36 @@ Los tres valores viajan en `docker-compose.yml` (servicio `api`). Para probar el
 circuito completo en local: activá la seña en `/panel/senas`, reservá desde la
 landing, pagá en `/pagar` con `4242 4242 4242 4242` y mirá el correo de
 confirmación en Mailpit. Con `DEPOSIT_INTERVAL=1s` se ve el barrido en acción.
+
+## Reseñas posvisita (`REVIEW_INTERVAL`)
+
+F13: cada turno **atendido** (`done`) de una clienta **con correo** puede pedir una
+reseña, una sola vez. El módulo (`internal/reviews`) NO toca la agenda, el POS, la
+caja ni la nómina: lee `bookings` por su propio adaptador de solo lectura.
+
+| Variable | Default en Compose | Qué hace |
+|---|---|---|
+| `REVIEW_INTERVAL` | `300s` (5 min) | Cada cuánto barre los turnos atendidos que ya pueden pedir reseña. Duración de Go (`5m`, `2s` para probar). **`0` deshabilita la tarea**; un valor negativo o ilegible impide arrancar. |
+
+El salón decide **si** pide reseñas y **cuándo** en el panel «Reseñas»
+(`PUT /api/v1/salons/:id/review-settings`, `enabled` + `delay_hours` de 1 a 72).
+Sin fila guardada las reseñas están **apagadas** (`enabled:false`,
+`delay_hours:24`). Con la tarea apagada o con `SMTP_HOST` vacío no se crea ningún
+pedido: no se pide una reseña que nunca va a llegar.
+
+Cómo funciona el envío (y por qué no manda dos correos):
+
+- El pedido es UNO por turno (`review_requests.booking_id` es UNIQUE), así que dos
+  barredores (dos réplicas, o un tick que se solapa) no crean dos pedidos.
+- El envío se **reclama** con un `UPDATE ... WHERE sent_at IS NULL` antes de
+  mandar: solo un proceso gana.
+- El enlace es un token de 32 bytes aleatorios; la base guarda **solo su
+  SHA-256**. Vence a los **30 días** y sirve **una sola vez** (el canje es un
+  `UPDATE` condicional en la misma transacción que crea la reseña).
+- Si el correo falla, el reclamo se **deshace** (`sent_at` vuelve a NULL) y el
+  próximo tick lo reintenta con un token nuevo. Si el proceso muere entre el
+  reclamo y el envío, ese correo no sale y no se reintenta: el contrato prefiere
+  un aviso perdido antes que dos correos.
+- Configuración del correo: el mismo `SMTP_*` de la confirmación de reserva. Abrí
+  Mailpit (`http://localhost:8025`) para ver el correo; el enlace es
+  `<APP_URL>/resena#<token>` (el token va en el fragmento, nunca en el query).

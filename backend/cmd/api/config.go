@@ -75,6 +75,10 @@ type config struct {
 	// DepositInterval es la cadencia del barrido de señas (F11, D9), en duración
 	// de Go: 60s por defecto. CERO lo deshabilita; negativo es error de arranque.
 	DepositInterval time.Duration
+	// ReviewInterval es la cadencia del barrido de reseñas posvisita (F13, D3),
+	// en duración de Go: 300s por defecto. CERO lo deshabilita; negativo es error
+	// de arranque.
+	ReviewInterval time.Duration
 }
 
 // loadConfig lee la configuración desde getenv (os.Getenv en producción; un
@@ -173,6 +177,16 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("DEPOSIT_INTERVAL no puede ser negativo (0 deshabilita la tarea, dio %s)", deposit)
 	}
 	cfg.DepositInterval = deposit
+	// REVIEW_INTERVAL: el barrido de reseñas (F13, D3). CERO lo deshabilita;
+	// negativo o ilegible es error de configuración, no un default silencioso.
+	review, err := time.ParseDuration(envOr(getenv, "REVIEW_INTERVAL", "300s"))
+	if err != nil {
+		return config{}, fmt.Errorf("REVIEW_INTERVAL debe ser una duración de Go (por ejemplo 300s o 2s; 0 lo deshabilita): %w", err)
+	}
+	if review < 0 {
+		return config{}, fmt.Errorf("REVIEW_INTERVAL no puede ser negativo (0 deshabilita la tarea, dio %s)", review)
+	}
+	cfg.ReviewInterval = review
 	// Con endpoint S3, el bucket no puede quedar vacío (S3_BUCKET="" explícito).
 	if cfg.S3Endpoint != "" && strings.TrimSpace(cfg.S3Bucket) == "" {
 		return config{}, fmt.Errorf("S3_BUCKET es obligatoria cuando S3_ENDPOINT está definida")
