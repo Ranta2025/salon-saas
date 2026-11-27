@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	audithttpapi "salon-saas/internal/audit/httpapi"
 	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
 	"salon-saas/internal/ports"
 
@@ -64,7 +65,7 @@ type Deps struct {
 	// cuelga de las rutas sensibles y `GET /salons/:id/audit-log`. Sin servicio
 	// configurado el middleware no hace nada (los routers de los tests unitarios
 	// siguen igual). La autorización de la lectura vive en el caso de uso.
-	Audit AuditHandler
+	Audit audithttpapi.AuditHandler
 	// TwoFactor es el 2FA TOTP opcional (F10, parte B): el segundo paso del login
 	// (`POST /auth/login/2fa`, público y bajo el límite por IP de /auth/) y las
 	// cuatro rutas de la cuenta propia (`/me/2fa`). Sin 2FA activo el login es el

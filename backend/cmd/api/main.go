@@ -20,6 +20,7 @@ import (
 	"salon-saas/internal/adapters/storage"
 	"salon-saas/internal/app"
 	"salon-saas/internal/audit"
+	audithttpapi "salon-saas/internal/audit/httpapi"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/exports"
 	exportsstore "salon-saas/internal/exports/postgres"
@@ -613,7 +614,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		// F9: fidelidad (cinco rutas: programa del salón; ficha, entrega y uso por clienta).
 		Loyalty: loyaltyhttpapi.LoyaltyHandler{Loyalty: loyaltySvc, Memberships: mems},
 		// F10: auditoría (el middleware de las rutas de D2 y GET audit-log).
-		Audit: httpapi.AuditHandler{Service: auditSvc, Memberships: mems},
+		Audit: audithttpapi.AuditHandler{Service: auditSvc, Memberships: mems},
 		// F16: perfil público del salón y su galería de fotos.
 		Profile: httpapi.SalonProfileHandler{Profile: salonProfileSvc, Memberships: mems},
 		Gallery: httpapi.GalleryHandler{Gallery: gallerySvc, Memberships: mems},

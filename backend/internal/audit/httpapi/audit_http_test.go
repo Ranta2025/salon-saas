@@ -12,6 +12,7 @@ import (
 	"regexp"
 	httpapi "salon-saas/internal/adapters/http"
 	auditsvc "salon-saas/internal/audit"
+	audithttpapi "salon-saas/internal/audit/httpapi"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/finance"
 	"salon-saas/internal/loyalty"
@@ -47,7 +48,7 @@ func newMWEnv(t *testing.T, users *httpkit.Users) *mwEnv {
 	gin.SetMode(gin.TestMode)
 	e := &mwEnv{repo: &httpkit.AuditEvents{}}
 	e.repo.Log = &e.order
-	h := httpapi.AuditHandler{
+	h := audithttpapi.AuditHandler{
 		Service: auditsvc.AuditService{Events: e.repo, Users: users},
 		Logf:    func(f string, a ...any) { e.logs = append(e.logs, fmt.Sprintf(f, a...)) },
 	}
@@ -226,7 +227,7 @@ func TestAuditMW_noActorOrDisabledIsPassThrough(t *testing.T) {
 	// Servicio sin repositorio (el httpapi.Deps de los tests unitarios): pass-through.
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	h := httpapi.AuditHandler{}
+	h := audithttpapi.AuditHandler{}
 	r.PUT("/x/:id", func(c *gin.Context) { c.Set("userID", "u"); c.Next() }, h.Audit("settings.update"),
 		func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 	w := httptest.NewRecorder()
@@ -277,7 +278,7 @@ func newAudWorld(t *testing.T) *audWorld {
 		},
 		Memberships: env.Mems,
 	}
-	env.Deps.Audit = httpapi.AuditHandler{
+	env.Deps.Audit = audithttpapi.AuditHandler{
 		Service: auditsvc.AuditService{
 			Events: w.repo, Users: env.Users, Memberships: env.Mems,
 			Now: func() time.Time { return audClock },
@@ -776,7 +777,7 @@ func TestAuditRoutes_writerDownKeepsResponse(t *testing.T) {
 // no existe una exportación CSV de gastos: no hay ruta que envolver.) Es la guarda de que ninguna ruta de D2 se
 // quede sin envolver ni una ruta fuera de D2 quede envuelta.
 func TestAuditRoutes_exactlyTheD2ListIsWrapped(t *testing.T) {
-	src, err := os.ReadFile("routes.go")
+	src, err := os.ReadFile("../../adapters/http/routes.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -829,7 +830,7 @@ func TestAuditRoutes_exactlyTheD2ListIsWrapped(t *testing.T) {
 	// Cada acción envuelta tiene su entrada en la tabla de entidades iff la ruta
 	// tiene un id propio.
 	for action, route := range want {
-		hasOwn := httpapi.AuditEntityParams[action] != ""
+		hasOwn := audithttpapi.AuditEntityParams[action] != ""
 		wantParam := ""
 		switch action {
 		case "payroll_run.adjust", "payroll_run.pay", "payroll_run.delete":
@@ -841,8 +842,8 @@ func TestAuditRoutes_exactlyTheD2ListIsWrapped(t *testing.T) {
 				}
 			}
 		}
-		if hasOwn != (wantParam != "") || httpapi.AuditEntityParams[action] != wantParam {
-			t.Errorf("%s: parámetro de entidad %q, esperaba %q", action, httpapi.AuditEntityParams[action], wantParam)
+		if hasOwn != (wantParam != "") || audithttpapi.AuditEntityParams[action] != wantParam {
+			t.Errorf("%s: parámetro de entidad %q, esperaba %q", action, audithttpapi.AuditEntityParams[action], wantParam)
 		}
 	}
 }

@@ -21,12 +21,13 @@ package httpapi
 import (
 	"log"
 	"net/http"
-	"time"
-
-	"github.com/gin-gonic/gin"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/audit"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 // AuditEntityParams dice qué parámetro de ruta es la entidad de cada acción de
@@ -125,7 +126,7 @@ func (h AuditHandler) List(c *gin.Context) {
 	// límite o el cursor estén mal.
 	page, err := h.Service.List(actor, salonID, c.Query("limit"), c.Query("before"), c.Query("action"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	events := make([]gin.H, 0, len(page.Events))
