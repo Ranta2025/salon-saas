@@ -1,10 +1,11 @@
-package pgstore
+package postgres
 
 import (
 	"context"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 )
 
@@ -39,7 +40,7 @@ func (r Notifications) Save(n domain.Notification) error {
 		 VALUES($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8)
 		 ON CONFLICT (id) DO NOTHING`,
 		n.ID, n.SalonID, n.UserID, n.Title, n.Body, string(n.Kind), n.ReadAt, n.CreatedAt)
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // List devuelve los avisos visibles para userID en el salón, más nuevos
@@ -77,7 +78,7 @@ func (r Notifications) MarkRead(salonID, userID, id string) error {
 		 WHERE id=$1 AND salon_id=$2 AND (user_id IS NULL OR user_id=$3)`,
 		id, salonID, userID, time.Now().UTC())
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
@@ -93,7 +94,7 @@ func (r Notifications) UnreadCount(salonID, userID string) (int, error) {
 		 WHERE salon_id=$1 AND (user_id IS NULL OR user_id=$2) AND read_at IS NULL`,
 		salonID, userID).Scan(&n)
 	if err != nil {
-		return 0, notFound(err)
+		return 0, pgstore.NotFound(err)
 	}
 	return n, nil
 }

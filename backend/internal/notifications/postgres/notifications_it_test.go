@@ -1,7 +1,7 @@
 // Notificaciones contra Postgres real (SALON_IT=1). Verifica el scoping por
 // salón y el "aviso para todo el salón" (user_id NULL) contra la DB de verdad.
 // Corre con: SALON_IT=1 go test ./internal/adapters/postgres/ -run TestNotifications -v
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -10,11 +10,12 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 func seedTenant(t *testing.T, salonID, userID string) {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	ctx := context.Background()
 	_, err := pool.Exec(ctx,
@@ -31,7 +32,7 @@ func seedTenant(t *testing.T, salonID, userID string) {
 }
 
 func TestNotifications_scope_y_lectura(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	ctx := context.Background()
 
@@ -127,7 +128,7 @@ func TestNotifications_scope_y_lectura(t *testing.T) {
 
 // El índice CHECK de kind y la FK del salón son la última barrera.
 func TestNotifications_db_rechaza_kind_y_salon_invalidos(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	ctx := context.Background()
 	repo := Notifications{Pool: pool}

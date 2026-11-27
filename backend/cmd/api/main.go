@@ -32,6 +32,7 @@ import (
 	"salon-saas/internal/loyalty"
 	loyaltystore "salon-saas/internal/loyalty/postgres"
 	notifsvc "salon-saas/internal/notifications"
+	notifstore "salon-saas/internal/notifications/postgres"
 	"salon-saas/internal/packages"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/products"
@@ -264,7 +265,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// hay websockets). Autentica el JWT del query param, valida el Origin con la
 	// MISMA allowlist de CORS (B-01) y arma una room por salón.
 	hub := realtime.NewHub(tokens, mems, realtime.HubOrigins(cfg.CORSOrigins...), realtime.HubSessionGate(sessionGate))
-	notifications := pgstore.Notifications{Pool: pool}
+	notifications := notifstore.Notifications{Pool: pool}
 	notifSvc := notifsvc.NotificationService{Notifications: notifications, Salons: mems, Events: hub}
 
 	// Adjuntos: S3 si S3_ENDPOINT está definido; si no, filesystem local. El
