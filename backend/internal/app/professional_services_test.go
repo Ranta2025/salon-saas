@@ -10,6 +10,7 @@ import (
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/staffing"
+	"salon-saas/internal/team"
 )
 
 // fakeProfessionalServices: qué servicios hace cada profesional, en memoria y
@@ -102,7 +103,7 @@ var _ ports.ProfessionalServiceRepository = (*fakeProfessionalServices)(nil)
 // teamFixture: pantalla de equipo con el dueño-barbero, la administración, una
 // profesional y recepción, más los repos que necesita F2c.
 type teamFixture struct {
-	svc      MemberService
+	svc      team.MemberService
 	mems     *fakeMemberships
 	users    *fakeUsers
 	members  *fakeMembers
@@ -158,7 +159,7 @@ func newTeamFixture(t *testing.T) *teamFixture {
 		t.Fatalf("servicio de otro salón: %v", err)
 	}
 	return &teamFixture{
-		svc: MemberService{
+		svc: team.MemberService{
 			Members: &fakeMembers{mems: mems, users: users}, Memberships: mems, Users: users,
 			Professionals: profs, Services: services,
 		},
@@ -408,7 +409,7 @@ func TestMemberService_update_trade(t *testing.T) {
 	barbero, colorista := "  Barbero  ", "Colorista"
 
 	// Solo oficio: se guarda recortado y vuelve en el miembro.
-	m, err := fx.svc.Update(owner, "s1", "u-prof", MemberPatch{Trade: &barbero})
+	m, err := fx.svc.Update(owner, "s1", "u-prof", team.MemberPatch{Trade: &barbero})
 	if err != nil {
 		t.Fatalf("oficio: %v", err)
 	}
@@ -423,20 +424,20 @@ func TestMemberService_update_trade(t *testing.T) {
 	}
 
 	// Sin campos no hay nada que cambiar: 400 con el texto del contrato.
-	if _, err := fx.svc.Update(owner, "s1", "u-prof", MemberPatch{}); !errors.Is(err, domain.ErrValidation) ||
+	if _, err := fx.svc.Update(owner, "s1", "u-prof", team.MemberPatch{}); !errors.Is(err, domain.ErrValidation) ||
 		err.Error() != "Indicá qué cambiar" {
 		t.Fatalf("patch vacío: %v", err)
 	}
 
 	// Recepción no tiene oficio.
-	if _, err := fx.svc.Update(owner, "s1", "u-recep", MemberPatch{Trade: &barbero}); !errors.Is(err, domain.ErrValidation) ||
+	if _, err := fx.svc.Update(owner, "s1", "u-recep", team.MemberPatch{Trade: &barbero}); !errors.Is(err, domain.ErrValidation) ||
 		err.Error() != "Ese rol no tiene oficio" {
 		t.Fatalf("oficio en recepción: %v", err)
 	}
 
 	// Las dos cosas a la vez: la administración se enciende y estrena oficio.
 	on := true
-	m, err = fx.svc.Update(owner, "s1", "u-admin", MemberPatch{Attends: &on, Trade: &colorista})
+	m, err = fx.svc.Update(owner, "s1", "u-admin", team.MemberPatch{Attends: &on, Trade: &colorista})
 	if err != nil {
 		t.Fatalf("attends + trade: %v", err)
 	}
@@ -450,14 +451,14 @@ func TestMemberService_update_trade(t *testing.T) {
 
 	// Permisos: la profesional no edita el equipo; el dueño de otro salón
 	// tampoco; el miembro de otro salón no existe para esta ruta (404).
-	if _, err := fx.svc.Update(profe, "s1", "u-admin", MemberPatch{Trade: &colorista}); !errors.Is(err, domain.ErrForbidden) {
+	if _, err := fx.svc.Update(profe, "s1", "u-admin", team.MemberPatch{Trade: &colorista}); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("profesional editando el equipo: %v", err)
 	}
 	ajenoActor, _ := fx.mems.Find("u-otro", "s2")
-	if _, err := fx.svc.Update(ajenoActor, "s1", "u-admin", MemberPatch{Trade: &colorista}); !errors.Is(err, domain.ErrForbidden) {
+	if _, err := fx.svc.Update(ajenoActor, "s1", "u-admin", team.MemberPatch{Trade: &colorista}); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("dueño de otro salón: %v", err)
 	}
-	if _, err := fx.svc.Update(owner, "s1", "u-otro", MemberPatch{Trade: &colorista}); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := fx.svc.Update(owner, "s1", "u-otro", team.MemberPatch{Trade: &colorista}); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("miembro de otro salón: %v", err)
 	}
 }
@@ -467,7 +468,7 @@ func TestMemberService_update_attends_solo(t *testing.T) {
 	fx := newTeamFixture(t)
 	owner, _ := fx.mems.Find("u-owner", "s1")
 	on := true
-	m, err := fx.svc.Update(owner, "s1", "u-admin", MemberPatch{Attends: &on})
+	m, err := fx.svc.Update(owner, "s1", "u-admin", team.MemberPatch{Attends: &on})
 	if err != nil {
 		t.Fatalf("attends: %v", err)
 	}
@@ -476,10 +477,10 @@ func TestMemberService_update_attends_solo(t *testing.T) {
 	}
 	// Un profesional no se apaga y recepción no se enciende: mismos mensajes.
 	off := false
-	if _, err := fx.svc.Update(owner, "s1", "u-prof", MemberPatch{Attends: &off}); err.Error() != "Las profesionales siempre atienden" {
+	if _, err := fx.svc.Update(owner, "s1", "u-prof", team.MemberPatch{Attends: &off}); err.Error() != "Las profesionales siempre atienden" {
 		t.Fatalf("profesional en false: %v", err)
 	}
-	if _, err := fx.svc.Update(owner, "s1", "u-recep", MemberPatch{Attends: &on}); err.Error() != "Ese rol no atiende clientes" {
+	if _, err := fx.svc.Update(owner, "s1", "u-recep", team.MemberPatch{Attends: &on}); err.Error() != "Ese rol no atiende clientes" {
 		t.Fatalf("recepción en true: %v", err)
 	}
 }
@@ -489,7 +490,7 @@ func TestMemberService_list_con_oficio_y_servicios(t *testing.T) {
 	fx := newTeamFixture(t)
 	owner, _ := fx.mems.Find("u-owner", "s1")
 	trade := "Barbero"
-	if _, err := fx.svc.Update(owner, "s1", "u-prof", MemberPatch{Trade: &trade}); err != nil {
+	if _, err := fx.svc.Update(owner, "s1", "u-prof", team.MemberPatch{Trade: &trade}); err != nil {
 		t.Fatalf("oficio: %v", err)
 	}
 	if _, err := fx.svc.SetServices(owner, "s1", "u-prof", []string{fx.corte.ID}); err != nil {

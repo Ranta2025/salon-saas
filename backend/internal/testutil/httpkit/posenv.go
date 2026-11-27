@@ -13,6 +13,8 @@ import (
 	"salon-saas/internal/ports"
 	"salon-saas/internal/staffing"
 	staffinghttpapi "salon-saas/internal/staffing/httpapi"
+	"salon-saas/internal/team"
+	teamhttpapi "salon-saas/internal/team/httpapi"
 	"testing"
 	"time"
 
@@ -203,7 +205,7 @@ func NewPOSEnv() *Env {
 	hasher := security.BcryptHasher{}
 	tokens := security.JWTIssuer{Secret: "test-secret"}
 	authSvc := app.AuthService{Users: env.Users, Hasher: hasher, Tokens: tokens}
-	tenSvc := app.TenantService{Salons: env.Salons, Memberships: env.Mems}
+	tenSvc := team.TenantService{Salons: env.Salons, Memberships: env.Mems}
 	notifSvc := notifications.NotificationService{Notifications: env.Notifications, Salons: env.Mems, Events: env.Events}
 	bookSvc := app.BookingService{Bookings: env.Bookings, Memberships: env.Mems, Events: env.Events, Notifier: notifSvc}
 	svcSvc := staffing.ServiceService{Services: env.Services, Memberships: env.Mems, Professionals: env.Professionals, Resources: env.Resources}
@@ -212,7 +214,7 @@ func NewPOSEnv() *Env {
 	dashSvc := app.DashboardService{Sales: env.Sales, Agenda: env.Bookings, Staff: env.Mems, Memberships: env.Mems}
 	clientSvc := app.ClientService{Clients: env.Clients, Memberships: env.Mems, Photos: env.Storage, Images: Images{}}
 	meSvc := app.MeService{Users: env.Users, Salons: env.Salons, Members: env.Mems}
-	staffSvc := app.StaffService{Staff: env.Mems, Memberships: env.Mems}
+	staffSvc := team.StaffService{Staff: env.Mems, Memberships: env.Mems}
 	publicSvc := app.PublicSalonService{
 		Salons: env.Salons, Services: env.Services,
 		Settings: env.Settings, Hours: env.Weekly,
@@ -229,7 +231,7 @@ func NewPOSEnv() *Env {
 		Tx: &BookingTx{Bookings: env.Bookings}, Events: env.Events, Notifier: notifSvc,
 		Mailer: env.Mailer, Emails: env.BookingEmails,
 	}
-	memberSvc := app.MemberService{
+	memberSvc := team.MemberService{
 		Members: env.MemberDir, Memberships: env.Mems, Users: env.Users,
 		Professionals: env.Professionals, Services: env.Services,
 		// F2g2: la baja corre en la transacción (desactivar + revocar las
@@ -238,12 +240,12 @@ func NewPOSEnv() *Env {
 	}
 	// F2g1: invitaciones de equipo. El reloj sale del fake para poder vencer una
 	// invitación sin esperar los 7 días.
-	invitationSvc := app.InvitationService{
+	invitationSvc := team.InvitationService{
 		Invitations: env.Invitations, Tx: env.Invitations, Memberships: env.Mems, Users: env.Users,
 		Salons: env.Salons, Settings: env.Settings, Mailer: env.Mailer,
 		AppURL: "http://localhost:8081", Now: env.Invitations.now,
 	}
-	invitationPublicSvc := app.InvitationPublicService{
+	invitationPublicSvc := team.InvitationPublicService{
 		Invitations: env.Invitations, Tx: env.Invitations, Users: env.Users, Salons: env.Salons,
 		Hasher: hasher, Tokens: tokens, Now: env.Invitations.now,
 	}
@@ -264,7 +266,7 @@ func NewPOSEnv() *Env {
 
 	env.Deps = httpapi.Deps{
 		Auth:          httpapi.AuthHandler{Auth: authSvc},
-		Tenants:       httpapi.TenantsHandler{Tenants: tenSvc, Memberships: env.Mems},
+		Tenants:       teamhttpapi.TenantsHandler{Tenants: tenSvc, Memberships: env.Mems},
 		Bookings:      httpapi.BookingHandler{Bookings: bookSvc, Memberships: env.Mems},
 		Services:      staffinghttpapi.ServiceHandler{Services: svcSvc, Memberships: env.Mems},
 		Sales:         httpapi.SaleHandler{Sales: saleSvc, Memberships: env.Mems},
@@ -273,17 +275,17 @@ func NewPOSEnv() *Env {
 		Notifications: notificationshttpapi.NotificationHandler{Notifications: notifSvc, Memberships: env.Mems},
 		Clients:       httpapi.ClientHandler{Clients: clientSvc, Memberships: env.Mems, Photos: env.Signer},
 		Me:            httpapi.MeHandler{Me: meSvc},
-		Staff:         httpapi.StaffHandler{Staff: staffSvc, Memberships: env.Mems},
+		Staff:         teamhttpapi.StaffHandler{Staff: staffSvc, Memberships: env.Mems},
 		Public:        httpapi.PublicHandler{Public: publicSvc, Avail: availabilitySvc, Bookings: publicBookingSvc},
 		Settings:      httpapi.SettingsHandler{Settings: settingsSvc, Memberships: env.Mems},
-		Members:       httpapi.MemberHandler{Members: memberSvc, Memberships: env.Mems},
+		Members:       teamhttpapi.MemberHandler{Members: memberSvc, Memberships: env.Mems},
 		Hours: httpapi.HoursHandler{
 			Salon: salonHoursSvc, Professional: professionalHoursSvc, Memberships: env.Mems,
 		},
 		TimeOff:     httpapi.TimeOffHandler{TimeOff: timeOffSvc, Memberships: env.Mems},
 		Absences:    httpapi.AbsenceHandler{Coverage: coverageSvc, Memberships: env.Mems},
 		Resources:   staffinghttpapi.ResourceHandler{Resources: staffing.ResourceService{Resources: env.Resources, Services: env.Services, Memberships: env.Mems}, Memberships: env.Mems},
-		Invitations: httpapi.InvitationHandler{Invitations: invitationSvc, Public: invitationPublicSvc, Memberships: env.Mems},
+		Invitations: teamhttpapi.InvitationHandler{Invitations: invitationSvc, Public: invitationPublicSvc, Memberships: env.Mems},
 		WS:          hub.ServeWS,
 		TokenIssuer: tokens,
 	}

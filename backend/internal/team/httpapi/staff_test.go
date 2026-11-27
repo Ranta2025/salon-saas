@@ -8,8 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	httpapi "salon-saas/internal/adapters/http"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/team"
+	teamhttpapi "salon-saas/internal/team/httpapi"
 	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
@@ -33,12 +34,12 @@ func (f memsCaida) ListStaff(string) ([]domain.StaffMember, error) { return nil,
 func TestStaff_find_falla_da_500_no_403(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	roto := memsCaida{err: errors.New("pq: connection reset by peer")}
-	staffSvc := app.StaffService{Staff: roto, Memberships: roto}
+	staffSvc := team.StaffService{Staff: roto, Memberships: roto}
 
 	r := gin.New()
 	r.GET("/staff/:id", func(c *gin.Context) {
 		c.Set("userID", "u-123")
-		httpapi.StaffHandler{Staff: staffSvc, Memberships: roto}.List(c)
+		teamhttpapi.StaffHandler{Staff: staffSvc, Memberships: roto}.List(c)
 	})
 
 	// El log del servidor se captura aparte: el detalle va ahí y no al cliente.

@@ -9,7 +9,7 @@
 //     (el viejo deja de servir: es de un solo uso por emisión);
 //   - el enlace se devuelve UNA sola vez, en esta respuesta, y no se puede
 //     recuperar después (no se guarda: en la DB queda su SHA-256).
-package app
+package team
 
 import (
 	"context"

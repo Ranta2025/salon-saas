@@ -1,6 +1,6 @@
 // StaffService: el equipo que atiende en el salón. Lo consume el select de
 // profesional de la agenda (el frontend no puede inventar IDs de profesionales).
-package app
+package team
 
 import (
 	"salon-saas/internal/domain"

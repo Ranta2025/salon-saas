@@ -11,6 +11,7 @@ import (
 	"html"
 	"strings"
 
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -19,7 +20,7 @@ import (
 func recoveryLink(appURL, path, token string) string {
 	base := strings.TrimSpace(appURL)
 	if base == "" {
-		base = DefaultAppURL
+		base = kernel.DefaultAppURL
 	}
 	return strings.TrimRight(base, "/") + path + "#" + token
 }

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/team"
 )
 
 // --- Fakes: implementan ports sin Postgres ni bcrypt. Para unit test alcanzan. ---
@@ -146,7 +147,7 @@ func TestAuth_Register_Login(t *testing.T) {
 
 func TestTenants_Create_Add(t *testing.T) {
 	salons, mems := &fakeSalons{}, &fakeMemberships{}
-	svc := TenantService{Salons: salons, Memberships: mems}
+	svc := team.TenantService{Salons: salons, Memberships: mems}
 	s, err := svc.CreateSalon("u-owner", "Navajas de Oro", "navajas-oro")
 	if err != nil {
 		t.Fatalf("create: %v", err)

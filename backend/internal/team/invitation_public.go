@@ -11,7 +11,7 @@
 // Sin oráculo: token desconocido, vencido, revocado y ya usado devuelven el
 // MISMO error ("Invitación inválida o vencida"), y el lookup solo revela
 // `has_account` para un token válido.
-package app
+package team
 
 import (
 	"errors"

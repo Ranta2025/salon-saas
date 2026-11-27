@@ -1,7 +1,7 @@
 // MemberService: la pantalla de equipo del salón. Solo owner/admin; el owner
 // suma admins, el admin suma profesionales y recepción, y el salón nunca se
 // queda sin owner.
-package app
+package team
 
 import (
 	"errors"

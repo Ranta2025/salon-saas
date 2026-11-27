@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/team"
 )
 
 // B-06: la clave se valida ANTES de hashear (8..72 bytes).
@@ -226,7 +227,7 @@ func TestStaffService(t *testing.T) {
 		},
 	}}
 	mems := &fakeMemberships{}
-	svc := StaffService{Staff: staff, Memberships: mems}
+	svc := team.StaffService{Staff: staff, Memberships: mems}
 	_ = mems.Save(domain.Membership{UserID: "u-recep", SalonID: "s1", Role: domain.RoleReception})
 
 	list, err := svc.List(domain.Membership{UserID: "u-recep", SalonID: "s1"}, "s1")

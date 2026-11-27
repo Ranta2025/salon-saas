@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
@@ -24,7 +25,7 @@ type DepositHandler struct {
 // loadActor delega en el helper compartido de la API (members.go): el actor
 // sale de la base, no del token.
 func (h DepositHandler) loadActor(c *gin.Context, salonID string) (domain.Membership, bool) {
-	return loadActor(h.Memberships, c, salonID)
+	return httpx.LoadActor(h.Memberships, c, salonID)
 }
 
 // depositRowJSON es la forma D10 de una fila de la pantalla.

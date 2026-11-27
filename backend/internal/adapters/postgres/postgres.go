@@ -221,6 +221,15 @@ type Memberships struct {
 
 func (r Memberships) Save(m domain.Membership) error { return saveMembership(r.Pool, m) }
 
+// SaveUser es la versión exportada de saveUser para los adaptadores que ya
+// viven en su módulo por funcionalidad (`internal/<feature>/postgres`): el canje
+// de una invitación crea la cuenta dentro de su transacción.
+func SaveUser(q Querier, u domain.User) error { return saveUser(q, u) }
+
+// SaveMembership es la versión exportada de saveMembership por el mismo motivo:
+// el canje de una invitación escribe la membresía dentro de su transacción.
+func SaveMembership(q Querier, m domain.Membership) error { return saveMembership(q, m) }
+
 // saveMembership es la ÚNICA forma de escribir una membresía: la usan el alta de
 // equipo y el canje de una invitación (F2g1), que la crea dentro de su
 // transacción.

@@ -5,7 +5,7 @@
 // "administración", "recepción"), la fecha de vencimiento en la zona del salón,
 // el enlace con el token en el fragmento y NADA más (ni ids ni datos internos).
 // El HTML escapa el nombre del salón, que lo escribe una persona.
-package app
+package team
 
 import (
 	"html"

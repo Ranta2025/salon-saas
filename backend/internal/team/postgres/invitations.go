@@ -1,4 +1,4 @@
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -74,7 +75,7 @@ func (r Invitations) FindByID(salonID, id string) (domain.Invitation, error) {
 	inv, err := scanInvitation(r.Pool.QueryRow(context.Background(),
 		`SELECT `+invitationColumns+` FROM invitations WHERE salon_id=$1 AND id=$2`, salonID, id).Scan)
 	if err != nil {
-		return domain.Invitation{}, notFound(err)
+		return domain.Invitation{}, pgstore.NotFound(err)
 	}
 	return inv, nil
 }
@@ -85,7 +86,7 @@ func (r Invitations) FindByTokenHash(tokenHash string) (domain.Invitation, error
 	inv, err := scanInvitation(r.Pool.QueryRow(context.Background(),
 		`SELECT `+invitationColumns+` FROM invitations WHERE token_hash=$1`, tokenHash).Scan)
 	if err != nil {
-		return domain.Invitation{}, notFound(err)
+		return domain.Invitation{}, pgstore.NotFound(err)
 	}
 	return inv, nil
 }
@@ -94,13 +95,13 @@ func (r Invitations) FindByTokenHash(tokenHash string) (domain.Invitation, error
 // termina bien. No toma advisory lock: la serialización del canje es el row lock
 // del UPDATE condicional (Claim), que es más fino que un lock por salón.
 func (r Invitations) InInvitationTx(fn func(tx ports.InvitationTx) error) error {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer rollbackTx(tx) // no-op si ya commiteó
+	defer pgstore.RollbackTx(tx) // no-op si ya commiteó
 	if err := fn(invitationTx{tx: tx}); err != nil {
 		return err
 	}
@@ -137,13 +138,13 @@ func (t invitationTx) Save(i domain.Invitation) error {
 	return saveInvitation(t.tx, i)
 }
 
-func saveInvitation(q querier, i domain.Invitation) error {
+func saveInvitation(q pgstore.Querier, i domain.Invitation) error {
 	_, err := q.Exec(context.Background(),
 		`INSERT INTO invitations(id,salon_id,email,role,attends,token_hash,expires_at,created_by,created_at)
 		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
 		i.ID, i.SalonID, i.Email, string(i.Role), i.Attends, i.TokenHash, i.ExpiresAt, i.CreatedBy, i.CreatedAt)
 	// 23505: token repetido o dos pendientes del mismo email (el índice parcial).
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // Claim es el canje atómico: se lleva la invitación SOLO si sigue pendiente y
@@ -155,7 +156,7 @@ func (t invitationTx) Claim(id, userID string) (domain.Invitation, error) {
 		 WHERE id=$1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()
 		 RETURNING `+invitationColumns, id, userID).Scan)
 	if err != nil {
-		return domain.Invitation{}, notFound(err)
+		return domain.Invitation{}, pgstore.NotFound(err)
 	}
 	return inv, nil
 }
@@ -168,7 +169,7 @@ func (t invitationTx) Revoke(salonID, id string, now time.Time) error {
 		 WHERE salon_id=$1 AND id=$2 AND accepted_at IS NULL AND revoked_at IS NULL`,
 		salonID, id, now)
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
@@ -178,7 +179,7 @@ func (t invitationTx) Revoke(salonID, id string, now time.Time) error {
 
 // SaveUser crea la cuenta de quien acepta la invitación (mismo INSERT que
 // Users.Save: un solo lugar decide cómo nace una cuenta).
-func (t invitationTx) SaveUser(u domain.User) error { return saveUser(t.tx, u) }
+func (t invitationTx) SaveUser(u domain.User) error { return pgstore.SaveUser(t.tx, u) }
 
 // MembershipExists dice si la persona ya es parte ACTIVA del salón. Una baja no
 // cuenta: canjear una invitación a quien estaba dado de baja lo REACTIVA con el
@@ -198,7 +199,7 @@ func (t invitationTx) MembershipExists(salonID, userID string) (bool, error) {
 // SaveMembership crea la membresía con el rol y la marca de la invitación
 // (mismo upsert que Memberships.Save: una sola forma de escribir una membresía).
 func (t invitationTx) SaveMembership(m domain.Membership) error {
-	return saveMembership(t.tx, m)
+	return pgstore.SaveMembership(t.tx, m)
 }
 
 var (

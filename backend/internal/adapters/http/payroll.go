@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
@@ -20,7 +21,7 @@ type PayrollHandler struct {
 }
 
 func (h PayrollHandler) loadActor(c *gin.Context, salonID string) (domain.Membership, bool) {
-	return loadActor(h.Memberships, c, salonID)
+	return httpx.LoadActor(h.Memberships, c, salonID)
 }
 
 // payModelJSON es la forma única del modelo de pago (D3): la usan el listado y

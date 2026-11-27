@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -121,7 +122,7 @@ func bookingLinkURL(appURL, token string) string {
 	}
 	base := strings.TrimSpace(appURL)
 	if base == "" {
-		base = DefaultAppURL
+		base = kernel.DefaultAppURL
 	}
 	return strings.TrimRight(base, "/") + "/turno#" + token
 }

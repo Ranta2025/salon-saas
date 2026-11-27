@@ -41,6 +41,9 @@ import (
 	productshttpapi "salon-saas/internal/products/httpapi"
 	"salon-saas/internal/staffing"
 	staffinghttpapi "salon-saas/internal/staffing/httpapi"
+	"salon-saas/internal/team"
+	teamhttpapi "salon-saas/internal/team/httpapi"
+	teamstore "salon-saas/internal/team/postgres"
 	"salon-saas/internal/waitlist"
 	waitlisthttpapi "salon-saas/internal/waitlist/httpapi"
 	waitliststore "salon-saas/internal/waitlist/postgres"
@@ -222,7 +225,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// SOLO el SHA-256 del token (migración 036).
 	recoveryRepo := pgstore.AccountRecovery{Pool: pool}
 	sessionGate := pgstore.SessionGate{Pool: pool}
-	tenSvc := app.TenantService{Salons: salons, Memberships: mems}
+	tenSvc := team.TenantService{Salons: salons, Memberships: mems}
 	bookings := pgstore.Bookings{Pool: pool}
 	salesRepo := pgstore.Sales{Pool: pool}
 	// F6: catálogo de productos (con su libro de stock) y la venta CON productos
@@ -256,7 +259,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	resourceRepo := pgstore.Resources{Pool: pool}
 	// F2g1: invitaciones de equipo. El adaptador es lectura + transacción (el
 	// canje es atómico); el token se guarda solo como SHA-256.
-	invitationRepo := pgstore.Invitations{Pool: pool}
+	invitationRepo := teamstore.Invitations{Pool: pool}
 	// F3.2: modelo de pago por miembro (member_pay, migración 024) y los
 	// agregados de comisión por profesional de una ventana.
 	payModelsRepo := pgstore.PayModels{Pool: pool}
@@ -379,7 +382,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Memberships: mems, Settings: salons,
 	}
 	meSvc := app.MeService{Users: users, Salons: salons, Members: mems}
-	staffSvc := app.StaffService{Staff: mems, Memberships: mems}
+	staffSvc := team.StaffService{Staff: mems, Memberships: mems}
 	// F16 (D4): la vidriera sale del panel: perfil, equipo que atiende, galería y
 	// paquetes activos, y la carta se filtra con la MISMA regla que la
 	// disponibilidad (ListProfessionalsFor).
@@ -402,7 +405,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Settings: salons, Salons: salons, Tx: bookings,
 		Events: hub, Notifier: notifSvc,
 	}
-	memberSvc := app.MemberService{
+	memberSvc := team.MemberService{
 		Members: mems, Memberships: mems, Users: users,
 		Professionals: professionals, Services: servicesRepo,
 		// F2g2: la baja corre en la transacción de `mems`: desactivar la membresía
@@ -483,11 +486,11 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// una sola vez) y el canje público (cuenta nueva + membresía + invitación
 	// aceptada en una transacción). Con el mailer nil la invitación existe igual
 	// y la respuesta dice email_sent=false.
-	invitationSvc := app.InvitationService{
+	invitationSvc := team.InvitationService{
 		Invitations: invitationRepo, Tx: invitationRepo, Memberships: mems, Users: users,
 		Salons: salons, Settings: salons, Mailer: mailer, AppURL: cfg.AppURL,
 	}
-	invitationPublicSvc := app.InvitationPublicService{
+	invitationPublicSvc := team.InvitationPublicService{
 		Invitations: invitationRepo, Tx: invitationRepo, Users: users, Salons: salons,
 		Hasher: hasher, Tokens: tokens,
 	}
@@ -586,7 +589,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	deps := httpapi.Deps{
 		Auth:          httpapi.AuthHandler{Auth: authSvc, Verification: verificationSvc},
 		TwoFactor:     httpapi.TwoFactorHandler{Service: twoFactorSvc},
-		Tenants:       httpapi.TenantsHandler{Tenants: tenSvc, Memberships: mems},
+		Tenants:       teamhttpapi.TenantsHandler{Tenants: tenSvc, Memberships: mems},
 		Bookings:      httpapi.BookingHandler{Bookings: bookSvc, Memberships: mems},
 		Services:      staffinghttpapi.ServiceHandler{Services: svcSvc, Memberships: mems},
 		Sales:         httpapi.SaleHandler{Sales: saleSvc, Memberships: mems},
@@ -595,18 +598,18 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Notifications: notificationshttpapi.NotificationHandler{Notifications: notifSvc, Memberships: mems},
 		Clients:       httpapi.ClientHandler{Clients: clientSvc, Memberships: mems, Photos: photoSigner, History: clientHistorySvc},
 		Me:            httpapi.MeHandler{Me: meSvc},
-		Staff:         httpapi.StaffHandler{Staff: staffSvc, Memberships: mems},
+		Staff:         teamhttpapi.StaffHandler{Staff: staffSvc, Memberships: mems},
 		Public:        httpapi.PublicHandler{Public: publicSvc, Avail: availabilitySvc, Bookings: publicBookingSvc},
 		BookingLinks:  httpapi.BookingLinkHandler{Links: bookingLinkSvc},
 		Settings:      httpapi.SettingsHandler{Settings: settingsSvc, Memberships: mems},
-		Members:       httpapi.MemberHandler{Members: memberSvc, Memberships: mems},
+		Members:       teamhttpapi.MemberHandler{Members: memberSvc, Memberships: mems},
 		Hours: httpapi.HoursHandler{
 			Salon: salonHoursSvc, Professional: professionalHoursSvc, Memberships: mems,
 		},
 		TimeOff:   httpapi.TimeOffHandler{TimeOff: timeOffSvc, Memberships: mems},
 		Absences:  httpapi.AbsenceHandler{Coverage: coverageSvc, Memberships: mems},
 		Resources: staffinghttpapi.ResourceHandler{Resources: resourceSvc, Memberships: mems},
-		Invitations: httpapi.InvitationHandler{
+		Invitations: teamhttpapi.InvitationHandler{
 			Invitations: invitationSvc, Public: invitationPublicSvc, Memberships: mems,
 		},
 		Payroll: httpapi.PayrollHandler{PayModels: payModelSvc, Payroll: payrollSvc, Memberships: mems},

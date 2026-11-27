@@ -1,10 +1,11 @@
-package app
+package team
 
 import (
 	"errors"
 	"testing"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // S-F2a-4/S-F2a-5: al dar de alta, la marca sale del rol salvo que el body diga
@@ -79,7 +80,7 @@ func TestMemberService_setAttends(t *testing.T) {
 	admin, _ := mems.Find("u-admin", "s1")
 	_ = mems.Save(domain.Membership{UserID: "u-prof", SalonID: "s1", Role: domain.RoleProfessional, Attends: true})
 	prof, _ := mems.Find("u-prof", "s1")
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
 
 	// El dueño puede apagarse a sí mismo: deja de atender sin dejar de mandar.
 	m, err := svc.Update(owner, "s1", "u-owner", attendsPatch(false))
@@ -121,7 +122,7 @@ func TestMemberService_setAttends(t *testing.T) {
 		t.Fatalf("recepción no atiende nunca: %+v", got)
 	}
 	// Miembro de otro salón: 404 (no se confirma ni se niega su existencia).
-	miembro(mems, "u-ajeno", "s2", domain.RoleAdmin)
+	testutil.Miembro(mems, "u-ajeno", "s2", domain.RoleAdmin)
 	if _, err := svc.Update(owner, "s1", "u-ajeno", attendsPatch(true)); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("miembro de otro salón: %v", err)
 	}

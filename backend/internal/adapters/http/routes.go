@@ -10,6 +10,7 @@ import (
 	"salon-saas/internal/ports"
 	productshttpapi "salon-saas/internal/products/httpapi"
 	staffinghttpapi "salon-saas/internal/staffing/httpapi"
+	teamhttpapi "salon-saas/internal/team/httpapi"
 	waitlisthttpapi "salon-saas/internal/waitlist/httpapi"
 
 	"github.com/gin-gonic/gin"
@@ -18,7 +19,7 @@ import (
 // Deps agrupa lo que HTTP necesita (todo interfaces: DIP hasta el borde).
 type Deps struct {
 	Auth          AuthHandler
-	Tenants       TenantsHandler
+	Tenants       teamhttpapi.TenantsHandler
 	Bookings      BookingHandler
 	Services      staffinghttpapi.ServiceHandler
 	Sales         SaleHandler
@@ -27,10 +28,10 @@ type Deps struct {
 	Notifications notificationshttpapi.NotificationHandler
 	Clients       ClientHandler
 	Me            MeHandler
-	Staff         StaffHandler
+	Staff         teamhttpapi.StaffHandler
 	Public        PublicHandler
 	Settings      SettingsHandler
-	Members       MemberHandler
+	Members       teamhttpapi.MemberHandler
 	// Hours es el horario semanal del salón y de cada profesional (F2d1).
 	Hours HoursHandler
 	// TimeOff son las ausencias de las profesionales (F2d2).
@@ -41,7 +42,7 @@ type Deps struct {
 	Resources staffinghttpapi.ResourceHandler
 	// Invitations son las invitaciones de equipo (F2g1): alta, listado y
 	// revocación del salón, más el lookup y el canje públicos.
-	Invitations InvitationHandler
+	Invitations teamhttpapi.InvitationHandler
 	// Payroll es la nómina de F3.2: modelo de pago por miembro, vista previa del
 	// período y «Mis comisiones». Los permisos de D7 los aplica el caso de uso.
 	Payroll PayrollHandler

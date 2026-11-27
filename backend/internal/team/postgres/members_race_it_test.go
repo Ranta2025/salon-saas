@@ -1,10 +1,10 @@
 // F1 del endurecimiento de F2g2 contra Postgres real (SALON_IT=1): dos owners
 // que se dan de baja MUTUAMENTE al mismo tiempo no pueden dejar el salón sin
-// dueño. Corre el caso de uso completo (app.MemberService + adaptador): el
+// dueño. Corre el caso de uso completo (team.MemberService + adaptador): el
 // chequeo del último owner tiene que leer el estado DENTRO de la transacción,
 // bajo el lock por salón, porque el row lock del UPDATE solo serializa dos bajas
 // de la MISMA persona.
-package pgstore
+package postgres
 
 import (
 	"errors"
@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"salon-saas/internal/app"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/team"
+	"salon-saas/internal/testutil/itdb"
 )
 
 const f1RaceSalon = "s-it-f1-race"
@@ -35,11 +37,11 @@ type f1Round struct {
 }
 
 // f1Fixture deja un salón con `owners` dueños ACTIVOS y sin turnos.
-func f1Fixture(t *testing.T, owners int) (*pgxpool.Pool, app.MemberService) {
+func f1Fixture(t *testing.T, owners int) (*pgxpool.Pool, team.MemberService) {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 
 	f2g2Exec(t, pool, `DELETE FROM salons WHERE id=$1`, f1RaceSalon)
 	f2g2Exec(t, pool, `DELETE FROM users WHERE id LIKE 'u-it-f1-%'`)
@@ -50,9 +52,9 @@ func f1Fixture(t *testing.T, owners int) (*pgxpool.Pool, app.MemberService) {
 		f2g2Exec(t, pool, `INSERT INTO memberships(user_id,salon_id,role,attends,trade) VALUES($1,$2,'owner',false,'')`,
 			fmt.Sprintf("u-it-f1-%d", i), f1RaceSalon)
 	}
-	repo := Memberships{Pool: pool}
-	return pool, app.MemberService{
-		Members: repo, Memberships: repo, Users: Users{Pool: pool}, Tx: repo,
+	repo := pgstore.Memberships{Pool: pool}
+	return pool, team.MemberService{
+		Members: repo, Memberships: repo, Users: pgstore.Users{Pool: pool}, Tx: repo,
 	}
 }
 
@@ -76,7 +78,7 @@ func f1ActiveOwners(t *testing.T, pool *pgxpool.Pool) int {
 // f1BajasSimultaneas corre las bajas a la vez (barrera de arranque) y clasifica
 // los resultados en los códigos que el contrato ve: 204 (sin error), 400
 // (ErrValidation) y 404 (ErrNotFound).
-func f1BajasSimultaneas(svc app.MemberService, actors []domain.Membership, targets []string) f1Round {
+func f1BajasSimultaneas(svc team.MemberService, actors []domain.Membership, targets []string) f1Round {
 	var r f1Round
 	errs := make([]error, len(actors))
 	start := make(chan struct{})
@@ -215,7 +217,7 @@ func TestMembers_IT_Deactivate_removeUnderLock_preserved(t *testing.T) {
 }
 
 // actorOf lee la membresía activa del actor (lo que hace el handler con el JWT).
-func actorOf(t *testing.T, svc app.MemberService, userID string) domain.Membership {
+func actorOf(t *testing.T, svc team.MemberService, userID string) domain.Membership {
 	t.Helper()
 	m, err := svc.Memberships.Find(userID, f1RaceSalon)
 	if err != nil {

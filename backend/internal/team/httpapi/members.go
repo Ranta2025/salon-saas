@@ -3,9 +3,9 @@ package httpapi
 import (
 	"net/http"
 	httpx "salon-saas/internal/adapters/http/httpx"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/team"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,12 +15,12 @@ import (
 // /salons/:id/members y la reactivación de quien fue dado de baja, F2g2). Solo
 // owner/admin; la regla de qué rol puede sumar cada uno vive en app/domain.
 type MemberHandler struct {
-	Members     app.MemberService
+	Members     team.MemberService
 	Memberships ports.MembershipRepository
 }
 
 func (h MemberHandler) loadActor(c *gin.Context, salonID string) (domain.Membership, bool) {
-	return loadActor(h.Memberships, c, salonID)
+	return httpx.LoadActor(h.Memberships, c, salonID)
 }
 
 // loadActor resuelve la membresía del usuario del token en el salón de la ruta.
@@ -62,7 +62,7 @@ func (h MemberHandler) List(c *gin.Context) {
 	}
 	list, err := h.Members.List(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -86,12 +86,12 @@ func (h MemberHandler) Add(c *gin.Context) {
 		Attends *bool  `json:"attends"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	m, err := h.Members.Add(actor, salonID, in.Email, domain.Role(in.Role), in.Attends)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, memberJSON(m))
@@ -112,13 +112,13 @@ func (h MemberHandler) Update(c *gin.Context) {
 		Trade   *string `json:"trade"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	m, err := h.Members.Update(actor, salonID, c.Param("uid"),
-		app.MemberPatch{Attends: in.Attends, Trade: in.Trade})
+		team.MemberPatch{Attends: in.Attends, Trade: in.Trade})
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, memberJSON(m))
@@ -137,12 +137,12 @@ func (h MemberHandler) SetServices(c *gin.Context) {
 		ServiceIDs []string `json:"service_ids"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	ids, err := h.Members.SetServices(actor, salonID, c.Param("uid"), in.ServiceIDs)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]string, 0, len(ids))
@@ -165,7 +165,7 @@ func (h MemberHandler) Remove(c *gin.Context) {
 		return
 	}
 	if err := h.Members.Remove(actor, salonID, c.Param("uid")); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -184,7 +184,7 @@ func (h MemberHandler) Reactivate(c *gin.Context) {
 	}
 	m, err := h.Members.Reactivate(actor, salonID, c.Param("uid"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, memberJSON(m))

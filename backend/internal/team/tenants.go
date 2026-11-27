@@ -1,5 +1,5 @@
 // TenantService: crea salones y agrega miembros con RBAC mínimo.
-package app
+package team
 
 import (
 	"salon-saas/internal/domain"

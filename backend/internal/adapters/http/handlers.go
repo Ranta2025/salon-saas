@@ -67,28 +67,3 @@ func (h AuthHandler) Login(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"token": res.Token})
 }
-
-// --- Tenants ---
-
-type TenantsHandler struct {
-	Tenants     app.TenantService
-	Memberships ports.MembershipRepository
-}
-
-func (h TenantsHandler) CreateSalon(c *gin.Context) {
-	uid, _ := c.Get("userID")
-	var in struct {
-		Name string `json:"name"`
-		Slug string `json:"slug"`
-	}
-	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
-		return
-	}
-	s, err := h.Tenants.CreateSalon(uid.(string), in.Name, in.Slug)
-	if err != nil {
-		respondErr(c, err)
-		return
-	}
-	c.JSON(http.StatusCreated, gin.H{"id": s.ID, "name": s.Name, "slug": s.Slug})
-}

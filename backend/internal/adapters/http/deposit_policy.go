@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
@@ -24,7 +25,7 @@ type DepositPolicyHandler struct {
 // loadActor delega en el helper compartido de la API (members.go): el actor
 // sale de la base, no del token.
 func (h DepositPolicyHandler) loadActor(c *gin.Context, salonID string) (domain.Membership, bool) {
-	return loadActor(h.Memberships, c, salonID)
+	return httpx.LoadActor(h.Memberships, c, salonID)
 }
 
 // depositPolicyJSON es la forma D3. Una política nunca guardada es

@@ -11,15 +11,16 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/team"
 )
 
 // InvitationHandler traduce HTTP <-> casos de uso de invitaciones.
 type InvitationHandler struct {
-	Invitations app.InvitationService
-	Public      app.InvitationPublicService
+	Invitations team.InvitationService
+	Public      team.InvitationPublicService
 	Memberships ports.MembershipRepository
 }
 
@@ -54,14 +55,14 @@ func (h InvitationHandler) Create(c *gin.Context) {
 		Attends *bool  `json:"attends"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
-	created, err := h.Invitations.Invite(actor, salonID, app.InvitationInput{
+	created, err := h.Invitations.Invite(actor, salonID, team.InvitationInput{
 		Email: in.Email, Role: domain.Role(in.Role), Attends: in.Attends,
 	})
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{
@@ -80,7 +81,7 @@ func (h InvitationHandler) List(c *gin.Context) {
 	}
 	list, err := h.Invitations.List(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -99,7 +100,7 @@ func (h InvitationHandler) Revoke(c *gin.Context) {
 		return
 	}
 	if err := h.Invitations.Revoke(actor, salonID, c.Param("iid")); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -114,12 +115,12 @@ func (h InvitationHandler) Lookup(c *gin.Context) {
 		Token string `json:"token"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	got, err := h.Public.Lookup(in.Token)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -142,12 +143,12 @@ func (h InvitationHandler) Accept(c *gin.Context) {
 		Password string `json:"password"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	session, err := h.Public.AcceptNew(in.Token, in.Name, in.Password)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"token": session})
@@ -163,12 +164,12 @@ func (h InvitationHandler) AcceptAs(c *gin.Context) {
 		Token string `json:"token"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	salon, inv, err := h.Public.AcceptExisting(userID, in.Token)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{

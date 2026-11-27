@@ -2,7 +2,7 @@
 // los horarios/ausencias/servicios de la persona, el acceso y los selectores
 // ven SOLO activos, y la baja con la revocación de las invitaciones que emitió
 // son atómicas (S-F2g2-6).
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -16,8 +16,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil/itdb"
 )
 
 const (
@@ -47,11 +49,11 @@ func f2g2Exec(t *testing.T, pool *pgxpool.Pool, q string, args ...any) {
 // así se puede probar que la baja en uno no le quita el acceso al otro. El salón
 // A arranca con el historial mínimo de la persona: un servicio que hace, un
 // tramo de horario, una ausencia futura, un turno pasado y una venta.
-func f2g2Fixture(t *testing.T) (*pgxpool.Pool, Memberships) {
+func f2g2Fixture(t *testing.T) (*pgxpool.Pool, pgstore.Memberships) {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 
 	f2g2Exec(t, pool, `DELETE FROM salons WHERE id IN ($1,$2)`, f2g2SalonA, f2g2SalonB)
 	f2g2Exec(t, pool, `DELETE FROM users WHERE id LIKE 'u-it-f2g2-%'`)
@@ -95,7 +97,7 @@ func f2g2Fixture(t *testing.T) (*pgxpool.Pool, Memberships) {
 		f2g2SalonA, f2g2SalonB, time.Now().UTC().Add(7*24*time.Hour), f2g2Pro, f2g2Owner)
 	f2g2Exec(t, pool, `UPDATE invitations SET accepted_at=now(), accepted_by=$1 WHERE id='inv-it-f2g2-accepted'`, f2g2Owner)
 
-	return pool, Memberships{Pool: pool}
+	return pool, pgstore.Memberships{Pool: pool}
 }
 
 // f2g2Scalar devuelve un entero de una query (o falla el test).
@@ -200,7 +202,7 @@ func TestMembers_IT_deactivate_keeps_history(t *testing.T) {
 // persona conserva el acceso al OTRO salón.
 func TestMembers_IT_deactivate_active_only_reads(t *testing.T) {
 	pool, repo := f2g2Fixture(t)
-	pros := ProfessionalServices{Pool: pool}
+	pros := pgstore.ProfessionalServices{Pool: pool}
 
 	// Antes de la baja: todo lo ve.
 	if _, err := repo.Find(f2g2Pro, f2g2SalonA); err != nil {
@@ -632,7 +634,7 @@ func TestMembers_IT_deactivate_reactivate_race(t *testing.T) {
 // comportamiento con miembros ACTIVOS es exactamente el de antes.
 func TestMembers_IT_active_reads_preserved(t *testing.T) {
 	pool, repo := f2g2Fixture(t)
-	pros := ProfessionalServices{Pool: pool}
+	pros := pgstore.ProfessionalServices{Pool: pool}
 
 	t.Run("Find", func(t *testing.T) {
 		m, err := repo.Find(f2g2Pro, f2g2SalonA)
@@ -729,10 +731,10 @@ func TestMembers_IT_active_reads_preserved(t *testing.T) {
 // existe queda activo) y crea el índice parcial del equipo activo. Se corre en
 // un esquema aislado con una memberships mínima y se revierte al final.
 func TestMigration022_membership_ended_at(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	ctx := context.Background()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 
 	raw, err := os.ReadFile(filepath.Join(migrationsDir(t), "022_membership_ended_at.sql"))
 	if err != nil {
@@ -790,4 +792,10 @@ func TestMigration022_membership_ended_at(t *testing.T) {
 	if !strings.Contains(def, "(salon_id)") || !strings.Contains(def, "WHERE (ended_at IS NULL)") {
 		t.Fatalf("el índice tiene que ser parcial por ended_at: %s", def)
 	}
+}
+
+// migrationsDir es backend/migrations visto desde internal/team/postgres.
+func migrationsDir(t *testing.T) string {
+	t.Helper()
+	return "../../../migrations"
 }

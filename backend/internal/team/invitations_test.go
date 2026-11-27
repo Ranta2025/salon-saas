@@ -3,7 +3,7 @@
 // Fakes del repositorio de invitaciones con la MISMA semántica que el adaptador
 // Postgres: el canje es un UPDATE condicional, el token se busca hasheado y las
 // escrituras de la transacción se revierten enteras si algo falla.
-package app
+package team
 
 import (
 	"errors"
@@ -15,6 +15,7 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil"
 )
 
 // --- fake del repositorio + transacción de invitaciones ---
@@ -25,8 +26,8 @@ type fakeInvitations struct {
 	// now es el reloj del canje (el UPDATE de Postgres usa now()).
 	now   time.Time
 	rows  map[string]domain.Invitation
-	users *fakeUsers
-	mems  *fakeMemberships
+	users *testutil.FakeUsers
+	mems  *testutil.FakeMemberships
 	// failMembership fuerza el fallo del último paso de la transacción (prueba
 	// el "todo o nada" que en Postgres sostiene la transacción real).
 	failMembership bool
@@ -86,18 +87,18 @@ func (f *fakeInvitations) InInvitationTx(fn func(tx ports.InvitationTx) error) e
 		rows[k] = v
 	}
 	users := map[string]domain.User{}
-	for k, v := range f.users.byEmail {
+	for k, v := range f.users.ByEmail {
 		users[k] = v
 	}
 	mems := map[string]domain.Membership{}
-	for k, v := range f.mems.byKey {
+	for k, v := range f.mems.ByKey {
 		mems[k] = v
 	}
 	f.inTx = true
 	err := fn(f)
 	f.inTx = false
 	if err != nil {
-		f.rows, f.users.byEmail, f.mems.byKey = rows, users, mems
+		f.rows, f.users.ByEmail, f.mems.ByKey = rows, users, mems
 	}
 	return err
 }
@@ -177,7 +178,7 @@ func (f *fakeInvitations) SaveUser(u domain.User) error { return f.users.Save(u)
 func (f *fakeInvitations) MembershipExists(salonID, userID string) (bool, error) {
 	unlock := f.lock()
 	defer unlock()
-	m, ok := f.mems.byKey[userID+"|"+salonID]
+	m, ok := f.mems.ByKey[userID+"|"+salonID]
 	if !ok || !m.Active() {
 		return false, nil
 	}
@@ -209,11 +210,11 @@ func (h *countingInvHasher) DummyCompare(string) bool          { return false }
 // --- entorno ---
 
 type inviteEnv struct {
-	users    *fakeUsers
-	salons   *fakeSalons
-	mems     *fakeMemberships
-	settings *fakeSettings
-	mailer   *fakeMailer
+	users    *testutil.FakeUsers
+	salons   *testutil.FakeSalons
+	mems     *testutil.FakeMemberships
+	settings *testutil.FakeSettings
+	mailer   *testutil.FakeMailer
 	inv      *fakeInvitations
 	hasher   *countingInvHasher
 	svc      InvitationService
@@ -228,21 +229,21 @@ const inviteSalonName = "Navajas de Oro"
 func newInviteEnv(t *testing.T) *inviteEnv {
 	t.Helper()
 	now := time.Date(2027, 3, 1, 12, 0, 0, 0, time.UTC)
-	users := &fakeUsers{}
-	salons := &fakeSalons{}
+	users := &testutil.FakeUsers{}
+	salons := &testutil.FakeSalons{}
 	if err := salons.Save(domain.Salon{ID: "s1", Slug: "navajas", Name: inviteSalonName}); err != nil {
 		t.Fatalf("salón: %v", err)
 	}
 	if err := salons.Save(domain.Salon{ID: "s2", Slug: "otro", Name: "Otro Salón"}); err != nil {
 		t.Fatalf("salón 2: %v", err)
 	}
-	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{}}
+	settings := &testutil.FakeSettings{BySalon: map[string]domain.SalonSettings{}}
 	st, err := domain.NewSalonSettings("s1", "America/Mexico_City", "09:00", "19:00", 30)
 	if err != nil {
 		t.Fatalf("settings: %v", err)
 	}
-	settings.bySalon["s1"] = st
-	mems := &fakeMemberships{}
+	settings.BySalon["s1"] = st
+	mems := &testutil.FakeMemberships{}
 	owner := domain.Membership{UserID: "u-owner", SalonID: "s1", Role: domain.RoleOwner, Attends: true}
 	if err := mems.Save(owner); err != nil {
 		t.Fatalf("owner: %v", err)
@@ -250,7 +251,7 @@ func newInviteEnv(t *testing.T) *inviteEnv {
 	inv := &fakeInvitations{rows: map[string]domain.Invitation{}, users: users, mems: mems, now: now}
 	env := &inviteEnv{
 		users: users, salons: salons, mems: mems, settings: settings,
-		mailer: &fakeMailer{}, inv: inv, hasher: &countingInvHasher{}, now: now, owner: owner,
+		mailer: &testutil.FakeMailer{}, inv: inv, hasher: &countingInvHasher{}, now: now, owner: owner,
 	}
 	genToken := func() (string, error) {
 		env.tokens++
@@ -306,7 +307,7 @@ func TestInvitation_Invite_emite_enlace_y_manda_el_correo(t *testing.T) {
 	if !created.EmailSent {
 		t.Fatal("con mailer sano el correo sale")
 	}
-	msgs := env.mailer.messages()
+	msgs := env.mailer.Messages()
 	if len(msgs) != 1 {
 		t.Fatalf("un correo, hubo %d", len(msgs))
 	}
@@ -515,7 +516,7 @@ func TestInvitation_reinvitar_revoca_el_token_viejo(t *testing.T) {
 // S-F2g1-5: si el SMTP falla la invitación existe igual y email_sent=false.
 func TestInvitation_correo_fallido_no_falla_el_alta(t *testing.T) {
 	env := newInviteEnv(t)
-	env.mailer.err = errors.New("smtp: conexión rechazada")
+	env.mailer.Err = errors.New("smtp: conexión rechazada")
 	created, token := env.invite(t, "lucia@mail.com", domain.RoleProfessional)
 	if created.EmailSent {
 		t.Fatal("con el SMTP caído email_sent tiene que ser false")
@@ -612,8 +613,8 @@ func TestInvitationAccept_politica_de_clave_antes_de_bcrypt(t *testing.T) {
 	if env.hasher.hashes != 0 {
 		t.Fatalf("bcrypt no se puede gastar con una clave inválida: %d hashes", env.hasher.hashes)
 	}
-	if len(env.users.byEmail) != 0 {
-		t.Fatalf("no se crea cuenta: %+v", env.users.byEmail)
+	if len(env.users.ByEmail) != 0 {
+		t.Fatalf("no se crea cuenta: %+v", env.users.ByEmail)
 	}
 	if row := env.inv.rows[created.Invitation.ID]; row.AcceptedAt != nil {
 		t.Fatal("la invitación queda pendiente")
@@ -690,7 +691,7 @@ func TestInvitationAccept_cuenta_existente_reactiva_una_baja(t *testing.T) {
 		t.Fatalf("usuario: %v", err)
 	}
 	salon := env.now
-	env.mems.byKey["u-lucia|s1"] = domain.Membership{
+	env.mems.ByKey["u-lucia|s1"] = domain.Membership{
 		UserID: "u-lucia", SalonID: "s1", Role: domain.RoleProfessional,
 		Attends: true, Trade: "Barbero", EndedAt: &salon,
 	}
@@ -711,14 +712,14 @@ func TestInvitationAccept_cuenta_existente_reactiva_una_baja(t *testing.T) {
 
 	// Y a alguien que YA está activo no se le cambia el rol: 409 (comportamiento
 	// de siempre).
-	env.mems.byKey["u-lucia|s1"] = domain.Membership{
+	env.mems.ByKey["u-lucia|s1"] = domain.Membership{
 		UserID: "u-lucia", SalonID: "s1", Role: domain.RoleReception,
 	}
 	_, token2 := env.invite(t, "otra@mail.com", domain.RoleProfessional)
 	if err := env.users.Save(domain.User{ID: "u-otra", Name: "Otra", Email: "otra@mail.com", PasswordHash: "x"}); err != nil {
 		t.Fatalf("usuario: %v", err)
 	}
-	env.mems.byKey["u-otra|s1"] = domain.Membership{UserID: "u-otra", SalonID: "s1", Role: domain.RoleProfessional, Attends: true}
+	env.mems.ByKey["u-otra|s1"] = domain.Membership{UserID: "u-otra", SalonID: "s1", Role: domain.RoleProfessional, Attends: true}
 	if _, _, err := env.pub.AcceptExisting("u-otra", token2); !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("activo aceptando otra invitación: %v", err)
 	}
@@ -757,8 +758,8 @@ func TestInvitationAccept_sin_oraculo(t *testing.T) {
 			t.Fatalf("lookup %s: %v", nombre, err)
 		}
 	}
-	if len(env.users.byEmail) != 1 {
-		t.Fatalf("solo la primera invitación creó cuenta: %+v", env.users.byEmail)
+	if len(env.users.ByEmail) != 1 {
+		t.Fatalf("solo la primera invitación creó cuenta: %+v", env.users.ByEmail)
 	}
 }
 
@@ -785,8 +786,8 @@ func TestInvitationAccept_transaccion_atomica(t *testing.T) {
 	if _, err := env.pub.AcceptNew(token, "Lucía", "secreta123"); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("fallo de membresía: %v", err)
 	}
-	if len(env.users.byEmail) != 0 {
-		t.Fatalf("no puede quedar la cuenta: %+v", env.users.byEmail)
+	if len(env.users.ByEmail) != 0 {
+		t.Fatalf("no puede quedar la cuenta: %+v", env.users.ByEmail)
 	}
 	if row := env.inv.rows[created.Invitation.ID]; row.AcceptedAt != nil {
 		t.Fatal("la invitación no se puede gastar si la membresía falló")

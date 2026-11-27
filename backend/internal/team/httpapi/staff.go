@@ -5,15 +5,16 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/team"
 )
 
 // StaffHandler: GET /api/v1/salons/:id/staff. El equipo que atiende, con id y
 // nombre: es la fuente del select de profesional del frontend.
 type StaffHandler struct {
-	Staff       app.StaffService
+	Staff       team.StaffService
 	Memberships ports.MembershipRepository
 }
 
@@ -33,7 +34,7 @@ func (h StaffHandler) loadActor(c *gin.Context, salonID string) (domain.Membersh
 	}
 	// respondErr deja el detalle en el log del servidor y responde genérico: no
 	// agrega el id de la persona ni su email a la línea.
-	respondErr(c, err)
+	httpx.RespondErr(c, err)
 	return domain.Membership{}, false
 }
 
@@ -46,7 +47,7 @@ func (h StaffHandler) List(c *gin.Context) {
 	}
 	list, err := h.Staff.List(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))

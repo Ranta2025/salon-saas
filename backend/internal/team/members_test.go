@@ -1,4 +1,4 @@
-package app
+package team
 
 import (
 	"errors"
@@ -7,15 +7,16 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // T6: gestión de miembros del salón (GET/POST/DELETE /salons/:id/members).
 // Solo owner/admin; el owner suma admins, el admin suma profesionales/recepción;
 // nunca se puede quedar el salón sin owner.
 
-func memberFixture(t *testing.T) (*MemberService, *fakeMemberships, *fakeMembers) {
+func memberFixture(t *testing.T) (*MemberService, *testutil.FakeMemberships, *fakeMembers) {
 	t.Helper()
-	users := &fakeUsers{}
+	users := &testutil.FakeUsers{}
 	for _, u := range []domain.User{
 		{ID: "u-owner", Name: "Ana", Email: "ana@mail.com"},
 		{ID: "u-admin", Name: "Beto", Email: "beto@mail.com"},
@@ -27,12 +28,12 @@ func memberFixture(t *testing.T) (*MemberService, *fakeMemberships, *fakeMembers
 			t.Fatalf("usuario: %v", err)
 		}
 	}
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	admin := &fakeMembers{mems: mems, users: users}
 	svc := &MemberService{Members: admin, Memberships: mems, Users: users, Tx: admin, Now: func() time.Time { return f2g2Now }}
-	miembro(mems, "u-owner", "s1", domain.RoleOwner)
-	miembro(mems, "u-admin", "s1", domain.RoleAdmin)
-	miembro(mems, "u-owner", "s2", domain.RoleOwner)
+	testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	testutil.Miembro(mems, "u-admin", "s1", domain.RoleAdmin)
+	testutil.Miembro(mems, "u-owner", "s2", domain.RoleOwner)
 	return svc, mems, admin
 }
 
@@ -57,7 +58,7 @@ func TestMemberService_list(t *testing.T) {
 	if _, err := svc.List(admin, "s1"); err != nil {
 		t.Fatalf("admin lista: %v", err)
 	}
-	prof := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	prof := testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
 	if _, err := svc.List(prof, "s1"); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("profesional listando: %v", err)
 	}
@@ -100,7 +101,7 @@ func TestMemberService_add(t *testing.T) {
 		t.Fatalf("owner agregando owner: %v", err)
 	}
 	// Profesional / recepción no administran: 403.
-	prof := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	prof := testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
 	if _, err := svc.Add(prof, "s1", "eva@mail.com", domain.RoleProfessional, nil); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("profesional agregando: %v", err)
 	}
@@ -150,7 +151,7 @@ func TestMemberService_remove(t *testing.T) {
 	if _, err := mems.Find("u-admin", "s1"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("el admin debe estar fuera: %v", err)
 	}
-	if raw := mems.byKey["u-admin|s1"]; raw.Active() {
+	if raw := mems.ByKey["u-admin|s1"]; raw.Active() {
 		t.Fatalf("la fila se conserva dada de baja: %+v", raw)
 	}
 	// Quitar a alguien que no está: 404.
@@ -171,11 +172,11 @@ func TestMemberService_remove(t *testing.T) {
 	if _, err := mems.Find("u-owner", "s1"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("el owner dado de baja ya no tiene acceso: %v", err)
 	}
-	if raw := mems.byKey["u-owner|s1"]; raw.Active() || raw.EndedAt == nil {
+	if raw := mems.ByKey["u-owner|s1"]; raw.Active() || raw.EndedAt == nil {
 		t.Fatalf("la fila del owner se conserva dada de baja: %+v", raw)
 	}
 	// Profesional no administra: 403.
-	prof := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	prof := testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
 	if err := svc.Remove(prof, "s1", "u-owner2"); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("profesional quitando: %v", err)
 	}

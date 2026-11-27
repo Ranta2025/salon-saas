@@ -279,7 +279,7 @@ func TestHTTP_public_availability_y_reserva_por_servicio(t *testing.T) {
 	env := httpkit.NewPOSEnv()
 	ownerTok, _ := env.Register(t, "owner@mail.com")
 	salonID := env.Salon(t, ownerTok, "agenda-servicios")
-	salonSettings(env, salonID)
+	httpkit.SalonSettings(env, salonID)
 	corte := env.SeedService(t, ownerTok, salonID, "Corte", 150000)
 	keratina := env.SeedService(t, ownerTok, salonID, "Keratina", 250000)
 	_, profCorte := env.Register(t, "corte@mail.com")

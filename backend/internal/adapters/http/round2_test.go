@@ -17,17 +17,9 @@ import (
 
 // Contrato ronda 2 (T6). El frontend codifica contra estas formas exactas.
 
-// salonSettings siembra la configuración de un salón de prueba (CDMX,
-// 09:00-12:00, paso 30) para disponibilidad y reserva pública.
-func salonSettings(env *httpkit.Env, salonID string) {
-	if env.Settings.BySalon == nil {
-		env.Settings.BySalon = map[string]domain.SalonSettings{}
-	}
-	env.Settings.BySalon[salonID] = domain.SalonSettings{
-		SalonID: salonID, Timezone: "America/Mexico_City",
-		OpenTime: "09:00", CloseTime: "12:00", SlotStepMin: 30,
-	}
-}
+// salonSettings siembra la configuración de un salón de prueba (el helper vive
+// en httpkit: lo comparten los contratos de varias funcionalidades).
+func salonSettings(env *httpkit.Env, salonID string) { httpkit.SalonSettings(env, salonID) }
 
 // --- Settings ---
 

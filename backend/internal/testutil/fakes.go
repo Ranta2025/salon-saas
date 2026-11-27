@@ -381,3 +381,45 @@ func (f *FakeEvents) Typed(t string) (ports.Event, int) {
 }
 
 var _ ports.EventPublisher = (*FakeEvents)(nil)
+
+// FakeSalons es el repositorio de salones en memoria: índice por slug y búsqueda
+// por id (la copia exportada del `fakeSalons` de los tests de app, que sigue con
+// los tests del nudo de reservas).
+type FakeSalons struct{ BySlug map[string]domain.Salon }
+
+func (f *FakeSalons) Save(s domain.Salon) error {
+	if f.BySlug == nil {
+		f.BySlug = map[string]domain.Salon{}
+	}
+	f.BySlug[s.Slug] = s
+	return nil
+}
+
+func (f *FakeSalons) FindBySlug(slug string) (domain.Salon, error) {
+	s, ok := f.BySlug[slug]
+	if !ok {
+		return domain.Salon{}, domain.ErrNotFound
+	}
+	return s, nil
+}
+
+// FindByID: lo usa GET /me para el nombre y el slug de cada salón del usuario.
+func (f *FakeSalons) FindByID(id string) (domain.Salon, error) {
+	for _, s := range f.BySlug {
+		if s.ID == id {
+			return s, nil
+		}
+	}
+	return domain.Salon{}, domain.ErrNotFound
+}
+
+// FakeStaffLister es la plantilla del salón en memoria (personal que atiende).
+type FakeStaffLister struct {
+	BySalon map[string][]domain.StaffMember
+}
+
+func (f *FakeStaffLister) ListStaff(salonID string) ([]domain.StaffMember, error) {
+	return f.BySalon[salonID], nil
+}
+
+var _ ports.StaffLister = (*FakeStaffLister)(nil)

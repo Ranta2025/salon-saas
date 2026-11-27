@@ -217,3 +217,16 @@ func (f *Bookings) StatsRange(salonID string, from, to time.Time) (int, int, err
 	}
 	return count, minutes, nil
 }
+
+// SalonSettings siembra la configuración de un salón de prueba (CDMX,
+// 09:00-12:00, paso 30) para disponibilidad y reserva pública. Es el helper
+// compartido por los contratos HTTP de las funcionalidades que la necesitan.
+func SalonSettings(env *Env, salonID string) {
+	if env.Settings.BySalon == nil {
+		env.Settings.BySalon = map[string]domain.SalonSettings{}
+	}
+	env.Settings.BySalon[salonID] = domain.SalonSettings{
+		SalonID: salonID, Timezone: "America/Mexico_City",
+		OpenTime: "09:00", CloseTime: "12:00", SlotStepMin: 30,
+	}
+}

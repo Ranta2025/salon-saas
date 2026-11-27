@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/team"
 )
 
 // S-F2a-2: el alta de un turno desde el panel valida el professional_id con la
@@ -50,7 +51,7 @@ func TestBooking_staff_solo_agenda_para_quien_atiende(t *testing.T) {
 // equipo nace sin atender salvo el profesional, que atiende por rol.
 func TestTenants_CreateSalon_ownerAttends(t *testing.T) {
 	salons, mems := &fakeSalons{}, &fakeMemberships{}
-	svc := TenantService{Salons: salons, Memberships: mems}
+	svc := team.TenantService{Salons: salons, Memberships: mems}
 	s, err := svc.CreateSalon("u-owner", "Navajas de Oro", "navajas-oro")
 	if err != nil {
 		t.Fatalf("create: %v", err)

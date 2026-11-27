@@ -1,13 +1,14 @@
 // Endurecimiento de F2g2 después de la verificación y la revisión nativa: la
 // carrera del último owner (F1), la reactivación por las otras dos puertas con
 // el rol guardado (F2) y el comportamiento de siempre para quien está activo.
-package app
+package team
 
 import (
 	"errors"
 	"testing"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // F1: el chequeo del último owner también corre DENTRO de la transacción,
@@ -18,7 +19,7 @@ import (
 func TestMemberService_remove_checks_last_owner_inside_the_tx(t *testing.T) {
 	svc, mems, admin := deactivateFixture(t)
 	owner, _ := mems.Find("u-owner", "s1")
-	mems.byKey["u-owner2|s1"] = domain.Membership{UserID: "u-owner2", SalonID: "s1", Role: domain.RoleOwner}
+	mems.ByKey["u-owner2|s1"] = domain.Membership{UserID: "u-owner2", SalonID: "s1", Role: domain.RoleOwner}
 
 	// El otro owner (el actor) ya fue dado de baja por la transacción que
 	// ganó la carrera: el pre-chequeo de afuera vio dos, el conteo de adentro ve
@@ -35,7 +36,7 @@ func TestMemberService_remove_checks_last_owner_inside_the_tx(t *testing.T) {
 	// El 400 revierte ENTERA la transacción: la fila que esta baja desactivó
 	// vuelve a estar activa (nada queda a medias).
 	for _, key := range []string{"u-owner|s1", "u-owner2|s1"} {
-		if raw := mems.byKey[key]; !raw.Active() {
+		if raw := mems.ByKey[key]; !raw.Active() {
 			t.Fatalf("el rechazo no puede dar de baja a %s: %+v", key, raw)
 		}
 	}
@@ -52,10 +53,10 @@ func TestMemberService_add_admin_cannot_reactivate_deactivated_admin_or_owner(t 
 	admin, _ := mems.Find("u-admin", "s1")
 	owner, _ := mems.Find("u-owner", "s1")
 	at := f2g2Now
-	mems.byKey["u-admin2|s1"] = domain.Membership{
+	mems.ByKey["u-admin2|s1"] = domain.Membership{
 		UserID: "u-admin2", SalonID: "s1", Role: domain.RoleAdmin, EndedAt: &at,
 	}
-	mems.byKey["u-owner2|s1"] = domain.Membership{
+	mems.ByKey["u-owner2|s1"] = domain.Membership{
 		UserID: "u-owner2", SalonID: "s1", Role: domain.RoleOwner, EndedAt: &at,
 	}
 
@@ -71,7 +72,7 @@ func TestMemberService_add_admin_cannot_reactivate_deactivated_admin_or_owner(t 
 		if _, err := svc.Add(admin, "s1", c.email, domain.RoleProfessional, nil); !errors.Is(err, domain.ErrForbidden) {
 			t.Fatalf("admin reactivando una baja de %s: %v", c.rol.Label(), err)
 		}
-		raw := mems.byKey[c.key]
+		raw := mems.ByKey[c.key]
 		if raw.Active() {
 			t.Fatalf("el 403 no puede reactivar: %+v", raw)
 		}
@@ -117,10 +118,10 @@ func TestInvitation_Invite_admin_cannot_invite_a_deactivated_admin_or_owner(t *t
 	if err := env.mems.Save(admin); err != nil {
 		t.Fatalf("admin: %v", err)
 	}
-	env.mems.byKey["u-admin2|s1"] = domain.Membership{
+	env.mems.ByKey["u-admin2|s1"] = domain.Membership{
 		UserID: "u-admin2", SalonID: "s1", Role: domain.RoleAdmin, EndedAt: &at,
 	}
-	env.mems.byKey["u-owner2|s1"] = domain.Membership{
+	env.mems.ByKey["u-owner2|s1"] = domain.Membership{
 		UserID: "u-owner2", SalonID: "s1", Role: domain.RoleOwner, EndedAt: &at,
 	}
 
@@ -152,7 +153,7 @@ func TestInvitation_accept_reactivates_a_deactivated_owner(t *testing.T) {
 		t.Fatalf("usuario: %v", err)
 	}
 	at := env.now
-	env.mems.byKey["u-owner2|s1"] = domain.Membership{
+	env.mems.ByKey["u-owner2|s1"] = domain.Membership{
 		UserID: "u-owner2", SalonID: "s1", Role: domain.RoleOwner, Attends: true, EndedAt: &at,
 	}
 	if _, err := env.mems.Find("u-owner2", "s1"); !errors.Is(err, domain.ErrNotFound) {
@@ -190,7 +191,7 @@ func TestMemberService_add_active_member_unchanged(t *testing.T) {
 	if !errors.Is(err, domain.ErrAlreadyExists) || err.Error() != "Ya es parte del equipo como profesional" {
 		t.Fatalf("otro rol: %v", err)
 	}
-	if raw := mems.byKey["u-prof|s1"]; !raw.Active() || raw.Role != domain.RoleProfessional {
+	if raw := mems.ByKey["u-prof|s1"]; !raw.Active() || raw.Role != domain.RoleProfessional {
 		t.Fatalf("un 409 no toca la membresía: %+v", raw)
 	}
 }
@@ -201,7 +202,7 @@ func TestInvitation_Invite_active_member_unchanged(t *testing.T) {
 	if err := env.users.Save(domain.User{ID: "u-prof", Name: "Caro", Email: "caro@mail.com"}); err != nil {
 		t.Fatalf("usuario: %v", err)
 	}
-	miembro(env.mems, "u-prof", "s1", domain.RoleProfessional)
+	testutil.Miembro(env.mems, "u-prof", "s1", domain.RoleProfessional)
 
 	_, err := env.svc.Invite(env.owner, "s1", InvitationInput{Email: "caro@mail.com", Role: domain.RoleProfessional})
 	if !errors.Is(err, domain.ErrAlreadyExists) {
@@ -220,12 +221,12 @@ func TestMemberService_remove_non_owner_unchanged(t *testing.T) {
 	admin.invitations = []domain.Invitation{
 		{ID: "inv-prof", SalonID: "s1", CreatedBy: "u-prof", Email: "uno@mail.com"},
 	}
-	before := mems.byKey["u-prof|s1"]
+	before := mems.ByKey["u-prof|s1"]
 
 	if err := svc.Remove(owner, "s1", "u-prof"); err != nil {
 		t.Fatalf("baja de un profesional: %v", err)
 	}
-	raw := mems.byKey["u-prof|s1"]
+	raw := mems.ByKey["u-prof|s1"]
 	if raw.Active() || raw.EndedAt == nil || !raw.EndedAt.Equal(f2g2Now) {
 		t.Fatalf("la fila queda dada de baja con la fecha: %+v", raw)
 	}
