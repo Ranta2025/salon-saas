@@ -1537,6 +1537,7 @@
 
 .review-card {
   display: grid;
+  align-content: start;
   gap: 0.6rem;
   min-width: 0;
   margin: 0;
@@ -1589,4 +1590,9 @@
   .reviews__list {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+}
+
+/* The hero sits on the plum photo: the ghost button keeps its light hover there. */
+.hero .btn--ghost:hover {
+  background: rgba(250, 245, 239, 0.16);
 }

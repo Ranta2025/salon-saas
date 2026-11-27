@@ -258,7 +258,7 @@ export function ReviewPage() {
           />
           <div className="review-form__foot">
             <p className="field__hint" id="review-comment-hint">
-              Hasta {MAX_REVIEW_COMMENT_LENGTH} caracteres, en una sola línea.
+              Hasta {MAX_REVIEW_COMMENT_LENGTH} caracteres, sin saltos de línea.
             </p>
             <p
               className="review-counter"

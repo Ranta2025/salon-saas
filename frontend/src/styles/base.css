@@ -263,8 +263,10 @@ ol {
   color: inherit;
 }
 
+/* The ghost button is used on light panels (security, reviews, activity): its
+   hover needs a tint that is visible there. The dark hero overrides it below. */
 .btn--ghost:hover {
-  background: rgba(250, 245, 239, 0.12);
+  background: rgba(30, 20, 24, 0.07);
 }
 
 .btn--quiet {

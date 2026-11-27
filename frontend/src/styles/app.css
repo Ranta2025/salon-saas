@@ -58,7 +58,7 @@
 }
 
 .shell__brand-kicker {
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -176,7 +176,7 @@
 }
 
 .shell__salon-label {
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -210,7 +210,7 @@
 }
 
 .shell__hint {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   color: var(--ink-muted);
 }
 
@@ -815,7 +815,7 @@
 
 .timeline__event-time {
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   color: var(--wine);
 }
 
@@ -840,7 +840,7 @@
   border-radius: var(--radius-pill);
   background: rgba(30, 20, 24, 0.08);
   color: var(--ink-soft);
-  font-size: 0.5625rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   line-height: 1.5;
   white-space: nowrap;
@@ -1416,7 +1416,7 @@
   border-radius: var(--radius-pill);
   background: var(--wine);
   color: var(--cream);
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   line-height: 1;
 }
@@ -1488,13 +1488,13 @@
 }
 
 .notif__item-title {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 700;
   line-height: 1.3;
 }
 
 .notif__item-body {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--ink-soft);
   line-height: 1.4;
 }

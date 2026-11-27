@@ -146,7 +146,7 @@ export function Timeline({
                 key={group.id}
               >
                 <header className="timeline__column-head">
-                  <h2>{group.name}</h2>
+                  <h2 title={group.name}>{group.name}</h2>
                   <span>{bookingCountLabel(group.bookings.length)}</span>
                 </header>
                 {bandsOf(group.id).map((band) => (
