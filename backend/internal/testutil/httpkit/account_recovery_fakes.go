@@ -4,71 +4,70 @@
 // Postgres (canje condicional, uno vigente por usuario, throttle bajo el lock,
 // idempotencia del token usado y ya verificado).
 //
-// El router es el REAL (RegisterRoutes + AuthMiddleware + el hub de tiempo real):
+// El router es el REAL (httpapi.RegisterRoutes + httpapi.AuthMiddleware + el hub de tiempo real):
 // lo que se prueba es el contrato de la API, no el cableado.
-package httpapi
+package httpkit
 
 import (
 	"context"
 	"regexp"
-	"sync"
-	"time"
-
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"sync"
+	"time"
 )
 
-// mrecovery es la tienda en memoria de F15.
-type mrecovery struct {
-	mu      sync.Mutex
-	users   map[string]*domain.User // por id
-	resets  []*domain.PasswordReset
-	verifs  []*domain.EmailVerification
-	changed map[string]*time.Time
+// Recovery es la tienda en memoria de F15.
+type Recovery struct {
+	Mu      sync.Mutex
+	Users   map[string]*domain.User // por id
+	Resets  []*domain.PasswordReset
+	Verifs  []*domain.EmailVerification
+	Changed map[string]*time.Time
 }
 
-func newMRecovery() *mrecovery {
-	return &mrecovery{
-		users:   map[string]*domain.User{},
-		changed: map[string]*time.Time{},
+func NewRecovery() *Recovery {
+	return &Recovery{
+		Users:   map[string]*domain.User{},
+		Changed: map[string]*time.Time{},
 	}
 }
 
 // seedUser deja una cuenta lista (verified = con email_verified_at).
-func (m *mrecovery) seedUser(id, name, email, passHash string, verified bool) domain.User {
+func (m *Recovery) SeedUser(id, name, email, passHash string, verified bool) domain.User {
 	u := domain.User{ID: id, Name: name, Email: email, PasswordHash: passHash, CreatedAt: time.Now().UTC()}
 	if verified {
 		at := u.CreatedAt
 		u.EmailVerifiedAt = &at
 	}
-	m.mu.Lock()
-	m.users[id] = &u
-	m.mu.Unlock()
+	m.Mu.Lock()
+	m.Users[id] = &u
+	m.Mu.Unlock()
 	return u
 }
 
 // UserRepository
-func (m *mrecovery) Save(u domain.User) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *Recovery) Save(u domain.User) error {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
 	cp := u
-	m.users[u.ID] = &cp
+	m.Users[u.ID] = &cp
 	return nil
 }
 
-func (m *mrecovery) FindByID(id string) (domain.User, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if u, ok := m.users[id]; ok {
+func (m *Recovery) FindByID(id string) (domain.User, error) {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
+	if u, ok := m.Users[id]; ok {
 		return *u, nil
 	}
 	return domain.User{}, domain.ErrNotFound
 }
 
-func (m *mrecovery) FindByEmail(email string) (domain.User, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, u := range m.users {
+func (m *Recovery) FindByEmail(email string) (domain.User, error) {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
+	for _, u := range m.Users {
 		if domain.NormalizeEmail(u.Email) == domain.NormalizeEmail(email) {
 			return *u, nil
 		}
@@ -77,12 +76,12 @@ func (m *mrecovery) FindByEmail(email string) (domain.User, error) {
 }
 
 // PasswordResetRepository
-func (m *mrecovery) IssueReset(r domain.PasswordReset) (bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *Recovery) IssueReset(r domain.PasswordReset) (bool, error) {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
 	var last *time.Time
 	inHour := 0
-	for _, x := range m.resets {
+	for _, x := range m.Resets {
 		if x.UserID != r.UserID {
 			continue
 		}
@@ -97,21 +96,21 @@ func (m *mrecovery) IssueReset(r domain.PasswordReset) (bool, error) {
 	if domain.ResetThrottled(last, inHour, r.CreatedAt) {
 		return false, nil
 	}
-	for _, x := range m.resets {
+	for _, x := range m.Resets {
 		if x.UserID == r.UserID && x.UsedAt == nil {
 			at := r.CreatedAt
 			x.UsedAt = &at
 		}
 	}
 	cp := r
-	m.resets = append(m.resets, &cp)
+	m.Resets = append(m.Resets, &cp)
 	return true, nil
 }
 
-func (m *mrecovery) FindReset(hash string) (domain.PasswordReset, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, x := range m.resets {
+func (m *Recovery) FindReset(hash string) (domain.PasswordReset, error) {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
+	for _, x := range m.Resets {
 		if x.TokenHash == hash {
 			return *x, nil
 		}
@@ -119,27 +118,27 @@ func (m *mrecovery) FindReset(hash string) (domain.PasswordReset, error) {
 	return domain.PasswordReset{}, domain.ErrNotFound
 }
 
-func (m *mrecovery) ConsumeReset(hash, passHash string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *Recovery) ConsumeReset(hash, passHash string) error {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
 	now := time.Now().UTC()
-	for _, x := range m.resets {
+	for _, x := range m.Resets {
 		if x.TokenHash != hash || !x.Usable(now) {
 			continue
 		}
 		at := now
 		x.UsedAt = &at
-		u := m.users[x.UserID]
+		u := m.Users[x.UserID]
 		if u == nil {
 			return domain.ErrNotFound
 		}
 		u.PasswordHash = passHash
-		m.changed[u.ID] = &at
+		m.Changed[u.ID] = &at
 		if u.EmailVerifiedAt == nil {
 			v := now
 			u.EmailVerifiedAt = &v
 		}
-		for _, o := range m.resets {
+		for _, o := range m.Resets {
 			if o.UserID == x.UserID && o.UsedAt == nil {
 				oa := now
 				o.UsedAt = &oa
@@ -151,30 +150,30 @@ func (m *mrecovery) ConsumeReset(hash, passHash string) error {
 }
 
 // EmailVerificationRepository
-func (m *mrecovery) IssueVerification(v domain.EmailVerification, minInterval time.Duration) (bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *Recovery) IssueVerification(v domain.EmailVerification, minInterval time.Duration) (bool, error) {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
 	if minInterval > 0 {
-		for _, x := range m.verifs {
+		for _, x := range m.Verifs {
 			if x.UserID == v.UserID && v.CreatedAt.Sub(x.CreatedAt) < minInterval {
 				return false, nil
 			}
 		}
 	}
 	cp := v
-	m.verifs = append(m.verifs, &cp)
+	m.Verifs = append(m.Verifs, &cp)
 	return true, nil
 }
 
-func (m *mrecovery) ConsumeVerification(hash string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *Recovery) ConsumeVerification(hash string) error {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
 	now := time.Now().UTC()
-	for _, x := range m.verifs {
+	for _, x := range m.Verifs {
 		if x.TokenHash != hash {
 			continue
 		}
-		u := m.users[x.UserID]
+		u := m.Users[x.UserID]
 		if u == nil {
 			return domain.ErrNotFound
 		}
@@ -199,52 +198,52 @@ func (m *mrecovery) ConsumeVerification(hash string) error {
 }
 
 // SessionGate (D4)
-func (m *mrecovery) PasswordChangedAt(userID string) (*time.Time, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if _, ok := m.users[userID]; !ok {
+func (m *Recovery) PasswordChangedAt(userID string) (*time.Time, error) {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
+	if _, ok := m.Users[userID]; !ok {
 		return nil, domain.ErrNotFound
 	}
-	return m.changed[userID], nil
+	return m.Changed[userID], nil
 }
 
 // resetCount y mailCount: introspección de las pruebas.
-func (m *mrecovery) resetCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.resets)
+func (m *Recovery) ResetCount() int {
+	m.Mu.Lock()
+	defer m.Mu.Unlock()
+	return len(m.Resets)
 }
 
-// inbox es el MailSender de las pruebas: guarda lo enviado y nunca falla.
-type inbox struct {
-	mu   sync.Mutex
-	sent []ports.Message
+// Inbox es el MailSender de las pruebas: guarda lo enviado y nunca falla.
+type Inbox struct {
+	Mu   sync.Mutex
+	Sent []ports.Message
 }
 
-func (b *inbox) Send(_ context.Context, msg ports.Message) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.sent = append(b.sent, msg)
+func (b *Inbox) Send(_ context.Context, msg ports.Message) error {
+	b.Mu.Lock()
+	defer b.Mu.Unlock()
+	b.Sent = append(b.Sent, msg)
 	return nil
 }
 
-func (b *inbox) count() int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return len(b.sent)
+func (b *Inbox) Count() int {
+	b.Mu.Lock()
+	defer b.Mu.Unlock()
+	return len(b.Sent)
 }
 
-func (b *inbox) last() ports.Message {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if len(b.sent) == 0 {
+func (b *Inbox) Last() ports.Message {
+	b.Mu.Lock()
+	defer b.Mu.Unlock()
+	if len(b.Sent) == 0 {
 		return ports.Message{}
 	}
-	return b.sent[len(b.sent)-1]
+	return b.Sent[len(b.Sent)-1]
 }
 
-// tokenFromLink saca el token del último correo (solo la prueba lo ve).
-func tokenFromLink(t interface {
+// TokenFromLink saca el token del último correo (solo la prueba lo ve).
+func TokenFromLink(t interface {
 	Helper()
 	Fatalf(string, ...any)
 }, link string) string {
@@ -257,9 +256,9 @@ func tokenFromLink(t interface {
 }
 
 var (
-	_ ports.UserRepository              = (*mrecovery)(nil)
-	_ ports.PasswordResetRepository     = (*mrecovery)(nil)
-	_ ports.EmailVerificationRepository = (*mrecovery)(nil)
-	_ ports.SessionGate                 = (*mrecovery)(nil)
-	_ ports.MailSender                  = (*inbox)(nil)
+	_ ports.UserRepository              = (*Recovery)(nil)
+	_ ports.PasswordResetRepository     = (*Recovery)(nil)
+	_ ports.EmailVerificationRepository = (*Recovery)(nil)
+	_ ports.SessionGate                 = (*Recovery)(nil)
+	_ ports.MailSender                  = (*Inbox)(nil)
 )

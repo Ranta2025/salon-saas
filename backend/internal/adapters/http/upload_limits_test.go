@@ -1,10 +1,11 @@
-package httpapi
+package httpapi_test
 
 import (
 	"bytes"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"salon-saas/internal/adapters/http"
 	"strings"
 	"testing"
 
@@ -38,7 +39,7 @@ func TestUpload_rechaza_body_gigante_con_archivo_chico(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodPost, "/x", &body)
 	c.Request.Header.Set("Content-Type", mw.FormDataContentType())
 
-	_, _, err = readUpload(c)
+	_, _, err = httpapi.ReadUpload(c)
 	if err == nil {
 		t.Fatal("body de 10 MB con archivo chico debe rechazarse")
 	}
@@ -62,7 +63,7 @@ func TestUpload_acepta_foto_normal(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodPost, "/x", &body)
 	c.Request.Header.Set("Content-Type", mw.FormDataContentType())
 
-	data, ct, err := readUpload(c)
+	data, ct, err := httpapi.ReadUpload(c)
 	if err != nil {
 		t.Fatalf("foto chica debe aceptarse: %v", err)
 	}

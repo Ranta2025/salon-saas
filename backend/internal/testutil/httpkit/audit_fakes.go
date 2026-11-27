@@ -1,59 +1,58 @@
-package httpapi
+package httpkit
 
 import (
 	"errors"
-	"sort"
-	"sync"
-
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"sort"
+	"sync"
 )
 
-// maudit imita pgstore.Audit: scope por salón, orden (created_at, id) DESC,
+// AuditEvents imita pgstore.Audit: scope por salón, orden (created_at, id) DESC,
 // cursor estricto y el filtro de acción de domain.AuditActionMatches. Puede
 // fallar o entrar en pánico a pedido y recuerda el orden de las llamadas.
-type maudit struct {
-	mu        sync.Mutex
-	rows      []domain.AuditEvent
-	appendErr error
-	panicOn   bool
-	listErr   error
+type AuditEvents struct {
+	Mu        sync.Mutex
+	Rows      []domain.AuditEvent
+	AppendErr error
+	PanicOn   bool
+	ListErr   error
 	// listCalls cuenta las lecturas: el permiso va antes de tocar la base.
-	listCalls   int
-	appendCalls int
-	log         *[]string
+	ListCalls   int
+	AppendCalls int
+	Log         *[]string
 }
 
-func (f *maudit) note(s string) {
-	if f.log != nil {
-		*f.log = append(*f.log, s)
+func (f *AuditEvents) note(s string) {
+	if f.Log != nil {
+		*f.Log = append(*f.Log, s)
 	}
 }
 
-func (f *maudit) Append(e domain.AuditEvent) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.appendCalls++
+func (f *AuditEvents) Append(e domain.AuditEvent) error {
+	f.Mu.Lock()
+	defer f.Mu.Unlock()
+	f.AppendCalls++
 	f.note("append:" + e.Action)
-	if f.panicOn {
+	if f.PanicOn {
 		panic("audit writer panic")
 	}
-	if f.appendErr != nil {
-		return f.appendErr
+	if f.AppendErr != nil {
+		return f.AppendErr
 	}
-	f.rows = append(f.rows, e)
+	f.Rows = append(f.Rows, e)
 	return nil
 }
 
-func (f *maudit) List(salonID string, q domain.AuditQuery) ([]domain.AuditEvent, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.listCalls++
-	if f.listErr != nil {
-		return nil, f.listErr
+func (f *AuditEvents) List(salonID string, q domain.AuditQuery) ([]domain.AuditEvent, error) {
+	f.Mu.Lock()
+	defer f.Mu.Unlock()
+	f.ListCalls++
+	if f.ListErr != nil {
+		return nil, f.ListErr
 	}
 	var out []domain.AuditEvent
-	for _, e := range f.rows {
+	for _, e := range f.Rows {
 		if e.SalonID != salonID || !domain.AuditActionMatches(q.Action, e.Action) {
 			continue
 		}
@@ -78,16 +77,16 @@ func (f *maudit) List(salonID string, q domain.AuditQuery) ([]domain.AuditEvent,
 }
 
 // actions devuelve "acción|entidad" de lo escrito, en orden de escritura.
-func (f *maudit) actions() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+func (f *AuditEvents) Actions() []string {
+	f.Mu.Lock()
+	defer f.Mu.Unlock()
 	var out []string
-	for _, e := range f.rows {
+	for _, e := range f.Rows {
 		out = append(out, e.Action+"|"+e.EntityID)
 	}
 	return out
 }
 
-var _ ports.AuditRepository = (*maudit)(nil)
+var _ ports.AuditRepository = (*AuditEvents)(nil)
 
-var errAuditDown = errors.New("audit down")
+var ErrAuditDown = errors.New("audit down")

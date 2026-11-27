@@ -3,26 +3,28 @@
 // Lo que estos tests NO pueden dejar pasar: el token aparece una sola vez (en la
 // respuesta del alta), nunca en el listado ni en el lookup ni en el log; y los
 // cuatro tokens que no sirven responden exactamente lo mismo.
-package httpapi
+package httpapi_test
 
 import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	httpapi "salon-saas/internal/adapters/http"
+	"salon-saas/internal/domain"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/domain"
 )
 
 // invitationEnv deja un salón con su dueño y devuelve el token del dueño y el id.
-func invitationEnv(t *testing.T) (*posEnv, string, string) {
+func invitationEnv(t *testing.T) (*httpkit.Env, string, string) {
 	t.Helper()
-	env := newPOSEnv()
-	ownerTok, _ := env.register(t, "owner@mail.com")
-	salonID := env.salon(t, ownerTok, "navajas")
+	env := httpkit.NewPOSEnv()
+	ownerTok, _ := env.Register(t, "owner@mail.com")
+	salonID := env.Salon(t, ownerTok, "navajas")
 	return env, ownerTok, salonID
 }
 
@@ -37,9 +39,9 @@ type createdInvitation struct {
 	EmailSent bool   `json:"email_sent"`
 }
 
-func (e *posEnv) invite(t *testing.T, token, salonID, email, role string) createdInvitation {
+func invite(t *testing.T, e *httpkit.Env, token, salonID, email, role string) createdInvitation {
 	t.Helper()
-	w := doReq(e.r, "POST", "/api/v1/salons/"+salonID+"/invitations",
+	w := httpkit.Do(e.Router, "POST", "/api/v1/salons/"+salonID+"/invitations",
 		`{"email":"`+email+`","role":"`+role+`"}`, token)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("invitar %s: %d %s", email, w.Code, w.Body.String())
@@ -68,7 +70,7 @@ func invitationToken(t *testing.T, link string) string {
 // El flujo completo: invitar -> mail -> lookup -> aceptar -> sesión -> miembro.
 func TestHTTP_invitation_flujo_completo(t *testing.T) {
 	env, ownerTok, salonID := invitationEnv(t)
-	created := env.invite(t, ownerTok, salonID, "  Lucia@Mail.com ", "professional")
+	created := invite(t, env, ownerTok, salonID, "  Lucia@Mail.com ", "professional")
 	if created.Invitation.Email != "lucia@mail.com" || created.Invitation.Role != "professional" {
 		t.Fatalf("invitación: %+v", created.Invitation)
 	}
@@ -84,7 +86,7 @@ func TestHTTP_invitation_flujo_completo(t *testing.T) {
 	}
 
 	// El listado muestra la pendiente y NUNCA el token ni su hash.
-	w := doReq(env.r, "GET", "/api/v1/salons/"+salonID+"/invitations", "", ownerTok)
+	w := httpkit.Do(env.Router, "GET", "/api/v1/salons/"+salonID+"/invitations", "", ownerTok)
 	if w.Code != http.StatusOK {
 		t.Fatalf("listar: %d %s", w.Code, w.Body.String())
 	}
@@ -97,7 +99,7 @@ func TestHTTP_invitation_flujo_completo(t *testing.T) {
 	}
 
 	// Lookup público, sin sesión.
-	w = doReq(env.r, "POST", "/api/v1/public/invitations/lookup", `{"token":"`+token+`"}`, "")
+	w = httpkit.Do(env.Router, "POST", "/api/v1/public/invitations/lookup", `{"token":"`+token+`"}`, "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("lookup: %d %s", w.Code, w.Body.String())
 	}
@@ -123,7 +125,7 @@ func TestHTTP_invitation_flujo_completo(t *testing.T) {
 	}
 
 	// Aceptar como persona nueva: la respuesta tiene la forma del login.
-	w = doReq(env.r, "POST", "/api/v1/public/invitations/accept",
+	w = httpkit.Do(env.Router, "POST", "/api/v1/public/invitations/accept",
 		`{"token":"`+token+`","name":"Lucía","password":"secreta123"}`, "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("aceptar: %d %s", w.Code, w.Body.String())
@@ -141,7 +143,7 @@ func TestHTTP_invitation_flujo_completo(t *testing.T) {
 	}
 
 	// La sesión sirve en /me y el salón aparece.
-	w = doReq(env.r, "GET", "/api/v1/me", "", jwt)
+	w = httpkit.Do(env.Router, "GET", "/api/v1/me", "", jwt)
 	if w.Code != http.StatusOK {
 		t.Fatalf("/me con la sesión nueva: %d %s", w.Code, w.Body.String())
 	}
@@ -150,7 +152,7 @@ func TestHTTP_invitation_flujo_completo(t *testing.T) {
 	}
 
 	// Y el miembro aparece en el equipo con su rol.
-	w = doReq(env.r, "GET", "/api/v1/salons/"+salonID+"/members", "", ownerTok)
+	w = httpkit.Do(env.Router, "GET", "/api/v1/salons/"+salonID+"/members", "", ownerTok)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "lucia@mail.com") ||
 		!strings.Contains(w.Body.String(), `"role":"professional"`) {
 		t.Fatalf("miembros: %d %s", w.Code, w.Body.String())
@@ -158,9 +160,9 @@ func TestHTTP_invitation_flujo_completo(t *testing.T) {
 
 	// El mismo token otra vez: el 404 genérico, idéntico al de un token que no
 	// existe (nada distingue "ya se usó" de "no existe").
-	second := doReq(env.r, "POST", "/api/v1/public/invitations/accept",
+	second := httpkit.Do(env.Router, "POST", "/api/v1/public/invitations/accept",
 		`{"token":"`+token+`","name":"Otra","password":"secreta123"}`, "")
-	bogus := doReq(env.r, "POST", "/api/v1/public/invitations/accept",
+	bogus := httpkit.Do(env.Router, "POST", "/api/v1/public/invitations/accept",
 		`{"token":"token-que-no-existe","name":"Otra","password":"secreta123"}`, "")
 	if second.Code != http.StatusNotFound || second.Body.String() != bogus.Body.String() {
 		t.Fatalf("segundo uso: %d %s vs %d %s", second.Code, second.Body.String(), bogus.Code, bogus.Body.String())
@@ -175,40 +177,40 @@ func TestHTTP_invitation_flujo_completo(t *testing.T) {
 func TestHTTP_invitation_lookup_sin_oraculo(t *testing.T) {
 	env, ownerTok, salonID := invitationEnv(t)
 	// Una cuenta que existe y no está en este salón.
-	if _, _ = env.register(t, "con-cuenta@mail.com"); false {
+	if _, _ = env.Register(t, "con-cuenta@mail.com"); false {
 		t.Fatal("no debería ejecutarse")
 	}
-	withAccount := env.invite(t, ownerTok, salonID, "con-cuenta@mail.com", "professional")
-	withoutAccount := env.invite(t, ownerTok, salonID, "sin-cuenta@mail.com", "professional")
+	withAccount := invite(t, env, ownerTok, salonID, "con-cuenta@mail.com", "professional")
+	withoutAccount := invite(t, env, ownerTok, salonID, "sin-cuenta@mail.com", "professional")
 
 	// Con token válido: has_account dice la verdad (y solo eso).
 	var lookup struct {
 		HasAccount bool `json:"has_account"`
 	}
-	w := doReq(env.r, "POST", "/api/v1/public/invitations/lookup", `{"token":"`+invitationToken(t, withAccount.Link)+`"}`, "")
+	w := httpkit.Do(env.Router, "POST", "/api/v1/public/invitations/lookup", `{"token":"`+invitationToken(t, withAccount.Link)+`"}`, "")
 	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &lookup) != nil || !lookup.HasAccount {
 		t.Fatalf("con cuenta: %d %s", w.Code, w.Body.String())
 	}
-	w = doReq(env.r, "POST", "/api/v1/public/invitations/lookup", `{"token":"`+invitationToken(t, withoutAccount.Link)+`"}`, "")
+	w = httpkit.Do(env.Router, "POST", "/api/v1/public/invitations/lookup", `{"token":"`+invitationToken(t, withoutAccount.Link)+`"}`, "")
 	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &lookup) != nil || lookup.HasAccount {
 		t.Fatalf("sin cuenta: %d %s", w.Code, w.Body.String())
 	}
 
 	// Revocada vs desconocida vs usada: misma respuesta, byte por byte.
-	revoked := env.invite(t, ownerTok, salonID, "revocada@mail.com", "professional")
-	if w := doReq(env.r, "DELETE", "/api/v1/salons/"+salonID+"/invitations/"+revoked.Invitation.ID, "", ownerTok); w.Code != http.StatusNoContent {
+	revoked := invite(t, env, ownerTok, salonID, "revocada@mail.com", "professional")
+	if w := httpkit.Do(env.Router, "DELETE", "/api/v1/salons/"+salonID+"/invitations/"+revoked.Invitation.ID, "", ownerTok); w.Code != http.StatusNoContent {
 		t.Fatalf("revocar: %d %s", w.Code, w.Body.String())
 	}
-	used := env.invite(t, ownerTok, salonID, "usada@mail.com", "professional")
-	if w := doReq(env.r, "POST", "/api/v1/public/invitations/accept",
+	used := invite(t, env, ownerTok, salonID, "usada@mail.com", "professional")
+	if w := httpkit.Do(env.Router, "POST", "/api/v1/public/invitations/accept",
 		`{"token":"`+invitationToken(t, used.Link)+`","name":"Usada","password":"secreta123"}`, ""); w.Code != http.StatusOK {
 		t.Fatalf("aceptar: %d %s", w.Code, w.Body.String())
 	}
 	responses := []*httptest.ResponseRecorder{
-		doReq(env.r, "POST", "/api/v1/public/invitations/lookup", `{"token":"`+invitationToken(t, revoked.Link)+`"}`, ""),
-		doReq(env.r, "POST", "/api/v1/public/invitations/lookup", `{"token":"`+invitationToken(t, used.Link)+`"}`, ""),
-		doReq(env.r, "POST", "/api/v1/public/invitations/lookup", `{"token":"nada"}`, ""),
-		doReq(env.r, "POST", "/api/v1/public/invitations/lookup", `{"token":""}`, ""),
+		httpkit.Do(env.Router, "POST", "/api/v1/public/invitations/lookup", `{"token":"`+invitationToken(t, revoked.Link)+`"}`, ""),
+		httpkit.Do(env.Router, "POST", "/api/v1/public/invitations/lookup", `{"token":"`+invitationToken(t, used.Link)+`"}`, ""),
+		httpkit.Do(env.Router, "POST", "/api/v1/public/invitations/lookup", `{"token":"nada"}`, ""),
+		httpkit.Do(env.Router, "POST", "/api/v1/public/invitations/lookup", `{"token":""}`, ""),
 	}
 	for i, w := range responses {
 		if w.Code != http.StatusNotFound || w.Body.String() != responses[0].Body.String() {
@@ -221,34 +223,34 @@ func TestHTTP_invitation_lookup_sin_oraculo(t *testing.T) {
 // su email es el de la invitación.
 func TestHTTP_invitation_accept_cuenta_existente(t *testing.T) {
 	env, ownerTok, salonID := invitationEnv(t)
-	invited, _ := env.register(t, "invitada@mail.com")
-	inv, _ := env.register(t, "otra@mail.com")
-	created := env.invite(t, ownerTok, salonID, "invitada@mail.com", "reception")
+	invited, _ := env.Register(t, "invitada@mail.com")
+	inv, _ := env.Register(t, "otra@mail.com")
+	created := invite(t, env, ownerTok, salonID, "invitada@mail.com", "reception")
 	token := invitationToken(t, created.Link)
 
 	// Otra cuenta con el token: 403 con el texto del contrato.
-	w := doReq(env.r, "POST", "/api/v1/invitations/accept", `{"token":"`+token+"\"}", inv)
+	w := httpkit.Do(env.Router, "POST", "/api/v1/invitations/accept", `{"token":"`+token+"\"}", inv)
 	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "Esta invitación es para otra cuenta") {
 		t.Fatalf("otra cuenta: %d %s", w.Code, w.Body.String())
 	}
 	// Sin sesión: 401 (la ruta es autenticada).
-	if w := doReq(env.r, "POST", "/api/v1/invitations/accept", `{"token":"`+token+"\"}", ""); w.Code != http.StatusUnauthorized {
+	if w := httpkit.Do(env.Router, "POST", "/api/v1/invitations/accept", `{"token":"`+token+"\"}", ""); w.Code != http.StatusUnauthorized {
 		t.Fatalf("sin sesión: %d %s", w.Code, w.Body.String())
 	}
 	// La persona invitada acepta y queda en el equipo con su rol.
-	w = doReq(env.r, "POST", "/api/v1/invitations/accept", `{"token":"`+token+"\"}", invited)
+	w = httpkit.Do(env.Router, "POST", "/api/v1/invitations/accept", `{"token":"`+token+"\"}", invited)
 	if w.Code != http.StatusOK {
 		t.Fatalf("aceptar existente: %d %s", w.Code, w.Body.String())
 	}
 	if !strings.Contains(w.Body.String(), "Salón navajas") || !strings.Contains(w.Body.String(), "reception") {
 		t.Fatalf("respuesta del canje autenticado: %s", w.Body.String())
 	}
-	w = doReq(env.r, "GET", "/api/v1/salons/"+salonID+"/members", "", ownerTok)
+	w = httpkit.Do(env.Router, "GET", "/api/v1/salons/"+salonID+"/members", "", ownerTok)
 	if !strings.Contains(w.Body.String(), "invitada@mail.com") || !strings.Contains(w.Body.String(), `"role":"reception"`) {
 		t.Fatalf("miembros: %s", w.Body.String())
 	}
 	// Y un token inválido por la ruta autenticada: el mismo 404 genérico.
-	if w := doReq(env.r, "POST", "/api/v1/invitations/accept", `{"token":"nada"}`, invited); w.Code != http.StatusNotFound ||
+	if w := httpkit.Do(env.Router, "POST", "/api/v1/invitations/accept", `{"token":"nada"}`, invited); w.Code != http.StatusNotFound ||
 		!strings.Contains(w.Body.String(), "Invitación inválida o vencida") {
 		t.Fatalf("token inválido autenticado: %d %s", w.Code, w.Body.String())
 	}
@@ -258,12 +260,12 @@ func TestHTTP_invitation_accept_cuenta_existente(t *testing.T) {
 func TestHTTP_invitation_errores(t *testing.T) {
 	env, ownerTok, salonID := invitationEnv(t)
 	// Un admin (no owner) y un profesional.
-	adminTok, adminID := env.register(t, "admin@mail.com")
-	if err := env.mems.Save(domain.Membership{UserID: adminID, SalonID: salonID, Role: domain.RoleAdmin}); err != nil {
+	adminTok, adminID := env.Register(t, "admin@mail.com")
+	if err := env.Mems.Save(domain.Membership{UserID: adminID, SalonID: salonID, Role: domain.RoleAdmin}); err != nil {
 		t.Fatalf("admin: %v", err)
 	}
-	profTok, profID := env.register(t, "profe@mail.com")
-	if err := env.mems.Save(domain.Membership{UserID: profID, SalonID: salonID, Role: domain.RoleProfessional, Attends: true}); err != nil {
+	profTok, profID := env.Register(t, "profe@mail.com")
+	if err := env.Mems.Save(domain.Membership{UserID: profID, SalonID: salonID, Role: domain.RoleProfessional, Attends: true}); err != nil {
 		t.Fatalf("profesional: %v", err)
 	}
 
@@ -284,14 +286,14 @@ func TestHTTP_invitation_errores(t *testing.T) {
 		{"otro salón", ownerTok, "s-ajeno", `{"email":"x@mail.com","role":"professional"}`, http.StatusForbidden, "sin acceso al salón"},
 	}
 	for _, c := range cases {
-		w := doReq(env.r, "POST", "/api/v1/salons/"+c.salon+"/invitations", c.body, c.token)
+		w := httpkit.Do(env.Router, "POST", "/api/v1/salons/"+c.salon+"/invitations", c.body, c.token)
 		if w.Code != c.status || !strings.Contains(w.Body.String(), c.text) {
 			t.Fatalf("%s: %d %s (esperaba %d con %q)", c.name, w.Code, w.Body.String(), c.status, c.text)
 		}
 	}
 
 	// Ya es parte del equipo: 409 con el texto del contrato.
-	w := doReq(env.r, "POST", "/api/v1/salons/"+salonID+"/invitations",
+	w := httpkit.Do(env.Router, "POST", "/api/v1/salons/"+salonID+"/invitations",
 		`{"email":"admin@mail.com","role":"professional"}`, ownerTok)
 	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "Esa persona ya es parte del equipo") {
 		t.Fatalf("ya es miembro: %d %s", w.Code, w.Body.String())
@@ -305,7 +307,7 @@ func TestHTTP_invitation_errores(t *testing.T) {
 		{"POST", "/api/v1/invitations/accept"},
 	}
 	for _, c := range sinSesion {
-		if w := doReq(env.r, c.method, c.path, `{}`, ""); w.Code != http.StatusUnauthorized {
+		if w := httpkit.Do(env.Router, c.method, c.path, `{}`, ""); w.Code != http.StatusUnauthorized {
 			t.Fatalf("sin sesión %s %s: %d %s", c.method, c.path, w.Code, w.Body.String())
 		}
 	}
@@ -316,13 +318,13 @@ func TestHTTP_invitation_errores(t *testing.T) {
 // sigue pasando.
 func TestHTTP_invitation_publicas_rate_limit(t *testing.T) {
 	env, ownerTok, salonID := invitationEnv(t)
-	created := env.invite(t, ownerTok, salonID, "lucia@mail.com", "professional")
+	created := invite(t, env, ownerTok, salonID, "lucia@mail.com", "professional")
 	token := invitationToken(t, created.Link)
 
-	d := env.deps()
-	d.PublicInvitationLimit = RateLimitFor(2, time.Minute, "POST", "/api/v1/public/invitations/")
+	d := env.Deps
+	d.PublicInvitationLimit = httpapi.RateLimitFor(2, time.Minute, "POST", "/api/v1/public/invitations/")
 	r := gin.New()
-	RegisterRoutes(r, d)
+	httpapi.RegisterRoutes(r, d)
 
 	post := func(path, ip, body string) int {
 		req := httptest.NewRequest("POST", path, strings.NewReader(body))

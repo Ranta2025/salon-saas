@@ -1,10 +1,14 @@
-package httpapi
+package httpapi_test
 
 import (
 	"bytes"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	httpapi "salon-saas/internal/adapters/http"
+	"salon-saas/internal/domain"
+	"salon-saas/internal/ports"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,15 +17,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/domain"
-	"salon-saas/internal/ports"
 )
 
 // mgallery imita a pgstore.SalonGallery: tope bajo el lock, orden de subida,
 // scope por salón y resolución por slug contra el fake de salones.
 type mgallery struct {
 	mu     sync.Mutex
-	salons *ms
+	Salons *httpkit.Salons
 	byID   map[string]domain.SalonPhoto
 	seq    int
 	// lookups cuenta las consultas por id/slug: una referencia inválida no debe
@@ -82,7 +84,7 @@ func (f *mgallery) FindPublic(slug, id string) (domain.SalonPhoto, error) {
 	if !ok {
 		return domain.SalonPhoto{}, domain.ErrNotFound
 	}
-	if s, ok := f.salons.bySlug[slug]; !ok || s.ID != p.SalonID {
+	if s, ok := f.Salons.BySlug[slug]; !ok || s.ID != p.SalonID {
 		return domain.SalonPhoto{}, domain.ErrNotFound
 	}
 	return p, nil
@@ -109,7 +111,7 @@ func (f *mgallery) Delete(salonID, id string) error {
 
 var _ ports.SalonGalleryRepository = (*mgallery)(nil)
 
-func (w *f16World) galleryPath() string { return "/api/v1/salons/" + w.salon + "/gallery" }
+func (w *f16World) galleryPath() string { return "/api/v1/salons/" + w.Salon + "/gallery" }
 
 // upload manda un multipart con el archivo en `field` y el Content-Type dado.
 func (w *f16World) upload(path, token, field, ctype string, data []byte) *httptest.ResponseRecorder {
@@ -129,7 +131,7 @@ func (w *f16World) upload(path, token, field, ctype string, data []byte) *httpte
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	rec := httptest.NewRecorder()
-	w.env.r.ServeHTTP(rec, req)
+	w.Env.Router.ServeHTTP(rec, req)
 	return rec
 }
 
@@ -149,19 +151,19 @@ func (w *f16World) addPhoto(t *testing.T, salon, token string) photoDTO {
 	var out struct {
 		Photo photoDTO `json:"photo"`
 	}
-	mustJSON(t, r.Body.Bytes(), &out)
+	httpkit.MustJSON(t, r.Body.Bytes(), &out)
 	return out.Photo
 }
 
 // D3: subir -> 201 {"photo":{id,url,caption,created_at}} con la URL pública.
 func TestGallery_upload_shape(t *testing.T) {
 	w := newF16World(t)
-	r := w.upload(w.galleryPath(), w.admin, "file", "image/png", png1x1())
+	r := w.upload(w.galleryPath(), w.Admin, "file", "image/png", png1x1())
 	if r.Code != http.StatusCreated {
 		t.Fatalf("subir: %d %s", r.Code, r.Body.String())
 	}
 	var raw map[string]map[string]any
-	mustJSON(t, r.Body.Bytes(), &raw)
+	httpkit.MustJSON(t, r.Body.Bytes(), &raw)
 	photo := raw["photo"]
 	if strings.Join(keysOf(photo), ",") != "caption,created_at,id,url" {
 		t.Fatalf("claves: %v", keysOf(photo))
@@ -174,7 +176,7 @@ func TestGallery_upload_shape(t *testing.T) {
 		t.Fatalf("created_at: %v", err)
 	}
 	// El campo `photo` (el que manda el frontend de clientas) también se acepta.
-	if r := w.upload(w.galleryPath(), w.owner, "photo", "image/jpeg", []byte("x")); r.Code != http.StatusCreated {
+	if r := w.upload(w.galleryPath(), w.Owner, "photo", "image/jpeg", []byte("x")); r.Code != http.StatusCreated {
 		t.Fatalf("campo photo: %d %s", r.Code, r.Body.String())
 	}
 }
@@ -182,32 +184,32 @@ func TestGallery_upload_shape(t *testing.T) {
 // D3: permisos antes de leer el archivo; recepción, profesional y ajeno no suben.
 func TestGallery_permissionsBeforeBody(t *testing.T) {
 	w := newF16World(t)
-	for name, tok := range map[string]string{"recep": w.recep, "prof": w.prof, "outsider": w.outsider} {
+	for name, tok := range map[string]string{"recep": w.Recep, "prof": w.Prof, "outsider": w.Outsider} {
 		if r := w.upload(w.galleryPath(), tok, "file", "image/png", png1x1()); r.Code != http.StatusForbidden {
 			t.Fatalf("%s sube: %d", name, r.Code)
 		}
 		// Cuerpo que ni siquiera es multipart: 403 igual (se mira el permiso primero).
-		if r := doReq(w.env.r, "POST", w.galleryPath(), `basura`, tok); r.Code != http.StatusForbidden {
+		if r := httpkit.Do(w.Env.Router, "POST", w.galleryPath(), `basura`, tok); r.Code != http.StatusForbidden {
 			t.Fatalf("%s cuerpo roto: %d", name, r.Code)
 		}
-		if r := doReq(w.env.r, "GET", w.galleryPath(), "", tok); r.Code != http.StatusForbidden {
+		if r := httpkit.Do(w.Env.Router, "GET", w.galleryPath(), "", tok); r.Code != http.StatusForbidden {
 			t.Fatalf("%s lista: %d", name, r.Code)
 		}
-		if r := doReq(w.env.r, "PUT", w.galleryPath()+"/x", `{"caption":"a"}`, tok); r.Code != http.StatusForbidden {
+		if r := httpkit.Do(w.Env.Router, "PUT", w.galleryPath()+"/x", `{"caption":"a"}`, tok); r.Code != http.StatusForbidden {
 			t.Fatalf("%s leyenda: %d", name, r.Code)
 		}
-		if r := doReq(w.env.r, "PUT", w.galleryPath()+"/x", `roto`, tok); r.Code != http.StatusForbidden {
+		if r := httpkit.Do(w.Env.Router, "PUT", w.galleryPath()+"/x", `roto`, tok); r.Code != http.StatusForbidden {
 			t.Fatalf("%s leyenda con cuerpo roto: %d", name, r.Code)
 		}
-		if r := doReq(w.env.r, "DELETE", w.galleryPath()+"/x", "", tok); r.Code != http.StatusForbidden {
+		if r := httpkit.Do(w.Env.Router, "DELETE", w.galleryPath()+"/x", "", tok); r.Code != http.StatusForbidden {
 			t.Fatalf("%s borra: %d", name, r.Code)
 		}
 	}
 	if r := w.upload(w.galleryPath(), "", "file", "image/png", png1x1()); r.Code != http.StatusUnauthorized {
 		t.Fatalf("sin token: %d", r.Code)
 	}
-	if len(w.gallery.byID) != 0 || len(w.env.store.files) != 0 {
-		t.Fatalf("un rechazo no escribe: %d filas, %d archivos", len(w.gallery.byID), len(w.env.store.files))
+	if len(w.Gallery.byID) != 0 || len(w.Env.Storage.Files) != 0 {
+		t.Fatalf("un rechazo no escribe: %d filas, %d archivos", len(w.Gallery.byID), len(w.Env.Storage.Files))
 	}
 }
 
@@ -215,24 +217,24 @@ func TestGallery_permissionsBeforeBody(t *testing.T) {
 func TestGallery_upload_invalid(t *testing.T) {
 	w := newF16World(t)
 	for _, ct := range []string{"image/svg+xml", "image/gif", "text/html", "application/pdf"} {
-		r := w.upload(w.galleryPath(), w.owner, "file", ct, []byte("x"))
+		r := w.upload(w.galleryPath(), w.Owner, "file", ct, []byte("x"))
 		wantHTTP(t, r, http.StatusBadRequest, domain.MsgPhotoType)
 	}
-	wantHTTP(t, w.upload(w.galleryPath(), w.owner, "file", "image/png", nil), http.StatusBadRequest, domain.MsgPhotoSize)
+	wantHTTP(t, w.upload(w.galleryPath(), w.Owner, "file", "image/png", nil), http.StatusBadRequest, domain.MsgPhotoSize)
 	big := make([]byte, domain.MaxPhotoBytes+1)
-	wantHTTP(t, w.upload(w.galleryPath(), w.owner, "file", "image/png", big), http.StatusBadRequest, domain.MsgPhotoSize)
+	wantHTTP(t, w.upload(w.galleryPath(), w.Owner, "file", "image/png", big), http.StatusBadRequest, domain.MsgPhotoSize)
 	// Campo equivocado: 400.
-	if r := w.upload(w.galleryPath(), w.owner, "otro", "image/png", png1x1()); r.Code != http.StatusBadRequest {
+	if r := w.upload(w.galleryPath(), w.Owner, "otro", "image/png", png1x1()); r.Code != http.StatusBadRequest {
 		t.Fatalf("campo: %d", r.Code)
 	}
-	if r := doReq(w.env.r, "POST", w.galleryPath(), `{"a":1}`, w.owner); r.Code != http.StatusBadRequest {
+	if r := httpkit.Do(w.Env.Router, "POST", w.galleryPath(), `{"a":1}`, w.Owner); r.Code != http.StatusBadRequest {
 		t.Fatalf("JSON: %d", r.Code)
 	}
-	if len(w.gallery.byID) != 0 || len(w.env.store.files) != 0 {
-		t.Fatalf("nada guardado: %d %d", len(w.gallery.byID), len(w.env.store.files))
+	if len(w.Gallery.byID) != 0 || len(w.Env.Storage.Files) != 0 {
+		t.Fatalf("nada guardado: %d %d", len(w.Gallery.byID), len(w.Env.Storage.Files))
 	}
 	// El tope exacto de 8 MB entra.
-	if r := w.upload(w.galleryPath(), w.owner, "file", "image/png", make([]byte, domain.MaxPhotoBytes)); r.Code != http.StatusCreated {
+	if r := w.upload(w.galleryPath(), w.Owner, "file", "image/png", make([]byte, domain.MaxPhotoBytes)); r.Code != http.StatusCreated {
 		t.Fatalf("8 MB exactos: %d %s", r.Code, r.Body.String())
 	}
 }
@@ -241,32 +243,32 @@ func TestGallery_upload_invalid(t *testing.T) {
 func TestGallery_capOf12(t *testing.T) {
 	w := newF16World(t)
 	for i := 0; i < 12; i++ {
-		w.addPhoto(t, w.salon, w.owner)
+		w.addPhoto(t, w.Salon, w.Owner)
 	}
-	files := len(w.env.store.files)
-	r := w.upload(w.galleryPath(), w.owner, "file", "image/png", png1x1())
+	files := len(w.Env.Storage.Files)
+	r := w.upload(w.galleryPath(), w.Owner, "file", "image/png", png1x1())
 	wantHTTP(t, r, http.StatusConflict, "La galería ya tiene 12 fotos")
-	if len(w.env.store.files) != files || len(w.gallery.byID) != 12 {
+	if len(w.Env.Storage.Files) != files || len(w.Gallery.byID) != 12 {
 		t.Fatalf("la 13ª no guarda nada")
 	}
-	w.addPhoto(t, w.other, w.outsider)
+	w.addPhoto(t, w.other, w.Outsider)
 }
 
 // D3: GET -> {"photos":[...]} en orden de subida y solo las del salón.
 func TestGallery_list(t *testing.T) {
 	w := newF16World(t)
-	empty := doReq(w.env.r, "GET", w.galleryPath(), "", w.owner)
+	empty := httpkit.Do(w.Env.Router, "GET", w.galleryPath(), "", w.Owner)
 	if empty.Code != http.StatusOK || strings.TrimSpace(empty.Body.String()) != `{"photos":[]}` {
 		t.Fatalf("vacía: %d %s", empty.Code, empty.Body.String())
 	}
-	a := w.addPhoto(t, w.salon, w.owner)
-	b := w.addPhoto(t, w.salon, w.admin)
-	w.addPhoto(t, w.other, w.outsider)
-	r := doReq(w.env.r, "GET", w.galleryPath(), "", w.admin)
+	a := w.addPhoto(t, w.Salon, w.Owner)
+	b := w.addPhoto(t, w.Salon, w.Admin)
+	w.addPhoto(t, w.other, w.Outsider)
+	r := httpkit.Do(w.Env.Router, "GET", w.galleryPath(), "", w.Admin)
 	var out struct {
 		Photos []photoDTO `json:"photos"`
 	}
-	mustJSON(t, r.Body.Bytes(), &out)
+	httpkit.MustJSON(t, r.Body.Bytes(), &out)
 	if r.Code != http.StatusOK || len(out.Photos) != 2 || out.Photos[0].ID != a.ID || out.Photos[1].ID != b.ID {
 		t.Fatalf("lista: %d %+v", r.Code, out)
 	}
@@ -278,15 +280,15 @@ func TestGallery_list(t *testing.T) {
 // D3: PUT {caption} exige la clave; null y "" = sin leyenda; inválida 400.
 func TestGallery_caption(t *testing.T) {
 	w := newF16World(t)
-	p := w.addPhoto(t, w.salon, w.owner)
+	p := w.addPhoto(t, w.Salon, w.Owner)
 	path := w.galleryPath() + "/" + p.ID
 	put := func(body string) (int, photoDTO) {
-		r := doReq(w.env.r, "PUT", path, body, w.owner)
+		r := httpkit.Do(w.Env.Router, "PUT", path, body, w.Owner)
 		var out struct {
 			Photo photoDTO `json:"photo"`
 		}
 		if r.Code == http.StatusOK {
-			mustJSON(t, r.Body.Bytes(), &out)
+			httpkit.MustJSON(t, r.Body.Bytes(), &out)
 		}
 		return r.Code, out.Photo
 	}
@@ -302,19 +304,19 @@ func TestGallery_caption(t *testing.T) {
 	}
 	put(`{"caption":"queda"}`)
 	// Clave ausente: 400 con texto, y NO borra la leyenda.
-	wantHTTP(t, doReq(w.env.r, "PUT", path, `{}`, w.owner), http.StatusBadRequest, domain.MsgPhotoCaptionMissing)
+	wantHTTP(t, httpkit.Do(w.Env.Router, "PUT", path, `{}`, w.Owner), http.StatusBadRequest, domain.MsgPhotoCaptionMissing)
 	for _, bad := range []string{`"` + strings.Repeat("a", 121) + `"`, `"a\nb"`, `"a\u0000b"`, `5`} {
-		if r := doReq(w.env.r, "PUT", path, `{"caption":`+bad+`}`, w.owner); r.Code != http.StatusBadRequest {
+		if r := httpkit.Do(w.Env.Router, "PUT", path, `{"caption":`+bad+`}`, w.Owner); r.Code != http.StatusBadRequest {
 			t.Fatalf("%q: %d", bad, r.Code)
 		}
 	}
-	if w.gallery.byID[p.ID].Caption != "queda" {
-		t.Fatalf("un 400 no escribe: %q", w.gallery.byID[p.ID].Caption)
+	if w.Gallery.byID[p.ID].Caption != "queda" {
+		t.Fatalf("un 400 no escribe: %q", w.Gallery.byID[p.ID].Caption)
 	}
 	// Foto de otro salón: 404 uniforme.
-	foreign := w.addPhoto(t, w.other, w.outsider)
-	wantHTTP(t, doReq(w.env.r, "PUT", w.galleryPath()+"/"+foreign.ID, `{"caption":"hack"}`, w.owner), http.StatusNotFound, domain.MsgPhotoNotFound)
-	if w.gallery.byID[foreign.ID].Caption != "" {
+	foreign := w.addPhoto(t, w.other, w.Outsider)
+	wantHTTP(t, httpkit.Do(w.Env.Router, "PUT", w.galleryPath()+"/"+foreign.ID, `{"caption":"hack"}`, w.Owner), http.StatusNotFound, domain.MsgPhotoNotFound)
+	if w.Gallery.byID[foreign.ID].Caption != "" {
 		t.Fatal("la foto ajena cambió")
 	}
 }
@@ -322,27 +324,27 @@ func TestGallery_caption(t *testing.T) {
 // D3: DELETE -> 204, borra la fila Y el archivo; la de otro salón es 404.
 func TestGallery_delete(t *testing.T) {
 	w := newF16World(t)
-	p := w.addPhoto(t, w.salon, w.owner)
-	foreign := w.addPhoto(t, w.other, w.outsider)
-	key := w.gallery.byID[p.ID].StorageKey
-	if _, ok := w.env.store.files[key]; !ok {
+	p := w.addPhoto(t, w.Salon, w.Owner)
+	foreign := w.addPhoto(t, w.other, w.Outsider)
+	key := w.Gallery.byID[p.ID].StorageKey
+	if _, ok := w.Env.Storage.Files[key]; !ok {
 		t.Fatal("el archivo debe existir")
 	}
-	wantHTTP(t, doReq(w.env.r, "DELETE", w.galleryPath()+"/"+foreign.ID, "", w.owner), http.StatusNotFound, domain.MsgPhotoNotFound)
-	if len(w.gallery.byID) != 2 {
+	wantHTTP(t, httpkit.Do(w.Env.Router, "DELETE", w.galleryPath()+"/"+foreign.ID, "", w.Owner), http.StatusNotFound, domain.MsgPhotoNotFound)
+	if len(w.Gallery.byID) != 2 {
 		t.Fatal("la ajena no se borra")
 	}
-	r := doReq(w.env.r, "DELETE", w.galleryPath()+"/"+p.ID, "", w.owner)
+	r := httpkit.Do(w.Env.Router, "DELETE", w.galleryPath()+"/"+p.ID, "", w.Owner)
 	if r.Code != http.StatusNoContent || r.Body.Len() != 0 {
 		t.Fatalf("delete: %d %q", r.Code, r.Body.String())
 	}
-	if _, ok := w.env.store.files[key]; ok {
+	if _, ok := w.Env.Storage.Files[key]; ok {
 		t.Fatal("el archivo también se borra")
 	}
-	if _, ok := w.gallery.byID[p.ID]; ok {
+	if _, ok := w.Gallery.byID[p.ID]; ok {
 		t.Fatal("la fila también")
 	}
-	if r := doReq(w.env.r, "DELETE", w.galleryPath()+"/"+p.ID, "", w.owner); r.Code != http.StatusNotFound {
+	if r := httpkit.Do(w.Env.Router, "DELETE", w.galleryPath()+"/"+p.ID, "", w.Owner); r.Code != http.StatusNotFound {
 		t.Fatalf("segundo delete: %d", r.Code)
 	}
 }
@@ -351,8 +353,8 @@ func TestGallery_delete(t *testing.T) {
 // cache de 5 minutos.
 func TestGallery_publicImage(t *testing.T) {
 	w := newF16World(t)
-	p := w.addPhoto(t, w.salon, w.owner)
-	r := doReq(w.env.r, "GET", "/api/v1/public/salons/f16-uno/gallery/"+p.ID, "", "")
+	p := w.addPhoto(t, w.Salon, w.Owner)
+	r := httpkit.Do(w.Env.Router, "GET", "/api/v1/public/salons/f16-uno/gallery/"+p.ID, "", "")
 	if r.Code != http.StatusOK {
 		t.Fatalf("pública: %d %s", r.Code, r.Body.String())
 	}
@@ -369,8 +371,8 @@ func TestGallery_publicImage(t *testing.T) {
 		t.Fatalf("cuerpo: %q len=%q", r.Body.String(), got)
 	}
 	// El tipo sale de la fila guardada, no de lo que subió la persona.
-	w.gallery.byID[p.ID] = func() domain.SalonPhoto { x := w.gallery.byID[p.ID]; x.ContentType = "image/png"; return x }()
-	r = doReq(w.env.r, "GET", "/api/v1/public/salons/f16-uno/gallery/"+p.ID, "", "")
+	w.Gallery.byID[p.ID] = func() domain.SalonPhoto { x := w.Gallery.byID[p.ID]; x.ContentType = "image/png"; return x }()
+	r = httpkit.Do(w.Env.Router, "GET", "/api/v1/public/salons/f16-uno/gallery/"+p.ID, "", "")
 	if r.Header().Get("Content-Type") != "image/png" {
 		t.Fatalf("tipo guardado: %q", r.Header().Get("Content-Type"))
 	}
@@ -380,8 +382,8 @@ func TestGallery_publicImage(t *testing.T) {
 // slug inexistente o foto de clienta; sin filtrar cuál es cuál.
 func TestGallery_publicImage_uniform404(t *testing.T) {
 	w := newF16World(t)
-	mine := w.addPhoto(t, w.salon, w.owner)
-	foreign := w.addPhoto(t, w.other, w.outsider)
+	mine := w.addPhoto(t, w.Salon, w.Owner)
+	foreign := w.addPhoto(t, w.other, w.Outsider)
 	var bodies []string
 	for _, path := range []string{
 		"/api/v1/public/salons/f16-uno/gallery/" + foreign.ID, // id de otro salón
@@ -389,7 +391,7 @@ func TestGallery_publicImage_uniform404(t *testing.T) {
 		"/api/v1/public/salons/no-existe/gallery/" + mine.ID,
 		"/api/v1/public/salons/f16-dos/gallery/" + mine.ID,
 	} {
-		r := doReq(w.env.r, "GET", path, "", "")
+		r := httpkit.Do(w.Env.Router, "GET", path, "", "")
 		if r.Code != http.StatusNotFound {
 			t.Fatalf("%s: %d", path, r.Code)
 		}
@@ -410,7 +412,7 @@ func TestGallery_publicImage_uniform404(t *testing.T) {
 func TestGallery_publicImage_neverServesClientPhotos(t *testing.T) {
 	w := newF16World(t)
 	clientID := w.newClientForGallery(t)
-	rec := w.upload("/api/v1/salons/"+w.salon+"/clients/"+clientID+"/photos", w.owner, "photo", "image/png", png1x1())
+	rec := w.upload("/api/v1/salons/"+w.Salon+"/clients/"+clientID+"/photos", w.Owner, "photo", "image/png", png1x1())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("foto de clienta: %d %s", rec.Code, rec.Body.String())
 	}
@@ -419,13 +421,13 @@ func TestGallery_publicImage_neverServesClientPhotos(t *testing.T) {
 			ID string `json:"id"`
 		} `json:"photo"`
 	}
-	mustJSON(t, rec.Body.Bytes(), &out)
-	r := doReq(w.env.r, "GET", "/api/v1/public/salons/f16-uno/gallery/"+out.Photo.ID, "", "")
+	httpkit.MustJSON(t, rec.Body.Bytes(), &out)
+	r := httpkit.Do(w.Env.Router, "GET", "/api/v1/public/salons/f16-uno/gallery/"+out.Photo.ID, "", "")
 	if r.Code != http.StatusNotFound || strings.Contains(r.Body.String(), "RIFF") {
 		t.Fatalf("la foto de una clienta no se sirve: %d %s", r.Code, r.Body.String())
 	}
 	// Y la galería del panel tampoco la lista.
-	list := doReq(w.env.r, "GET", w.galleryPath(), "", w.owner)
+	list := httpkit.Do(w.Env.Router, "GET", w.galleryPath(), "", w.Owner)
 	if strings.TrimSpace(list.Body.String()) != `{"photos":[]}` {
 		t.Fatalf("la galería no mezcla fotos de clientas: %s", list.Body.String())
 	}
@@ -433,39 +435,39 @@ func TestGallery_publicImage_neverServesClientPhotos(t *testing.T) {
 
 func (w *f16World) newClientForGallery(t *testing.T) string {
 	t.Helper()
-	r := doReq(w.env.r, "POST", "/api/v1/salons/"+w.salon+"/clients", `{"name":"Lía"}`, w.owner)
+	r := httpkit.Do(w.Env.Router, "POST", "/api/v1/salons/"+w.Salon+"/clients", `{"name":"Lía"}`, w.Owner)
 	if r.Code != http.StatusCreated {
 		t.Fatalf("clienta: %d %s", r.Code, r.Body.String())
 	}
 	var c struct {
 		ID string `json:"id"`
 	}
-	mustJSON(t, r.Body.Bytes(), &c)
+	httpkit.MustJSON(t, r.Body.Bytes(), &c)
 	return c.ID
 }
 
-// El tope de body de 1 MB de MaxJSONBody exime a la subida de la galería (que
+// El tope de body de 1 MB de httpapi.MaxJSONBody exime a la subida de la galería (que
 // tiene el suyo, 8 MB) y NO a ninguna otra ruta.
 func TestGallery_uploadBodyLimitIsPerRoute(t *testing.T) {
 	w := newF16World(t)
 	r := gin.New()
-	r.Use(MaxJSONBodyExceptGalleryUpload(1 << 20))
-	RegisterRoutes(r, w.env.d)
-	w.env.r = r
+	r.Use(httpapi.MaxJSONBodyExceptGalleryUpload(1 << 20))
+	httpapi.RegisterRoutes(r, w.Env.Deps)
+	w.Env.Router = r
 
 	// 2 MB de imagen: pasa el tope general y entra por el de la galería.
-	if rec := w.upload(w.galleryPath(), w.owner, "file", "image/png", make([]byte, 2<<20)); rec.Code != http.StatusCreated {
+	if rec := w.upload(w.galleryPath(), w.Owner, "file", "image/png", make([]byte, 2<<20)); rec.Code != http.StatusCreated {
 		t.Fatalf("la subida de 2 MB debe entrar: %d %s", rec.Code, rec.Body.String())
 	}
 	// Más de 8 MB + el margen del multipart: se corta.
-	if rec := w.upload(w.galleryPath(), w.owner, "file", "image/png", make([]byte, 10<<20)); rec.Code == http.StatusCreated {
+	if rec := w.upload(w.galleryPath(), w.Owner, "file", "image/png", make([]byte, 10<<20)); rec.Code == http.StatusCreated {
 		t.Fatalf("10 MB no entran")
 	}
 	// Cualquier otra ruta sigue con 1 MB aunque diga ser multipart.
 	big := `{"name":"` + strings.Repeat("x", 2<<20) + `"}`
 	req := httptest.NewRequest("PUT", w.profilePath(), strings.NewReader(big))
 	req.Header.Set("Content-Type", "multipart/form-data; boundary=x")
-	req.Header.Set("Authorization", "Bearer "+w.owner)
+	req.Header.Set("Authorization", "Bearer "+w.Owner)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	if rec.Code != http.StatusRequestEntityTooLarge {

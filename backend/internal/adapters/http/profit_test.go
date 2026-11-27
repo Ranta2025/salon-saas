@@ -1,21 +1,21 @@
 // Contrato HTTP del reporte de ganancia neta (F3b, D1/D2/D5): la forma EXACTA,
 // los permisos, el período derivado en la zona del salón, el salón sin
 // movimientos (ceros, no 500) y el 400 de «Período inválido».
-package httpapi
+package httpapi_test
 
 import (
 	"net/http"
+	"salon-saas/internal/domain"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
-
-	"salon-saas/internal/domain"
 )
 
-func (e *expHTTPEnv) profitPath(q string) string { return e.url(e.salon, "/profit"+q) }
+func (e *expHTTPEnv) profitPath(q string) string { return e.url(e.Salon, "/profit"+q) }
 
 func TestHTTP_profit_forma_y_totales(t *testing.T) {
 	e := newExpHTTPEnv(t)
-	e.profit.data = domain.ProfitData{
+	e.Profit.Data = domain.ProfitData{
 		RevenueByDay:  map[string]int{"2026-03-02": 50000, "2026-03-08": 25000},
 		ExpensesByDay: map[string]int{"2026-03-02": 10000, "2026-03-05": 400000},
 		PayrollByDay:  map[string]int{"2026-03-08": 30000},
@@ -29,7 +29,7 @@ func TestHTTP_profit_forma_y_totales(t *testing.T) {
 		t.Fatalf("ganancias: %d %s", w.Code, w.Body.String())
 	}
 	var got map[string]any
-	mustJSON(t, w.Body.Bytes(), &got)
+	httpkit.MustJSON(t, w.Body.Bytes(), &got)
 	sameKeys(t, "reporte", got, "period", "totals", "days", "expenses_by_category")
 
 	period := got["period"].(map[string]any)
@@ -95,13 +95,13 @@ func TestHTTP_profit_forma_y_totales(t *testing.T) {
 // es HOY en la zona del salón (20/3/2026 en CDMX).
 func TestHTTP_profit_salon_vacio_y_hoy_local(t *testing.T) {
 	e := newExpHTTPEnv(t)
-	e.profit.data = domain.ProfitData{}
+	e.Profit.Data = domain.ProfitData{}
 	w := e.do(t, "GET", e.profitPath("?kind=day"), "", "duena@exp.com")
 	if w.Code != http.StatusOK {
 		t.Fatalf("ganancias vacías: %d %s", w.Code, w.Body.String())
 	}
 	var got map[string]any
-	mustJSON(t, w.Body.Bytes(), &got)
+	httpkit.MustJSON(t, w.Body.Bytes(), &got)
 	period := got["period"].(map[string]any)
 	if period["kind"] != "day" || period["from"] != "2026-03-20" || period["to"] != "2026-03-20" {
 		t.Fatalf("period = %v", period)
@@ -129,7 +129,7 @@ func TestHTTP_profit_periodo_invalido(t *testing.T) {
 			t.Fatalf("%q: %d %s", q, w.Code, w.Body.String())
 		}
 	}
-	if w := doReq(e.r, "GET", e.profitPath("?kind=day"), "", ""); w.Code != http.StatusUnauthorized {
+	if w := httpkit.Do(e.r, "GET", e.profitPath("?kind=day"), "", ""); w.Code != http.StatusUnauthorized {
 		t.Fatalf("sin token: %d %s", w.Code, w.Body.String())
 	}
 }

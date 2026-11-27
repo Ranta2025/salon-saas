@@ -11,7 +11,7 @@ import (
 )
 
 // routePhotoUpload identifica la ÚNICA ruta con tope de body propio (más
-// grande que el JSON): la subida de fotos, que valida readUpload.
+// grande que el JSON): la subida de fotos, que valida ReadUpload.
 // MaxJSONBody la salta por RUTA, no por Content-Type.
 const routePhotoUpload = "/api/v1/salons/:id/clients/:cid/photos"
 
@@ -21,7 +21,7 @@ const routePhotoUpload = "/api/v1/salons/:id/clients/:cid/photos"
 // JSON. Con Content-Length declarado se rechaza antes de leer nada; sin él, el
 // MaxBytesReader corta la lectura igual (el binding falla y la ruta responde
 // 400). La subida de fotos queda exenta porque tiene su propio tope (8 MB) en
-// readUpload, que además rechaza lo que no es imagen.
+// ReadUpload, que además rechaza lo que no es imagen.
 func MaxJSONBody(limit int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if hasOwnBodyLimit(c.FullPath()) {

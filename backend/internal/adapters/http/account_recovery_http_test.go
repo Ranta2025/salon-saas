@@ -4,22 +4,24 @@
 //
 // Router REAL (`RegisterRoutes`), `AuthMiddleware` real, hub de tiempo real real y
 // JWT reales: lo que se prueba es la API, no el cableado.
-package httpapi
+package httpapi_test
 
 import (
 	"context"
 	"encoding/json"
+	"github.com/golang-jwt/jwt/v5"
 	"net/http"
+	httpapi "salon-saas/internal/adapters/http"
+	"salon-saas/internal/adapters/realtime"
+	"salon-saas/internal/adapters/security"
+	"salon-saas/internal/app"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
-	"salon-saas/internal/adapters/realtime"
-	"salon-saas/internal/adapters/security"
-	"salon-saas/internal/app"
 )
 
 // queuedRunner difiere los trabajos: prueba que TODO el trabajo del pedido corre
@@ -53,20 +55,20 @@ func (q *queuedRunner) Flush() {
 
 type recHTTP struct {
 	r      *gin.Engine
-	store  *mrecovery
-	box    *inbox
+	store  *httpkit.Recovery
+	box    *httpkit.Inbox
 	tokens security.JWTIssuer
 	run    *queuedRunner
 }
 
-// newRecHTTP arma el router completo (el de newPOSEnv) con los casos de uso de
+// newRecHTTP arma el router completo (el de httpkit.NewPOSEnv) con los casos de uso de
 // F15 sobre los fakes, la compuerta cableada en el middleware y en el hub.
 func newRecHTTP(t *testing.T) *recHTTP {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	env := newPOSEnv()
-	store := newMRecovery()
-	box := &inbox{}
+	env := httpkit.NewPOSEnv()
+	store := httpkit.NewRecovery()
+	box := &httpkit.Inbox{}
 	tokens := security.JWTIssuer{Secret: "test-secret"}
 	hasher := security.BcryptHasher{Cost: 4}
 	run := &queuedRunner{}
@@ -77,25 +79,25 @@ func newRecHTTP(t *testing.T) *recHTTP {
 	verifSvc := app.EmailVerificationService{
 		Users: store, Verifs: store, Mailer: box, AppURL: "https://app.test", Run: run.Run,
 	}
-	d := env.d
-	d.Auth = AuthHandler{
+	d := env.Deps
+	d.Auth = httpapi.AuthHandler{
 		Auth:         app.AuthService{Users: store, Hasher: hasher, Tokens: tokens},
 		Verification: verifSvc,
 	}
-	d.Recovery = AccountRecoveryHandler{Recovery: recoverySvc, Verif: verifSvc}
-	d.Me = MeHandler{Me: app.MeService{Users: store, Salons: env.salons, Members: env.mems}}
-	d.WS = realtime.NewHub(tokens, env.mems, realtime.HubSessionGate(store)).ServeWS
+	d.Recovery = httpapi.AccountRecoveryHandler{Recovery: recoverySvc, Verif: verifSvc}
+	d.Me = httpapi.MeHandler{Me: app.MeService{Users: store, Salons: env.Salons, Members: env.Mems}}
+	d.WS = realtime.NewHub(tokens, env.Mems, realtime.HubSessionGate(store)).ServeWS
 	d.TokenIssuer = tokens
 	d.SessionGate = store
 	r := gin.New()
-	RegisterRoutes(r, d)
+	httpapi.RegisterRoutes(r, d)
 	return &recHTTP{r: r, store: store, box: box, tokens: tokens, run: run}
 }
 
 // register crea una cuenta por la ruta real y devuelve su id.
 func (h *recHTTP) register(t *testing.T, email string) string {
 	t.Helper()
-	w := doReq(h.r, "POST", "/api/v1/auth/register",
+	w := httpkit.Do(h.r, "POST", "/api/v1/auth/register",
 		`{"name":"Ana","email":"`+email+`","password":"secreta123"}`, "")
 	if w.Code != http.StatusCreated {
 		t.Fatalf("register %s: %d %s", email, w.Code, w.Body.String())
@@ -110,33 +112,33 @@ func (h *recHTTP) register(t *testing.T, email string) string {
 // resetLink devuelve el token del último correo de restablecer.
 func (h *recHTTP) resetLink(t *testing.T) string {
 	t.Helper()
-	text := h.box.last().Text
+	text := h.box.Last().Text
 	idx := strings.Index(text, "https://app.test/restablecer#")
 	if idx < 0 {
 		t.Fatalf("el correo no trae el enlace de restablecer:\n%s", text)
 	}
-	return tokenFromLink(t, text[idx:])
+	return httpkit.TokenFromLink(t, text[idx:])
 }
 
 // verifyLink devuelve el token del último correo de verificación.
 func (h *recHTTP) verifyLink(t *testing.T) string {
 	t.Helper()
-	text := h.box.last().Text
+	text := h.box.Last().Text
 	idx := strings.Index(text, "https://app.test/verificar-email#")
 	if idx < 0 {
 		t.Fatalf("el correo no trae el enlace de verificación:\n%s", text)
 	}
-	return tokenFromLink(t, text[idx:])
+	return httpkit.TokenFromLink(t, text[idx:])
 }
 
 // D2: el mismo 202 con el mismo cuerpo para un email conocido y uno desconocido,
 // y TODO el trabajo corre después de responder.
 func TestF15HTTP_Forgot_sameResponseAndWorkAfterResponding(t *testing.T) {
 	h := newRecHTTP(t)
-	h.store.seedUser("u-ana", "Ana", "ana@mail.com", "h", true)
+	h.store.SeedUser("u-ana", "Ana", "ana@mail.com", "h", true)
 
-	known := doReq(h.r, "POST", "/api/v1/auth/forgot", `{"email":"ana@mail.com"}`, "")
-	unknown := doReq(h.r, "POST", "/api/v1/auth/forgot", `{"email":"nadie@mail.com"}`, "")
+	known := httpkit.Do(h.r, "POST", "/api/v1/auth/forgot", `{"email":"ana@mail.com"}`, "")
+	unknown := httpkit.Do(h.r, "POST", "/api/v1/auth/forgot", `{"email":"nadie@mail.com"}`, "")
 	for name, w := range map[string]int{"conocido": known.Code, "desconocido": unknown.Code} {
 		if w != http.StatusAccepted {
 			t.Fatalf("%s: status %d", name, w)
@@ -152,17 +154,17 @@ func TestF15HTTP_Forgot_sameResponseAndWorkAfterResponding(t *testing.T) {
 		t.Fatal("el Content-Type tiene que ser idéntico")
 	}
 	// Nada se hizo todavía: el trabajo está encolado.
-	if h.store.resetCount() != 0 || h.box.count() != 0 || h.run.Pending() != 2 {
+	if h.store.ResetCount() != 0 || h.box.Count() != 0 || h.run.Pending() != 2 {
 		t.Fatalf("antes de correr el trabajo: resets=%d mails=%d pending=%d",
-			h.store.resetCount(), h.box.count(), h.run.Pending())
+			h.store.ResetCount(), h.box.Count(), h.run.Pending())
 	}
 	h.run.Flush()
 	// Solo la cuenta que existe emite el token y manda el correo.
-	if h.store.resetCount() != 1 || h.box.count() != 1 {
-		t.Fatalf("después: resets=%d mails=%d", h.store.resetCount(), h.box.count())
+	if h.store.ResetCount() != 1 || h.box.Count() != 1 {
+		t.Fatalf("después: resets=%d mails=%d", h.store.ResetCount(), h.box.Count())
 	}
-	if h.box.last().To != "ana@mail.com" || h.box.last().Subject != "Restablece tu contrasena" {
-		t.Fatalf("correo: %+v", h.box.last())
+	if h.box.Last().To != "ana@mail.com" || h.box.Last().Subject != "Restablece tu contrasena" {
+		t.Fatalf("correo: %+v", h.box.Last())
 	}
 	if tok := h.resetLink(t); len(tok) != 43 {
 		t.Fatalf("el enlace lleva un token de 32 bytes en base64url: %q", tok)
@@ -176,18 +178,18 @@ func TestF15HTTP_Forgot_badInput(t *testing.T) {
 	for _, body := range []string{
 		`{"email":""}`, `{"email":"sin-arroba"}`, `{"email":"a b@x.com"}`,
 	} {
-		w := doReq(h.r, "POST", "/api/v1/auth/forgot", body, "")
+		w := httpkit.Do(h.r, "POST", "/api/v1/auth/forgot", body, "")
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("%s: %d %s", body, w.Code, w.Body.String())
 		}
 	}
 	for _, body := range []string{`{"email":123}`, `{"email":null}`, `{`, `[]`, `{"email":"ana\u0000@mail.com"}`} {
-		w := doReq(h.r, "POST", "/api/v1/auth/forgot", body, "")
+		w := httpkit.Do(h.r, "POST", "/api/v1/auth/forgot", body, "")
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("%s: %d %s", body, w.Code, w.Body.String())
 		}
 	}
-	if h.run.Pending() != 0 || h.store.resetCount() != 0 {
+	if h.run.Pending() != 0 || h.store.ResetCount() != 0 {
 		t.Fatal("un email inválido no puede encolar trabajo ni emitir token")
 	}
 }
@@ -196,9 +198,9 @@ func TestF15HTTP_Forgot_badInput(t *testing.T) {
 // vencido o desconocido da el mismo 400; el éxito es 204 sin sesión.
 func TestF15HTTP_Reset(t *testing.T) {
 	h := newRecHTTP(t)
-	userID := h.store.seedUser("u-ana", "Ana", "ana@mail.com", "h", true).ID
-	h.store.seedUser("u-bea", "Bea", "bea@mail.com", "h", true)
-	if w := doReq(h.r, "POST", "/api/v1/auth/forgot", `{"email":"ana@mail.com"}`, ""); w.Code != 202 {
+	userID := h.store.SeedUser("u-ana", "Ana", "ana@mail.com", "h", true).ID
+	h.store.SeedUser("u-bea", "Bea", "bea@mail.com", "h", true)
+	if w := httpkit.Do(h.r, "POST", "/api/v1/auth/forgot", `{"email":"ana@mail.com"}`, ""); w.Code != 202 {
 		t.Fatalf("forgot: %d", w.Code)
 	}
 	h.run.Flush()
@@ -209,7 +211,7 @@ func TestF15HTTP_Reset(t *testing.T) {
 		`{"token":"` + tok + `","password":"corta"}`,
 		`{"token":"` + tok + `","password":"` + strings.Repeat("x", 73) + `"}`,
 	} {
-		w := doReq(h.r, "POST", "/api/v1/auth/reset", body, "")
+		w := httpkit.Do(h.r, "POST", "/api/v1/auth/reset", body, "")
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("contraseña inválida: %d %s", w.Code, w.Body.String())
 		}
@@ -220,19 +222,19 @@ func TestF15HTTP_Reset(t *testing.T) {
 		`{"token":"corto","password":"nuevaClave1"}`,
 		`{"token":"` + strings.Repeat("A", 43) + `","password":"nuevaClave1"}`,
 	} {
-		w := doReq(h.r, "POST", "/api/v1/auth/reset", body, "")
+		w := httpkit.Do(h.r, "POST", "/api/v1/auth/reset", body, "")
 		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "Enlace invalido o vencido") {
 			t.Fatalf("token inválido: %d %s", w.Code, w.Body.String())
 		}
 	}
 	for _, body := range []string{`{"token":123,"password":"nuevaClave1"}`, `{"token":"` + tok + `","password":123}`, `{"token":"` + tok + `","password":"nueva\u0000Clave1"}`} {
-		w := doReq(h.r, "POST", "/api/v1/auth/reset", body, "")
+		w := httpkit.Do(h.r, "POST", "/api/v1/auth/reset", body, "")
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("cuerpo inválido: %d %s", w.Code, w.Body.String())
 		}
 	}
 	// Éxito: 204 y NINGÚN cuerpo (no se emite sesión).
-	w := doReq(h.r, "POST", "/api/v1/auth/reset", `{"token":"`+tok+`","password":"nuevaClave1"}`, "")
+	w := httpkit.Do(h.r, "POST", "/api/v1/auth/reset", `{"token":"`+tok+`","password":"nuevaClave1"}`, "")
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("reset: %d %s", w.Code, w.Body.String())
 	}
@@ -243,7 +245,7 @@ func TestF15HTTP_Reset(t *testing.T) {
 		t.Fatal(err)
 	}
 	// El token ya se usó: 400 con el texto uniforme y la clave no cambia.
-	if w := doReq(h.r, "POST", "/api/v1/auth/reset", `{"token":"`+tok+`","password":"otraClave1"}`, ""); w.Code != http.StatusBadRequest ||
+	if w := httpkit.Do(h.r, "POST", "/api/v1/auth/reset", `{"token":"`+tok+`","password":"otraClave1"}`, ""); w.Code != http.StatusBadRequest ||
 		!strings.Contains(w.Body.String(), "Enlace invalido o vencido") {
 		t.Fatalf("reuso: %d %s", w.Code, w.Body.String())
 	}
@@ -254,31 +256,31 @@ func TestF15HTTP_Reset(t *testing.T) {
 // nunca cambió. Sin contraseña cambiada el token sigue valiendo.
 func TestF15HTTP_SessionGateOnMeAndWebsocket(t *testing.T) {
 	h := newRecHTTP(t)
-	h.store.seedUser("u-ana", "Ana", "ana@mail.com", "h", true)
+	h.store.SeedUser("u-ana", "Ana", "ana@mail.com", "h", true)
 	oldToken, err := h.tokens.Issue("u-ana")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Sin cambio de contraseña: la sesión vale en los dos lados.
-	if w := doReq(h.r, "GET", "/api/v1/me", "", oldToken); w.Code != http.StatusOK {
+	if w := httpkit.Do(h.r, "GET", "/api/v1/me", "", oldToken); w.Code != http.StatusOK {
 		t.Fatalf("/me antes del cambio: %d %s", w.Code, w.Body.String())
 	}
 	// El WS sin membresías da 403 (el token pasó la compuerta y llegó al hub).
-	if w := doReq(h.r, "GET", "/api/v1/ws?token="+oldToken, "", ""); w.Code != http.StatusForbidden {
+	if w := httpkit.Do(h.r, "GET", "/api/v1/ws?token="+oldToken, "", ""); w.Code != http.StatusForbidden {
 		t.Fatalf("/ws sin salones: %d %s", w.Code, w.Body.String())
 	}
 
 	// Un reinicio real por la API: el token anterior muere.
-	if w := doReq(h.r, "POST", "/api/v1/auth/forgot", `{"email":"ana@mail.com"}`, ""); w.Code != 202 {
+	if w := httpkit.Do(h.r, "POST", "/api/v1/auth/forgot", `{"email":"ana@mail.com"}`, ""); w.Code != 202 {
 		t.Fatalf("forgot: %d", w.Code)
 	}
 	h.run.Flush()
 	tok := h.resetLink(t)
-	if w := doReq(h.r, "POST", "/api/v1/auth/reset", `{"token":"`+tok+`","password":"nuevaClave1"}`, ""); w.Code != 204 {
+	if w := httpkit.Do(h.r, "POST", "/api/v1/auth/reset", `{"token":"`+tok+`","password":"nuevaClave1"}`, ""); w.Code != 204 {
 		t.Fatalf("reset: %d %s", w.Code, w.Body.String())
 	}
 	for _, path := range []string{"/api/v1/me", "/api/v1/ws?token=" + oldToken} {
-		w := doReq(h.r, "GET", path, "", oldToken)
+		w := httpkit.Do(h.r, "GET", path, "", oldToken)
 		if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "token") {
 			t.Fatalf("%s con el token anterior: %d %s", path, w.Code, w.Body.String())
 		}
@@ -289,7 +291,7 @@ func TestF15HTTP_SessionGateOnMeAndWebsocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := doReq(h.r, "GET", "/api/v1/me", "", fresh)
+	w := httpkit.Do(h.r, "GET", "/api/v1/me", "", fresh)
 	if w.Code != http.StatusOK {
 		t.Fatalf("/me con la sesión nueva: %d %s", w.Code, w.Body.String())
 	}
@@ -313,10 +315,10 @@ func TestF15HTTP_gateFailureFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w := doReq(h.r, "GET", "/api/v1/me", "", tok); w.Code != http.StatusUnauthorized {
+	if w := httpkit.Do(h.r, "GET", "/api/v1/me", "", tok); w.Code != http.StatusUnauthorized {
 		t.Fatalf("usuario inexistente: %d %s", w.Code, w.Body.String())
 	}
-	if w := doReq(h.r, "GET", "/api/v1/ws?token="+tok, "", ""); w.Code != http.StatusUnauthorized {
+	if w := httpkit.Do(h.r, "GET", "/api/v1/ws?token="+tok, "", ""); w.Code != http.StatusUnauthorized {
 		t.Fatalf("/ws usuario inexistente: %d %s", w.Code, w.Body.String())
 	}
 }
@@ -326,39 +328,39 @@ func TestF15HTTP_gateFailureFailsClosed(t *testing.T) {
 func TestF15HTTP_VerifyEmail(t *testing.T) {
 	h := newRecHTTP(t)
 	userID := h.register(t, "ana@mail.com")
-	if h.run.Pending() != 1 || h.box.count() != 0 {
-		t.Fatalf("el correo de verificación corre DESPUÉS: pending=%d mails=%d", h.run.Pending(), h.box.count())
+	if h.run.Pending() != 1 || h.box.Count() != 0 {
+		t.Fatalf("el correo de verificación corre DESPUÉS: pending=%d mails=%d", h.run.Pending(), h.box.Count())
 	}
 	h.run.Flush()
-	if h.box.count() != 1 || h.box.last().Subject != "Verifica tu email" || h.box.last().To != "ana@mail.com" {
-		t.Fatalf("correo de verificación: %+v", h.box.last())
+	if h.box.Count() != 1 || h.box.Last().Subject != "Verifica tu email" || h.box.Last().To != "ana@mail.com" {
+		t.Fatalf("correo de verificación: %+v", h.box.Last())
 	}
 	tok := h.verifyLink(t)
 	// La sesión de la cuenta recién creada (sin verificar) funciona igual: D9.
 	session, _ := h.tokens.Issue(userID)
-	w := doReq(h.r, "GET", "/api/v1/me", "", session)
+	w := httpkit.Do(h.r, "GET", "/api/v1/me", "", session)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"email_verified":false`) {
 		t.Fatalf("/me sin verificar: %d %s", w.Code, w.Body.String())
 	}
 	// Canje: 204.
-	if w := doReq(h.r, "POST", "/api/v1/auth/verify-email", `{"token":"`+tok+`"}`, ""); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+	if w := httpkit.Do(h.r, "POST", "/api/v1/auth/verify-email", `{"token":"`+tok+`"}`, ""); w.Code != http.StatusNoContent || w.Body.Len() != 0 {
 		t.Fatalf("verify: %d %s", w.Code, w.Body.String())
 	}
-	if w := doReq(h.r, "GET", "/api/v1/me", "", session); !strings.Contains(w.Body.String(), `"email_verified":true`) {
+	if w := httpkit.Do(h.r, "GET", "/api/v1/me", "", session); !strings.Contains(w.Body.String(), `"email_verified":true`) {
 		t.Fatalf("/me verificado: %s", w.Body.String())
 	}
 	// Reuso: idempotente (la cuenta ya está verificada).
-	if w := doReq(h.r, "POST", "/api/v1/auth/verify-email", `{"token":"`+tok+`"}`, ""); w.Code != http.StatusNoContent {
+	if w := httpkit.Do(h.r, "POST", "/api/v1/auth/verify-email", `{"token":"`+tok+`"}`, ""); w.Code != http.StatusNoContent {
 		t.Fatalf("reuso idempotente: %d %s", w.Code, w.Body.String())
 	}
 	// Desconocido / con forma inválida: el texto uniforme.
 	for _, body := range []string{`{"token":""}`, `{"token":"corto"}`, `{"token":"` + strings.Repeat("A", 43) + `"}`} {
-		w := doReq(h.r, "POST", "/api/v1/auth/verify-email", body, "")
+		w := httpkit.Do(h.r, "POST", "/api/v1/auth/verify-email", body, "")
 		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "Enlace invalido o vencido") {
 			t.Fatalf("%s: %d %s", body, w.Code, w.Body.String())
 		}
 	}
-	if w := doReq(h.r, "POST", "/api/v1/auth/verify-email", `{"token":1}`, ""); w.Code != 400 {
+	if w := httpkit.Do(h.r, "POST", "/api/v1/auth/verify-email", `{"token":1}`, ""); w.Code != 400 {
 		t.Fatalf("tipo equivocado: %d", w.Code)
 	}
 }
@@ -370,18 +372,18 @@ func TestF15HTTP_ResendVerification(t *testing.T) {
 	userID := h.register(t, "ana@mail.com")
 	h.run.Flush()
 	session, _ := h.tokens.Issue(userID)
-	if w := doReq(h.r, "POST", "/api/v1/me/verify-email/resend", "", ""); w.Code != http.StatusUnauthorized {
+	if w := httpkit.Do(h.r, "POST", "/api/v1/me/verify-email/resend", "", ""); w.Code != http.StatusUnauthorized {
 		t.Fatalf("sin sesión: %d", w.Code)
 	}
 	// El primer reenvío cae dentro del minuto del correo del registro: 429.
-	w := doReq(h.r, "POST", "/api/v1/me/verify-email/resend", "", session)
+	w := httpkit.Do(h.r, "POST", "/api/v1/me/verify-email/resend", "", session)
 	if w.Code != http.StatusTooManyRequests || !strings.Contains(w.Body.String(), "Espera un minuto antes de pedir otro correo") {
 		t.Fatalf("429 esperado: %d %s", w.Code, w.Body.String())
 	}
 	// Una cuenta ya verificada: 409 con el texto del contrato.
-	verified := h.store.seedUser("u-bea", "Bea", "bea@mail.com", "h", true).ID
+	verified := h.store.SeedUser("u-bea", "Bea", "bea@mail.com", "h", true).ID
 	beaSession, _ := h.tokens.Issue(verified)
-	w = doReq(h.r, "POST", "/api/v1/me/verify-email/resend", "", beaSession)
+	w = httpkit.Do(h.r, "POST", "/api/v1/me/verify-email/resend", "", beaSession)
 	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "El email ya esta verificado") {
 		t.Fatalf("409 esperado: %d %s", w.Code, w.Body.String())
 	}
@@ -395,22 +397,22 @@ func TestF15HTTP_ResendIs202AndMailsAsync(t *testing.T) {
 	h.run.Flush()
 	session, _ := h.tokens.Issue(userID)
 	// Fuera de la ventana del minuto: se envejece el pedido anterior.
-	h.store.mu.Lock()
-	for _, v := range h.store.verifs {
+	h.store.Mu.Lock()
+	for _, v := range h.store.Verifs {
 		v.CreatedAt = time.Now().UTC().Add(-2 * time.Minute)
 	}
-	h.store.mu.Unlock()
-	before := h.box.count()
-	w := doReq(h.r, "POST", "/api/v1/me/verify-email/resend", "", session)
+	h.store.Mu.Unlock()
+	before := h.box.Count()
+	w := httpkit.Do(h.r, "POST", "/api/v1/me/verify-email/resend", "", session)
 	if w.Code != http.StatusAccepted || w.Body.String() != `{"ok":true}` {
 		t.Fatalf("resend: %d %s", w.Code, w.Body.String())
 	}
-	if h.box.count() != before || h.run.Pending() != 1 {
-		t.Fatalf("el correo sale por el runner: mails=%d pending=%d", h.box.count(), h.run.Pending())
+	if h.box.Count() != before || h.run.Pending() != 1 {
+		t.Fatalf("el correo sale por el runner: mails=%d pending=%d", h.box.Count(), h.run.Pending())
 	}
 	h.run.Flush()
-	if h.box.count() != before+1 {
-		t.Fatalf("correos: %d", h.box.count())
+	if h.box.Count() != before+1 {
+		t.Fatalf("correos: %d", h.box.Count())
 	}
 }
 
@@ -418,11 +420,11 @@ func TestF15HTTP_ResendIs202AndMailsAsync(t *testing.T) {
 // punta con la compuerta cableada).
 func TestF15HTTP_twoFactorChallengeIsNotASession(t *testing.T) {
 	h := newRecHTTP(t)
-	h.store.seedUser("u-ana", "Ana", "ana@mail.com", "h", true)
+	h.store.SeedUser("u-ana", "Ana", "ana@mail.com", "h", true)
 	// Un JWT con typ:"2fa" es lo que emite el desafío de F10.
 	challenge := issueTyped(t, "test-secret", "u-ana", "2fa")
 	for _, path := range []string{"/api/v1/me", "/api/v1/ws?token=" + challenge} {
-		w := doReq(h.r, "GET", path, "", challenge)
+		w := httpkit.Do(h.r, "GET", path, "", challenge)
 		if w.Code != http.StatusUnauthorized {
 			t.Fatalf("%s con el desafío: %d %s", path, w.Code, w.Body.String())
 		}

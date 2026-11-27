@@ -1,49 +1,48 @@
-package httpapi
+package httpkit
 
 import (
-	"sort"
-	"time"
-
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"sort"
+	"time"
 )
 
 // Fake de las liquidaciones (F3.3) para el contrato HTTP: misma semántica que
 // la migración 025 (EXCLUDE por salón, inmutabilidad de la pagada) y datos
 // sembrables desde el test.
 
-type mPayrollRuns struct {
-	runs map[string]domain.PayrollRun
+type PayrollRuns struct {
+	Runs map[string]domain.PayrollRun
 	now  func() time.Time
 	// settings es la configuración que lee la creación dentro de la transacción
 	// (zona horaria del período, F3.3).
-	settings *msettings
+	SettingsRepo *Settings
 	// body y sales son la fuente de la vista previa dentro de la transacción.
-	body  *mPayModels
-	sales *mPayrollSales
+	Body  *PayModels
+	Sales *PayrollSales
 	// failAfter simula una falla dentro de la transacción después de escribir.
-	failAfter func() error
+	FailAfter func() error
 }
 
-func newMPayrollRuns(now func() time.Time) *mPayrollRuns {
-	return &mPayrollRuns{runs: map[string]domain.PayrollRun{}, now: now}
+func NewPayrollRuns(now func() time.Time) *PayrollRuns {
+	return &PayrollRuns{Runs: map[string]domain.PayrollRun{}, now: now}
 }
 
-func clonePRun(r domain.PayrollRun) domain.PayrollRun {
+func ClonePRun(r domain.PayrollRun) domain.PayrollRun {
 	out := r
 	out.Lines = append([]domain.PayrollLine(nil), r.Lines...)
 	return out
 }
 
-func (f *mPayrollRuns) seed(r domain.PayrollRun) { f.runs[r.ID] = clonePRun(r) }
+func (f *PayrollRuns) Seed(r domain.PayrollRun) { f.Runs[r.ID] = ClonePRun(r) }
 
-func runOverlaps(a, b domain.PayrollRun) bool {
+func RunOverlaps(a, b domain.PayrollRun) bool {
 	return a.SalonID == b.SalonID && a.From <= b.To && b.From <= a.To
 }
 
-func (f *mPayrollRuns) ListRuns(salonID string) ([]domain.PayrollRunSummary, error) {
+func (f *PayrollRuns) ListRuns(salonID string) ([]domain.PayrollRunSummary, error) {
 	out := []domain.PayrollRunSummary{}
-	for _, r := range f.runs {
+	for _, r := range f.Runs {
 		if r.SalonID != salonID {
 			continue
 		}
@@ -62,51 +61,51 @@ func (f *mPayrollRuns) ListRuns(salonID string) ([]domain.PayrollRunSummary, err
 	return out, nil
 }
 
-func (f *mPayrollRuns) FindRun(salonID, runID string) (domain.PayrollRun, error) {
-	r, ok := f.runs[runID]
+func (f *PayrollRuns) FindRun(salonID, runID string) (domain.PayrollRun, error) {
+	r, ok := f.Runs[runID]
 	if !ok || r.SalonID != salonID {
 		return domain.PayrollRun{}, domain.ErrNotFound
 	}
-	return clonePRun(r), nil
+	return ClonePRun(r), nil
 }
 
 // Settings modela la configuración leída bajo el lock de la transacción.
-func (f *mPayrollRuns) Settings(salonID string) (domain.SalonSettings, error) {
-	if f.settings == nil {
+func (f *PayrollRuns) Settings(salonID string) (domain.SalonSettings, error) {
+	if f.SettingsRepo == nil {
 		return domain.SalonSettings{}, domain.ErrNotFound
 	}
-	return f.settings.Settings(salonID)
+	return f.SettingsRepo.Settings(salonID)
 }
 
 // PreviewSource modela la vista previa leída en la MISMA transacción.
-func (f *mPayrollRuns) PreviewSource() ports.PayrollPreviewSource {
-	return mRunPreview{body: f.body, sales: f.sales}
+func (f *PayrollRuns) PreviewSource() ports.PayrollPreviewSource {
+	return RunPreview{Body: f.Body, Sales: f.Sales}
 }
 
-type mRunPreview struct {
-	body  *mPayModels
-	sales *mPayrollSales
+type RunPreview struct {
+	Body  *PayModels
+	Sales *PayrollSales
 }
 
-func (p mRunPreview) ListPayModels(salonID string) ([]domain.MemberPayView, error) {
-	return p.body.ListPayModels(salonID)
+func (p RunPreview) ListPayModels(salonID string) ([]domain.MemberPayView, error) {
+	return p.Body.ListPayModels(salonID)
 }
 
-func (p mRunPreview) CommissionTotals(salonID string, from, to time.Time) ([]domain.PayrollSalesTotal, error) {
-	return p.sales.CommissionTotals(salonID, from, to)
+func (p RunPreview) CommissionTotals(salonID string, from, to time.Time) ([]domain.PayrollSalesTotal, error) {
+	return p.Sales.CommissionTotals(salonID, from, to)
 }
 
-func (f *mPayrollRuns) SaveRun(run domain.PayrollRun) error {
-	for _, r := range f.runs {
-		if runOverlaps(r, run) {
+func (f *PayrollRuns) SaveRun(run domain.PayrollRun) error {
+	for _, r := range f.Runs {
+		if RunOverlaps(r, run) {
 			return domain.ErrAlreadyExists
 		}
 	}
-	f.runs[run.ID] = clonePRun(run)
+	f.Runs[run.ID] = ClonePRun(run)
 	return nil
 }
 
-func (f *mPayrollRuns) AdjustLine(salonID, runID, userID string, adjustmentCents int, note string) error {
+func (f *PayrollRuns) AdjustLine(salonID, runID, userID string, adjustmentCents int, note string) error {
 	r, err := f.FindRun(salonID, runID)
 	if err != nil {
 		return err
@@ -130,11 +129,11 @@ func (f *mPayrollRuns) AdjustLine(salonID, runID, userID string, adjustmentCents
 	if !found {
 		return domain.ErrNotFound
 	}
-	f.runs[runID] = r
+	f.Runs[runID] = r
 	return nil
 }
 
-func (f *mPayrollRuns) PayRun(salonID, runID, paidBy string) error {
+func (f *PayrollRuns) PayRun(salonID, runID, paidBy string) error {
 	r, err := f.FindRun(salonID, runID)
 	if err != nil {
 		return err
@@ -146,11 +145,11 @@ func (f *mPayrollRuns) PayRun(salonID, runID, paidBy string) error {
 	r.Status = domain.PayrollRunPaid
 	r.PaidAt = &at
 	r.PaidBy = paidBy
-	f.runs[runID] = r
+	f.Runs[runID] = r
 	return nil
 }
 
-func (f *mPayrollRuns) DeleteRun(salonID, runID string) error {
+func (f *PayrollRuns) DeleteRun(salonID, runID string) error {
 	r, err := f.FindRun(salonID, runID)
 	if err != nil {
 		return err
@@ -158,27 +157,27 @@ func (f *mPayrollRuns) DeleteRun(salonID, runID string) error {
 	if r.Paid() {
 		return domain.ErrAlreadyExists
 	}
-	delete(f.runs, runID)
+	delete(f.Runs, runID)
 	return nil
 }
 
-func (f *mPayrollRuns) InPayrollTx(salonID string, fn func(tx ports.PayrollRunTx) error) error {
+func (f *PayrollRuns) InPayrollTx(salonID string, fn func(tx ports.PayrollRunTx) error) error {
 	backup := map[string]domain.PayrollRun{}
-	for id, r := range f.runs {
-		backup[id] = clonePRun(r)
+	for id, r := range f.Runs {
+		backup[id] = ClonePRun(r)
 	}
 	err := fn(f)
-	if err == nil && f.failAfter != nil {
-		err = f.failAfter()
+	if err == nil && f.FailAfter != nil {
+		err = f.FailAfter()
 	}
 	if err != nil {
-		f.runs = backup
+		f.Runs = backup
 		return err
 	}
 	return nil
 }
 
 var (
-	_ ports.PayrollRunRepository = (*mPayrollRuns)(nil)
-	_ ports.PayrollTxRunner      = (*mPayrollRuns)(nil)
+	_ ports.PayrollRunRepository = (*PayrollRuns)(nil)
+	_ ports.PayrollTxRunner      = (*PayrollRuns)(nil)
 )

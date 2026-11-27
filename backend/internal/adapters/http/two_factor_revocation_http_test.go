@@ -5,7 +5,7 @@
 //
 // La compuerta es un fake con la misma semántica que pgstore.SessionGate (nil =
 // la contraseña nunca cambió) para poder mover `password_changed_at` sin Postgres.
-package httpapi
+package httpapi_test
 
 import (
 	"encoding/base32"
@@ -15,6 +15,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	httpapi "salon-saas/internal/adapters/http"
+	"salon-saas/internal/adapters/realtime"
+	"salon-saas/internal/adapters/security"
+	"salon-saas/internal/app"
+	auditsvc "salon-saas/internal/audit"
+	"salon-saas/internal/domain"
+	"salon-saas/internal/ports"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"sync"
 	"testing"
@@ -22,12 +30,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"salon-saas/internal/adapters/realtime"
-	"salon-saas/internal/adapters/security"
-	"salon-saas/internal/app"
-	auditsvc "salon-saas/internal/audit"
-	"salon-saas/internal/domain"
-	"salon-saas/internal/ports"
 )
 
 // httpGate es users.password_changed_at bajo control del test.
@@ -93,23 +95,23 @@ func decodeBase32Secret(t *testing.T, b32 string) []byte {
 type tfRevHTTP struct {
 	r       *gin.Engine
 	srv     *httptest.Server
-	env     *posEnv
-	repo    *mtf
-	clock   *mtfClock
+	Env     *httpkit.Env
+	repo    *httpkit.TwoFactor
+	Clock   *httpkit.TwoFactorClock
 	gate    *httpGate
 	tokens  security.JWTIssuer
-	hub     *realtime.Hub
-	userID  string
-	salonID string
+	Hub     *realtime.Hub
+	UserID  string
+	SalonID string
 	session string
 }
 
 func newTFRevHTTP(t *testing.T) *tfRevHTTP {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	env := newPOSEnv()
-	clock := &mtfClock{t: time.Now().UTC()}
-	repo := newMTF(clock.Now)
+	env := httpkit.NewPOSEnv()
+	clock := &httpkit.TwoFactorClock{T: time.Now().UTC()}
+	repo := httpkit.NewTwoFactor(clock.Now)
 	tokens := security.JWTIssuer{Secret: "test-secret"}
 	gate := &httpGate{}
 	box, err := domain.NewTOTPSecretBox("test-secret")
@@ -117,36 +119,36 @@ func newTFRevHTTP(t *testing.T) *tfRevHTTP {
 		t.Fatal(err)
 	}
 	tfSvc := app.TwoFactorService{
-		Repo: repo, Users: env.users, Hasher: security.BcryptHasher{}, Tokens: tokens,
-		Challenges: tokens, Box: box, Memberships: env.mems,
-		Audit: auditsvc.AuditService{Events: &maudit{}, Users: env.users}, Now: clock.Now,
+		Repo: repo, Users: env.Users, Hasher: security.BcryptHasher{}, Tokens: tokens,
+		Challenges: tokens, Box: box, Memberships: env.Mems,
+		Audit: auditsvc.AuditService{Events: &httpkit.AuditEvents{}, Users: env.Users}, Now: clock.Now,
 		Gate: gate,
 	}
-	d := env.d
-	d.Auth = AuthHandler{Auth: app.AuthService{
-		Users: env.users, Hasher: security.BcryptHasher{}, Tokens: tokens, TwoFactor: tfSvc,
+	d := env.Deps
+	d.Auth = httpapi.AuthHandler{Auth: app.AuthService{
+		Users: env.Users, Hasher: security.BcryptHasher{}, Tokens: tokens, TwoFactor: tfSvc,
 	}}
-	d.TwoFactor = TwoFactorHandler{Service: tfSvc}
+	d.TwoFactor = httpapi.TwoFactorHandler{Service: tfSvc}
 	d.TokenIssuer = tokens
 	d.SessionGate = gate
-	hub := realtime.NewHub(tokens, env.mems,
+	hub := realtime.NewHub(tokens, env.Mems,
 		realtime.HubOrigins("http://localhost:5173"),
 		realtime.HubSessionGate(gate),
 		realtime.HubSessionCheckInterval(wsChecksEvery),
 	)
 	d.WS = hub.ServeWS
 	r := gin.New()
-	RegisterRoutes(r, d)
+	httpapi.RegisterRoutes(r, d)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 
-	h := &tfRevHTTP{r: r, srv: srv, env: env, repo: repo, clock: clock, gate: gate, tokens: tokens, hub: hub}
-	if w := doReq(r, "POST", "/api/v1/auth/register", `{"name":"Ana","email":"ana@mail.com","password":"secreta123"}`, ""); w.Code != 201 {
+	h := &tfRevHTTP{r: r, srv: srv, Env: env, repo: repo, Clock: clock, gate: gate, tokens: tokens, Hub: hub}
+	if w := httpkit.Do(r, "POST", "/api/v1/auth/register", `{"name":"Ana","email":"ana@mail.com","password":"secreta123"}`, ""); w.Code != 201 {
 		t.Fatalf("register: %d %s", w.Code, w.Body.String())
 	}
-	h.userID = env.users.byEmail["ana@mail.com"].ID
+	h.UserID = env.Users.ByEmail["ana@mail.com"].ID
 	h.session = h.login(t)
-	w := doReq(r, "POST", "/api/v1/salons", `{"name":"Navajas","slug":"navajas"}`, h.session)
+	w := httpkit.Do(r, "POST", "/api/v1/salons", `{"name":"Navajas","slug":"navajas"}`, h.session)
 	if w.Code != 201 {
 		t.Fatalf("salon: %d %s", w.Code, w.Body.String())
 	}
@@ -154,13 +156,13 @@ func newTFRevHTTP(t *testing.T) *tfRevHTTP {
 	if err := json.Unmarshal(w.Body.Bytes(), &s); err != nil || s.ID == "" {
 		t.Fatalf("salón sin id: %s", w.Body.String())
 	}
-	h.salonID = s.ID
+	h.SalonID = s.ID
 	return h
 }
 
 func (h *tfRevHTTP) login(t *testing.T) string {
 	t.Helper()
-	w := doReq(h.r, "POST", "/api/v1/auth/login", `{"email":"ana@mail.com","password":"secreta123"}`, "")
+	w := httpkit.Do(h.r, "POST", "/api/v1/auth/login", `{"email":"ana@mail.com","password":"secreta123"}`, "")
 	if w.Code != 200 {
 		t.Fatalf("login: %d %s", w.Code, w.Body.String())
 	}
@@ -170,27 +172,27 @@ func (h *tfRevHTTP) login(t *testing.T) string {
 // enable activa el 2FA y devuelve el secreto en claro (la app autenticadora).
 func (h *tfRevHTTP) enable(t *testing.T) []byte {
 	t.Helper()
-	w := doReq(h.r, "POST", "/api/v1/me/2fa/setup", "", h.session)
+	w := httpkit.Do(h.r, "POST", "/api/v1/me/2fa/setup", "", h.session)
 	if w.Code != 200 {
 		t.Fatalf("setup: %d %s", w.Code, w.Body.String())
 	}
 	sec := decodeBase32Secret(t, field(t, w, "secret"))
-	w = doReq(h.r, "POST", "/api/v1/me/2fa/enable", `{"code":"`+h.code(sec, 0)+`"}`, h.session)
+	w = httpkit.Do(h.r, "POST", "/api/v1/me/2fa/enable", `{"code":"`+h.code(sec, 0)+`"}`, h.session)
 	if w.Code != 200 {
 		t.Fatalf("enable: %d %s", w.Code, w.Body.String())
 	}
-	h.clock.Add(2 * 30 * time.Second) // el paso de activación no estorba
+	h.Clock.Add(2 * 30 * time.Second) // el paso de activación no estorba
 	return sec
 }
 
 func (h *tfRevHTTP) code(secret []byte, ahead int64) string {
-	return domain.TOTPCode(secret, domain.TOTPStepAt(h.clock.Now())+ahead, domain.TOTPDigits)
+	return domain.TOTPCode(secret, domain.TOTPStepAt(h.Clock.Now())+ahead, domain.TOTPDigits)
 }
 
 // challenge pide el desafío por la ruta real del login.
 func (h *tfRevHTTP) challenge(t *testing.T) string {
 	t.Helper()
-	w := doReq(h.r, "POST", "/api/v1/auth/login", `{"email":"ana@mail.com","password":"secreta123"}`, "")
+	w := httpkit.Do(h.r, "POST", "/api/v1/auth/login", `{"email":"ana@mail.com","password":"secreta123"}`, "")
 	if w.Code != 200 {
 		t.Fatalf("login con 2FA: %d %s", w.Code, w.Body.String())
 	}
@@ -206,7 +208,7 @@ func (h *tfRevHTTP) challenge(t *testing.T) string {
 }
 
 func (h *tfRevHTTP) login2fa(challenge, code string) *httptest.ResponseRecorder {
-	return doReq(h.r, "POST", "/api/v1/auth/login/2fa",
+	return httpkit.Do(h.r, "POST", "/api/v1/auth/login/2fa",
 		`{"challenge":"`+challenge+`","code":"`+code+`"}`, "")
 }
 
@@ -222,7 +224,7 @@ func TestF15Fix_challengeIssuedBeforeResetCannotBeExchanged(t *testing.T) {
 	if w := h.login2fa(ch, h.code(sec, 0)); w.Code != http.StatusOK {
 		t.Fatalf("control sin reinicio: %d %s", w.Code, w.Body.String())
 	}
-	h.clock.Add(60 * time.Second)
+	h.Clock.Add(60 * time.Second)
 
 	// El reinicio ocurre DESPUÉS del desafío.
 	ch = h.challenge(t)
@@ -233,7 +235,7 @@ func TestF15Fix_challengeIssuedBeforeResetCannotBeExchanged(t *testing.T) {
 		t.Fatalf("desafío revocado: %d %s", revoked.Code, revoked.Body.String())
 	}
 	// La MISMA respuesta que un código malo: no se puede distinguir una causa de otra.
-	h.clock.Add(60 * time.Second)
+	h.Clock.Add(60 * time.Second)
 	badCode := h.login2fa(ch, "000000")
 	if badCode.Code != revoked.Code || badCode.Body.String() != revoked.Body.String() {
 		t.Errorf("el 401 no es uniforme: revocado=%d %s, código malo=%d %s",
@@ -242,14 +244,14 @@ func TestF15Fix_challengeIssuedBeforeResetCannotBeExchanged(t *testing.T) {
 
 	// Un desafío obtenido DESPUÉS del reinicio sí se canjea.
 	h.gate.set(time.Now().Add(-time.Minute))
-	h.clock.Add(60 * time.Second)
+	h.Clock.Add(60 * time.Second)
 	fresh := h.challenge(t)
 	w := h.login2fa(fresh, h.code(sec, 0))
 	if w.Code != http.StatusOK {
 		t.Fatalf("desafío posterior al reinicio: %d %s", w.Code, w.Body.String())
 	}
 	tok := field(t, w, "token")
-	if w2 := doReq(h.r, "GET", "/api/v1/me", "", tok); w2.Code != http.StatusOK {
+	if w2 := httpkit.Do(h.r, "GET", "/api/v1/me", "", tok); w2.Code != http.StatusOK {
 		t.Fatalf("la sesión del canje nuevo no sirve: %d %s", w2.Code, w2.Body.String())
 	}
 }
@@ -278,10 +280,10 @@ func TestF15Fix_websocketClosesAfterPasswordReset(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 	deadline := time.Now().Add(2 * time.Second)
-	for h.hub.Rooms()[h.salonID] != 1 && time.Now().Before(deadline) {
+	for h.Hub.Rooms()[h.SalonID] != 1 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
-	if n := h.hub.Rooms()[h.salonID]; n != 1 {
+	if n := h.Hub.Rooms()[h.SalonID]; n != 1 {
 		t.Fatalf("el socket no entró a la room: %d", n)
 	}
 

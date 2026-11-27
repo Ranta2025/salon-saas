@@ -1,16 +1,18 @@
-package httpapi
+package httpapi_test
 
 import (
 	"encoding/csv"
 	"encoding/json"
 	"net/http"
+	httpapi "salon-saas/internal/adapters/http"
+	"salon-saas/internal/app"
+	"salon-saas/internal/domain"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
-	"salon-saas/internal/domain"
 )
 
 // Contrato HTTP de las liquidaciones (F3.3): las siete rutas, la forma EXACTA
@@ -19,40 +21,40 @@ import (
 
 type runHTTPEnv struct {
 	*payEnv
-	runs *mPayrollRuns
+	Runs *httpkit.PayrollRuns
 }
 
 func newRunHTTPEnv(t *testing.T) *runHTTPEnv {
 	t.Helper()
 	base := newPayEnv(t)
-	runs := newMPayrollRuns(func() time.Time { return payrollNow })
-	runs.settings = base.env.settings
-	runs.body, runs.sales = base.body, base.sales
-	d := base.env.d
-	d.PayrollRuns = PayrollRunHandler{
+	runs := httpkit.NewPayrollRuns(func() time.Time { return payrollNow })
+	runs.SettingsRepo = base.Env.Settings
+	runs.Body, runs.Sales = base.Body, base.Sales
+	d := base.Env.Deps
+	d.PayrollRuns = httpapi.PayrollRunHandler{
 		Runs: app.PayrollRunService{
 			Runs: runs, Tx: runs,
-			PayModels: base.body, Sales: base.sales,
-			Memberships: base.env.mems, Settings: base.env.settings,
+			PayModels: base.Body, Sales: base.Sales,
+			Memberships: base.Env.Mems, Settings: base.Env.Settings,
 			Now: func() time.Time { return payrollNow },
 		},
-		Memberships: base.env.mems,
+		Memberships: base.Env.Mems,
 	}
 	r := gin.New()
-	RegisterRoutes(r, d)
+	httpapi.RegisterRoutes(r, d)
 	base.r = r
-	return &runHTTPEnv{payEnv: base, runs: runs}
+	return &runHTTPEnv{payEnv: base, Runs: runs}
 }
 
 // febRunData deja a Ana con una venta cerrada de febrero (comisión 200).
 func (e *runHTTPEnv) febRunData() {
-	e.sales.add(e.salon, domain.PayrollSalesTotal{
-		UserID: e.users["ana@pay.com"], Name: "ana@pay.com",
+	e.Sales.Add(e.Salon, domain.PayrollSalesTotal{
+		UserID: e.Users["ana@pay.com"], Name: "ana@pay.com",
 		SalesCount: 2, SalesTotalCents: 2000, CommissionBase: 20000,
 	})
 }
 
-func (e *runHTTPEnv) runsPath(path string) string { return e.url(e.salon, "/payroll/runs"+path) }
+func (e *runHTTPEnv) runsPath(path string) string { return e.url(e.Salon, "/payroll/runs"+path) }
 
 // runJSONKeys es la forma EXACTA del detalle congelada en el contrato.
 func runJSONKeys(t *testing.T, what string, run map[string]any) {
@@ -82,7 +84,7 @@ func TestHTTP_payroll_runs_ciclo(t *testing.T) {
 		t.Fatalf("crear: %d %s", w.Code, w.Body.String())
 	}
 	var created map[string]any
-	mustJSON(t, w.Body.Bytes(), &created)
+	httpkit.MustJSON(t, w.Body.Bytes(), &created)
 	runJSONKeys(t, "run creado", created)
 	if created["kind"] != "month" || created["from"] != "2026-02-01" ||
 		created["to"] != "2026-02-28" || created["status"] != "open" {
@@ -99,7 +101,7 @@ func TestHTTP_payroll_runs_ciclo(t *testing.T) {
 		t.Fatalf("líneas: %+v", lines)
 	}
 	line := lines[0].(map[string]any)
-	if line["user_id"] != e.users["ana@pay.com"] || line["name"] != "ana@pay.com" ||
+	if line["user_id"] != e.Users["ana@pay.com"] || line["name"] != "ana@pay.com" ||
 		line["active"] != true || line["sales_count"] != float64(2) ||
 		line["sales_total_cents"] != float64(2000) || line["commission_cents"] != float64(200) ||
 		line["adjustment_cents"] != float64(0) || line["adjustment_note"] != "" ||
@@ -116,7 +118,7 @@ func TestHTTP_payroll_runs_ciclo(t *testing.T) {
 	var list struct {
 		Runs []map[string]any `json:"runs"`
 	}
-	mustJSON(t, w.Body.Bytes(), &list)
+	httpkit.MustJSON(t, w.Body.Bytes(), &list)
 	if len(list.Runs) != 1 {
 		t.Fatalf("listado: %+v", list.Runs)
 	}
@@ -132,18 +134,18 @@ func TestHTTP_payroll_runs_ciclo(t *testing.T) {
 		t.Fatalf("detalle: %d %s", w.Code, w.Body.String())
 	}
 	var got map[string]any
-	mustJSON(t, w.Body.Bytes(), &got)
+	httpkit.MustJSON(t, w.Body.Bytes(), &got)
 	if got["id"] != runID {
 		t.Fatalf("detalle: %+v", got)
 	}
 
 	// Ajuste: total = comisión + fijo + ajuste.
-	w = e.do(t, "PATCH", e.runsPath("/"+runID+"/lines/"+e.users["ana@pay.com"]),
+	w = e.do(t, "PATCH", e.runsPath("/"+runID+"/lines/"+e.Users["ana@pay.com"]),
 		`{"adjustment_cents":-200,"adjustment_note":"venta duplicada"}`, "admin@pay.com")
 	if w.Code != http.StatusOK {
 		t.Fatalf("ajuste: %d %s", w.Code, w.Body.String())
 	}
-	mustJSON(t, w.Body.Bytes(), &got)
+	httpkit.MustJSON(t, w.Body.Bytes(), &got)
 	runJSONKeys(t, "run ajustado", got)
 	totals := got["totals"].(map[string]any)
 	if totals["commission_cents"] != float64(200) || totals["adjustment_cents"] != float64(-200) ||
@@ -167,7 +169,7 @@ func TestHTTP_payroll_runs_ciclo(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("pagar: %d %s", w.Code, w.Body.String())
 	}
-	mustJSON(t, w.Body.Bytes(), &got)
+	httpkit.MustJSON(t, w.Body.Bytes(), &got)
 	if got["status"] != "paid" {
 		t.Fatalf("estado tras pagar: %+v", got)
 	}
@@ -181,7 +183,7 @@ func TestHTTP_payroll_runs_ciclo(t *testing.T) {
 
 	// Desde acá, TODO es 409 con la frase exacta.
 	for _, c := range []struct{ method, path, body string }{
-		{"PATCH", e.runsPath("/" + runID + "/lines/" + e.users["ana@pay.com"]), `{"adjustment_cents":1,"adjustment_note":"x"}`},
+		{"PATCH", e.runsPath("/" + runID + "/lines/" + e.Users["ana@pay.com"]), `{"adjustment_cents":1,"adjustment_note":"x"}`},
 		{"POST", e.runsPath("/" + runID + "/pay"), ""},
 		{"DELETE", e.runsPath("/" + runID), ""},
 	} {
@@ -190,15 +192,15 @@ func TestHTTP_payroll_runs_ciclo(t *testing.T) {
 			t.Fatalf("%s %s sobre pagada: %d %s", c.method, c.path, w.Code, w.Body.String())
 		}
 		var out map[string]string
-		mustJSON(t, w.Body.Bytes(), &out)
+		httpkit.MustJSON(t, w.Body.Bytes(), &out)
 		if out["error"] != domain.MsgPayrollRunPaid {
 			t.Fatalf("%s %s: mensaje = %q", c.method, c.path, out["error"])
 		}
 	}
 
 	// Otra corrida abierta se borra (204) y libera los días.
-	e.sales.add(e.salon, domain.PayrollSalesTotal{
-		UserID: e.users["ana@pay.com"], Name: "ana@pay.com",
+	e.Sales.Add(e.Salon, domain.PayrollSalesTotal{
+		UserID: e.Users["ana@pay.com"], Name: "ana@pay.com",
 		SalesCount: 1, SalesTotalCents: 1000, CommissionBase: 10000,
 	})
 	w = e.do(t, "POST", e.runsPath(""), `{"kind":"month","date":"2026-01-10"}`, "duena@pay.com")
@@ -206,7 +208,7 @@ func TestHTTP_payroll_runs_ciclo(t *testing.T) {
 		t.Fatalf("crear enero: %d %s", w.Code, w.Body.String())
 	}
 	var jan map[string]any
-	mustJSON(t, w.Body.Bytes(), &jan)
+	httpkit.MustJSON(t, w.Body.Bytes(), &jan)
 	if w := e.do(t, "DELETE", e.runsPath("/"+jan["id"].(string)), "", "duena@pay.com"); w.Code != http.StatusNoContent {
 		t.Fatalf("borrar abierta: %d %s", w.Code, w.Body.String())
 	}
@@ -250,9 +252,9 @@ func TestHTTP_payroll_runs_reglas_y_validacion(t *testing.T) {
 		t.Fatalf("crear: %d %s", w.Code, w.Body.String())
 	}
 	var run map[string]any
-	mustJSON(t, w.Body.Bytes(), &run)
+	httpkit.MustJSON(t, w.Body.Bytes(), &run)
 	runID := run["id"].(string)
-	linePath := e.runsPath("/" + runID + "/lines/" + e.users["ana@pay.com"])
+	linePath := e.runsPath("/" + runID + "/lines/" + e.Users["ana@pay.com"])
 
 	// Cuerpo parcial: campo ausente o null -> 400 (lección de F3.2), nunca 0 en
 	// silencio, y nada cambia.
@@ -262,7 +264,7 @@ func TestHTTP_payroll_runs_reglas_y_validacion(t *testing.T) {
 			t.Fatalf("cuerpo parcial %s: %d %s", body, w.Code, w.Body.String())
 		}
 		var out map[string]string
-		mustJSON(t, w.Body.Bytes(), &out)
+		httpkit.MustJSON(t, w.Body.Bytes(), &out)
 		if out["error"] != domain.MsgPayrollAdjustmentMissing {
 			t.Fatalf("cuerpo parcial %s: mensaje = %q", body, out["error"])
 		}
@@ -290,12 +292,12 @@ func TestHTTP_payroll_runs_reglas_y_validacion(t *testing.T) {
 		t.Fatalf("ajuste fuera del máximo: %d %s", w.Code, w.Body.String())
 	}
 	// Persona que no está en la corrida: 404.
-	if w := e.do(t, "PATCH", e.runsPath("/"+runID+"/lines/"+e.users["recep@pay.com"]),
+	if w := e.do(t, "PATCH", e.runsPath("/"+runID+"/lines/"+e.Users["recep@pay.com"]),
 		`{"adjustment_cents":1,"adjustment_note":"x"}`, duena); w.Code != http.StatusNotFound {
 		t.Fatalf("persona fuera: %d %s", w.Code, w.Body.String())
 	}
 	// Corrida que no existe: 404.
-	if w := e.do(t, "PATCH", e.runsPath("/no-existe/lines/"+e.users["ana@pay.com"]),
+	if w := e.do(t, "PATCH", e.runsPath("/no-existe/lines/"+e.Users["ana@pay.com"]),
 		`{"adjustment_cents":0}`, duena); w.Code != http.StatusNotFound {
 		t.Fatalf("corrida inexistente: %d %s", w.Code, w.Body.String())
 	}
@@ -315,8 +317,8 @@ func TestHTTP_payroll_runs_reglas_y_validacion(t *testing.T) {
 func TestHTTP_payroll_runs_permisos_por_rol(t *testing.T) {
 	e := newRunHTTPEnv(t)
 	e.febRunData()
-	e.sales.add(e.salon, domain.PayrollSalesTotal{
-		UserID: e.users["ana@pay.com"], Name: "ana@pay.com",
+	e.Sales.Add(e.Salon, domain.PayrollSalesTotal{
+		UserID: e.Users["ana@pay.com"], Name: "ana@pay.com",
 		SalesCount: 1, SalesTotalCents: 1000, CommissionBase: 10000,
 	})
 
@@ -326,14 +328,14 @@ func TestHTTP_payroll_runs_permisos_por_rol(t *testing.T) {
 		t.Fatalf("run de referencia: %d %s", w.Code, w.Body.String())
 	}
 	var ref map[string]any
-	mustJSON(t, w.Body.Bytes(), &ref)
+	httpkit.MustJSON(t, w.Body.Bytes(), &ref)
 	rid := ref["id"].(string)
 
 	routes := []struct{ name, method, path, body string }{
 		{"listar", "GET", e.runsPath(""), ""},
 		{"crear", "POST", e.runsPath(""), `{"kind":"month","date":"2026-01-10"}`},
 		{"detalle", "GET", e.runsPath("/" + rid), ""},
-		{"ajustar", "PATCH", e.runsPath("/" + rid + "/lines/" + e.users["ana@pay.com"]), `{"adjustment_cents":0}`},
+		{"ajustar", "PATCH", e.runsPath("/" + rid + "/lines/" + e.Users["ana@pay.com"]), `{"adjustment_cents":0}`},
 		{"pagar", "POST", e.runsPath("/" + rid + "/pay"), ""},
 		{"borrar", "DELETE", e.runsPath("/" + rid), ""},
 		{"exportar", "GET", e.runsPath("/" + rid + "/export.csv"), ""},
@@ -358,11 +360,11 @@ func TestHTTP_payroll_runs_permisos_por_rol(t *testing.T) {
 	// Y BORRAN de verdad (204) una corrida abierta cada uno.
 	for i, email := range []string{"duena@pay.com", "admin@pay.com"} {
 		id := "run-del-" + email
-		e.runs.seed(domain.PayrollRun{
-			ID: id, SalonID: e.salon, Kind: domain.PayMonth,
+		e.Runs.Seed(domain.PayrollRun{
+			ID: id, SalonID: e.Salon, Kind: domain.PayMonth,
 			From: "2025-0" + string(rune('1'+i)) + "-01", To: "2025-0" + string(rune('1'+i)) + "-28",
 			Status: domain.PayrollRunOpen, CreatedAt: payrollNow,
-			Lines: []domain.PayrollLine{{UserID: e.users["ana@pay.com"], Name: "ana@pay.com", TotalCents: 0}},
+			Lines: []domain.PayrollLine{{UserID: e.Users["ana@pay.com"], Name: "ana@pay.com", TotalCents: 0}},
 		})
 		if w := e.do(t, "DELETE", e.runsPath("/"+id), "", email); w.Code != http.StatusNoContent {
 			t.Fatalf("%s borra: %d %s", email, w.Code, w.Body.String())
@@ -388,7 +390,7 @@ func TestHTTP_payroll_runs_permisos_por_rol(t *testing.T) {
 	}
 	// Sin token: 401 en las siete.
 	for _, r := range routes {
-		w := doReq(e.r, r.method, r.path, r.body, "")
+		w := httpkit.Do(e.r, r.method, r.path, r.body, "")
 		if w.Code != http.StatusUnauthorized {
 			t.Fatalf("%s %s sin token: %d", r.method, r.name, w.Code)
 		}
@@ -403,14 +405,14 @@ func TestHTTP_payroll_runs_tenant(t *testing.T) {
 	otro := domain.PayrollRun{
 		ID: "run-otro", SalonID: e.otros, Kind: domain.PayMonth,
 		From: "2026-02-01", To: "2026-02-28", Status: domain.PayrollRunOpen,
-		CreatedBy: e.users["ajeno@pay.com"], CreatedAt: now,
-		Lines: []domain.PayrollLine{{UserID: e.users["carla@pay.com"], Name: "Carla", Active: true, TotalCents: 0}},
+		CreatedBy: e.Users["ajeno@pay.com"], CreatedAt: now,
+		Lines: []domain.PayrollLine{{UserID: e.Users["carla@pay.com"], Name: "Carla", Active: true, TotalCents: 0}},
 	}
-	e.runs.seed(otro)
+	e.Runs.Seed(otro)
 
 	for _, r := range []struct{ method, path, body string }{
 		{"GET", "/run-otro", ""},
-		{"PATCH", "/run-otro/lines/" + e.users["carla@pay.com"], `{"adjustment_cents":0}`},
+		{"PATCH", "/run-otro/lines/" + e.Users["carla@pay.com"], `{"adjustment_cents":0}`},
 		{"POST", "/run-otro/pay", ""},
 		{"DELETE", "/run-otro", ""},
 		{"GET", "/run-otro/export.csv", ""},
@@ -431,10 +433,10 @@ func TestHTTP_payroll_runs_tenant(t *testing.T) {
 func TestHTTP_payroll_export_csv(t *testing.T) {
 	e := newRunHTTPEnv(t)
 	run := domain.PayrollRun{
-		ID: "run-csv", SalonID: e.salon, Kind: domain.PayMonth,
+		ID: "run-csv", SalonID: e.Salon, Kind: domain.PayMonth,
 		From: "2026-02-01", To: "2026-02-28", Status: domain.PayrollRunPaid,
-		CreatedBy: e.users["duena@pay.com"], CreatedAt: payrollNow,
-		PaidAt: &payrollNow, PaidBy: e.users["duena@pay.com"],
+		CreatedBy: e.Users["duena@pay.com"], CreatedAt: payrollNow,
+		PaidAt: &payrollNow, PaidBy: e.Users["duena@pay.com"],
 		Lines: []domain.PayrollLine{
 			{UserID: "u-1", Name: "=SUM(A1:A9)", Active: true, TotalCents: 0},
 			{UserID: "u-2", Name: "+Ana", Active: true, SalesTotalCents: 5, CommissionCents: 5, TotalCents: 5},
@@ -447,7 +449,7 @@ func TestHTTP_payroll_export_csv(t *testing.T) {
 			{UserID: "u-9", Name: "Ñandú", Active: true, TotalCents: 0},
 		},
 	}
-	e.runs.seed(run)
+	e.Runs.Seed(run)
 
 	w := e.do(t, "GET", e.runsPath("/run-csv/export.csv"), "", "duena@pay.com")
 	if w.Code != http.StatusOK {

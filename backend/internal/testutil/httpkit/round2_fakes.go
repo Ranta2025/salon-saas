@@ -1,67 +1,66 @@
-package httpapi
+package httpkit
 
 import (
-	"sort"
-	"time"
-
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"sort"
+	"time"
 )
 
 // Fakes de la ronda 2 (misma semántica que pgstore: scope por salón,
 // ErrNotFound, upsert).
 
-type msettings struct {
-	bySalon map[string]domain.SalonSettings
+type Settings struct {
+	BySalon map[string]domain.SalonSettings
 	// frozen simula un salón con liquidaciones de nómina: el PUT que cambia la
 	// zona horaria no escribe nada y devuelve ErrAlreadyExists (F3.3).
-	frozen map[string]bool
+	Frozen map[string]bool
 }
 
-func (f *msettings) Settings(salonID string) (domain.SalonSettings, error) {
-	if s, ok := f.bySalon[salonID]; ok {
+func (f *Settings) Settings(salonID string) (domain.SalonSettings, error) {
+	if s, ok := f.BySalon[salonID]; ok {
 		return s, nil
 	}
 	return domain.SalonSettings{}, domain.ErrNotFound
 }
 
-func (f *msettings) SaveSettings(s domain.SalonSettings) error {
-	if f.bySalon == nil {
-		f.bySalon = map[string]domain.SalonSettings{}
+func (f *Settings) SaveSettings(s domain.SalonSettings) error {
+	if f.BySalon == nil {
+		f.BySalon = map[string]domain.SalonSettings{}
 	}
-	f.bySalon[s.SalonID] = s
+	f.BySalon[s.SalonID] = s
 	return nil
 }
 
 // SaveSettingsGuarded modela la zona congelada: con liquidaciones (frozen) el
 // PUT rechaza el cambio con ErrAlreadyExists y no escribe nada.
-func (f *msettings) SaveSettingsGuarded(s domain.SalonSettings) error {
-	if f.frozen[s.SalonID] {
+func (f *Settings) SaveSettingsGuarded(s domain.SalonSettings) error {
+	if f.Frozen[s.SalonID] {
 		return domain.ErrAlreadyExists
 	}
 	return f.SaveSettings(s)
 }
 
-var _ ports.SalonSettingsRepository = (*msettings)(nil)
+var _ ports.SalonSettingsRepository = (*Settings)(nil)
 
-type mmembers struct {
-	mems *mm
+type MemberDir struct {
+	Mems *Memberships
 	// bookings cuenta los turnos futuros de la baja y inv revoca las
 	// invitaciones pendientes que emitió quien se va (S-F2g2-4).
-	bookings *mb
-	inv      *minvitations
-	users    *mu
+	Bookings    *Bookings
+	Invitations *Invitations
+	Users       *Users
 }
 
 // ListMembers incluye a quien fue dado de baja con su estado (S-F2g2-4): la
 // pantalla de equipo decide cómo mostrarlo.
-func (f *mmembers) ListMembers(salonID string) ([]domain.Member, error) {
+func (f *MemberDir) ListMembers(salonID string) ([]domain.Member, error) {
 	out := []domain.Member{}
-	for _, m := range f.mems.byKey {
+	for _, m := range f.Mems.ByKey {
 		if m.SalonID != salonID {
 			continue
 		}
-		u, err := f.users.FindByID(m.UserID)
+		u, err := f.Users.FindByID(m.UserID)
 		if err != nil {
 			return nil, err
 		}
@@ -77,8 +76,8 @@ func (f *mmembers) ListMembers(salonID string) ([]domain.Member, error) {
 
 // FindMember resuelve la membresía INCLUYENDO a quien fue dado de baja, como la
 // query de pgstore: es la única lectura que ve el estado anterior.
-func (f *mmembers) FindMember(userID, salonID string) (domain.Membership, error) {
-	m, ok := f.mems.byKey[userID+"|"+salonID]
+func (f *MemberDir) FindMember(userID, salonID string) (domain.Membership, error) {
+	m, ok := f.Mems.ByKey[userID+"|"+salonID]
 	if !ok {
 		return domain.Membership{}, domain.ErrNotFound
 	}
@@ -87,39 +86,39 @@ func (f *mmembers) FindMember(userID, salonID string) (domain.Membership, error)
 
 // DeactivateMember es el UPDATE condicional por ended_at: una membresía ya dada
 // de baja (o de otro salón) no afecta filas.
-func (f *mmembers) DeactivateMember(userID, salonID string, endedAt time.Time) error {
+func (f *MemberDir) DeactivateMember(userID, salonID string, endedAt time.Time) error {
 	key := userID + "|" + salonID
-	m, ok := f.mems.byKey[key]
+	m, ok := f.Mems.ByKey[key]
 	if !ok || !m.Active() {
 		return domain.ErrNotFound
 	}
 	at := endedAt
 	m.EndedAt = &at
-	f.mems.byKey[key] = m
+	f.Mems.ByKey[key] = m
 	return nil
 }
 
 // ReactivateMember es el UPDATE condicional al revés: sin filas (ya activa o de
 // otro salón) es ErrNotFound.
-func (f *mmembers) ReactivateMember(userID, salonID string) error {
+func (f *MemberDir) ReactivateMember(userID, salonID string) error {
 	key := userID + "|" + salonID
-	m, ok := f.mems.byKey[key]
+	m, ok := f.Mems.ByKey[key]
 	if !ok || m.Active() {
 		return domain.ErrNotFound
 	}
 	m.EndedAt = nil
-	f.mems.byKey[key] = m
+	f.Mems.ByKey[key] = m
 	return nil
 }
 
 // CountFutureBookings cuenta los turnos `booked` que empiezan después de now de
 // esa persona (la misma consulta que pgstore).
-func (f *mmembers) CountFutureBookings(salonID, userID string, now time.Time) (int, error) {
-	if f.bookings == nil {
+func (f *MemberDir) CountFutureBookings(salonID, userID string, now time.Time) (int, error) {
+	if f.Bookings == nil {
 		return 0, nil
 	}
 	n := 0
-	for _, b := range f.bookings.all {
+	for _, b := range f.Bookings.All {
 		if b.SalonID != salonID || b.ProfessionalID != userID {
 			continue
 		}
@@ -131,45 +130,45 @@ func (f *mmembers) CountFutureBookings(salonID, userID string, now time.Time) (i
 	return n, nil
 }
 
-func (f *mmembers) DeleteMember(userID, salonID string) error {
+func (f *MemberDir) DeleteMember(userID, salonID string) error {
 	key := userID + "|" + salonID
-	if _, ok := f.mems.byKey[key]; !ok {
+	if _, ok := f.Mems.ByKey[key]; !ok {
 		return domain.ErrNotFound
 	}
-	delete(f.mems.byKey, key)
+	delete(f.Mems.ByKey, key)
 	return nil
 }
 
 // SetAttends: mismo scope que pgstore (una fila por salón); sin fila, ErrNotFound.
-func (f *mmembers) SetAttends(userID, salonID string, attends bool) error {
+func (f *MemberDir) SetAttends(userID, salonID string, attends bool) error {
 	key := userID + "|" + salonID
-	m, ok := f.mems.byKey[key]
+	m, ok := f.Mems.ByKey[key]
 	if !ok {
 		return domain.ErrNotFound
 	}
 	m.Attends = attends
-	f.mems.byKey[key] = m
+	f.Mems.ByKey[key] = m
 	return nil
 }
 
 // SetTrade: mismo scope que pgstore (una fila por salón); sin fila, ErrNotFound.
-func (f *mmembers) SetTrade(userID, salonID, trade string) error {
+func (f *MemberDir) SetTrade(userID, salonID, trade string) error {
 	key := userID + "|" + salonID
-	m, ok := f.mems.byKey[key]
+	m, ok := f.Mems.ByKey[key]
 	if !ok {
 		return domain.ErrNotFound
 	}
 	m.Trade = trade
-	f.mems.byKey[key] = m
+	f.Mems.ByKey[key] = m
 	return nil
 }
 
 // CountRole cuenta solo ACTIVOS, como pgstore: una baja no protege al último
 // owner (si contara las filas dadas de baja, el dueño que queda solo nunca
 // podría irse).
-func (f *mmembers) CountRole(salonID string, role domain.Role) (int, error) {
+func (f *MemberDir) CountRole(salonID string, role domain.Role) (int, error) {
 	n := 0
-	for _, m := range f.mems.byKey {
+	for _, m := range f.Mems.ByKey {
 		if m.SalonID == salonID && m.Role == role && m.Active() {
 			n++
 		}
@@ -180,51 +179,51 @@ func (f *mmembers) CountRole(salonID string, role domain.Role) (int, error) {
 // InMemberTx: snapshot + rollback, como la transacción real. Si la baja falla
 // (turnos pendientes) no queda la membresía dada de baja ni una invitación
 // revocada.
-func (f *mmembers) InMemberTx(fn func(tx ports.MemberTx) error) error {
+func (f *MemberDir) InMemberTx(fn func(tx ports.MemberTx) error) error {
 	mems := map[string]domain.Membership{}
-	for k, v := range f.mems.byKey {
+	for k, v := range f.Mems.ByKey {
 		mems[k] = v
 	}
 	var invs map[string]domain.Invitation
-	if f.inv != nil {
+	if f.Invitations != nil {
 		invs = map[string]domain.Invitation{}
-		for k, v := range f.inv.rows {
+		for k, v := range f.Invitations.Rows {
 			invs[k] = v
 		}
 	}
-	err := fn(mmemberTx{f})
+	err := fn(MemberTx{f})
 	if err != nil {
-		f.mems.byKey = mems
-		if f.inv != nil {
-			f.inv.rows = invs
+		f.Mems.ByKey = mems
+		if f.Invitations != nil {
+			f.Invitations.Rows = invs
 		}
 	}
 	return err
 }
 
-type mmemberTx struct{ f *mmembers }
+type MemberTx struct{ F *MemberDir }
 
-func (t mmemberTx) DeactivateMember(userID, salonID string, endedAt time.Time) error {
-	return t.f.DeactivateMember(userID, salonID, endedAt)
+func (t MemberTx) DeactivateMember(userID, salonID string, endedAt time.Time) error {
+	return t.F.DeactivateMember(userID, salonID, endedAt)
 }
 
-func (t mmemberTx) CountFutureBookings(salonID, userID string, now time.Time) (int, error) {
-	return t.f.CountFutureBookings(salonID, userID, now)
+func (t MemberTx) CountFutureBookings(salonID, userID string, now time.Time) (int, error) {
+	return t.F.CountFutureBookings(salonID, userID, now)
 }
 
 // CountRole: solo activos, leído después del UPDATE de la baja (como la query
 // dentro de la transacción real).
-func (t mmemberTx) CountRole(salonID string, role domain.Role) (int, error) {
-	return t.f.CountRole(salonID, role)
+func (t MemberTx) CountRole(salonID string, role domain.Role) (int, error) {
+	return t.F.CountRole(salonID, role)
 }
 
 // RevokeInvitationsBy: las pendientes que emitió esa persona dejan de servir en
 // el MISMO commit que la baja (hallazgo de F2g1).
-func (t mmemberTx) RevokeInvitationsBy(salonID, createdBy string, now time.Time) error {
-	if t.f.inv == nil {
+func (t MemberTx) RevokeInvitationsBy(salonID, createdBy string, now time.Time) error {
+	if t.F.Invitations == nil {
 		return nil
 	}
-	for id, row := range t.f.inv.rows {
+	for id, row := range t.F.Invitations.Rows {
 		if row.SalonID != salonID || row.CreatedBy != createdBy {
 			continue
 		}
@@ -233,37 +232,37 @@ func (t mmemberTx) RevokeInvitationsBy(salonID, createdBy string, now time.Time)
 		}
 		at := now
 		row.RevokedAt = &at
-		t.f.inv.rows[id] = row
+		t.F.Invitations.Rows[id] = row
 	}
 	return nil
 }
 
 var (
-	_ ports.MemberAdminRepository = (*mmembers)(nil)
-	_ ports.MemberTxRunner        = (*mmembers)(nil)
-	_ ports.MemberTx              = mmemberTx{}
+	_ ports.MemberAdminRepository = (*MemberDir)(nil)
+	_ ports.MemberTxRunner        = (*MemberDir)(nil)
+	_ ports.MemberTx              = MemberTx{}
 )
 
-// failUnread simula la query del badge caída (R4-003): listar no puede fallar
+// FailUnread simula la query del badge caída (R4-003): listar no puede fallar
 // por el contador.
-type failUnread struct{ inner *mnotif }
+type FailUnread struct{ Inner *Notifications }
 
-func (f failUnread) Save(n domain.Notification) error { return f.inner.Save(n) }
-func (f failUnread) List(salonID, userID string, limit int) ([]domain.Notification, error) {
-	return f.inner.List(salonID, userID, limit)
+func (f FailUnread) Save(n domain.Notification) error { return f.Inner.Save(n) }
+func (f FailUnread) List(salonID, userID string, limit int) ([]domain.Notification, error) {
+	return f.Inner.List(salonID, userID, limit)
 }
-func (f failUnread) MarkRead(salonID, userID, id string) error {
-	return f.inner.MarkRead(salonID, userID, id)
+func (f FailUnread) MarkRead(salonID, userID, id string) error {
+	return f.Inner.MarkRead(salonID, userID, id)
 }
-func (f failUnread) UnreadCount(string, string) (int, error) { return 0, errFakeInfra }
+func (f FailUnread) UnreadCount(string, string) (int, error) { return 0, ErrFakeInfra }
 
-var _ ports.NotificationRepository = failUnread{}
+var _ ports.NotificationRepository = FailUnread{}
 
 // typed busca un evento por tipo (mismo helper que en app, para los tests HTTP).
-func (f *mevents) typed(t string) (ports.Event, int) {
+func (f *Events) Typed(t string) (ports.Event, int) {
 	n := 0
 	var found ports.Event
-	for _, ev := range f.all {
+	for _, ev := range f.All {
 		if ev.Type == t {
 			n++
 			found = ev
@@ -272,25 +271,25 @@ func (f *mevents) typed(t string) (ports.Event, int) {
 	return found, n
 }
 
-// mprof: qué servicios hace cada profesional (F2c), con la misma semántica que
+// Professionals: qué servicios hace cada profesional (F2c), con la misma semántica que
 // pgstore. Un servicio sin filas grabadas lo hace todo el equipo reservable:
 // es lo que deja la migración 016 en una base con datos previos, y así los
 // tests anteriores (los que asumen "todos hacen todo") siguen siendo válidos.
-type mprof struct {
-	mems      *mm
-	byService map[string][]string // "salonID|serviceID" -> userIDs
-	byMember  map[string][]string // "salonID|userID"    -> serviceIDs
+type Professionals struct {
+	Mems      *Memberships
+	ByService map[string][]string // "salonID|serviceID" -> userIDs
+	ByMember  map[string][]string // "salonID|userID"    -> serviceIDs
 }
 
-func (f *mprof) ListProfessionalsFor(salonID, serviceID string) ([]domain.StaffMember, error) {
+func (f *Professionals) ListProfessionalsFor(salonID, serviceID string) ([]domain.StaffMember, error) {
 	key := salonID + "|" + serviceID
-	ids, recorded := f.byService[key]
+	ids, recorded := f.ByService[key]
 	want := map[string]bool{}
 	for _, id := range ids {
 		want[id] = true
 	}
 	var out []domain.StaffMember
-	for _, m := range f.mems.byKey {
+	for _, m := range f.Mems.ByKey {
 		if m.SalonID != salonID || !m.Bookable() {
 			continue
 		}
@@ -305,12 +304,12 @@ func (f *mprof) ListProfessionalsFor(salonID, serviceID string) ([]domain.StaffM
 	return out, nil
 }
 
-func (f *mprof) ListServiceIDs(salonID, userID string) ([]string, error) {
-	return append([]string{}, f.byMember[salonID+"|"+userID]...), nil
+func (f *Professionals) ListServiceIDs(salonID, userID string) ([]string, error) {
+	return append([]string{}, f.ByMember[salonID+"|"+userID]...), nil
 }
 
-func (f *mprof) SetServices(salonID, userID string, serviceIDs []string) error {
-	if _, ok := f.mems.byKey[userID+"|"+salonID]; !ok {
+func (f *Professionals) SetServices(salonID, userID string, serviceIDs []string) error {
+	if _, ok := f.Mems.ByKey[userID+"|"+salonID]; !ok {
 		return domain.ErrNotFound
 	}
 	uniq := map[string]bool{}
@@ -323,34 +322,34 @@ func (f *mprof) SetServices(salonID, userID string, serviceIDs []string) error {
 		out = append(out, id)
 	}
 	sort.Strings(out)
-	if f.byMember == nil {
-		f.byMember = map[string][]string{}
+	if f.ByMember == nil {
+		f.ByMember = map[string][]string{}
 	}
-	if f.byService == nil {
-		f.byService = map[string][]string{}
+	if f.ByService == nil {
+		f.ByService = map[string][]string{}
 	}
-	f.byMember[salonID+"|"+userID] = out
+	f.ByMember[salonID+"|"+userID] = out
 	for _, id := range out {
 		key := salonID + "|" + id
 		found := false
-		for _, who := range f.byService[key] {
+		for _, who := range f.ByService[key] {
 			if who == userID {
 				found = true
 			}
 		}
 		if !found {
-			f.byService[key] = append(f.byService[key], userID)
+			f.ByService[key] = append(f.ByService[key], userID)
 		}
 	}
 	return nil
 }
 
 // assign graba quién hace el servicio (lista vacía = nadie).
-func (f *mprof) assign(salonID, serviceID string, userIDs ...string) {
-	if f.byService == nil {
-		f.byService = map[string][]string{}
+func (f *Professionals) Assign(salonID, serviceID string, userIDs ...string) {
+	if f.ByService == nil {
+		f.ByService = map[string][]string{}
 	}
-	f.byService[salonID+"|"+serviceID] = userIDs
+	f.ByService[salonID+"|"+serviceID] = userIDs
 }
 
-var _ ports.ProfessionalServiceRepository = (*mprof)(nil)
+var _ ports.ProfessionalServiceRepository = (*Professionals)(nil)

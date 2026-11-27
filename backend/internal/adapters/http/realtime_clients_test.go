@@ -1,4 +1,4 @@
-package httpapi
+package httpapi_test
 
 import (
 	"bytes"
@@ -10,183 +10,25 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"salon-saas/internal/adapters/http"
+	"salon-saas/internal/domain"
+	"salon-saas/internal/ports"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
-
-	"salon-saas/internal/domain"
-	"salon-saas/internal/ports"
 )
 
-// --- Fakes de notificaciones, clientes, storage e imágenes (en memoria) ---
+var _ ports.NotificationRepository = (*httpkit.Notifications)(nil)
 
-type mnotif struct{ all []domain.Notification }
+var _ ports.ClientRepository = (*httpkit.Clients)(nil)
 
-func (f *mnotif) Save(n domain.Notification) error { f.all = append(f.all, n); return nil }
+var _ ports.PhotoStorage = (*httpkit.Storage)(nil)
 
-func (f *mnotif) visible(n domain.Notification, salonID, userID string) bool {
-	return n.SalonID == salonID && (n.UserID == "" || n.UserID == userID)
-}
+var _ ports.ImageProcessor = httpkit.Images{}
 
-func (f *mnotif) List(salonID, userID string, limit int) ([]domain.Notification, error) {
-	var out []domain.Notification
-	for i := len(f.all) - 1; i >= 0; i-- {
-		if f.visible(f.all[i], salonID, userID) {
-			out = append(out, f.all[i])
-			if len(out) == limit {
-				break
-			}
-		}
-	}
-	return out, nil
-}
-
-func (f *mnotif) MarkRead(salonID, userID, id string) error {
-	for i := range f.all {
-		if f.all[i].ID == id && f.visible(f.all[i], salonID, userID) {
-			f.all[i].MarkRead(time.Now().UTC())
-			return nil
-		}
-	}
-	return domain.ErrNotFound
-}
-
-func (f *mnotif) UnreadCount(salonID, userID string) (int, error) {
-	n := 0
-	for _, x := range f.all {
-		if f.visible(x, salonID, userID) && !x.Read() {
-			n++
-		}
-	}
-	return n, nil
-}
-
-var _ ports.NotificationRepository = (*mnotif)(nil)
-
-type mclients struct {
-	clients []domain.Client
-	photos  []domain.ClientPhoto
-}
-
-func (f *mclients) Save(c domain.Client) error { f.clients = append(f.clients, c); return nil }
-
-// FindByPhone / FindByName: la reserva pública busca la ficha del visitante
-// antes de crear una nueva (teléfono normalizado / nombre exacto).
-func (f *mclients) FindByPhone(salonID, phone string) (domain.Client, error) {
-	for _, c := range f.clients {
-		if c.SalonID == salonID && domain.NormalizePhone(c.Phone) == phone {
-			return c, nil
-		}
-	}
-	return domain.Client{}, domain.ErrNotFound
-}
-
-func (f *mclients) FindByName(salonID, name string) (domain.Client, error) {
-	for _, c := range f.clients {
-		if c.SalonID == salonID && c.Name == name {
-			return c, nil
-		}
-	}
-	return domain.Client{}, domain.ErrNotFound
-}
-
-func (f *mclients) FindByID(salonID, id string) (domain.Client, error) {
-	for _, c := range f.clients {
-		if c.SalonID == salonID && c.ID == id {
-			return c, nil
-		}
-	}
-	return domain.Client{}, domain.ErrNotFound
-}
-
-func (f *mclients) List(salonID string) ([]domain.Client, error) {
-	var out []domain.Client
-	for _, c := range f.clients {
-		if c.SalonID == salonID {
-			out = append(out, c)
-		}
-	}
-	return out, nil
-}
-
-func (f *mclients) SavePhoto(p domain.ClientPhoto) error { f.photos = append(f.photos, p); return nil }
-
-func (f *mclients) ListPhotos(salonID, clientID string) ([]domain.ClientPhoto, error) {
-	var out []domain.ClientPhoto
-	for _, p := range f.photos {
-		if p.SalonID == salonID && p.ClientID == clientID {
-			out = append(out, p)
-		}
-	}
-	return out, nil
-}
-
-func (f *mclients) DeletePhoto(salonID, clientID, id string) error {
-	for i, p := range f.photos {
-		if p.SalonID == salonID && p.ClientID == clientID && p.ID == id {
-			f.photos = append(f.photos[:i], f.photos[i+1:]...)
-			return nil
-		}
-	}
-	return domain.ErrNotFound
-}
-
-func (f *mclients) FindPhoto(salonID, clientID, id string) (domain.ClientPhoto, error) {
-	for _, p := range f.photos {
-		if p.SalonID == salonID && p.ClientID == clientID && p.ID == id {
-			return p, nil
-		}
-	}
-	return domain.ClientPhoto{}, domain.ErrNotFound
-}
-
-func (f *mclients) PhotoByID(id string) (domain.ClientPhoto, error) {
-	for _, p := range f.photos {
-		if p.ID == id {
-			return p, nil
-		}
-	}
-	return domain.ClientPhoto{}, domain.ErrNotFound
-}
-
-var _ ports.ClientRepository = (*mclients)(nil)
-
-type mstorage struct{ files map[string][]byte }
-
-func (f *mstorage) Put(key string, data []byte, contentType string) (string, error) {
-	if f.files == nil {
-		f.files = map[string][]byte{}
-	}
-	f.files[key] = data
-	return key, nil
-}
-
-func (f *mstorage) Get(path string) ([]byte, error) {
-	if data, ok := f.files[path]; ok {
-		return data, nil
-	}
-	return nil, domain.ErrNotFound
-}
-
-func (f *mstorage) Delete(path string) error { delete(f.files, path); return nil }
-
-var _ ports.PhotoStorage = (*mstorage)(nil)
-
-// mimages: "convierte" a un webp de mentira con dimensiones fijas.
-type mimages struct{}
-
-func (mimages) ToWebP(data []byte) ([]byte, int, int, error) {
-	return []byte("RIFF....WEBP-falso"), 1280, 960, nil
-}
-
-var _ ports.ImageProcessor = mimages{}
-
-type mevents struct{ all []ports.Event }
-
-func (f *mevents) Publish(ev ports.Event) error { f.all = append(f.all, ev); return nil }
-
-var _ ports.EventPublisher = (*mevents)(nil)
+var _ ports.EventPublisher = (*httpkit.Events)(nil)
 
 // pngDePrueba arma un PNG real (el handler y el adapter validan el archivo).
 func pngDePrueba(t *testing.T, w, h int) []byte {
@@ -234,23 +76,21 @@ func doMultipart(t *testing.T, r http.Handler, path, token, field, filename, con
 	return w
 }
 
-// --- Notificaciones ---
-
 // Flujo: la reserva deja un aviso -> se lista -> se marca leída -> 204.
 func TestHTTP_notifications_flujo(t *testing.T) {
-	env := newPOSEnv()
-	ownerTok, _ := env.register(t, "owner@mail.com")
-	salonID := env.salon(t, ownerTok, "avisos")
+	env := httpkit.NewPOSEnv()
+	ownerTok, _ := env.Register(t, "owner@mail.com")
+	salonID := env.Salon(t, ownerTok, "avisos")
 	base := "/api/v1/salons/" + salonID
-	seedProfessional(env, salonID, "prof1")
+	httpkit.SeedProfessional(env, salonID, "prof1")
 
 	// Una reserva crea el aviso "Nuevo turno" para todo el salón.
-	if w := doReq(env.r, "POST", base+"/bookings",
+	if w := httpkit.Do(env.Router, "POST", base+"/bookings",
 		`{"professional_id":"prof1","client_name":"Lía","starts_at":"2026-12-03T10:00:00Z","ends_at":"2026-12-03T11:00:00Z"}`, ownerTok); w.Code != http.StatusCreated {
 		t.Fatalf("reserva: %d %s", w.Code, w.Body.String())
 	}
 
-	w := doReq(env.r, "GET", base+"/notifications", "", ownerTok)
+	w := httpkit.Do(env.Router, "GET", base+"/notifications", "", ownerTok)
 	if w.Code != http.StatusOK {
 		t.Fatalf("listar avisos: %d %s", w.Code, w.Body.String())
 	}
@@ -258,7 +98,7 @@ func TestHTTP_notifications_flujo(t *testing.T) {
 		Notifications []map[string]any `json:"notifications"`
 		Unread        int              `json:"unread"`
 	}
-	mustJSON(t, w.Body.Bytes(), &list)
+	httpkit.MustJSON(t, w.Body.Bytes(), &list)
 	if len(list.Notifications) != 1 {
 		t.Fatalf("esperaba 1 aviso, dio %s", w.Body.String())
 	}
@@ -275,7 +115,7 @@ func TestHTTP_notifications_flujo(t *testing.T) {
 
 	// Marcar leída: 204 sin body.
 	nid, _ := n["id"].(string)
-	w = doReq(env.r, "POST", "/api/v1/notifications/"+nid+"/read", "", ownerTok)
+	w = httpkit.Do(env.Router, "POST", "/api/v1/notifications/"+nid+"/read", "", ownerTok)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("marcar leída: %d %s", w.Code, w.Body.String())
 	}
@@ -283,49 +123,49 @@ func TestHTTP_notifications_flujo(t *testing.T) {
 		t.Fatalf("204 no debe traer body: %s", w.Body.String())
 	}
 	// Idempotente: de nuevo 204.
-	if w := doReq(env.r, "POST", "/api/v1/notifications/"+nid+"/read", "", ownerTok); w.Code != http.StatusNoContent {
+	if w := httpkit.Do(env.Router, "POST", "/api/v1/notifications/"+nid+"/read", "", ownerTok); w.Code != http.StatusNoContent {
 		t.Fatalf("marcar dos veces: %d", w.Code)
 	}
-	w = doReq(env.r, "GET", base+"/notifications", "", ownerTok)
-	mustJSON(t, w.Body.Bytes(), &list)
+	w = httpkit.Do(env.Router, "GET", base+"/notifications", "", ownerTok)
+	httpkit.MustJSON(t, w.Body.Bytes(), &list)
 	if list.Notifications[0]["read"] != true || list.Unread != 0 {
 		t.Fatalf("la marca no se reflejó: %s", w.Body.String())
 	}
 	// Un aviso inexistente (o de otro salón): 404.
-	if w := doReq(env.r, "POST", "/api/v1/notifications/no-existe/read", "", ownerTok); w.Code != http.StatusNotFound {
+	if w := httpkit.Do(env.Router, "POST", "/api/v1/notifications/no-existe/read", "", ownerTok); w.Code != http.StatusNotFound {
 		t.Fatalf("aviso inexistente debe dar 404, dio %d %s", w.Code, w.Body.String())
 	}
 	// Sin token: 401.
-	if w := doReq(env.r, "GET", base+"/notifications", "", ""); w.Code != http.StatusUnauthorized {
+	if w := httpkit.Do(env.Router, "GET", base+"/notifications", "", ""); w.Code != http.StatusUnauthorized {
 		t.Fatalf("sin token debe dar 401, dio %d", w.Code)
 	}
 	// No-miembro: 403.
-	strangerTok, _ := env.register(t, "stranger@mail.com")
-	if w := doReq(env.r, "GET", base+"/notifications", "", strangerTok); w.Code != http.StatusForbidden {
+	strangerTok, _ := env.Register(t, "stranger@mail.com")
+	if w := httpkit.Do(env.Router, "GET", base+"/notifications", "", strangerTok); w.Code != http.StatusForbidden {
 		t.Fatalf("no-miembro debe dar 403, dio %d %s", w.Code, w.Body.String())
 	}
 	// El aviso de un salón no se puede marcar desde otro: 404 (no se filtra).
-	otherTok, _ := env.register(t, "owner2@mail.com")
-	otherSalon := env.salon(t, otherTok, "avisos-2")
+	otherTok, _ := env.Register(t, "owner2@mail.com")
+	otherSalon := env.Salon(t, otherTok, "avisos-2")
 	_ = otherSalon
-	if w := doReq(env.r, "POST", "/api/v1/notifications/"+nid+"/read", "", otherTok); w.Code != http.StatusNotFound {
+	if w := httpkit.Do(env.Router, "POST", "/api/v1/notifications/"+nid+"/read", "", otherTok); w.Code != http.StatusNotFound {
 		t.Fatalf("otro salón marcando: %d %s", w.Code, w.Body.String())
 	}
 }
 
 // El cierre de caja también avisa (y el aviso trae la diferencia en texto).
 func TestHTTP_notifications_cierre(t *testing.T) {
-	env := newPOSEnv()
-	ownerTok, _ := env.register(t, "owner@mail.com")
-	salonID := env.salon(t, ownerTok, "avisos-cierre")
-	if w := doReq(env.r, "POST", "/api/v1/salons/"+salonID+"/cash-closes", `{"counted_cents":1000,"note":"ok"}`, ownerTok); w.Code != http.StatusCreated {
+	env := httpkit.NewPOSEnv()
+	ownerTok, _ := env.Register(t, "owner@mail.com")
+	salonID := env.Salon(t, ownerTok, "avisos-cierre")
+	if w := httpkit.Do(env.Router, "POST", "/api/v1/salons/"+salonID+"/cash-closes", `{"counted_cents":1000,"note":"ok"}`, ownerTok); w.Code != http.StatusCreated {
 		t.Fatalf("cierre: %d %s", w.Code, w.Body.String())
 	}
-	w := doReq(env.r, "GET", "/api/v1/salons/"+salonID+"/notifications", "", ownerTok)
+	w := httpkit.Do(env.Router, "GET", "/api/v1/salons/"+salonID+"/notifications", "", ownerTok)
 	var list struct {
 		Notifications []map[string]any `json:"notifications"`
 	}
-	mustJSON(t, w.Body.Bytes(), &list)
+	httpkit.MustJSON(t, w.Body.Bytes(), &list)
 	if len(list.Notifications) != 1 || list.Notifications[0]["kind"] != "cash" {
 		t.Fatalf("esperaba el aviso del cierre: %s", w.Body.String())
 	}
@@ -337,15 +177,13 @@ func TestHTTP_notifications_cierre(t *testing.T) {
 	}
 }
 
-// --- Clientes ---
-
 func TestHTTP_clients(t *testing.T) {
-	env := newPOSEnv()
-	ownerTok, _ := env.register(t, "owner@mail.com")
-	salonID := env.salon(t, ownerTok, "clientes")
+	env := httpkit.NewPOSEnv()
+	ownerTok, _ := env.Register(t, "owner@mail.com")
+	salonID := env.Salon(t, ownerTok, "clientes")
 	base := "/api/v1/salons/" + salonID + "/clients"
 
-	w := doReq(env.r, "POST", base, `{"name":"Lía Fernández","phone":"11 5555-1234","notes":"prefiere la mañana"}`, ownerTok)
+	w := httpkit.Do(env.Router, "POST", base, `{"name":"Lía Fernández","phone":"11 5555-1234","notes":"prefiere la mañana"}`, ownerTok)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("crear cliente: %d %s", w.Code, w.Body.String())
 	}
@@ -356,49 +194,49 @@ func TestHTTP_clients(t *testing.T) {
 		Phone   string `json:"phone"`
 		Notes   string `json:"notes"`
 	}
-	mustJSON(t, w.Body.Bytes(), &created)
+	httpkit.MustJSON(t, w.Body.Bytes(), &created)
 	if created.ID == "" || created.SalonID != salonID || created.Name != "Lía Fernández" ||
 		created.Phone != "11 5555-1234" || created.Notes != "prefiere la mañana" {
 		t.Fatalf("respuesta de creación incompleta: %s", w.Body.String())
 	}
 
 	// Listado.
-	w = doReq(env.r, "GET", base, "", ownerTok)
+	w = httpkit.Do(env.Router, "GET", base, "", ownerTok)
 	var list struct {
 		Clients []map[string]any `json:"clients"`
 	}
-	mustJSON(t, w.Body.Bytes(), &list)
+	httpkit.MustJSON(t, w.Body.Bytes(), &list)
 	if len(list.Clients) != 1 || list.Clients[0]["id"] != created.ID {
 		t.Fatalf("listado de clientes: %s", w.Body.String())
 	}
 
 	// Nombre vacío y body roto: 400.
 	for _, bad := range []string{`{"name":"   "}`, `no-json`} {
-		if w := doReq(env.r, "POST", base, bad, ownerTok); w.Code != http.StatusBadRequest {
+		if w := httpkit.Do(env.Router, "POST", base, bad, ownerTok); w.Code != http.StatusBadRequest {
 			t.Fatalf("%q debe dar 400, dio %d %s", bad, w.Code, w.Body.String())
 		}
 	}
 
 	// Profesional: lee sí, escribe no. No-miembro: 403 en todo.
-	profTok, profID := env.register(t, "profe@mail.com")
-	_ = env.mems.Save(domain.Membership{UserID: profID, SalonID: salonID, Role: domain.RoleProfessional})
-	if w := doReq(env.r, "GET", base, "", profTok); w.Code != http.StatusOK {
+	profTok, profID := env.Register(t, "profe@mail.com")
+	_ = env.Mems.Save(domain.Membership{UserID: profID, SalonID: salonID, Role: domain.RoleProfessional})
+	if w := httpkit.Do(env.Router, "GET", base, "", profTok); w.Code != http.StatusOK {
 		t.Fatalf("profesional leyendo: %d %s", w.Code, w.Body.String())
 	}
-	if w := doReq(env.r, "POST", base, `{"name":"Otro"}`, profTok); w.Code != http.StatusForbidden {
+	if w := httpkit.Do(env.Router, "POST", base, `{"name":"Otro"}`, profTok); w.Code != http.StatusForbidden {
 		t.Fatalf("profesional creando debe dar 403, dio %d %s", w.Code, w.Body.String())
 	}
-	strangerTok, _ := env.register(t, "stranger@mail.com")
-	if w := doReq(env.r, "GET", base, "", strangerTok); w.Code != http.StatusForbidden {
+	strangerTok, _ := env.Register(t, "stranger@mail.com")
+	if w := httpkit.Do(env.Router, "GET", base, "", strangerTok); w.Code != http.StatusForbidden {
 		t.Fatalf("no-miembro debe dar 403, dio %d", w.Code)
 	}
 	// Recepción administra clientes.
-	recepTok, recepID := env.register(t, "recep@mail.com")
-	_ = env.mems.Save(domain.Membership{UserID: recepID, SalonID: salonID, Role: domain.RoleReception})
-	if w := doReq(env.r, "POST", base, `{"name":"Ana"}`, recepTok); w.Code != http.StatusCreated {
+	recepTok, recepID := env.Register(t, "recep@mail.com")
+	_ = env.Mems.Save(domain.Membership{UserID: recepID, SalonID: salonID, Role: domain.RoleReception})
+	if w := httpkit.Do(env.Router, "POST", base, `{"name":"Ana"}`, recepTok); w.Code != http.StatusCreated {
 		t.Fatalf("recepción creando: %d %s", w.Code, w.Body.String())
 	}
-	if w := doReq(env.r, "GET", base, "", ""); w.Code != http.StatusUnauthorized {
+	if w := httpkit.Do(env.Router, "GET", base, "", ""); w.Code != http.StatusUnauthorized {
 		t.Fatalf("sin token debe dar 401, dio %d", w.Code)
 	}
 }
@@ -406,12 +244,12 @@ func TestHTTP_clients(t *testing.T) {
 // E-03: el alta de ficha acepta un email opcional, lo normaliza y lo devuelve
 // en la MISMA forma de la ficha (el frontend lo muestra sin cambiar nada más).
 func TestHTTP_client_create_con_email(t *testing.T) {
-	env := newPOSEnv()
-	ownerTok, _ := env.register(t, "owner@mail.com")
-	salonID := env.salon(t, ownerTok, "clientes-email")
+	env := httpkit.NewPOSEnv()
+	ownerTok, _ := env.Register(t, "owner@mail.com")
+	salonID := env.Salon(t, ownerTok, "clientes-email")
 	base := "/api/v1/salons/" + salonID + "/clients"
 
-	w := doReq(env.r, "POST", base, `{"name":"Lía","phone":"11 5555-1234","email":"  Lia@Mail.COM "}`, ownerTok)
+	w := httpkit.Do(env.Router, "POST", base, `{"name":"Lía","phone":"11 5555-1234","email":"  Lia@Mail.COM "}`, ownerTok)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("crear con email: %d %s", w.Code, w.Body.String())
 	}
@@ -419,34 +257,34 @@ func TestHTTP_client_create_con_email(t *testing.T) {
 		ID    string `json:"id"`
 		Email string `json:"email"`
 	}
-	mustJSON(t, w.Body.Bytes(), &created)
+	httpkit.MustJSON(t, w.Body.Bytes(), &created)
 	if created.ID == "" || created.Email != "lia@mail.com" {
 		t.Fatalf("el email se devuelve normalizado: %s", w.Body.String())
 	}
 
 	// Persistido: el listado de la pantalla de clientes lo trae.
-	w = doReq(env.r, "GET", base, "", ownerTok)
+	w = httpkit.Do(env.Router, "GET", base, "", ownerTok)
 	var list struct {
 		Clients []map[string]any `json:"clients"`
 	}
-	mustJSON(t, w.Body.Bytes(), &list)
+	httpkit.MustJSON(t, w.Body.Bytes(), &list)
 	if len(list.Clients) != 1 || list.Clients[0]["email"] != "lia@mail.com" {
 		t.Fatalf("listado con email: %s", w.Body.String())
 	}
 
 	// Sin email sigue entrando, con el campo vacío (texto, nunca null).
-	w = doReq(env.r, "POST", base, `{"name":"Ana"}`, ownerTok)
+	w = httpkit.Do(env.Router, "POST", base, `{"name":"Ana"}`, ownerTok)
 	var sinEmail struct {
 		Email string `json:"email"`
 	}
-	mustJSON(t, w.Body.Bytes(), &sinEmail)
+	httpkit.MustJSON(t, w.Body.Bytes(), &sinEmail)
 	if sinEmail.Email != "" {
 		t.Fatalf("sin email el campo va vacío, dio %q", sinEmail.Email)
 	}
 
 	// Email inválido: 400 con mensaje para la pantalla, sin el prefijo interno
 	// del error de dominio ("validación:").
-	w = doReq(env.r, "POST", base, `{"name":"Ana","email":"sin-arroba"}`, ownerTok)
+	w = httpkit.Do(env.Router, "POST", base, `{"name":"Ana","email":"sin-arroba"}`, ownerTok)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("email inválido debe dar 400, dio %d %s", w.Code, w.Body.String())
 	}
@@ -455,23 +293,21 @@ func TestHTTP_client_create_con_email(t *testing.T) {
 	}
 }
 
-// --- Fotos ---
-
 func TestHTTP_photos_flujo(t *testing.T) {
-	env := newPOSEnv()
-	ownerTok, _ := env.register(t, "owner@mail.com")
-	salonID := env.salon(t, ownerTok, "fotos")
+	env := httpkit.NewPOSEnv()
+	ownerTok, _ := env.Register(t, "owner@mail.com")
+	salonID := env.Salon(t, ownerTok, "fotos")
 	base := "/api/v1/salons/" + salonID + "/clients"
-	w := doReq(env.r, "POST", base, `{"name":"Lía"}`, ownerTok)
+	w := httpkit.Do(env.Router, "POST", base, `{"name":"Lía"}`, ownerTok)
 	var cl struct {
 		ID string `json:"id"`
 	}
-	mustJSON(t, w.Body.Bytes(), &cl)
+	httpkit.MustJSON(t, w.Body.Bytes(), &cl)
 	photos := base + "/" + cl.ID + "/photos"
 
 	// Subida multipart con un PNG real (como el input del navegador).
 	png := pngDePrueba(t, 40, 30)
-	w = doMultipart(t, env.r, photos, ownerTok, "file", "foto.png", "image/png", png)
+	w = doMultipart(t, env.Router, photos, ownerTok, "file", "foto.png", "image/png", png)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("subir foto: %d %s", w.Code, w.Body.String())
 	}
@@ -485,7 +321,7 @@ func TestHTTP_photos_flujo(t *testing.T) {
 			Client string `json:"client_id"`
 		} `json:"photo"`
 	}
-	mustJSON(t, w.Body.Bytes(), &up)
+	httpkit.MustJSON(t, w.Body.Bytes(), &up)
 	// Ronda 2: la url viene firmada con vencimiento (24 h). El frontend la usa
 	// tal cual; el id solo ya no sirve.
 	if up.Photo.ID == "" || !strings.HasPrefix(up.Photo.URL, "/api/v1/photos/"+up.Photo.ID+"?exp=") ||
@@ -500,11 +336,11 @@ func TestHTTP_photos_flujo(t *testing.T) {
 	}
 
 	// La galería de la ficha.
-	w = doReq(env.r, "GET", photos, "", ownerTok)
+	w = httpkit.Do(env.Router, "GET", photos, "", ownerTok)
 	var gal struct {
 		Photos []map[string]any `json:"photos"`
 	}
-	mustJSON(t, w.Body.Bytes(), &gal)
+	httpkit.MustJSON(t, w.Body.Bytes(), &gal)
 	if len(gal.Photos) != 1 || gal.Photos[0]["url"] != up.Photo.URL {
 		t.Fatalf("galería: %s", w.Body.String())
 	}
@@ -513,7 +349,7 @@ func TestHTTP_photos_flujo(t *testing.T) {
 	// puede hacer un <img src>: el id aleatorio es la capability).
 	req := httptest.NewRequest("GET", up.Photo.URL, nil)
 	rec := httptest.NewRecorder()
-	env.r.ServeHTTP(rec, req)
+	env.Router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("servir foto: %d %s", rec.Code, rec.Body.String())
 	}
@@ -530,35 +366,35 @@ func TestHTTP_photos_flujo(t *testing.T) {
 
 	// Foto inexistente con firma válida: 404 en JSON (no un body vacío). Sin
 	// firma la respuesta es 403 y no confirma si el id existe (ronda 2).
-	expNoExiste := photoURLNow().Add(time.Hour).Unix()
-	noExiste := "/api/v1/photos/no-existe?exp=" + strconv.FormatInt(expNoExiste, 10) + "&sig=" + env.signer.Sign("no-existe", expNoExiste)
+	expNoExiste := httpapi.PhotoURLNow().Add(time.Hour).Unix()
+	noExiste := "/api/v1/photos/no-existe?exp=" + strconv.FormatInt(expNoExiste, 10) + "&sig=" + env.Signer.Sign("no-existe", expNoExiste)
 	req = httptest.NewRequest("GET", noExiste, nil)
 	rec = httptest.NewRecorder()
-	env.r.ServeHTTP(rec, req)
+	env.Router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("foto inexistente: %d", rec.Code)
 	}
 	req = httptest.NewRequest("GET", "/api/v1/photos/no-existe", nil)
 	rec = httptest.NewRecorder()
-	env.r.ServeHTTP(rec, req)
+	env.Router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("sin firma debe dar 403, dio %d", rec.Code)
 	}
 
 	// Borrar: 204, la galería queda vacía y la url deja de servir.
-	if w := doReq(env.r, "DELETE", photos+"/"+up.Photo.ID, "", ownerTok); w.Code != http.StatusNoContent {
+	if w := httpkit.Do(env.Router, "DELETE", photos+"/"+up.Photo.ID, "", ownerTok); w.Code != http.StatusNoContent {
 		t.Fatalf("borrar foto: %d %s", w.Code, w.Body.String())
 	}
-	if w := doReq(env.r, "GET", photos, "", ownerTok); w.Code != http.StatusOK {
+	if w := httpkit.Do(env.Router, "GET", photos, "", ownerTok); w.Code != http.StatusOK {
 		t.Fatalf("galería post delete: %d", w.Code)
 	}
 	req = httptest.NewRequest("GET", up.Photo.URL, nil)
 	rec = httptest.NewRecorder()
-	env.r.ServeHTTP(rec, req)
+	env.Router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("la foto borrada no debe servirse: %d", rec.Code)
 	}
-	if w := doReq(env.r, "DELETE", photos+"/"+up.Photo.ID, "", ownerTok); w.Code != http.StatusNotFound {
+	if w := httpkit.Do(env.Router, "DELETE", photos+"/"+up.Photo.ID, "", ownerTok); w.Code != http.StatusNotFound {
 		t.Fatalf("borrar dos veces: %d", w.Code)
 	}
 }
@@ -566,19 +402,19 @@ func TestHTTP_photos_flujo(t *testing.T) {
 // El frontend sube con FormData.append('photo', file); curl/Postman usan
 // "file". Los dos nombres de campo tienen que funcionar igual.
 func TestHTTP_photos_acepta_campo_photo_y_file(t *testing.T) {
-	env := newPOSEnv()
-	ownerTok, _ := env.register(t, "owner@mail.com")
-	salonID := env.salon(t, ownerTok, "fotos-campos")
+	env := httpkit.NewPOSEnv()
+	ownerTok, _ := env.Register(t, "owner@mail.com")
+	salonID := env.Salon(t, ownerTok, "fotos-campos")
 	base := "/api/v1/salons/" + salonID + "/clients"
-	w := doReq(env.r, "POST", base, `{"name":"Lía"}`, ownerTok)
+	w := httpkit.Do(env.Router, "POST", base, `{"name":"Lía"}`, ownerTok)
 	var cl struct {
 		ID string `json:"id"`
 	}
-	mustJSON(t, w.Body.Bytes(), &cl)
+	httpkit.MustJSON(t, w.Body.Bytes(), &cl)
 	photos := base + "/" + cl.ID + "/photos"
 
 	for _, field := range []string{"photo", "file"} {
-		w := doMultipart(t, env.r, photos, ownerTok, field, "foto.png", "image/png", pngDePrueba(t, 20, 20))
+		w := doMultipart(t, env.Router, photos, ownerTok, field, "foto.png", "image/png", pngDePrueba(t, 20, 20))
 		if w.Code != http.StatusCreated {
 			t.Fatalf("campo %q debe aceptarse: %d %s", field, w.Code, w.Body.String())
 		}
@@ -588,7 +424,7 @@ func TestHTTP_photos_acepta_campo_photo_y_file(t *testing.T) {
 				URL string `json:"url"`
 			} `json:"photo"`
 		}
-		mustJSON(t, w.Body.Bytes(), &up)
+		httpkit.MustJSON(t, w.Body.Bytes(), &up)
 		if up.Photo.ID == "" || up.Photo.URL == "" {
 			t.Fatalf("campo %q: respuesta sin foto: %s", field, w.Body.String())
 		}
@@ -598,83 +434,81 @@ func TestHTTP_photos_acepta_campo_photo_y_file(t *testing.T) {
 // La imagen cruda en el body (Content-Type: image/png) también vale: es lo más
 // simple para probar con curl sin multipart.
 func TestHTTP_photos_acepta_body_crudo(t *testing.T) {
-	env := newPOSEnv()
-	ownerTok, _ := env.register(t, "owner@mail.com")
-	salonID := env.salon(t, ownerTok, "fotos-raw")
+	env := httpkit.NewPOSEnv()
+	ownerTok, _ := env.Register(t, "owner@mail.com")
+	salonID := env.Salon(t, ownerTok, "fotos-raw")
 	base := "/api/v1/salons/" + salonID + "/clients"
-	w := doReq(env.r, "POST", base, `{"name":"Lía"}`, ownerTok)
+	w := httpkit.Do(env.Router, "POST", base, `{"name":"Lía"}`, ownerTok)
 	var cl struct {
 		ID string `json:"id"`
 	}
-	mustJSON(t, w.Body.Bytes(), &cl)
+	httpkit.MustJSON(t, w.Body.Bytes(), &cl)
 
 	req := httptest.NewRequest("POST", base+"/"+cl.ID+"/photos", bytes.NewReader(pngDePrueba(t, 16, 16)))
 	req.Header.Set("Content-Type", "image/png")
 	req.Header.Set("Authorization", "Bearer "+ownerTok)
 	rec := httptest.NewRecorder()
-	env.r.ServeHTTP(rec, req)
+	env.Router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("body crudo: %d %s", rec.Code, rec.Body.String())
 	}
 }
 
 func TestHTTP_photos_rechaza_lo_que_no_corresponde(t *testing.T) {
-	env := newPOSEnv()
-	ownerTok, _ := env.register(t, "owner@mail.com")
-	salonID := env.salon(t, ownerTok, "fotos-2")
+	env := httpkit.NewPOSEnv()
+	ownerTok, _ := env.Register(t, "owner@mail.com")
+	salonID := env.Salon(t, ownerTok, "fotos-2")
 	base := "/api/v1/salons/" + salonID + "/clients"
-	w := doReq(env.r, "POST", base, `{"name":"Lía"}`, ownerTok)
+	w := httpkit.Do(env.Router, "POST", base, `{"name":"Lía"}`, ownerTok)
 	var cl struct {
 		ID string `json:"id"`
 	}
-	mustJSON(t, w.Body.Bytes(), &cl)
+	httpkit.MustJSON(t, w.Body.Bytes(), &cl)
 	photos := base + "/" + cl.ID + "/photos"
 
 	// PDF: 400 (aunque se llame .png).
-	if w := doMultipart(t, env.r, photos, ownerTok, "file", "cv.png", "application/pdf", []byte("%PDF-1.7 nope")); w.Code != http.StatusBadRequest {
+	if w := doMultipart(t, env.Router, photos, ownerTok, "file", "cv.png", "application/pdf", []byte("%PDF-1.7 nope")); w.Code != http.StatusBadRequest {
 		t.Fatalf("pdf debe dar 400, dio %d %s", w.Code, w.Body.String())
 	}
 	// Más de 8 MB: 400.
 	big := append(pngDePrueba(t, 20, 20), bytes.Repeat([]byte("x"), domain.MaxPhotoBytes+1)...)
-	if w := doMultipart(t, env.r, photos, ownerTok, "file", "grande.png", "image/png", big); w.Code != http.StatusBadRequest {
+	if w := doMultipart(t, env.Router, photos, ownerTok, "file", "grande.png", "image/png", big); w.Code != http.StatusBadRequest {
 		t.Fatalf("más de 8 MB debe dar 400, dio %d %s", w.Code, w.Body.String())
 	}
 	// Partes que no son la foto / sin archivo: 400.
-	if w := doMultipart(t, env.r, photos, ownerTok, "otro", "x.png", "image/png", pngDePrueba(t, 10, 10)); w.Code != http.StatusBadRequest {
+	if w := doMultipart(t, env.Router, photos, ownerTok, "otro", "x.png", "image/png", pngDePrueba(t, 10, 10)); w.Code != http.StatusBadRequest {
 		t.Fatalf("campo equivocado debe dar 400, dio %d %s", w.Code, w.Body.String())
 	}
 	// JSON en vez de multipart: 400.
-	if w := doReq(env.r, "POST", photos, `{"file":"x"}`, ownerTok); w.Code != http.StatusBadRequest {
+	if w := httpkit.Do(env.Router, "POST", photos, `{"file":"x"}`, ownerTok); w.Code != http.StatusBadRequest {
 		t.Fatalf("json debe dar 400, dio %d %s", w.Code, w.Body.String())
 	}
 	// Profesional: 403. No-miembro: 403.
-	profTok, profID := env.register(t, "profe@mail.com")
-	_ = env.mems.Save(domain.Membership{UserID: profID, SalonID: salonID, Role: domain.RoleProfessional})
-	if w := doMultipart(t, env.r, photos, profTok, "file", "foto.png", "image/png", pngDePrueba(t, 10, 10)); w.Code != http.StatusForbidden {
+	profTok, profID := env.Register(t, "profe@mail.com")
+	_ = env.Mems.Save(domain.Membership{UserID: profID, SalonID: salonID, Role: domain.RoleProfessional})
+	if w := doMultipart(t, env.Router, photos, profTok, "file", "foto.png", "image/png", pngDePrueba(t, 10, 10)); w.Code != http.StatusForbidden {
 		t.Fatalf("profesional subiendo debe dar 403, dio %d %s", w.Code, w.Body.String())
 	}
-	strangerTok, _ := env.register(t, "stranger@mail.com")
-	if w := doMultipart(t, env.r, photos, strangerTok, "file", "foto.png", "image/png", pngDePrueba(t, 10, 10)); w.Code != http.StatusForbidden {
+	strangerTok, _ := env.Register(t, "stranger@mail.com")
+	if w := doMultipart(t, env.Router, photos, strangerTok, "file", "foto.png", "image/png", pngDePrueba(t, 10, 10)); w.Code != http.StatusForbidden {
 		t.Fatalf("no-miembro debe dar 403, dio %d %s", w.Code, w.Body.String())
 	}
 	// Cliente de otro salón (la ficha no existe): 404.
-	otherTok, _ := env.register(t, "owner2@mail.com")
-	otherSalon := env.salon(t, otherTok, "fotos-3")
-	if w := doMultipart(t, env.r, "/api/v1/salons/"+otherSalon+"/clients/"+cl.ID+"/photos", otherTok, "file", "foto.png", "image/png", pngDePrueba(t, 10, 10)); w.Code != http.StatusNotFound {
+	otherTok, _ := env.Register(t, "owner2@mail.com")
+	otherSalon := env.Salon(t, otherTok, "fotos-3")
+	if w := doMultipart(t, env.Router, "/api/v1/salons/"+otherSalon+"/clients/"+cl.ID+"/photos", otherTok, "file", "foto.png", "image/png", pngDePrueba(t, 10, 10)); w.Code != http.StatusNotFound {
 		t.Fatalf("cliente de otro salón debe dar 404, dio %d %s", w.Code, w.Body.String())
 	}
 }
 
-// --- Realtime ---
-
 // La ruta del websocket vive en el mismo router que la API y autentica por
 // query param: sin token no hay conexión.
 func TestHTTP_ws_registrado_y_autenticado(t *testing.T) {
-	env := newPOSEnv()
+	env := httpkit.NewPOSEnv()
 
 	req := httptest.NewRequest("GET", "/api/v1/ws", nil)
 	rec := httptest.NewRecorder()
-	env.r.ServeHTTP(rec, req)
+	env.Router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("ws sin token debe dar 401, dio %d %s", rec.Code, rec.Body.String())
 	}
@@ -685,11 +519,11 @@ func TestHTTP_ws_registrado_y_autenticado(t *testing.T) {
 
 	// Con token válido el handler intenta el upgrade: un GET normal recibe 400
 	// de gorilla (la ruta existe y llegó al hub, no es un 404).
-	tok, _ := env.register(t, "owner@mail.com")
-	_ = env.salon(t, tok, "ws-salon")
+	tok, _ := env.Register(t, "owner@mail.com")
+	_ = env.Salon(t, tok, "ws-salon")
 	req = httptest.NewRequest("GET", "/api/v1/ws?token="+tok, nil)
 	rec = httptest.NewRecorder()
-	env.r.ServeHTTP(rec, req)
+	env.Router.ServeHTTP(rec, req)
 	if rec.Code == http.StatusNotFound {
 		t.Fatalf("la ruta /api/v1/ws no está registrada")
 	}

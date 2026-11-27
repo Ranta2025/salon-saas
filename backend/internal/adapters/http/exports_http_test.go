@@ -1,15 +1,17 @@
-package httpapi
+package httpapi_test
 
 import (
 	"fmt"
 	"net/http"
+	httpapi "salon-saas/internal/adapters/http"
+	"salon-saas/internal/domain"
+	"salon-saas/internal/exports"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/domain"
-	"salon-saas/internal/exports"
 )
 
 // Contrato HTTP de la exportación CSV (F4): las tres rutas, los permisos de D1
@@ -20,8 +22,8 @@ import (
 var exportHTTPNow = time.Date(2026, 5, 5, 3, 0, 0, 0, time.UTC)
 
 type exportHTTPEnv struct {
-	*posEnv
-	exports *mExports
+	*httpkit.Env
+	Exports *httpkit.Exports
 	svc     *exports.ExportService
 	logs    []string
 }
@@ -33,22 +35,22 @@ func (e *exportHTTPEnv) logf(format string, args ...any) {
 // rebuild vuelve a montar el router con el handler de export actual (el tope de
 // filas cambia entre pruebas).
 func (e *exportHTTPEnv) rebuild() {
-	d := e.posEnv.d
-	d.Exports = ExportHandler{Exports: *e.svc, Memberships: e.mems, Logf: e.logf}
+	d := e.Env.Deps
+	d.Exports = httpapi.ExportHandler{Exports: *e.svc, Memberships: e.Mems, Logf: e.logf}
 	r := gin.New()
-	RegisterRoutes(r, d)
-	e.posEnv.r = r
+	httpapi.RegisterRoutes(r, d)
+	e.Env.Router = r
 }
 
 func newExportHTTPEnv(t *testing.T) *exportHTTPEnv {
 	t.Helper()
-	base := newPOSEnv()
-	repo := newMExports()
+	base := httpkit.NewPOSEnv()
+	repo := httpkit.NewExports()
 	svc := &exports.ExportService{
-		Exports: repo, Memberships: base.mems, Settings: base.settings,
+		Exports: repo, Memberships: base.Mems, Settings: base.Settings,
 		Now: func() time.Time { return exportHTTPNow },
 	}
-	e := &exportHTTPEnv{posEnv: base, exports: repo, svc: svc}
+	e := &exportHTTPEnv{Env: base, Exports: repo, svc: svc}
 	e.rebuild()
 	return e
 }
@@ -56,8 +58,8 @@ func newExportHTTPEnv(t *testing.T) *exportHTTPEnv {
 // member registra un usuario y lo deja en el salón con el rol pedido.
 func (e *exportHTTPEnv) member(t *testing.T, email, salonID string, role domain.Role) (string, string) {
 	t.Helper()
-	tok, uid := e.register(t, email)
-	if err := e.mems.Save(domain.Membership{UserID: uid, SalonID: salonID, Role: role, Attends: role == domain.RoleProfessional}); err != nil {
+	tok, uid := e.Register(t, email)
+	if err := e.Mems.Save(domain.Membership{UserID: uid, SalonID: salonID, Role: role, Attends: role == domain.RoleProfessional}); err != nil {
 		t.Fatalf("membership %s: %v", email, err)
 	}
 	return tok, uid
@@ -69,46 +71,46 @@ func (e *exportHTTPEnv) exportPath(salonID, file string) string {
 
 // seedExportData deja datos del salón en los tres fakes (y basura de otro salón).
 func (e *exportHTTPEnv) seedExportData(salonID, otherSalon string) {
-	e.exports.addSale(salonID, domain.ExportSaleRow{
+	e.Exports.AddSale(salonID, domain.ExportSaleRow{
 		CreatedAt: time.Date(2026, 5, 4, 18, 0, 0, 0, time.UTC), SaleID: "v1",
 		ProfessionalName: "Ana", ClientName: "Lía", Method: domain.MethodCard,
 		Items: 2, TotalCents: 150000,
 	})
-	e.exports.addSale(salonID, domain.ExportSaleRow{
+	e.Exports.AddSale(salonID, domain.ExportSaleRow{
 		CreatedAt: time.Date(2026, 5, 3, 15, 0, 0, 0, time.UTC), SaleID: "v2",
 		ProfessionalName: "Ana", ClientName: "Zoe", Method: domain.MethodCash,
 		Items: 1, TotalCents: 5000,
 	})
 	// Fuera de la ventana 2026-05-01..2026-05-04 (es el 5 local).
-	e.exports.addSale(salonID, domain.ExportSaleRow{
+	e.Exports.AddSale(salonID, domain.ExportSaleRow{
 		CreatedAt: time.Date(2026, 5, 5, 18, 0, 0, 0, time.UTC), SaleID: "v3",
 		ProfessionalName: "Ana", ClientName: "Fuera", Method: domain.MethodCash,
 		Items: 1, TotalCents: 100,
 	})
-	e.exports.addSale(otherSalon, domain.ExportSaleRow{
+	e.Exports.AddSale(otherSalon, domain.ExportSaleRow{
 		CreatedAt: time.Date(2026, 5, 4, 18, 0, 0, 0, time.UTC), SaleID: "ajena",
 		ProfessionalName: "Otra", ClientName: "Ajena", Method: domain.MethodCash,
 		Items: 1, TotalCents: 999,
 	})
-	e.exports.addClose(salonID, domain.ExportCashCloseRow{
+	e.Exports.AddClose(salonID, domain.ExportCashCloseRow{
 		OpenedAt:        time.Date(2026, 5, 4, 15, 0, 0, 0, time.UTC),
 		ClosedAt:        time.Date(2026, 5, 4, 23, 30, 0, 0, time.UTC),
 		SystemCashCents: 10005, CountedCents: 10000, DifferenceCents: -5,
 		Note: "=cmd|' /C calc'!A0",
 	})
-	e.exports.addClose(otherSalon, domain.ExportCashCloseRow{
+	e.Exports.AddClose(otherSalon, domain.ExportCashCloseRow{
 		OpenedAt: time.Date(2026, 5, 4, 15, 0, 0, 0, time.UTC),
 		ClosedAt: time.Date(2026, 5, 4, 16, 0, 0, 0, time.UTC), Note: "ajena",
 	})
-	e.exports.addClient(salonID, domain.ExportClientRow{
+	e.Exports.AddClient(salonID, domain.ExportClientRow{
 		Name: "Zoe", Phone: "11 2222-3333", Email: "zoe@mail.com",
 		CreatedAt: time.Date(2026, 5, 5, 3, 0, 0, 0, time.UTC),
 	})
-	e.exports.addClient(salonID, domain.ExportClientRow{
+	e.Exports.AddClient(salonID, domain.ExportClientRow{
 		Name: "Lía", Phone: "+54 11 5555-1234", Email: "lia@mail.com",
 		Notes: "alergia al nickel", CreatedAt: time.Date(2026, 5, 5, 3, 0, 0, 0, time.UTC),
 	})
-	e.exports.addClient(otherSalon, domain.ExportClientRow{
+	e.Exports.AddClient(otherSalon, domain.ExportClientRow{
 		Name: "Ajena", CreatedAt: time.Date(2026, 5, 5, 3, 0, 0, 0, time.UTC),
 	})
 }
@@ -118,10 +120,10 @@ func (e *exportHTTPEnv) seedExportData(salonID, otherSalon string) {
 func TestHTTP_export_csv_los_tres_archivos(t *testing.T) {
 	e := newExportHTTPEnv(t)
 	ownerTok, ownerID := e.member(t, "duena@export.com", "", domain.RoleOwner)
-	salonID := e.salon(t, ownerTok, "export")
+	salonID := e.Salon(t, ownerTok, "export")
 	// El salón nace con la dueña; el segundo miembro es el profesional del seed.
-	_, profID := e.register(t, "profe@export.com")
-	if err := e.mems.Save(domain.Membership{UserID: profID, SalonID: salonID, Role: domain.RoleProfessional, Attends: true}); err != nil {
+	_, profID := e.Register(t, "profe@export.com")
+	if err := e.Mems.Save(domain.Membership{UserID: profID, SalonID: salonID, Role: domain.RoleProfessional, Attends: true}); err != nil {
 		t.Fatalf("profesional: %v", err)
 	}
 	otherSalon := "salon-ajeno"
@@ -160,7 +162,7 @@ func TestHTTP_export_csv_los_tres_archivos(t *testing.T) {
 	}
 	for _, c := range cases {
 		e.logs = nil
-		w := doReq(e.r, "GET", e.exportPath(salonID, c.file)+c.query, "", ownerTok)
+		w := httpkit.Do(e.Router, "GET", e.exportPath(salonID, c.file)+c.query, "", ownerTok)
 		if w.Code != http.StatusOK {
 			t.Fatalf("%s: %d %s", c.name, w.Code, w.Body.String())
 		}
@@ -201,16 +203,16 @@ func TestHTTP_export_csv_los_tres_archivos(t *testing.T) {
 func TestHTTP_export_csv_permisos_rol_por_rol(t *testing.T) {
 	e := newExportHTTPEnv(t)
 	ownerTok, _ := e.member(t, "rol-owner@export.com", "", domain.RoleOwner)
-	salonID := e.salon(t, ownerTok, "roles") // la dueña queda como owner de ese salón
+	salonID := e.Salon(t, ownerTok, "roles") // la dueña queda como owner de ese salón
 	adminTok, _ := e.member(t, "rol-admin@export.com", salonID, domain.RoleAdmin)
 	recepTok, _ := e.member(t, "rol-recep@export.com", salonID, domain.RoleReception)
 	profTok, _ := e.member(t, "rol-prof@export.com", salonID, domain.RoleProfessional)
 	clientTok, _ := e.member(t, "rol-client@export.com", salonID, domain.RoleClient)
 	// Dueño de OTRO salón: no es miembro de este.
-	_, _ = e.register(t, "rol-ajeno@export.com")
+	_, _ = e.Register(t, "rol-ajeno@export.com")
 
-	otherOwnerTok, _ := e.register(t, "rol-otro@export.com")
-	otherSalon := e.salon(t, otherOwnerTok, "otro-salon")
+	otherOwnerTok, _ := e.Register(t, "rol-otro@export.com")
+	otherSalon := e.Salon(t, otherOwnerTok, "otro-salon")
 	e.seedExportData(salonID, otherSalon)
 
 	files := []struct{ file, query string }{
@@ -223,7 +225,7 @@ func TestHTTP_export_csv_permisos_rol_por_rol(t *testing.T) {
 		for _, ok := range []struct {
 			name, tok string
 		}{{"owner", ownerTok}, {"admin", adminTok}} {
-			if w := doReq(e.r, "GET", path, "", ok.tok); w.Code != http.StatusOK {
+			if w := httpkit.Do(e.Router, "GET", path, "", ok.tok); w.Code != http.StatusOK {
 				t.Fatalf("%s de %s: %d %s", f.file, ok.name, w.Code, w.Body.String())
 			}
 		}
@@ -232,12 +234,12 @@ func TestHTTP_export_csv_permisos_rol_por_rol(t *testing.T) {
 		}{
 			{"recepción", recepTok}, {"profesional", profTok}, {"cliente", clientTok},
 		} {
-			w := doReq(e.r, "GET", path, "", no.tok)
+			w := httpkit.Do(e.Router, "GET", path, "", no.tok)
 			if w.Code != http.StatusForbidden {
 				t.Fatalf("%s de %s: %d %s", f.file, no.name, w.Code, w.Body.String())
 			}
 			var body map[string]string
-			mustJSON(t, w.Body.Bytes(), &body)
+			httpkit.MustJSON(t, w.Body.Bytes(), &body)
 			if body["error"] != "sin permiso" {
 				t.Fatalf("%s de %s: error = %q", f.file, no.name, body["error"])
 			}
@@ -246,11 +248,11 @@ func TestHTTP_export_csv_permisos_rol_por_rol(t *testing.T) {
 			}
 		}
 		// Sin token: 401.
-		if w := doReq(e.r, "GET", path, "", ""); w.Code != http.StatusUnauthorized {
+		if w := httpkit.Do(e.Router, "GET", path, "", ""); w.Code != http.StatusUnauthorized {
 			t.Fatalf("%s sin token: %d", f.file, w.Code)
 		}
 		// Pedir el salón ajeno con el token del dueño de s1: 403 o 404.
-		w := doReq(e.r, "GET", e.exportPath(otherSalon, f.file)+f.query, "", ownerTok)
+		w := httpkit.Do(e.Router, "GET", e.exportPath(otherSalon, f.file)+f.query, "", ownerTok)
 		if w.Code != http.StatusForbidden && w.Code != http.StatusNotFound {
 			t.Fatalf("%s de otro salón: %d %s", f.file, w.Code, w.Body.String())
 		}
@@ -262,7 +264,7 @@ func TestHTTP_export_csv_permisos_rol_por_rol(t *testing.T) {
 func TestHTTP_export_csv_rango_y_tope(t *testing.T) {
 	e := newExportHTTPEnv(t)
 	ownerTok, _ := e.member(t, "rango@export.com", "", domain.RoleOwner)
-	salonID := e.salon(t, ownerTok, "rango")
+	salonID := e.Salon(t, ownerTok, "rango")
 	e.seedExportData(salonID, "otro-rango")
 
 	badRanges := []string{
@@ -275,12 +277,12 @@ func TestHTTP_export_csv_rango_y_tope(t *testing.T) {
 	}
 	for _, q := range badRanges {
 		for _, file := range []string{"sales.csv", "cash-closes.csv"} {
-			w := doReq(e.r, "GET", e.exportPath(salonID, file)+q, "", ownerTok)
+			w := httpkit.Do(e.Router, "GET", e.exportPath(salonID, file)+q, "", ownerTok)
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("%s %q: %d %s", file, q, w.Code, w.Body.String())
 			}
 			var body map[string]string
-			mustJSON(t, w.Body.Bytes(), &body)
+			httpkit.MustJSON(t, w.Body.Bytes(), &body)
 			if body["error"] != domain.MsgExportRangeInvalid {
 				t.Fatalf("%s %q: error = %q", file, q, body["error"])
 			}
@@ -290,7 +292,7 @@ func TestHTTP_export_csv_rango_y_tope(t *testing.T) {
 		}
 	}
 	// 366 días exactos pasan.
-	if w := doReq(e.r, "GET", e.exportPath(salonID, "sales.csv")+"?from=2026-01-01&to=2027-01-01", "", ownerTok); w.Code != http.StatusOK {
+	if w := httpkit.Do(e.Router, "GET", e.exportPath(salonID, "sales.csv")+"?from=2026-01-01&to=2027-01-01", "", ownerTok); w.Code != http.StatusOK {
 		t.Fatalf("366 días: %d %s", w.Code, w.Body.String())
 	}
 
@@ -298,12 +300,12 @@ func TestHTTP_export_csv_rango_y_tope(t *testing.T) {
 	e.svc.RowCap = 1
 	e.rebuild()
 	e.logs = nil
-	w := doReq(e.r, "GET", e.exportPath(salonID, "sales.csv")+"?from=2026-05-01&to=2026-05-04", "", ownerTok)
+	w := httpkit.Do(e.Router, "GET", e.exportPath(salonID, "sales.csv")+"?from=2026-05-01&to=2026-05-04", "", ownerTok)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("tope: %d %s", w.Code, w.Body.String())
 	}
 	var body map[string]string
-	mustJSON(t, w.Body.Bytes(), &body)
+	httpkit.MustJSON(t, w.Body.Bytes(), &body)
 	if body["error"] != domain.MsgExportRowsTooMany {
 		t.Fatalf("tope: error = %q", body["error"])
 	}
@@ -317,27 +319,27 @@ func TestHTTP_export_csv_rango_y_tope(t *testing.T) {
 		t.Fatalf("un 400 no es un export: log = %q", e.logs)
 	}
 	// El LIMIT que se pide es tope + 1 (la consulta sabe si hay más).
-	if len(e.exports.limits) == 0 || e.exports.limits[len(e.exports.limits)-1] != 2 {
-		t.Fatalf("LIMIT = %v, quería tope+1 = 2", e.exports.limits)
+	if len(e.Exports.Limits) == 0 || e.Exports.Limits[len(e.Exports.Limits)-1] != 2 {
+		t.Fatalf("LIMIT = %v, quería tope+1 = 2", e.Exports.Limits)
 	}
 
 	// Cierres y clientes tienen sus propios mensajes de tope.
-	if w := doReq(e.r, "GET", e.exportPath(salonID, "cash-closes.csv")+"?from=2026-05-01&to=2026-05-04", "", ownerTok); w.Code != http.StatusOK {
+	if w := httpkit.Do(e.Router, "GET", e.exportPath(salonID, "cash-closes.csv")+"?from=2026-05-01&to=2026-05-04", "", ownerTok); w.Code != http.StatusOK {
 		t.Fatalf("1 cierre con tope 1 debía pasar: %d %s", w.Code, w.Body.String())
 	}
 	for i := 0; i < 2; i++ {
-		e.exports.addClose(salonID, domain.ExportCashCloseRow{
+		e.Exports.AddClose(salonID, domain.ExportCashCloseRow{
 			OpenedAt: time.Date(2026, 5, 4, 10, 0, 0, 0, time.UTC),
 			ClosedAt: time.Date(2026, 5, 4, 11+i, 0, 0, 0, time.UTC),
 		})
 	}
-	w = doReq(e.r, "GET", e.exportPath(salonID, "cash-closes.csv")+"?from=2026-05-01&to=2026-05-04", "", ownerTok)
-	mustJSON(t, w.Body.Bytes(), &body)
+	w = httpkit.Do(e.Router, "GET", e.exportPath(salonID, "cash-closes.csv")+"?from=2026-05-01&to=2026-05-04", "", ownerTok)
+	httpkit.MustJSON(t, w.Body.Bytes(), &body)
 	if w.Code != http.StatusBadRequest || body["error"] != domain.MsgExportRowsTooMany {
 		t.Fatalf("cierres sobre el tope: %d %s", w.Code, w.Body.String())
 	}
-	w = doReq(e.r, "GET", e.exportPath(salonID, "clients.csv"), "", ownerTok)
-	mustJSON(t, w.Body.Bytes(), &body)
+	w = httpkit.Do(e.Router, "GET", e.exportPath(salonID, "clients.csv"), "", ownerTok)
+	httpkit.MustJSON(t, w.Body.Bytes(), &body)
 	if w.Code != http.StatusBadRequest || body["error"] != domain.MsgExportClientsTooMany {
 		t.Fatalf("clientes sobre el tope: %d %s", w.Code, w.Body.String())
 	}
@@ -347,8 +349,8 @@ func TestHTTP_export_csv_rango_y_tope(t *testing.T) {
 func TestHTTP_export_csv_rango_vacio_solo_cabecera(t *testing.T) {
 	e := newExportHTTPEnv(t)
 	ownerTok, _ := e.member(t, "vacio@export.com", "", domain.RoleOwner)
-	salonID := e.salon(t, ownerTok, "vacio")
-	w := doReq(e.r, "GET", e.exportPath(salonID, "sales.csv")+"?from=2026-05-01&to=2026-05-01", "", ownerTok)
+	salonID := e.Salon(t, ownerTok, "vacio")
+	w := httpkit.Do(e.Router, "GET", e.exportPath(salonID, "sales.csv")+"?from=2026-05-01&to=2026-05-01", "", ownerTok)
 	if w.Code != http.StatusOK {
 		t.Fatalf("ventas vacías: %d %s", w.Code, w.Body.String())
 	}
@@ -363,9 +365,9 @@ func TestHTTP_export_csv_rango_vacio_solo_cabecera(t *testing.T) {
 func TestHTTP_export_csv_nombre_sin_inyeccion(t *testing.T) {
 	e := newExportHTTPEnv(t)
 	ownerTok, _ := e.member(t, "nombre@export.com", "", domain.RoleOwner)
-	salonID := e.salon(t, ownerTok, "nombre")
+	salonID := e.Salon(t, ownerTok, "nombre")
 	// Una fecha con CRLF no es un rango válido: 400 y ninguna cabecera armada.
-	w := doReq(e.r, "GET", e.exportPath(salonID, "sales.csv")+"?from=2026-05-01%0d%0aX-Injected:%201&to=2026-05-04", "", ownerTok)
+	w := httpkit.Do(e.Router, "GET", e.exportPath(salonID, "sales.csv")+"?from=2026-05-01%0d%0aX-Injected:%201&to=2026-05-04", "", ownerTok)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("CRLF en from: %d %s", w.Code, w.Body.String())
 	}
@@ -373,7 +375,7 @@ func TestHTTP_export_csv_nombre_sin_inyeccion(t *testing.T) {
 		t.Fatalf("Content-Disposition inyectada: %q", cd)
 	}
 	// Un nombre válido no lleva nada más que el alfabeto seguro.
-	w = doReq(e.r, "GET", e.exportPath(salonID, "sales.csv")+"?from=2026-05-01&to=2026-05-04", "", ownerTok)
+	w = httpkit.Do(e.Router, "GET", e.exportPath(salonID, "sales.csv")+"?from=2026-05-01&to=2026-05-04", "", ownerTok)
 	cd := w.Header().Get("Content-Disposition")
 	if cd != `attachment; filename="ventas-2026-05-01_2026-05-04.csv"` {
 		t.Fatalf("Content-Disposition = %q", cd)

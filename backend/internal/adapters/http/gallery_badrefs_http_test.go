@@ -1,7 +1,8 @@
-package httpapi
+package httpapi_test
 
 import (
 	"net/http"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
 )
@@ -13,39 +14,39 @@ import (
 func TestGallery_invalid_references_are_a_uniform_404_without_touching_the_store(t *testing.T) {
 	w := newF16World(t)
 	const slug = "f16-uno"
-	photo := w.addPhoto(t, w.salon, w.owner)
+	photo := w.addPhoto(t, w.Salon, w.Owner)
 	badIDs := []string{"%00", "%ff%fe", "a%00b", strings.Repeat("a", 200)}
 
 	for _, id := range badIDs {
-		before := w.gallery.lookups
-		rec := doReq(w.env.r, "GET", "/api/v1/public/salons/"+slug+"/gallery/"+id, "", "")
+		before := w.Gallery.lookups
+		rec := httpkit.Do(w.Env.Router, "GET", "/api/v1/public/salons/"+slug+"/gallery/"+id, "", "")
 		if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "Foto no encontrada") {
 			t.Fatalf("público id %q: %d %s", id, rec.Code, rec.Body.String())
 		}
-		if w.gallery.lookups != before {
+		if w.Gallery.lookups != before {
 			t.Fatalf("público id %q: no debe consultar la base", id)
 		}
 		for _, m := range []struct{ method, body string }{{"PUT", `{"caption":"x"}`}, {"DELETE", ""}} {
-			before = w.gallery.lookups
-			rec := doReq(w.env.r, m.method, w.galleryPath()+"/"+id, m.body, w.owner)
+			before = w.Gallery.lookups
+			rec := httpkit.Do(w.Env.Router, m.method, w.galleryPath()+"/"+id, m.body, w.Owner)
 			if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "Foto no encontrada") {
 				t.Fatalf("%s id %q: %d %s", m.method, id, rec.Code, rec.Body.String())
 			}
-			if w.gallery.lookups != before {
+			if w.Gallery.lookups != before {
 				t.Fatalf("%s id %q: no debe consultar la base", m.method, id)
 			}
 		}
 	}
 	// Slug inválido: mismo 404 y sin consultar.
 	for _, slug := range []string{"%00", "%ff", "sal%00uno"} {
-		before := w.gallery.lookups
-		rec := doReq(w.env.r, "GET", "/api/v1/public/salons/"+slug+"/gallery/"+photo.ID, "", "")
-		if rec.Code != http.StatusNotFound || w.gallery.lookups != before {
-			t.Fatalf("slug %q: %d %s (consultas %d->%d)", slug, rec.Code, rec.Body.String(), before, w.gallery.lookups)
+		before := w.Gallery.lookups
+		rec := httpkit.Do(w.Env.Router, "GET", "/api/v1/public/salons/"+slug+"/gallery/"+photo.ID, "", "")
+		if rec.Code != http.StatusNotFound || w.Gallery.lookups != before {
+			t.Fatalf("slug %q: %d %s (consultas %d->%d)", slug, rec.Code, rec.Body.String(), before, w.Gallery.lookups)
 		}
 	}
 	// La foto real sigue sirviéndose.
-	if rec := doReq(w.env.r, "GET", "/api/v1/public/salons/"+slug+"/gallery/"+photo.ID, "", ""); rec.Code != http.StatusOK {
+	if rec := httpkit.Do(w.Env.Router, "GET", "/api/v1/public/salons/"+slug+"/gallery/"+photo.ID, "", ""); rec.Code != http.StatusOK {
 		t.Fatalf("la foto real: %d", rec.Code)
 	}
 }

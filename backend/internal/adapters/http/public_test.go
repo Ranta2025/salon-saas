@@ -1,21 +1,21 @@
-package httpapi
+package httpapi_test
 
 import (
 	"net/http"
+	"salon-saas/internal/domain"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
-
-	"salon-saas/internal/domain"
 )
 
 func publicGet(t *testing.T, w *f16World, slug string) map[string]any {
 	t.Helper()
-	r := doReq(w.env.r, "GET", "/api/v1/public/salons/"+slug, "", "")
+	r := httpkit.Do(w.Env.Router, "GET", "/api/v1/public/salons/"+slug, "", "")
 	if r.Code != http.StatusOK {
 		t.Fatalf("público %s: %d %s", slug, r.Code, r.Body.String())
 	}
 	var out map[string]any
-	mustJSON(t, r.Body.Bytes(), &out)
+	httpkit.MustJSON(t, r.Body.Bytes(), &out)
 	return out
 }
 
@@ -33,19 +33,19 @@ func listOf(t *testing.T, m map[string]any, key string) []any {
 // agrega (salon.*, services[].description, team, gallery, packages).
 func TestPublicPayload_exactShape(t *testing.T) {
 	w := newF16World(t)
-	svcID := w.env.seedService(t, w.owner, w.salon, "Corte", 15000)
+	svcID := w.Env.SeedService(t, w.Owner, w.Salon, "Corte", 15000)
 	// El dueño no atiende por defecto: Ana (profesional) hace el servicio.
-	_ = w.env.profs.SetServices(w.salon, w.profID, []string{svcID})
-	doReq(w.env.r, "PUT", w.servicesPath()+"/"+svcID, `{"name":"Corte","duration_min":45,"price_cents":15000,"commission_pct":20,"description":"Corte clásico"}`, w.owner)
-	doReq(w.env.r, "PUT", w.profilePath(), fullProfileBody, w.owner)
-	p := w.addPhoto(t, w.salon, w.owner)
-	doReq(w.env.r, "PUT", w.galleryPath()+"/"+p.ID, `{"caption":"El local"}`, w.owner)
+	_ = w.Env.Professionals.SetServices(w.Salon, w.ProfID, []string{svcID})
+	httpkit.Do(w.Env.Router, "PUT", w.servicesPath()+"/"+svcID, `{"name":"Corte","duration_min":45,"price_cents":15000,"commission_pct":20,"description":"Corte clásico"}`, w.Owner)
+	httpkit.Do(w.Env.Router, "PUT", w.profilePath(), fullProfileBody, w.Owner)
+	p := w.addPhoto(t, w.Salon, w.Owner)
+	httpkit.Do(w.Env.Router, "PUT", w.galleryPath()+"/"+p.ID, `{"caption":"El local"}`, w.Owner)
 	ninety := 90
-	pkg, err := domain.NewServicePackage(w.salon, "Pack 5", svcID, 5, 60000, &ninety)
+	pkg, err := domain.NewServicePackage(w.Salon, "Pack 5", svcID, 5, 60000, &ninety)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = w.packages.Create(pkg)
+	_ = w.Packages.Create(pkg)
 
 	got := publicGet(t, w, "f16-uno")
 	if strings.Join(keysOf(got), ",") != "gallery,hours,loyalty,packages,salon,services,team" {
@@ -55,7 +55,7 @@ func TestPublicPayload_exactShape(t *testing.T) {
 	if strings.Join(keysOf(salon), ",") != "address,description,email,id,instagram,name,phone,slug,timezone" {
 		t.Fatalf("claves de salon: %v", keysOf(salon))
 	}
-	if salon["id"] != w.salon || salon["slug"] != "f16-uno" || salon["name"] != "Navajas de Oro" || salon["description"] != "Barbería clásica" ||
+	if salon["id"] != w.Salon || salon["slug"] != "f16-uno" || salon["name"] != "Navajas de Oro" || salon["description"] != "Barbería clásica" ||
 		salon["address"] != "Calle 1 #23" || salon["phone"] != "+52 55" || salon["email"] != "hola@navajas.com" ||
 		salon["instagram"] != "navajas.oro" || salon["timezone"] != domain.DefaultSalonSettings("x").Timezone {
 		t.Fatalf("salon: %v", salon)
@@ -105,10 +105,10 @@ func TestPublicPayload_exactShape(t *testing.T) {
 func TestPublicPayload_emptySections(t *testing.T) {
 	w := newF16World(t)
 	// El dueño de f16-dos deja de atender: nadie del equipo.
-	for k, m := range w.env.mems.byKey {
+	for k, m := range w.Env.Mems.ByKey {
 		if m.SalonID == w.other {
 			m.Attends = false
-			w.env.mems.byKey[k] = m
+			w.Env.Mems.ByKey[k] = m
 		}
 	}
 	got := publicGet(t, w, "f16-dos")
@@ -127,12 +127,12 @@ func TestPublicPayload_emptySections(t *testing.T) {
 // profesionales sin datos sensibles; los paquetes inactivos fuera.
 func TestPublicPayload_filtersTeamAndPackages(t *testing.T) {
 	w := newF16World(t)
-	hecho := w.env.seedService(t, w.owner, w.salon, "Hecho", 1000)
-	nadie := w.env.seedService(t, w.owner, w.salon, "Nadie lo hace", 2000)
-	viejo := w.env.seedService(t, w.owner, w.salon, "Viejo", 3000)
-	_ = w.env.profs.SetServices(w.salon, w.profID, []string{hecho, viejo})
-	w.env.profs.byService = map[string][]string{w.salon + "|" + nadie: {}}
-	doReq(w.env.r, "PUT", w.servicesPath()+"/"+viejo, `{"name":"Viejo","duration_min":45,"price_cents":3000,"commission_pct":20,"active":false}`, w.owner)
+	hecho := w.Env.SeedService(t, w.Owner, w.Salon, "Hecho", 1000)
+	nadie := w.Env.SeedService(t, w.Owner, w.Salon, "Nadie lo hace", 2000)
+	viejo := w.Env.SeedService(t, w.Owner, w.Salon, "Viejo", 3000)
+	_ = w.Env.Professionals.SetServices(w.Salon, w.ProfID, []string{hecho, viejo})
+	w.Env.Professionals.ByService = map[string][]string{w.Salon + "|" + nadie: {}}
+	httpkit.Do(w.Env.Router, "PUT", w.servicesPath()+"/"+viejo, `{"name":"Viejo","duration_min":45,"price_cents":3000,"commission_pct":20,"active":false}`, w.Owner)
 	// Recepción (rol que no atiende) y un dueño sin la marca no son el equipo.
 	got := publicGet(t, w, "f16-uno")
 	names := []string{}
@@ -154,11 +154,11 @@ func TestPublicPayload_filtersTeamAndPackages(t *testing.T) {
 			t.Fatal(err)
 		}
 		p.Active = active
-		_ = w.packages.Create(p)
+		_ = w.Packages.Create(p)
 	}
-	mk(w.salon, hecho, "Pack vigente", true)
-	mk(w.salon, hecho, "Pack apagado", false)
-	mk(w.salon, viejo, "Pack de servicio inactivo", true)
+	mk(w.Salon, hecho, "Pack vigente", true)
+	mk(w.Salon, hecho, "Pack apagado", false)
+	mk(w.Salon, viejo, "Pack de servicio inactivo", true)
 	mk(w.other, hecho, "Pack ajeno", true)
 	got = publicGet(t, w, "f16-uno")
 	pk := listOf(t, got, "packages")

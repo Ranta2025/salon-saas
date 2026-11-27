@@ -1,15 +1,17 @@
-package httpapi
+package httpapi_test
 
 import (
 	"encoding/json"
 	"net/http"
+	httpapi "salon-saas/internal/adapters/http"
+	"salon-saas/internal/app"
+	"salon-saas/internal/domain"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
-	"salon-saas/internal/domain"
 )
 
 // Contrato F1 (HTTP): las cuatro rutas públicas del enlace firmado, con el token
@@ -18,9 +20,9 @@ import (
 const linkHTTPAppURL = "http://localhost:8081"
 
 type linkHTTPEnv struct {
-	*posEnv
+	*httpkit.Env
 	r     *gin.Engine
-	links *mlinks
+	Links *httpkit.Links
 	svc   app.BookingLinkService
 }
 
@@ -32,45 +34,45 @@ func newLinkHTTPEnv(t *testing.T) *linkHTTPEnv { return buildLinkHTTPEnv(t, fals
 // límites por IP de producción, cada uno con SU PROPIA instancia).
 func buildLinkHTTPEnv(t *testing.T, withLimits bool) *linkHTTPEnv {
 	t.Helper()
-	env := newPOSEnv()
-	links := &mlinks{bookings: env.bookings}
-	d := env.deps()
+	env := httpkit.NewPOSEnv()
+	links := &httpkit.Links{Bookings: env.Bookings}
+	d := env.Deps
 	// La reserva pública emite el enlace de la confirmación (F1/D1).
 	pub := d.Public.Bookings
 	pub.Links = links
 	pub.AppURL = linkHTTPAppURL
 	d.Public.Bookings = pub
 	svc := app.BookingLinkService{
-		Links: links, Tx: links, Bookings: env.bookings, Salons: env.salons,
-		Services: env.services, Staff: env.mems, Settings: env.settings,
-		Professionals: env.profs, Hours: env.weekly, TimeOff: env.timeOff,
-		Resources: env.resources, Availability: d.Public.Avail,
-		Events: env.events, Notifier: d.Notifications.Notifications,
-		Mailer: env.mailer, Emails: env.emails, AppURL: linkHTTPAppURL,
+		Links: links, Tx: links, Bookings: env.Bookings, Salons: env.Salons,
+		Services: env.Services, Staff: env.Mems, Settings: env.Settings,
+		Professionals: env.Professionals, Hours: env.Weekly, TimeOff: env.TimeOff,
+		Resources: env.Resources, Availability: d.Public.Avail,
+		Events: env.Events, Notifier: d.Notifications.Notifications,
+		Mailer: env.Mailer, Emails: env.BookingEmails, AppURL: linkHTTPAppURL,
 	}
-	d.BookingLinks = BookingLinkHandler{Links: svc}
+	d.BookingLinks = httpapi.BookingLinkHandler{Links: svc}
 	if withLimits {
 		// Como en cmd/api: mismo valor (20/min) y TRES instancias distintas.
-		d.PublicBookingLimit = RateLimitFor(linkRateLimit, time.Minute, "POST", "/api/v1/public/salons/")
-		d.PublicInvitationLimit = RateLimitFor(linkRateLimit, time.Minute, "POST", "/api/v1/public/invitations/")
-		d.PublicBookingLinkLimit = RateLimitFor(linkRateLimit, time.Minute, "POST", "/api/v1/public/booking-links/")
+		d.PublicBookingLimit = httpapi.RateLimitFor(linkRateLimit, time.Minute, "POST", "/api/v1/public/salons/")
+		d.PublicInvitationLimit = httpapi.RateLimitFor(linkRateLimit, time.Minute, "POST", "/api/v1/public/invitations/")
+		d.PublicBookingLinkLimit = httpapi.RateLimitFor(linkRateLimit, time.Minute, "POST", "/api/v1/public/booking-links/")
 	}
-	env.r = gin.New()
-	RegisterRoutes(env.r, d)
-	return &linkHTTPEnv{posEnv: env, r: env.r, links: links, svc: svc}
+	env.Router = gin.New()
+	httpapi.RegisterRoutes(env.Router, d)
+	return &linkHTTPEnv{Env: env, r: env.Router, Links: links, svc: svc}
 }
 
 // seedLinkSalon siembra salón, servicio y profesional con su horario.
 func (e *linkHTTPEnv) seedLinkSalon(t *testing.T, slug string) (salonID, svcID, profID string) {
 	t.Helper()
-	ownerTok, _ := e.register(t, "owner-"+slug+"@mail.com")
-	salonID = e.salon(t, ownerTok, slug)
-	svcID = e.seedService(t, ownerTok, salonID, "Corte", 150000)
-	salonSettings(e.posEnv, salonID)
-	_, profID = e.register(t, "profe-"+slug+"@mail.com")
-	seedProfessional(e.posEnv, salonID, profID)
+	ownerTok, _ := e.Register(t, "owner-"+slug+"@mail.com")
+	salonID = e.Salon(t, ownerTok, slug)
+	svcID = e.SeedService(t, ownerTok, salonID, "Corte", 150000)
+	salonSettings(e.Env, salonID)
+	_, profID = e.Register(t, "profe-"+slug+"@mail.com")
+	httpkit.SeedProfessional(e.Env, salonID, profID)
 	// Qué servicio hace: la reserva pública exige que el profesional lo haga.
-	e.profs.byService = map[string][]string{salonID + "|" + svcID: {profID}}
+	e.Professionals.ByService = map[string][]string{salonID + "|" + svcID: {profID}}
 	return salonID, svcID, profID
 }
 
@@ -86,12 +88,12 @@ func (e *linkHTTPEnv) seedLinkBooking(t *testing.T, slug string, offsetDays int)
 		`"starts_at":"` + starts.Format(time.RFC3339) + `"}`
 	// El conteo se toma ANTES del pedido y con el método protegido: la
 	// confirmación viaja en una goroutine y puede llegar antes de que se mire.
-	before := e.mailer.count()
-	w := doReq(e.r, "POST", "/api/v1/public/salons/"+slug+"/bookings", body, "")
+	before := e.Mailer.Count()
+	w := httpkit.Do(e.r, "POST", "/api/v1/public/salons/"+slug+"/bookings", body, "")
 	if w.Code != http.StatusCreated {
 		t.Fatalf("reserva pública: %d %s", w.Code, w.Body.String())
 	}
-	msg := e.mailer.waitCount(t, before+1)
+	msg := e.Mailer.WaitCount(t, before+1)
 	last := msg[len(msg)-1]
 	idx := strings.Index(last.Text, "/turno#")
 	if idx < 0 {
@@ -122,7 +124,7 @@ func linkHTTPDay(t *testing.T, offsetDays int) time.Time {
 // linkPost manda un POST JSON a una de las cuatro rutas del enlace.
 func (e *linkHTTPEnv) linkPost(t *testing.T, route, body string) (int, map[string]any) {
 	t.Helper()
-	w := doReq(e.r, "POST", "/api/v1/public/booking-links/"+route, body, "")
+	w := httpkit.Do(e.r, "POST", "/api/v1/public/booking-links/"+route, body, "")
 	var out map[string]any
 	if w.Body.Len() > 0 {
 		_ = json.Unmarshal(w.Body.Bytes(), &out)
@@ -136,7 +138,7 @@ func TestHTTP_booking_link_lookup(t *testing.T) {
 	env := newLinkHTTPEnv(t)
 	_, token := env.seedLinkBooking(t, "enlace-ok", 0)
 
-	w := doReq(env.r, "POST", "/api/v1/public/booking-links/lookup", `{"token":"`+token+`"}`, "")
+	w := httpkit.Do(env.Router, "POST", "/api/v1/public/booking-links/lookup", `{"token":"`+token+`"}`, "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("lookup: %d %s", w.Code, w.Body.String())
 	}
@@ -152,7 +154,7 @@ func TestHTTP_booking_link_lookup(t *testing.T) {
 			MinNoticeHours   int    `json:"min_notice_hours"`
 		} `json:"booking"`
 	}
-	mustJSON(t, w.Body.Bytes(), &out)
+	httpkit.MustJSON(t, w.Body.Bytes(), &out)
 	if out.Booking.SalonName != "Salón enlace-ok" || out.Booking.ServiceName != "Corte" ||
 		out.Booking.ProfessionalName == "" || out.Booking.Timezone != "America/Mexico_City" ||
 		!out.Booking.CanChange || out.Booking.MinNoticeHours != 2 {
@@ -251,7 +253,7 @@ func TestHTTP_booking_link_cancel(t *testing.T) {
 	if code != http.StatusOK || out["status"] != "cancelled" {
 		t.Fatalf("cancelar: %d %v", code, out)
 	}
-	stored, err := env.bookings.FindByID(salonID, env.bookings.all[len(env.bookings.all)-1].ID)
+	stored, err := env.Bookings.FindByID(salonID, env.Bookings.All[len(env.Bookings.All)-1].ID)
 	if err != nil || stored.Status != domain.BookingCancelled {
 		t.Fatalf("el turno quedó cancelado: %+v %v", stored, err)
 	}
@@ -304,8 +306,8 @@ func TestHTTP_booking_link_reschedule(t *testing.T) {
 	if code, out := env.linkPost(t, "lookup", `{"token":"`+token+`"}`); code != http.StatusNotFound {
 		t.Fatalf("token viejo: %d %v", code, out)
 	}
-	if len(env.links.rows()) != 2 {
-		t.Fatalf("esperaba dos enlaces emitidos (confirmación + reprogramación): %+v", env.links.rows())
+	if len(env.Links.Rows()) != 2 {
+		t.Fatalf("esperaba dos enlaces emitidos (confirmación + reprogramación): %+v", env.Links.Rows())
 	}
 }
 
@@ -334,11 +336,11 @@ func TestHTTP_booking_link_rate_limit_propio(t *testing.T) {
 	starts := linkHTTPDay(t, 1)
 	book := `{"service_id":"` + svcID + `","professional_id":"` + profID +
 		`","client_name":"Ana","starts_at":"` + starts.Format(time.RFC3339) + `"}`
-	w := doReq(env.r, "POST", "/api/v1/public/salons/limite-enlace/bookings", book, "")
+	w := httpkit.Do(env.Router, "POST", "/api/v1/public/salons/limite-enlace/bookings", book, "")
 	if w.Code == http.StatusTooManyRequests {
 		t.Fatalf("la inundación de enlaces no puede gastar el cubo de la reserva pública: %s", w.Body.String())
 	}
-	if w := doReq(env.r, "POST", "/api/v1/public/invitations/lookup", `{"token":"x"}`, ""); w.Code == http.StatusTooManyRequests {
+	if w := httpkit.Do(env.Router, "POST", "/api/v1/public/invitations/lookup", `{"token":"x"}`, ""); w.Code == http.StatusTooManyRequests {
 		t.Fatalf("la inundación de enlaces no puede gastar el cubo de las invitaciones: %s", w.Body.String())
 	}
 
@@ -351,7 +353,7 @@ func TestHTTP_booking_link_rate_limit_propio(t *testing.T) {
 		starts := linkHTTPDay(t, i)
 		body := `{"service_id":"` + oSvc + `","professional_id":"` + oProf +
 			`","client_name":"Ana","starts_at":"` + starts.Format(time.RFC3339) + `"}`
-		w := doReq(other.r, "POST", "/api/v1/public/salons/limite-reserva/bookings", body, "")
+		w := httpkit.Do(other.r, "POST", "/api/v1/public/salons/limite-reserva/bookings", body, "")
 		if i < linkRateLimit && w.Code == http.StatusTooManyRequests {
 			t.Fatalf("la reserva %d no puede estar limitada todavía", i)
 		}

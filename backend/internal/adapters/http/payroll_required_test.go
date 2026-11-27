@@ -1,7 +1,8 @@
-package httpapi
+package httpapi_test
 
 import (
 	"net/http"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"testing"
 )
 
@@ -12,8 +13,8 @@ import (
 // 400 y no escribe nada.
 func TestHTTP_pay_model_campos_obligatorios(t *testing.T) {
 	e := newPayEnv(t)
-	ana := e.users["ana@pay.com"]
-	path := e.url(e.salon, "/members/"+ana+"/pay-model")
+	ana := e.Users["ana@pay.com"]
+	path := e.url(e.Salon, "/members/"+ana+"/pay-model")
 
 	// Un modelo válido y con sueldo, que ningún cuerpo parcial puede pisar.
 	if w := e.do(t, "PUT", path, `{"fixed_cents":150000,"fixed_period":"month","commission_enabled":false}`, "duena@pay.com"); w.Code != http.StatusOK {
@@ -35,18 +36,18 @@ func TestHTTP_pay_model_campos_obligatorios(t *testing.T) {
 			t.Fatalf("%s: esperaba 400, dio %d %s", c.name, w.Code, w.Body.String())
 		}
 		var out map[string]string
-		mustJSON(t, w.Body.Bytes(), &out)
+		httpkit.MustJSON(t, w.Body.Bytes(), &out)
 		if out["error"] == "" {
 			t.Fatalf("%s: el 400 tiene que traer un mensaje en español: %s", c.name, w.Body.String())
 		}
 	}
 
 	// Nada de lo anterior tocó el modelo guardado.
-	w := e.do(t, "GET", e.url(e.salon, "/pay-models"), "", "duena@pay.com")
+	w := e.do(t, "GET", e.url(e.Salon, "/pay-models"), "", "duena@pay.com")
 	var list struct {
 		PayModels []map[string]any `json:"pay_models"`
 	}
-	mustJSON(t, w.Body.Bytes(), &list)
+	httpkit.MustJSON(t, w.Body.Bytes(), &list)
 	for _, m := range list.PayModels {
 		if m["user_id"] != ana {
 			continue

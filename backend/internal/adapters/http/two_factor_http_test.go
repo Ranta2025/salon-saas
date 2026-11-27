@@ -2,81 +2,83 @@
 // con fakes en memoria, JWT y bcrypt REALES, el AuthMiddleware real y el hub de
 // tiempo real real: lo que se prueba es el contrato de la API y que el desafío
 // del segundo paso NUNCA autentica nada.
-package httpapi
+package httpapi_test
 
 import (
 	"encoding/base32"
 	"encoding/json"
 	"errors"
+	"github.com/golang-jwt/jwt/v5"
 	"net/http/httptest"
 	"regexp"
+	httpapi "salon-saas/internal/adapters/http"
+	"salon-saas/internal/adapters/security"
+	"salon-saas/internal/app"
+	auditsvc "salon-saas/internal/audit"
+	"salon-saas/internal/domain"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
-	"salon-saas/internal/adapters/security"
-	"salon-saas/internal/app"
-	auditsvc "salon-saas/internal/audit"
-	"salon-saas/internal/domain"
 )
 
 type tfHTTP struct {
 	r      *gin.Engine
-	d      Deps
-	env    *posEnv
-	repo   *mtf
-	clock  *mtfClock
-	audit  *maudit
+	d      httpapi.Deps
+	Env    *httpkit.Env
+	repo   *httpkit.TwoFactor
+	Clock  *httpkit.TwoFactorClock
+	Audit  *httpkit.AuditEvents
 	tokens security.JWTIssuer
 	// Cuenta de prueba.
-	email, pass, userID, session, salonID string
+	Email, pass, UserID, session, SalonID string
 }
 
 func newTFHTTP(t *testing.T) *tfHTTP {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	env := newPOSEnv()
-	clock := &mtfClock{t: time.Now().UTC()}
-	repo := newMTF(clock.Now)
-	audit := &maudit{}
+	env := httpkit.NewPOSEnv()
+	clock := &httpkit.TwoFactorClock{T: time.Now().UTC()}
+	repo := httpkit.NewTwoFactor(clock.Now)
+	audit := &httpkit.AuditEvents{}
 	tokens := security.JWTIssuer{Secret: "test-secret"}
 	box, err := domain.NewTOTPSecretBox("test-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
 	tfSvc := app.TwoFactorService{
-		Repo: repo, Users: env.users, Hasher: security.BcryptHasher{}, Tokens: tokens,
-		Challenges: tokens, Box: box, Memberships: env.mems,
-		Audit: auditsvc.AuditService{Events: audit, Users: env.users}, Now: clock.Now,
+		Repo: repo, Users: env.Users, Hasher: security.BcryptHasher{}, Tokens: tokens,
+		Challenges: tokens, Box: box, Memberships: env.Mems,
+		Audit: auditsvc.AuditService{Events: audit, Users: env.Users}, Now: clock.Now,
 	}
-	d := env.d
-	d.Auth = AuthHandler{Auth: app.AuthService{Users: env.users, Hasher: security.BcryptHasher{}, Tokens: tokens, TwoFactor: tfSvc}}
-	d.TwoFactor = TwoFactorHandler{Service: tfSvc}
+	d := env.Deps
+	d.Auth = httpapi.AuthHandler{Auth: app.AuthService{Users: env.Users, Hasher: security.BcryptHasher{}, Tokens: tokens, TwoFactor: tfSvc}}
+	d.TwoFactor = httpapi.TwoFactorHandler{Service: tfSvc}
 	r := gin.New()
-	RegisterRoutes(r, d)
-	h := &tfHTTP{r: r, d: d, env: env, repo: repo, clock: clock, audit: audit, tokens: tokens,
-		email: "ana@mail.com", pass: "secreta123"}
+	httpapi.RegisterRoutes(r, d)
+	h := &tfHTTP{r: r, d: d, Env: env, repo: repo, Clock: clock, Audit: audit, tokens: tokens,
+		Email: "ana@mail.com", pass: "secreta123"}
 
-	if w := doReq(r, "POST", "/api/v1/auth/register", `{"name":"Ana","email":"ana@mail.com","password":"secreta123"}`, ""); w.Code != 201 {
+	if w := httpkit.Do(r, "POST", "/api/v1/auth/register", `{"name":"Ana","email":"ana@mail.com","password":"secreta123"}`, ""); w.Code != 201 {
 		t.Fatalf("register: %d %s", w.Code, w.Body.String())
 	}
-	h.userID = env.users.byEmail[h.email].ID
+	h.UserID = env.Users.ByEmail[h.Email].ID
 	h.session = h.login(t)
-	w := doReq(r, "POST", "/api/v1/salons", `{"name":"Navajas","slug":"navajas"}`, h.session)
+	w := httpkit.Do(r, "POST", "/api/v1/salons", `{"name":"Navajas","slug":"navajas"}`, h.session)
 	if w.Code != 201 {
 		t.Fatalf("salon: %d %s", w.Code, w.Body.String())
 	}
 	var s struct{ ID string }
 	_ = json.Unmarshal(w.Body.Bytes(), &s)
-	h.salonID = s.ID
+	h.SalonID = s.ID
 	return h
 }
 
 func (h *tfHTTP) login(t *testing.T) string {
 	t.Helper()
-	w := doReq(h.r, "POST", "/api/v1/auth/login", `{"email":"ana@mail.com","password":"secreta123"}`, "")
+	w := httpkit.Do(h.r, "POST", "/api/v1/auth/login", `{"email":"ana@mail.com","password":"secreta123"}`, "")
 	if w.Code != 200 {
 		t.Fatalf("login: %d %s", w.Code, w.Body.String())
 	}
@@ -89,7 +91,7 @@ func (h *tfHTTP) login(t *testing.T) string {
 }
 
 func (h *tfHTTP) do(method, path, body, token string) *httptest.ResponseRecorder {
-	return doReq(h.r, method, path, body, token)
+	return httpkit.Do(h.r, method, path, body, token)
 }
 
 func body(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
@@ -128,7 +130,7 @@ func (h *tfHTTP) setup(t *testing.T) []byte {
 
 // code es el código TOTP del instante del reloj de prueba + `ahead` pasos.
 func (h *tfHTTP) code(secret []byte, ahead int64) string {
-	return domain.TOTPCode(secret, domain.TOTPStepAt(h.clock.Now())+ahead, domain.TOTPDigits)
+	return domain.TOTPCode(secret, domain.TOTPStepAt(h.Clock.Now())+ahead, domain.TOTPDigits)
 }
 
 // enable activa el 2FA y devuelve secreto y códigos de recuperación. Después
@@ -144,11 +146,11 @@ func (h *tfHTTP) enable(t *testing.T) ([]byte, []string) {
 		RecoveryCodes []string `json:"recovery_codes"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &out)
-	h.clock.Add(2 * 30 * time.Second)
-	h.audit.mu.Lock()
-	h.audit.rows = nil
-	h.audit.appendCalls = 0
-	h.audit.mu.Unlock()
+	h.Clock.Add(2 * 30 * time.Second)
+	h.Audit.Mu.Lock()
+	h.Audit.Rows = nil
+	h.Audit.AppendCalls = 0
+	h.Audit.Mu.Unlock()
 	return sec, out.RecoveryCodes
 }
 
@@ -229,7 +231,7 @@ func TestTwoFactorHTTP_loginWithTwoFactorReturnsChallengeNotToken(t *testing.T) 
 	}
 	cl := tok.Claims.(jwt.MapClaims)
 	exp, _ := cl.GetExpirationTime()
-	if cl["typ"] != "2fa" || cl["sub"] != h.userID || time.Until(exp.Time) > 5*time.Minute+5*time.Second || time.Until(exp.Time) < 4*time.Minute {
+	if cl["typ"] != "2fa" || cl["sub"] != h.UserID || time.Until(exp.Time) > 5*time.Minute+5*time.Second || time.Until(exp.Time) < 4*time.Minute {
 		t.Errorf("claims del desafío: %v", cl)
 	}
 	// Una contraseña mala con 2FA da el MISMO 401 de siempre (sin delatar el 2FA).
@@ -251,10 +253,10 @@ func TestTwoFactorHTTP_challengeNeverAuthenticatesAndSessionIsNotAChallenge(t *t
 		{"POST", "/api/v1/me/2fa/enable", `{"code":"123456"}`},
 		{"POST", "/api/v1/me/2fa/disable", `{"password":"secreta123","code":"123456"}`},
 		{"POST", "/api/v1/salons", `{"name":"X","slug":"x"}`},
-		{"GET", "/api/v1/salons/" + h.salonID + "/settings", ""},
-		{"GET", "/api/v1/salons/" + h.salonID + "/members", ""},
-		{"GET", "/api/v1/salons/" + h.salonID + "/audit-log", ""},
-		{"GET", "/api/v1/salons/" + h.salonID + "/bookings", ""},
+		{"GET", "/api/v1/salons/" + h.SalonID + "/settings", ""},
+		{"GET", "/api/v1/salons/" + h.SalonID + "/members", ""},
+		{"GET", "/api/v1/salons/" + h.SalonID + "/audit-log", ""},
+		{"GET", "/api/v1/salons/" + h.SalonID + "/bookings", ""},
 	}
 	for _, rt := range routes {
 		wantErr(t, h.do(rt.method, rt.path, rt.body, ch), 401, "token inválido")
@@ -269,7 +271,7 @@ func TestTwoFactorHTTP_challengeNeverAuthenticatesAndSessionIsNotAChallenge(t *t
 	wantErr(t, h.login2fa(h.session, h.code(sec, 0)), 401, msgChallenge)
 	// Una sesión con typ:"session" explícito (válida como sesión) tampoco es un desafío.
 	explicit, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": h.userID, "typ": "session", "exp": time.Now().Add(time.Hour).Unix(),
+		"sub": h.UserID, "typ": "session", "exp": time.Now().Add(time.Hour).Unix(),
 	}).SignedString([]byte("test-secret"))
 	if w := h.do("GET", "/api/v1/me", "", explicit); w.Code != 200 {
 		t.Errorf("typ:session debe valer como sesión: %d", w.Code)
@@ -277,10 +279,10 @@ func TestTwoFactorHTTP_challengeNeverAuthenticatesAndSessionIsNotAChallenge(t *t
 	wantErr(t, h.login2fa(explicit, h.code(sec, 0)), 401, msgChallenge)
 	// Desafío vencido, de otra firma, basura, vacío: el mismo 401 uniforme.
 	expired, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": h.userID, "typ": "2fa", "exp": time.Now().Add(-time.Second).Unix(),
+		"sub": h.UserID, "typ": "2fa", "exp": time.Now().Add(-time.Second).Unix(),
 	}).SignedString([]byte("test-secret"))
 	forged, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": h.userID, "typ": "2fa", "exp": time.Now().Add(time.Minute).Unix(),
+		"sub": h.UserID, "typ": "2fa", "exp": time.Now().Add(time.Minute).Unix(),
 	}).SignedString([]byte("otra-clave"))
 	for _, bad := range []string{expired, forged, "basura", ""} {
 		wantErr(t, h.login2fa(bad, h.code(sec, 0)), 401, msgChallenge)
@@ -308,14 +310,14 @@ func TestTwoFactorHTTP_login2faIssuesSessionToken(t *testing.T) {
 	if w := h.do("GET", "/api/v1/me", "", tok); w.Code != 200 {
 		t.Fatalf("GET /me con el token de login/2fa: %d", w.Code)
 	}
-	if w := h.do("GET", "/api/v1/salons/"+h.salonID+"/settings", "", tok); w.Code != 200 {
+	if w := h.do("GET", "/api/v1/salons/"+h.SalonID+"/settings", "", tok); w.Code != 200 {
 		t.Fatalf("ruta del panel: %d %s", w.Code, w.Body.String())
 	}
 	wantErr(t, h.do("GET", "/api/v1/me", "", ch), 401, "token inválido")
 	// Anti-replay: el mismo código otra vez falla con el mismo 401.
 	wantErr(t, h.login2fa(ch, h.code(sec, 0)), 401, msgChallenge)
 	// Con espacios en el medio (se pega «123 456»).
-	h.clock.Add(31 * time.Second)
+	h.Clock.Add(31 * time.Second)
 	c := h.code(sec, 0)
 	if w := h.login2fa(ch, c[:3]+" "+c[3:]); w.Code != 200 {
 		t.Fatalf("código con espacio: %d %s", w.Code, w.Body.String())
@@ -351,7 +353,7 @@ func TestTwoFactorHTTP_login2faLockout(t *testing.T) {
 	// Y la contraseña buena sigue dando el desafío (el bloqueo es del segundo paso).
 	h.challenge(t)
 	// A los 15 minutos se libera.
-	h.clock.Add(16 * time.Minute)
+	h.Clock.Add(16 * time.Minute)
 	if w := h.login2fa(ch, h.code(sec, 0)); w.Code != 200 {
 		t.Fatalf("liberado: %d %s", w.Code, w.Body.String())
 	}
@@ -433,12 +435,12 @@ func TestTwoFactorHTTP_statusSetupEnableFlow(t *testing.T) {
 	if w := h.do("GET", "/api/v1/me/2fa", "", h.session); strings.TrimSpace(w.Body.String()) != `{"enabled":false}` {
 		t.Fatalf("un código malo no activa: %s", w.Body.String())
 	}
-	if len(h.audit.rows) != 0 {
+	if len(h.Audit.Rows) != 0 {
 		t.Fatal("sin activar no hay auditoría")
 	}
 	// Con el código del secreto VIEJO (reemplazado) tampoco.
 	old, _ := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(secret)
-	if domain.TOTPCode(old, domain.TOTPStepAt(h.clock.Now()), 6) != h.code(sec2, 0) {
+	if domain.TOTPCode(old, domain.TOTPStepAt(h.Clock.Now()), 6) != h.code(sec2, 0) {
 		wantErr(t, h.do("POST", "/api/v1/me/2fa/enable", `{"code":"`+h.code(old, 0)+`"}`, h.session), 400, msgBadCode)
 	}
 	// Bien.
@@ -491,7 +493,7 @@ func TestTwoFactorHTTP_disable(t *testing.T) {
 	if w := h.do("GET", "/api/v1/me/2fa", "", h.session); strings.TrimSpace(w.Body.String()) != `{"enabled":true}` {
 		t.Fatalf("sigue activado: %s", w.Body.String())
 	}
-	if len(h.audit.rows) != 0 {
+	if len(h.Audit.Rows) != 0 {
 		t.Fatal("sin desactivar no hay auditoría")
 	}
 	// Bien, con un código de recuperación: 204 sin cuerpo.
@@ -502,7 +504,7 @@ func TestTwoFactorHTTP_disable(t *testing.T) {
 	if w := h.do("GET", "/api/v1/me/2fa", "", h.session); strings.TrimSpace(w.Body.String()) != `{"enabled":false}` {
 		t.Fatalf("desactivado: %s", w.Body.String())
 	}
-	if _, ok := h.repo.rows[h.userID]; ok || len(h.repo.codes[h.userID]) != 0 {
+	if _, ok := h.repo.Rows[h.UserID]; ok || len(h.repo.Codes[h.UserID]) != 0 {
 		t.Error("se borran el secreto y los códigos")
 	}
 	// El login vuelve a ser el de siempre.
@@ -564,34 +566,34 @@ func TestTwoFactorHTTP_auditEnabledAndDisabled(t *testing.T) {
 	if w := h.do("POST", "/api/v1/me/2fa/enable", `{"code":"`+h.code(sec, 0)+`"}`, h.session); w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
-	if len(h.audit.rows) != 1 {
-		t.Fatalf("un evento por salón activo: %+v", h.audit.rows)
+	if len(h.Audit.Rows) != 1 {
+		t.Fatalf("un evento por salón activo: %+v", h.Audit.Rows)
 	}
-	ev := h.audit.rows[0]
-	if ev.Action != "auth.2fa_enabled" || ev.SalonID != h.salonID || ev.ActorUserID != h.userID || ev.EntityID != "" {
+	ev := h.Audit.Rows[0]
+	if ev.Action != "auth.2fa_enabled" || ev.SalonID != h.SalonID || ev.ActorUserID != h.UserID || ev.EntityID != "" {
 		t.Errorf("evento: %+v", ev)
 	}
-	h.clock.Add(time.Minute)
+	h.Clock.Add(time.Minute)
 	if w := h.do("POST", "/api/v1/me/2fa/disable", `{"password":"secreta123","code":"`+h.code(sec, 1)+`"}`, h.session); w.Code != 204 {
 		t.Fatalf("disable: %d %s", w.Code, w.Body.String())
 	}
-	if len(h.audit.rows) != 2 || h.audit.rows[1].Action != "auth.2fa_disabled" || h.audit.rows[1].SalonID != h.salonID {
-		t.Errorf("eventos: %+v", h.audit.rows)
+	if len(h.Audit.Rows) != 2 || h.Audit.Rows[1].Action != "auth.2fa_disabled" || h.Audit.Rows[1].SalonID != h.SalonID {
+		t.Errorf("eventos: %+v", h.Audit.Rows)
 	}
 }
 
 func TestTwoFactorHTTP_auditFailureDoesNotBreakRequest(t *testing.T) {
 	h := newTFHTTP(t)
-	h.audit.appendErr = errAuditDownHTTP
+	h.Audit.AppendErr = errAuditDownHTTP
 	sec := h.setup(t)
 	if w := h.do("POST", "/api/v1/me/2fa/enable", `{"code":"`+h.code(sec, 0)+`"}`, h.session); w.Code != 200 {
 		t.Fatalf("enable con la auditoría caída: %d %s", w.Code, w.Body.String())
 	}
-	h.clock.Add(time.Minute)
+	h.Clock.Add(time.Minute)
 	if w := h.do("POST", "/api/v1/me/2fa/disable", `{"password":"secreta123","code":"`+h.code(sec, 1)+`"}`, h.session); w.Code != 204 {
 		t.Fatalf("disable con la auditoría caída: %d %s", w.Code, w.Body.String())
 	}
-	if h.audit.appendCalls == 0 {
+	if h.Audit.AppendCalls == 0 {
 		t.Error("tenía que intentar escribir")
 	}
 }
@@ -599,15 +601,15 @@ func TestTwoFactorHTTP_auditFailureDoesNotBreakRequest(t *testing.T) {
 // --- Límite por IP ----------------------------------------------------------------------------
 
 // La ruta nueva cuelga de /api/v1/auth/, así que el limitador por IP del
-// composition root (RateLimit(..., "/api/v1/auth/")) la cubre sin cambios.
+// composition root (httpapi.RateLimit(..., "/api/v1/auth/")) la cubre sin cambios.
 func TestTwoFactorHTTP_ipRateLimitCoversLogin2fa(t *testing.T) {
 	h := newTFHTTP(t)
 	r := gin.New()
-	r.Use(RateLimit(3, time.Minute, "/api/v1/auth/"))
-	RegisterRoutes(r, h.d)
+	r.Use(httpapi.RateLimit(3, time.Minute, "/api/v1/auth/"))
+	httpapi.RegisterRoutes(r, h.d)
 	last := 0
 	for i := 0; i < 5; i++ {
-		w := doReq(r, "POST", "/api/v1/auth/login/2fa", `{"challenge":"x","code":"1"}`, "")
+		w := httpkit.Do(r, "POST", "/api/v1/auth/login/2fa", `{"challenge":"x","code":"1"}`, "")
 		if i < 3 && w.Code == 429 {
 			t.Fatalf("el pedido %d no debía limitarse", i+1)
 		}

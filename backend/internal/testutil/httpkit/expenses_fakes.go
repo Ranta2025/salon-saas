@@ -1,31 +1,30 @@
-package httpapi
+package httpkit
 
 import (
-	"sort"
-	"time"
-
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"sort"
+	"time"
 )
 
 // Fakes de gastos y ganancia neta (F3b) para el contrato HTTP: misma semántica
 // que pgstore (scope por salón, orden descendente, tope del listado) y datos
 // sembrables desde el test.
 
-type mExpenses struct {
-	byID map[string]domain.Expense
+type Expenses struct {
+	ByID map[string]domain.Expense
 }
 
-func newMExpenses() *mExpenses { return &mExpenses{byID: map[string]domain.Expense{}} }
+func NewExpenses() *Expenses { return &Expenses{ByID: map[string]domain.Expense{}} }
 
-func (f *mExpenses) Save(e domain.Expense) error {
-	f.byID[e.ID] = e
+func (f *Expenses) Save(e domain.Expense) error {
+	f.ByID[e.ID] = e
 	return nil
 }
 
-func (f *mExpenses) ListRange(salonID, from, to string, limit int) ([]domain.Expense, bool, error) {
+func (f *Expenses) ListRange(salonID, from, to string, limit int) ([]domain.Expense, bool, error) {
 	out := []domain.Expense{}
-	for _, e := range f.byID {
+	for _, e := range f.ByID {
 		if e.SalonID != salonID || e.SpentOn < from || e.SpentOn > to {
 			continue
 		}
@@ -46,42 +45,42 @@ func (f *mExpenses) ListRange(salonID, from, to string, limit int) ([]domain.Exp
 	return out, false, nil
 }
 
-func (f *mExpenses) FindByID(salonID, id string) (domain.Expense, error) {
-	e, ok := f.byID[id]
+func (f *Expenses) FindByID(salonID, id string) (domain.Expense, error) {
+	e, ok := f.ByID[id]
 	if !ok || e.SalonID != salonID {
 		return domain.Expense{}, domain.ErrNotFound
 	}
 	return e, nil
 }
 
-func (f *mExpenses) Update(e domain.Expense) error {
-	cur, ok := f.byID[e.ID]
+func (f *Expenses) Update(e domain.Expense) error {
+	cur, ok := f.ByID[e.ID]
 	if !ok || cur.SalonID != e.SalonID {
 		return domain.ErrNotFound
 	}
-	f.byID[e.ID] = e
+	f.ByID[e.ID] = e
 	return nil
 }
 
-func (f *mExpenses) Delete(salonID, id string) error {
-	e, ok := f.byID[id]
+func (f *Expenses) Delete(salonID, id string) error {
+	e, ok := f.ByID[id]
 	if !ok || e.SalonID != salonID {
 		return domain.ErrNotFound
 	}
-	delete(f.byID, id)
+	delete(f.ByID, id)
 	return nil
 }
 
-var _ ports.ExpenseRepository = (*mExpenses)(nil)
+var _ ports.ExpenseRepository = (*Expenses)(nil)
 
-// mProfit devuelve la foto sembrada y no filtra: el recorte por día del período
+// Profit devuelve la foto sembrada y no filtra: el recorte por día del período
 // lo hace el dominio (que es lo que se prueba en el handler).
-type mProfit struct {
-	data domain.ProfitData
+type Profit struct {
+	Data domain.ProfitData
 }
 
-func (f *mProfit) DailyProfit(salonID, timezone string, from, to time.Time) (domain.ProfitData, error) {
-	return f.data, nil
+func (f *Profit) DailyProfit(salonID, timezone string, from, to time.Time) (domain.ProfitData, error) {
+	return f.Data, nil
 }
 
-var _ ports.ProfitRepository = (*mProfit)(nil)
+var _ ports.ProfitRepository = (*Profit)(nil)

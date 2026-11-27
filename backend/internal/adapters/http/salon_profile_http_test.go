@@ -1,32 +1,34 @@
-package httpapi
+package httpapi_test
 
 import (
 	"net/http"
-	"strings"
-	"testing"
-
-	"github.com/gin-gonic/gin"
+	httpapi "salon-saas/internal/adapters/http"
 	"salon-saas/internal/adapters/security"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	httpkit "salon-saas/internal/testutil/httpkit"
+	"strings"
+	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 // mprofiles imita a pgstore.SalonProfiles: nombre y slug salen del fake de
 // salones (la misma fuente que FindBySlug), los cinco datos viven acá, el slug no
 // se escribe y un salón inexistente es ErrNotFound.
 type mprofiles struct {
-	salons *ms
-	rows   map[string]domain.SalonProfile
-	saves  int
+	Salons *httpkit.Salons
+	Rows   map[string]domain.SalonProfile
+	Saves  int
 }
 
 func (f *mprofiles) Profile(salonID string) (domain.SalonProfile, error) {
-	for _, s := range f.salons.bySlug {
+	for _, s := range f.Salons.BySlug {
 		if s.ID != salonID {
 			continue
 		}
-		p := f.rows[salonID]
+		p := f.Rows[salonID]
 		p.SalonID, p.Slug, p.Name = s.ID, s.Slug, s.Name
 		return p, nil
 	}
@@ -38,68 +40,68 @@ func (f *mprofiles) SaveProfile(p domain.SalonProfile) error {
 	if err != nil {
 		return err
 	}
-	if f.rows == nil {
-		f.rows = map[string]domain.SalonProfile{}
+	if f.Rows == nil {
+		f.Rows = map[string]domain.SalonProfile{}
 	}
 	p.Slug = cur.Slug
-	f.rows[p.SalonID] = p
-	s := f.salons.bySlug[cur.Slug]
+	f.Rows[p.SalonID] = p
+	s := f.Salons.BySlug[cur.Slug]
 	s.Name = p.Name
-	f.salons.bySlug[cur.Slug] = s
-	f.saves++
+	f.Salons.BySlug[cur.Slug] = s
+	f.Saves++
 	return nil
 }
 
 var _ ports.SalonProfileRepository = (*mprofiles)(nil)
 
 // f16World es el router con el perfil, la galería y la vidriera de F16 cableados
-// sobre los fakes del posEnv.
+// sobre los fakes del httpkit.Env.
 type f16World struct {
-	env      *posEnv
+	Env      *httpkit.Env
 	profiles *mprofiles
-	gallery  *mgallery
-	packages *mpkgCatalog
-	salon    string
+	Gallery  *mgallery
+	Packages *httpkit.PkgCatalog
+	Salon    string
 	other    string
 	// Tokens: dueño del salón, administración, recepción, profesional, ajeno.
-	owner, admin, recep, prof, outsider string
-	ownerID, profID                     string
+	Owner, Admin, Recep, Prof, Outsider string
+	OwnerID, ProfID                     string
 }
 
 func newF16World(t *testing.T) *f16World {
 	t.Helper()
-	env := newPOSEnv()
-	w := &f16World{env: env}
-	w.profiles = &mprofiles{salons: env.salons}
-	w.gallery = &mgallery{salons: env.salons, byID: map[string]domain.SalonPhoto{}}
-	w.packages = &mpkgCatalog{services: env.services}
-	env.d.Profile = SalonProfileHandler{
-		Profile:     app.SalonProfileService{Profiles: w.profiles, Memberships: env.mems},
-		Memberships: env.mems,
+	env := httpkit.NewPOSEnv()
+	w := &f16World{Env: env}
+	w.profiles = &mprofiles{Salons: env.Salons}
+	w.Gallery = &mgallery{Salons: env.Salons, byID: map[string]domain.SalonPhoto{}}
+	w.Packages = &httpkit.PkgCatalog{Services: env.Services}
+	env.Deps.Profile = httpapi.SalonProfileHandler{
+		Profile:     app.SalonProfileService{Profiles: w.profiles, Memberships: env.Mems},
+		Memberships: env.Mems,
 	}
-	env.d.Gallery = GalleryHandler{
+	env.Deps.Gallery = httpapi.GalleryHandler{
 		Gallery: app.GalleryService{
-			Gallery: w.gallery, Memberships: env.mems, Salons: env.salons, Photos: env.store, Images: mimages{},
+			Gallery: w.Gallery, Memberships: env.Mems, Salons: env.Salons, Photos: env.Storage, Images: httpkit.Images{},
 		},
-		Memberships: env.mems,
+		Memberships: env.Mems,
 	}
-	env.d.Public.Public = app.PublicSalonService{
-		Salons: env.salons, Services: env.services, Settings: env.settings, Hours: env.weekly,
-		Profiles: w.profiles, Staff: env.mems, Professionals: env.profs, Gallery: w.gallery, Packages: w.packages,
+	env.Deps.Public.Public = app.PublicSalonService{
+		Salons: env.Salons, Services: env.Services, Settings: env.Settings, Hours: env.Weekly,
+		Profiles: w.profiles, Staff: env.Mems, Professionals: env.Professionals, Gallery: w.Gallery, Packages: w.Packages,
 	}
-	env.r = gin.New()
-	RegisterRoutes(env.r, env.d)
+	env.Router = gin.New()
+	httpapi.RegisterRoutes(env.Router, env.Deps)
 	var id string
-	w.owner, w.ownerID = w.fastUser(t, "owner-f16@mail.com")
-	w.salon = env.salon(t, w.owner, "f16-uno")
-	w.admin, id = w.fastUser(t, "admin-f16@mail.com")
-	seedRole(t, env, w.salon, id, domain.RoleAdmin)
-	w.recep, id = w.fastUser(t, "recep-f16@mail.com")
-	seedRole(t, env, w.salon, id, domain.RoleReception)
-	w.prof, w.profID = w.fastUser(t, "prof-f16@mail.com")
-	seedRole(t, env, w.salon, w.profID, domain.RoleProfessional)
-	w.outsider, _ = w.fastUser(t, "other-f16@mail.com")
-	w.other = env.salon(t, w.outsider, "f16-dos")
+	w.Owner, w.OwnerID = w.fastUser(t, "owner-f16@mail.com")
+	w.Salon = env.Salon(t, w.Owner, "f16-uno")
+	w.Admin, id = w.fastUser(t, "admin-f16@mail.com")
+	httpkit.SeedRole(t, env, w.Salon, id, domain.RoleAdmin)
+	w.Recep, id = w.fastUser(t, "recep-f16@mail.com")
+	httpkit.SeedRole(t, env, w.Salon, id, domain.RoleReception)
+	w.Prof, w.ProfID = w.fastUser(t, "prof-f16@mail.com")
+	httpkit.SeedRole(t, env, w.Salon, w.ProfID, domain.RoleProfessional)
+	w.Outsider, _ = w.fastUser(t, "other-f16@mail.com")
+	w.other = env.Salon(t, w.Outsider, "f16-dos")
 	return w
 }
 
@@ -110,7 +112,7 @@ func newF16World(t *testing.T) *f16World {
 func (w *f16World) fastUser(t *testing.T, email string) (string, string) {
 	t.Helper()
 	u := domain.User{ID: domain.NewID(), Name: email, Email: email, PasswordHash: "x"}
-	if err := w.env.users.Save(u); err != nil {
+	if err := w.Env.Users.Save(u); err != nil {
 		t.Fatal(err)
 	}
 	tok, err := security.JWTIssuer{Secret: "test-secret"}.Issue(u.ID)
@@ -120,7 +122,7 @@ func (w *f16World) fastUser(t *testing.T, email string) (string, string) {
 	return tok, u.ID
 }
 
-func (w *f16World) profilePath() string { return "/api/v1/salons/" + w.salon + "/profile" }
+func (w *f16World) profilePath() string { return "/api/v1/salons/" + w.Salon + "/profile" }
 
 const fullProfileBody = `{"name":"Navajas de Oro","description":"Barbería clásica","address":"Calle 1 #23","phone":"+52 55","email":"Hola@Navajas.com","instagram":"navajas.oro"}`
 
@@ -128,13 +130,13 @@ const fullProfileBody = `{"name":"Navajas de Oro","description":"Barbería clás
 // cargar salen como null.
 func TestProfile_Get_shapeAndRoles(t *testing.T) {
 	w := newF16World(t)
-	for name, tok := range map[string]string{"owner": w.owner, "admin": w.admin, "recep": w.recep, "prof": w.prof} {
-		r := doReq(w.env.r, "GET", w.profilePath(), "", tok)
+	for name, tok := range map[string]string{"owner": w.Owner, "admin": w.Admin, "recep": w.Recep, "prof": w.Prof} {
+		r := httpkit.Do(w.Env.Router, "GET", w.profilePath(), "", tok)
 		if r.Code != http.StatusOK {
 			t.Fatalf("%s: %d %s", name, r.Code, r.Body.String())
 		}
 		var got map[string]any
-		mustJSON(t, r.Body.Bytes(), &got)
+		httpkit.MustJSON(t, r.Body.Bytes(), &got)
 		if strings.Join(keysOf(got), ",") != "address,description,email,instagram,name,phone,slug" {
 			t.Fatalf("%s: claves %v", name, keysOf(got))
 		}
@@ -144,10 +146,10 @@ func TestProfile_Get_shapeAndRoles(t *testing.T) {
 		}
 	}
 	// Sin token 401; ajeno (miembro de otro salón) 403; salón inexistente 403.
-	if r := doReq(w.env.r, "GET", w.profilePath(), "", ""); r.Code != http.StatusUnauthorized {
+	if r := httpkit.Do(w.Env.Router, "GET", w.profilePath(), "", ""); r.Code != http.StatusUnauthorized {
 		t.Fatalf("sin token: %d", r.Code)
 	}
-	if r := doReq(w.env.r, "GET", w.profilePath(), "", w.outsider); r.Code != http.StatusForbidden {
+	if r := httpkit.Do(w.Env.Router, "GET", w.profilePath(), "", w.Outsider); r.Code != http.StatusForbidden {
 		t.Fatalf("ajeno: %d", r.Code)
 	}
 }
@@ -156,12 +158,12 @@ func TestProfile_Get_shapeAndRoles(t *testing.T) {
 func TestProfile_Put_replacesAndIgnoresSlug(t *testing.T) {
 	w := newF16World(t)
 	body := strings.Replace(fullProfileBody, `{"name"`, `{"slug":"hackeado","name"`, 1)
-	r := doReq(w.env.r, "PUT", w.profilePath(), body, w.admin)
+	r := httpkit.Do(w.Env.Router, "PUT", w.profilePath(), body, w.Admin)
 	if r.Code != http.StatusOK {
 		t.Fatalf("put: %d %s", r.Code, r.Body.String())
 	}
 	var got map[string]any
-	mustJSON(t, r.Body.Bytes(), &got)
+	httpkit.MustJSON(t, r.Body.Bytes(), &got)
 	want := map[string]any{"name": "Navajas de Oro", "slug": "f16-uno", "description": "Barbería clásica", "address": "Calle 1 #23",
 		"phone": "+52 55", "email": "hola@navajas.com", "instagram": "navajas.oro"}
 	for k, v := range want {
@@ -170,19 +172,19 @@ func TestProfile_Put_replacesAndIgnoresSlug(t *testing.T) {
 		}
 	}
 	// El GET siguiente lo ve igual y el slug público sigue siendo el original.
-	r = doReq(w.env.r, "GET", w.profilePath(), "", w.recep)
+	r = httpkit.Do(w.Env.Router, "GET", w.profilePath(), "", w.Recep)
 	var again map[string]any
-	mustJSON(t, r.Body.Bytes(), &again)
+	httpkit.MustJSON(t, r.Body.Bytes(), &again)
 	if again["name"] != "Navajas de Oro" || again["slug"] != "f16-uno" {
 		t.Fatalf("get: %v", again)
 	}
-	if _, ok := w.env.salons.bySlug["hackeado"]; ok {
+	if _, ok := w.Env.Salons.BySlug["hackeado"]; ok {
 		t.Fatal("el slug no se edita")
 	}
 	// null explícito borra el dato; "" también.
-	r = doReq(w.env.r, "PUT", w.profilePath(), `{"name":"X","description":null,"address":"","phone":null,"email":null,"instagram":null}`, w.owner)
+	r = httpkit.Do(w.Env.Router, "PUT", w.profilePath(), `{"name":"X","description":null,"address":"","phone":null,"email":null,"instagram":null}`, w.Owner)
 	var cleared map[string]any
-	mustJSON(t, r.Body.Bytes(), &cleared)
+	httpkit.MustJSON(t, r.Body.Bytes(), &cleared)
 	if r.Code != http.StatusOK || cleared["description"] != nil || cleared["address"] != nil || cleared["name"] != "X" {
 		t.Fatalf("null/vacío: %d %v", r.Code, cleared)
 	}
@@ -192,18 +194,18 @@ func TestProfile_Put_replacesAndIgnoresSlug(t *testing.T) {
 // (lección de F8): un body roto da 403 a quien no puede, no 400.
 func TestProfile_Put_permissionBeforeBody(t *testing.T) {
 	w := newF16World(t)
-	for name, tok := range map[string]string{"recep": w.recep, "prof": w.prof, "outsider": w.outsider} {
+	for name, tok := range map[string]string{"recep": w.Recep, "prof": w.Prof, "outsider": w.Outsider} {
 		for _, body := range []string{fullProfileBody, `{"name":`, `no es json`, ``} {
-			if r := doReq(w.env.r, "PUT", w.profilePath(), body, tok); r.Code != http.StatusForbidden {
+			if r := httpkit.Do(w.Env.Router, "PUT", w.profilePath(), body, tok); r.Code != http.StatusForbidden {
 				t.Fatalf("%s con %q: %d %s", name, body, r.Code, r.Body.String())
 			}
 		}
 	}
-	if r := doReq(w.env.r, "PUT", w.profilePath(), fullProfileBody, ""); r.Code != http.StatusUnauthorized {
+	if r := httpkit.Do(w.Env.Router, "PUT", w.profilePath(), fullProfileBody, ""); r.Code != http.StatusUnauthorized {
 		t.Fatalf("sin token: %d", r.Code)
 	}
-	if w.profiles.saves != 0 {
-		t.Fatalf("un rechazo no escribe: %d", w.profiles.saves)
+	if w.profiles.Saves != 0 {
+		t.Fatalf("un rechazo no escribe: %d", w.profiles.Saves)
 	}
 }
 
@@ -220,13 +222,13 @@ func TestProfile_Put_requiresEverySixKeys(t *testing.T) {
 			}
 		}
 		body := `{` + strings.Join(parts, ",") + `}`
-		r := doReq(w.env.r, "PUT", w.profilePath(), body, w.owner)
+		r := httpkit.Do(w.Env.Router, "PUT", w.profilePath(), body, w.Owner)
 		wantHTTP(t, r, http.StatusBadRequest, "Faltan datos del salón: nombre, descripción, dirección, teléfono, email e instagram")
 	}
-	r := doReq(w.env.r, "PUT", w.profilePath(), `{}`, w.owner)
+	r := httpkit.Do(w.Env.Router, "PUT", w.profilePath(), `{}`, w.Owner)
 	wantHTTP(t, r, http.StatusBadRequest, "Faltan datos del salón: nombre, descripción, dirección, teléfono, email e instagram")
-	if w.profiles.saves != 0 {
-		t.Fatalf("un 400 no escribe: %d", w.profiles.saves)
+	if w.profiles.Saves != 0 {
+		t.Fatalf("un 400 no escribe: %d", w.profiles.Saves)
 	}
 }
 
@@ -262,7 +264,7 @@ func TestProfile_Put_validationsWriteNothing(t *testing.T) {
 		{"instagram largo", "instagram", q(strings.Repeat("a", 61)), domain.MsgSalonInstagramLong},
 	}
 	for _, c := range cases {
-		r := doReq(w.env.r, "PUT", w.profilePath(), build(c.field, c.value), w.owner)
+		r := httpkit.Do(w.Env.Router, "PUT", w.profilePath(), build(c.field, c.value), w.Owner)
 		if r.Code != http.StatusBadRequest {
 			t.Fatalf("%s: %d %s", c.name, r.Code, r.Body.String())
 		}
@@ -271,13 +273,13 @@ func TestProfile_Put_validationsWriteNothing(t *testing.T) {
 		}
 	}
 	// Tipos equivocados: 400 «body inválido».
-	if r := doReq(w.env.r, "PUT", w.profilePath(), build("phone", `5`), w.owner); r.Code != http.StatusBadRequest {
+	if r := httpkit.Do(w.Env.Router, "PUT", w.profilePath(), build("phone", `5`), w.Owner); r.Code != http.StatusBadRequest {
 		t.Fatalf("número en un texto: %d", r.Code)
 	}
-	if w.profiles.saves != 0 {
-		t.Fatalf("un 400 no escribe: %d", w.profiles.saves)
+	if w.profiles.Saves != 0 {
+		t.Fatalf("un 400 no escribe: %d", w.profiles.Saves)
 	}
-	got, _ := w.profiles.Profile(w.salon)
+	got, _ := w.profiles.Profile(w.Salon)
 	if got.Name != "Salón f16-uno" || got.Address != "" {
 		t.Fatalf("nada cambió: %+v", got)
 	}
@@ -286,14 +288,14 @@ func TestProfile_Put_validationsWriteNothing(t *testing.T) {
 // Tenant: el dueño de otro salón no puede escribir (ni leer) este perfil.
 func TestProfile_tenantIsolation(t *testing.T) {
 	w := newF16World(t)
-	if r := doReq(w.env.r, "PUT", w.profilePath(), fullProfileBody, w.outsider); r.Code != http.StatusForbidden {
+	if r := httpkit.Do(w.Env.Router, "PUT", w.profilePath(), fullProfileBody, w.Outsider); r.Code != http.StatusForbidden {
 		t.Fatalf("put ajeno: %d", r.Code)
 	}
 	otherPath := "/api/v1/salons/" + w.other + "/profile"
-	if r := doReq(w.env.r, "PUT", otherPath, fullProfileBody, w.outsider); r.Code != http.StatusOK {
+	if r := httpkit.Do(w.Env.Router, "PUT", otherPath, fullProfileBody, w.Outsider); r.Code != http.StatusOK {
 		t.Fatalf("put propio: %d", r.Code)
 	}
-	mine, _ := w.profiles.Profile(w.salon)
+	mine, _ := w.profiles.Profile(w.Salon)
 	if mine.Name == "Navajas de Oro" {
 		t.Fatalf("el perfil de f16-uno cambió")
 	}
@@ -301,33 +303,33 @@ func TestProfile_tenantIsolation(t *testing.T) {
 
 // ---- D2: descripción de servicio ---------------------------------------
 
-func (w *f16World) servicesPath() string { return "/api/v1/salons/" + w.salon + "/services" }
+func (w *f16World) servicesPath() string { return "/api/v1/salons/" + w.Salon + "/services" }
 
 func TestServices_description(t *testing.T) {
 	w := newF16World(t)
-	r := doReq(w.env.r, "POST", w.servicesPath(), `{"name":"Corte","duration_min":30,"price_cents":1000,"commission_pct":10,"description":"Corte clásico"}`, w.owner)
+	r := httpkit.Do(w.Env.Router, "POST", w.servicesPath(), `{"name":"Corte","duration_min":30,"price_cents":1000,"commission_pct":10,"description":"Corte clásico"}`, w.Owner)
 	if r.Code != http.StatusCreated {
 		t.Fatalf("alta: %d %s", r.Code, r.Body.String())
 	}
 	var created map[string]any
-	mustJSON(t, r.Body.Bytes(), &created)
+	httpkit.MustJSON(t, r.Body.Bytes(), &created)
 	if created["description"] != "Corte clásico" {
 		t.Fatalf("alta devuelve la descripción: %v", created)
 	}
 	id := created["id"].(string)
 
 	// Alta SIN la clave (cliente anterior a F16): description null y todo lo demás igual.
-	r = doReq(w.env.r, "POST", w.servicesPath(), `{"name":"Barba","duration_min":20,"price_cents":500,"commission_pct":0}`, w.owner)
+	r = httpkit.Do(w.Env.Router, "POST", w.servicesPath(), `{"name":"Barba","duration_min":20,"price_cents":500,"commission_pct":0}`, w.Owner)
 	var plain map[string]any
-	mustJSON(t, r.Body.Bytes(), &plain)
+	httpkit.MustJSON(t, r.Body.Bytes(), &plain)
 	if r.Code != http.StatusCreated || plain["description"] != nil || plain["price_cents"].(float64) != 500 {
 		t.Fatalf("alta sin descripción: %d %v", r.Code, plain)
 	}
 
 	put := func(body string) (int, map[string]any) {
-		r := doReq(w.env.r, "PUT", w.servicesPath()+"/"+id, body, w.owner)
+		r := httpkit.Do(w.Env.Router, "PUT", w.servicesPath()+"/"+id, body, w.Owner)
 		var out map[string]any
-		mustJSON(t, r.Body.Bytes(), &out)
+		httpkit.MustJSON(t, r.Body.Bytes(), &out)
 		return r.Code, out
 	}
 	// PUT sin la clave: se CONSERVA la descripción (no se borra).
@@ -349,16 +351,16 @@ func TestServices_description(t *testing.T) {
 	// Inválida: 400 con mensaje y no escribe.
 	put(`{"name":"Corte","duration_min":30,"price_cents":1200,"commission_pct":10,"description":"Queda"}`)
 	for _, bad := range []string{`"` + strings.Repeat("a", 301) + `"`, `"a\nb"`, `"a\u0000b"`} {
-		r := doReq(w.env.r, "PUT", w.servicesPath()+"/"+id, `{"name":"Corte","duration_min":30,"price_cents":9999,"commission_pct":10,"description":`+bad+`}`, w.owner)
+		r := httpkit.Do(w.Env.Router, "PUT", w.servicesPath()+"/"+id, `{"name":"Corte","duration_min":30,"price_cents":9999,"commission_pct":10,"description":`+bad+`}`, w.Owner)
 		if r.Code != http.StatusBadRequest {
 			t.Fatalf("%q: %d %s", bad, r.Code, r.Body.String())
 		}
 	}
-	list := doReq(w.env.r, "GET", w.servicesPath(), "", w.recep)
+	list := httpkit.Do(w.Env.Router, "GET", w.servicesPath(), "", w.Recep)
 	var l struct {
 		Services []map[string]any `json:"services"`
 	}
-	mustJSON(t, list.Body.Bytes(), &l)
+	httpkit.MustJSON(t, list.Body.Bytes(), &l)
 	var corte map[string]any
 	for _, s := range l.Services {
 		if s["id"] == id {
@@ -369,7 +371,7 @@ func TestServices_description(t *testing.T) {
 		t.Fatalf("un 400 no escribe y la lista trae la descripción: %v", corte)
 	}
 	// Los permisos no cambiaron: recepción no edita.
-	if r := doReq(w.env.r, "PUT", w.servicesPath()+"/"+id, `{"name":"Corte","duration_min":30,"price_cents":1,"commission_pct":10,"description":"x"}`, w.recep); r.Code != http.StatusForbidden {
+	if r := httpkit.Do(w.Env.Router, "PUT", w.servicesPath()+"/"+id, `{"name":"Corte","duration_min":30,"price_cents":1,"commission_pct":10,"description":"x"}`, w.Recep); r.Code != http.StatusForbidden {
 		t.Fatalf("recepción: %d", r.Code)
 	}
 }

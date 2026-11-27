@@ -1,15 +1,17 @@
-package httpapi
+package httpapi_test
 
 import (
 	"net/http"
 	"net/http/httptest"
+	httpapi "salon-saas/internal/adapters/http"
+	"salon-saas/internal/app"
+	"salon-saas/internal/domain"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"sort"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
-	"salon-saas/internal/domain"
 )
 
 // Contrato HTTP de la nómina (F3.2 del contrato F3): las cuatro rutas, los
@@ -21,53 +23,53 @@ var payrollNow = time.Date(2026, 3, 20, 18, 0, 0, 0, time.UTC)
 
 // payEnv es el router completo con la nómina cableada sobre los fakes.
 type payEnv struct {
-	env    *posEnv
+	Env    *httpkit.Env
 	r      *gin.Engine
-	body   *mPayModels
-	sales  *mPayrollSales
-	salon  string
+	Body   *httpkit.PayModels
+	Sales  *httpkit.PayrollSales
+	Salon  string
 	otros  string
-	users  map[string]string // email -> userID
+	Users  map[string]string // email -> userID
 	tokens map[string]string // email -> token
 }
 
 func newPayEnv(t *testing.T) *payEnv {
 	t.Helper()
-	env := newPOSEnv()
-	pay := &mPayModels{mems: env.mems, users: env.users, rows: map[string]domain.MemberPay{}}
-	sales := &mPayrollSales{}
-	d := env.d
-	d.Payroll = PayrollHandler{
-		PayModels: app.PayModelService{Pay: pay, Memberships: env.mems},
+	env := httpkit.NewPOSEnv()
+	pay := &httpkit.PayModels{Mems: env.Mems, Users: env.Users, Rows: map[string]domain.MemberPay{}}
+	sales := &httpkit.PayrollSales{}
+	d := env.Deps
+	d.Payroll = httpapi.PayrollHandler{
+		PayModels: app.PayModelService{Pay: pay, Memberships: env.Mems},
 		Payroll: app.PayrollService{
-			Pay: pay, Sales: sales, Memberships: env.mems, Settings: env.settings,
+			Pay: pay, Sales: sales, Memberships: env.Mems, Settings: env.Settings,
 			Now: func() time.Time { return payrollNow },
 		},
-		Memberships: env.mems,
+		Memberships: env.Mems,
 	}
 	r := gin.New()
-	RegisterRoutes(r, d)
+	httpapi.RegisterRoutes(r, d)
 
-	e := &payEnv{env: env, r: r, body: pay, sales: sales, users: map[string]string{}, tokens: map[string]string{}}
+	e := &payEnv{Env: env, r: r, Body: pay, Sales: sales, Users: map[string]string{}, tokens: map[string]string{}}
 	// Personas: dueña, administración, dos profesionales (una se dará de baja),
 	// recepción y el dueño de OTRO salón con su propia profesional.
 	for _, email := range []string{
 		"duena@pay.com", "admin@pay.com", "ana@pay.com", "beto@pay.com",
 		"recep@pay.com", "ajeno@pay.com", "carla@pay.com",
 	} {
-		tok, uid := env.register(t, email)
-		e.tokens[email], e.users[email] = tok, uid
+		tok, uid := env.Register(t, email)
+		e.tokens[email], e.Users[email] = tok, uid
 	}
-	e.salon = env.salon(t, e.tokens["duena@pay.com"], "nomina")
-	e.otros = env.salon(t, e.tokens["ajeno@pay.com"], "nomina-otra")
+	e.Salon = env.Salon(t, e.tokens["duena@pay.com"], "nomina")
+	e.otros = env.Salon(t, e.tokens["ajeno@pay.com"], "nomina-otra")
 	for _, m := range []domain.Membership{
-		{UserID: e.users["admin@pay.com"], SalonID: e.salon, Role: domain.RoleAdmin},
-		{UserID: e.users["ana@pay.com"], SalonID: e.salon, Role: domain.RoleProfessional, Attends: true},
-		{UserID: e.users["beto@pay.com"], SalonID: e.salon, Role: domain.RoleProfessional, Attends: true},
-		{UserID: e.users["recep@pay.com"], SalonID: e.salon, Role: domain.RoleReception},
-		{UserID: e.users["carla@pay.com"], SalonID: e.otros, Role: domain.RoleProfessional, Attends: true},
+		{UserID: e.Users["admin@pay.com"], SalonID: e.Salon, Role: domain.RoleAdmin},
+		{UserID: e.Users["ana@pay.com"], SalonID: e.Salon, Role: domain.RoleProfessional, Attends: true},
+		{UserID: e.Users["beto@pay.com"], SalonID: e.Salon, Role: domain.RoleProfessional, Attends: true},
+		{UserID: e.Users["recep@pay.com"], SalonID: e.Salon, Role: domain.RoleReception},
+		{UserID: e.Users["carla@pay.com"], SalonID: e.otros, Role: domain.RoleProfessional, Attends: true},
 	} {
-		if err := env.mems.Save(m); err != nil {
+		if err := env.Mems.Save(m); err != nil {
 			t.Fatalf("membership %s: %v", m.UserID, err)
 		}
 	}
@@ -77,14 +79,14 @@ func newPayEnv(t *testing.T) *payEnv {
 // deactivate marca la baja de una persona en el fake (como ended_at).
 func (e *payEnv) deactivate(t *testing.T, email string) {
 	t.Helper()
-	key := e.users[email] + "|" + e.salon
-	m, ok := e.env.mems.byKey[key]
+	key := e.Users[email] + "|" + e.Salon
+	m, ok := e.Env.Mems.ByKey[key]
 	if !ok {
 		t.Fatalf("%s no es miembro", email)
 	}
 	ended := payrollNow.Add(-48 * time.Hour)
 	m.EndedAt = &ended
-	e.env.mems.byKey[key] = m
+	e.Env.Mems.ByKey[key] = m
 }
 
 func (e *payEnv) url(salonID, path string) string {
@@ -93,7 +95,7 @@ func (e *payEnv) url(salonID, path string) string {
 
 func (e *payEnv) do(t *testing.T, method, path, body, email string) *httptest.ResponseRecorder {
 	t.Helper()
-	return doReq(e.r, method, path, body, e.tokens[email])
+	return httpkit.Do(e.r, method, path, body, e.tokens[email])
 }
 
 // keys devuelve el conjunto ordenado de claves de un objeto JSON: la forma de la
@@ -125,10 +127,10 @@ func sameKeys(t *testing.T, what string, got map[string]any, want ...string) {
 // Matriz de permisos de D7 sobre las CUATRO rutas.
 func TestHTTP_payroll_permisos_por_rol(t *testing.T) {
 	e := newPayEnv(t)
-	payModels := e.url(e.salon, "/pay-models")
-	payModel := e.url(e.salon, "/members/"+e.users["ana@pay.com"]+"/pay-model")
-	preview := e.url(e.salon, "/payroll/preview")
-	me := e.url(e.salon, "/payroll/me?kind=month&date=2026-03-10")
+	payModels := e.url(e.Salon, "/pay-models")
+	payModel := e.url(e.Salon, "/members/"+e.Users["ana@pay.com"]+"/pay-model")
+	preview := e.url(e.Salon, "/payroll/preview")
+	me := e.url(e.Salon, "/payroll/me?kind=month&date=2026-03-10")
 	putBody := `{"fixed_cents":1000,"fixed_period":"month","commission_enabled":true}`
 	prevBody := `{"kind":"month","date":"2026-03-10"}`
 
@@ -215,14 +217,14 @@ func TestHTTP_payroll_permisos_por_rol(t *testing.T) {
 			// donde son miembros del salón.
 			if c.want[path] == 403 && (c.rol == "recep@pay.com" || c.rol == "ana@pay.com") && path != me {
 				var out map[string]string
-				mustJSON(t, w.Body.Bytes(), &out)
+				httpkit.MustJSON(t, w.Body.Bytes(), &out)
 				if out["error"] != "sin permiso" {
 					t.Fatalf("%s %s: mensaje = %q", c.rol, path, out["error"])
 				}
 			}
 			if c.want[path] == 403 && path == me && c.rol == "recep@pay.com" {
 				var out map[string]string
-				mustJSON(t, w.Body.Bytes(), &out)
+				httpkit.MustJSON(t, w.Body.Bytes(), &out)
 				if out["error"] != "sin permiso" {
 					t.Fatalf("recepción en /me: mensaje = %q", out["error"])
 				}
@@ -240,7 +242,7 @@ func TestHTTP_payroll_permisos_por_rol(t *testing.T) {
 		if path == preview {
 			method, body = "POST", prevBody
 		}
-		if w := doReq(e.r, method, path, body, ""); w.Code != http.StatusUnauthorized {
+		if w := httpkit.Do(e.r, method, path, body, ""); w.Code != http.StatusUnauthorized {
 			t.Fatalf("sin token %s %s: %d", method, path, w.Code)
 		}
 	}
@@ -282,14 +284,14 @@ func TestHTTP_pay_models_listado(t *testing.T) {
 	e := newPayEnv(t)
 	e.deactivate(t, "beto@pay.com")
 
-	w := e.do(t, "GET", e.url(e.salon, "/pay-models"), "", "duena@pay.com")
+	w := e.do(t, "GET", e.url(e.Salon, "/pay-models"), "", "duena@pay.com")
 	if w.Code != http.StatusOK {
 		t.Fatalf("listar: %d %s", w.Code, w.Body.String())
 	}
 	var out struct {
 		PayModels []map[string]any `json:"pay_models"`
 	}
-	mustJSON(t, w.Body.Bytes(), &out)
+	httpkit.MustJSON(t, w.Body.Bytes(), &out)
 	if len(out.PayModels) != 5 {
 		t.Fatalf("esperaba los 5 miembros del salón, dio %d: %s", len(out.PayModels), w.Body.String())
 	}
@@ -300,17 +302,17 @@ func TestHTTP_pay_models_listado(t *testing.T) {
 		byUser[m["user_id"].(string)] = m
 	}
 	// La baja aparece con active=false y su nombre real.
-	beto := byUser[e.users["beto@pay.com"]]
+	beto := byUser[e.Users["beto@pay.com"]]
 	if beto == nil || beto["active"] != false || beto["name"] != "beto@pay.com" || beto["role"] != "professional" {
 		t.Fatalf("la baja debe listarse: %+v", beto)
 	}
 	// Sin fila: 0, month, comisión encendida.
-	ana := byUser[e.users["ana@pay.com"]]
+	ana := byUser[e.Users["ana@pay.com"]]
 	if ana["fixed_cents"] != float64(0) || ana["fixed_period"] != "month" || ana["commission_enabled"] != true {
 		t.Fatalf("default de D3: %+v", ana)
 	}
 	// Aislamiento: la profesional del otro salón NO está en la lista.
-	if _, ok := byUser[e.users["carla@pay.com"]]; ok {
+	if _, ok := byUser[e.Users["carla@pay.com"]]; ok {
 		t.Fatal("la lista no puede traer miembros de otro salón")
 	}
 
@@ -322,12 +324,12 @@ func TestHTTP_pay_models_listado(t *testing.T) {
 	var otro struct {
 		PayModels []map[string]any `json:"pay_models"`
 	}
-	mustJSON(t, wo.Body.Bytes(), &otro)
+	httpkit.MustJSON(t, wo.Body.Bytes(), &otro)
 	if len(otro.PayModels) != 2 {
 		t.Fatalf("el otro salón tiene 2 miembros, dio %d: %s", len(otro.PayModels), wo.Body.String())
 	}
 	for _, m := range otro.PayModels {
-		if m["user_id"] == e.users["ana@pay.com"] {
+		if m["user_id"] == e.Users["ana@pay.com"] {
 			t.Fatal("el otro salón no puede ver a Ana")
 		}
 	}
@@ -337,15 +339,15 @@ func TestHTTP_pay_models_listado(t *testing.T) {
 // es 404 y no escribe nada.
 func TestHTTP_pay_model_update(t *testing.T) {
 	e := newPayEnv(t)
-	ana := e.users["ana@pay.com"]
-	path := e.url(e.salon, "/members/"+ana+"/pay-model")
+	ana := e.Users["ana@pay.com"]
+	path := e.url(e.Salon, "/members/"+ana+"/pay-model")
 
 	w := e.do(t, "PUT", path, `{"fixed_cents":150000,"fixed_period":"fortnight","commission_enabled":false}`, "duena@pay.com")
 	if w.Code != http.StatusOK {
 		t.Fatalf("update: %d %s", w.Code, w.Body.String())
 	}
 	var got map[string]any
-	mustJSON(t, w.Body.Bytes(), &got)
+	httpkit.MustJSON(t, w.Body.Bytes(), &got)
 	sameKeys(t, "pay_model", got,
 		"user_id", "name", "role", "active", "fixed_cents", "fixed_period", "commission_enabled")
 	if got["user_id"] != ana || got["fixed_cents"] != float64(150000) ||
@@ -353,11 +355,11 @@ func TestHTTP_pay_model_update(t *testing.T) {
 		t.Fatalf("respuesta del update: %+v", got)
 	}
 	// Quedó guardado.
-	w = e.do(t, "GET", e.url(e.salon, "/pay-models"), "", "duena@pay.com")
+	w = e.do(t, "GET", e.url(e.Salon, "/pay-models"), "", "duena@pay.com")
 	var list struct {
 		PayModels []map[string]any `json:"pay_models"`
 	}
-	mustJSON(t, w.Body.Bytes(), &list)
+	httpkit.MustJSON(t, w.Body.Bytes(), &list)
 	for _, m := range list.PayModels {
 		if m["user_id"] == ana && m["fixed_cents"] != float64(150000) {
 			t.Fatalf("no quedó guardado: %+v", m)
@@ -365,13 +367,13 @@ func TestHTTP_pay_model_update(t *testing.T) {
 	}
 
 	// Una persona de OTRO salón: 404 (no existe para este salón).
-	carla := e.users["carla@pay.com"]
-	if w := e.do(t, "PUT", e.url(e.salon, "/members/"+carla+"/pay-model"),
+	carla := e.Users["carla@pay.com"]
+	if w := e.do(t, "PUT", e.url(e.Salon, "/members/"+carla+"/pay-model"),
 		`{"fixed_cents":1000,"fixed_period":"month","commission_enabled":true}`, "duena@pay.com"); w.Code != http.StatusNotFound {
 		t.Fatalf("persona de otro salón: %d %s", w.Code, w.Body.String())
 	}
 	// Y su modelo sigue siendo el default en SU salón.
-	if v := e.body.rows[payRowKey(e.otros, carla)]; v.FixedCents != 0 {
+	if v := e.Body.Rows[httpkit.PayRowKey(e.otros, carla)]; v.FixedCents != 0 {
 		t.Fatalf("no debía escribirse nada: %+v", v)
 	}
 }
@@ -380,8 +382,8 @@ func TestHTTP_pay_model_update(t *testing.T) {
 // desconocido, número no entero y persona que no es del salón.
 func TestHTTP_pay_model_errores(t *testing.T) {
 	e := newPayEnv(t)
-	ana := e.users["ana@pay.com"]
-	path := e.url(e.salon, "/members/"+ana+"/pay-model")
+	ana := e.Users["ana@pay.com"]
+	path := e.url(e.Salon, "/members/"+ana+"/pay-model")
 
 	cases := []struct{ name, body, want string }{
 		{"negativo", `{"fixed_cents":-1,"fixed_period":"month","commission_enabled":true}`,
@@ -397,7 +399,7 @@ func TestHTTP_pay_model_errores(t *testing.T) {
 			t.Fatalf("%s: %d %s", c.name, w.Code, w.Body.String())
 		}
 		var out map[string]string
-		mustJSON(t, w.Body.Bytes(), &out)
+		httpkit.MustJSON(t, w.Body.Bytes(), &out)
 		if out["error"] != c.want {
 			t.Fatalf("%s: mensaje = %q, esperaba %q", c.name, out["error"], c.want)
 		}
@@ -408,12 +410,12 @@ func TestHTTP_pay_model_errores(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("no entero: %d %s", w.Code, w.Body.String())
 	}
-	if v := e.body.rows[payRowKey(e.salon, ana)]; v.FixedCents != 0 {
+	if v := e.Body.Rows[httpkit.PayRowKey(e.Salon, ana)]; v.FixedCents != 0 {
 		t.Fatalf("nada debía escribirse: %+v", v)
 	}
 
 	// Una persona que no es del salón: 404.
-	if w := e.do(t, "PUT", e.url(e.salon, "/members/u-no-existe/pay-model"),
+	if w := e.do(t, "PUT", e.url(e.Salon, "/members/u-no-existe/pay-model"),
 		`{"fixed_cents":1000,"fixed_period":"month","commission_enabled":true}`, "duena@pay.com"); w.Code != http.StatusNotFound {
 		t.Fatalf("no miembro: %d %s", w.Code, w.Body.String())
 	}
@@ -423,26 +425,26 @@ func TestHTTP_pay_model_errores(t *testing.T) {
 // líneas (comisión, fijo, estimado) y los totales.
 func TestHTTP_payroll_preview(t *testing.T) {
 	e := newPayEnv(t)
-	ana, beto := e.users["ana@pay.com"], e.users["beto@pay.com"]
-	e.sales.add(e.salon, domain.PayrollSalesTotal{
+	ana, beto := e.Users["ana@pay.com"], e.Users["beto@pay.com"]
+	e.Sales.Add(e.Salon, domain.PayrollSalesTotal{
 		UserID: ana, Name: "ana@pay.com", SalesCount: 3, SalesTotalCents: 3499,
 		CommissionBase: 49990, Estimated: true,
 	})
-	e.sales.add(e.salon, domain.PayrollSalesTotal{
+	e.Sales.Add(e.Salon, domain.PayrollSalesTotal{
 		UserID: beto, Name: "beto@pay.com", SalesCount: 1, SalesTotalCents: 2000, CommissionBase: 20000,
 	})
 	// La dueña cobra un fijo mensual sin comisión.
-	if w := e.do(t, "PUT", e.url(e.salon, "/members/"+e.users["duena@pay.com"]+"/pay-model"),
+	if w := e.do(t, "PUT", e.url(e.Salon, "/members/"+e.Users["duena@pay.com"]+"/pay-model"),
 		`{"fixed_cents":100000,"fixed_period":"month","commission_enabled":false}`, "duena@pay.com"); w.Code != http.StatusOK {
 		t.Fatalf("modelo de la dueña: %d %s", w.Code, w.Body.String())
 	}
 
-	w := e.do(t, "POST", e.url(e.salon, "/payroll/preview"), `{"kind":"month","date":"2026-03-10"}`, "duena@pay.com")
+	w := e.do(t, "POST", e.url(e.Salon, "/payroll/preview"), `{"kind":"month","date":"2026-03-10"}`, "duena@pay.com")
 	if w.Code != http.StatusOK {
 		t.Fatalf("preview: %d %s", w.Code, w.Body.String())
 	}
 	var out map[string]any
-	mustJSON(t, w.Body.Bytes(), &out)
+	httpkit.MustJSON(t, w.Body.Bytes(), &out)
 	sameKeys(t, "preview", out, "period", "lines", "totals")
 
 	period := out["period"].(map[string]any)
@@ -462,7 +464,7 @@ func TestHTTP_payroll_preview(t *testing.T) {
 	}
 	// Orden: total desc y después nombre.
 	first := lines[0].(map[string]any)
-	if first["user_id"] != e.users["duena@pay.com"] || first["fixed_cents"] != float64(100000) ||
+	if first["user_id"] != e.Users["duena@pay.com"] || first["fixed_cents"] != float64(100000) ||
 		first["commission_cents"] != float64(0) || first["total_cents"] != float64(100000) {
 		t.Fatalf("línea de la dueña: %+v", first)
 	}
@@ -485,12 +487,12 @@ func TestHTTP_payroll_preview(t *testing.T) {
 	}
 
 	// Un período terminado sale con closed:true (febrero con «hoy» 20/3).
-	w = e.do(t, "POST", e.url(e.salon, "/payroll/preview"), `{"kind":"month","date":"2026-02-10"}`, "duena@pay.com")
+	w = e.do(t, "POST", e.url(e.Salon, "/payroll/preview"), `{"kind":"month","date":"2026-02-10"}`, "duena@pay.com")
 	if w.Code != http.StatusOK {
 		t.Fatalf("preview de febrero: %d %s", w.Code, w.Body.String())
 	}
 	var feb map[string]any
-	mustJSON(t, w.Body.Bytes(), &feb)
+	httpkit.MustJSON(t, w.Body.Bytes(), &feb)
 	if feb["period"].(map[string]any)["closed"] != true {
 		t.Fatalf("febrero debe estar cerrado: %+v", feb["period"])
 	}
@@ -499,27 +501,27 @@ func TestHTTP_payroll_preview(t *testing.T) {
 // GET /payroll/me: solo lo del que llama, con la misma forma del período.
 func TestHTTP_payroll_me(t *testing.T) {
 	e := newPayEnv(t)
-	ana, beto := e.users["ana@pay.com"], e.users["beto@pay.com"]
-	e.sales.add(e.salon, domain.PayrollSalesTotal{
+	ana, beto := e.Users["ana@pay.com"], e.Users["beto@pay.com"]
+	e.Sales.Add(e.Salon, domain.PayrollSalesTotal{
 		UserID: ana, Name: "ana@pay.com", SalesCount: 3, SalesTotalCents: 3499,
 		CommissionBase: 49990, Estimated: true,
 	})
 	// Beto vendió mucho más: sus números no pueden aparecer en la respuesta de Ana.
-	e.sales.add(e.salon, domain.PayrollSalesTotal{
+	e.Sales.Add(e.Salon, domain.PayrollSalesTotal{
 		UserID: beto, Name: "beto@pay.com", SalesCount: 9, SalesTotalCents: 900000, CommissionBase: 9000000,
 	})
 	// Y Ana tiene un modelo de pago suyo que tampoco se expone.
-	if w := e.do(t, "PUT", e.url(e.salon, "/members/"+ana+"/pay-model"),
+	if w := e.do(t, "PUT", e.url(e.Salon, "/members/"+ana+"/pay-model"),
 		`{"fixed_cents":0,"fixed_period":"month","commission_enabled":true}`, "duena@pay.com"); w.Code != http.StatusOK {
 		t.Fatalf("modelo de Ana: %d %s", w.Code, w.Body.String())
 	}
 
-	w := e.do(t, "GET", e.url(e.salon, "/payroll/me?kind=month&date=2026-03-10"), "", "ana@pay.com")
+	w := e.do(t, "GET", e.url(e.Salon, "/payroll/me?kind=month&date=2026-03-10"), "", "ana@pay.com")
 	if w.Code != http.StatusOK {
 		t.Fatalf("me: %d %s", w.Code, w.Body.String())
 	}
 	var out map[string]any
-	mustJSON(t, w.Body.Bytes(), &out)
+	httpkit.MustJSON(t, w.Body.Bytes(), &out)
 	sameKeys(t, "me", out, "period", "sales_count", "sales_total_cents", "commission_cents", "estimated")
 	period := out["period"].(map[string]any)
 	sameKeys(t, "period", period, "kind", "from", "to", "closed")
@@ -532,12 +534,12 @@ func TestHTTP_payroll_me(t *testing.T) {
 	}
 
 	// La administración también puede ver las suyas (0 ventas).
-	w = e.do(t, "GET", e.url(e.salon, "/payroll/me?kind=week&date=2026-03-10"), "", "admin@pay.com")
+	w = e.do(t, "GET", e.url(e.Salon, "/payroll/me?kind=week&date=2026-03-10"), "", "admin@pay.com")
 	if w.Code != http.StatusOK {
 		t.Fatalf("admin en /me: %d %s", w.Code, w.Body.String())
 	}
 	var adm map[string]any
-	mustJSON(t, w.Body.Bytes(), &adm)
+	httpkit.MustJSON(t, w.Body.Bytes(), &adm)
 	if adm["sales_count"] != float64(0) || adm["commission_cents"] != float64(0) {
 		t.Fatalf("admin sin ventas: %+v", adm)
 	}
@@ -557,28 +559,28 @@ func TestHTTP_payroll_periodo_invalido(t *testing.T) {
 		`{"kind":"month","date":""}`,
 	}
 	for _, body := range cases {
-		w := e.do(t, "POST", e.url(e.salon, "/payroll/preview"), body, "duena@pay.com")
+		w := e.do(t, "POST", e.url(e.Salon, "/payroll/preview"), body, "duena@pay.com")
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("preview %s: %d %s", body, w.Code, w.Body.String())
 		}
 		var out map[string]string
-		mustJSON(t, w.Body.Bytes(), &out)
+		httpkit.MustJSON(t, w.Body.Bytes(), &out)
 		if out["error"] != "Período inválido" {
 			t.Fatalf("preview %s: mensaje = %q", body, out["error"])
 		}
 	}
 	// /me del profesional con un tipo inválido: 400, no 403 (el rol sí puede).
-	w := e.do(t, "GET", e.url(e.salon, "/payroll/me?kind=dia&date=2026-03-10"), "", "ana@pay.com")
+	w := e.do(t, "GET", e.url(e.Salon, "/payroll/me?kind=dia&date=2026-03-10"), "", "ana@pay.com")
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("me con tipo inválido: %d %s", w.Code, w.Body.String())
 	}
 	var out map[string]string
-	mustJSON(t, w.Body.Bytes(), &out)
+	httpkit.MustJSON(t, w.Body.Bytes(), &out)
 	if out["error"] != "Período inválido" {
 		t.Fatalf("me: mensaje = %q", out["error"])
 	}
 	// Y sin parámetros tampoco se inventa un período.
-	if w := e.do(t, "GET", e.url(e.salon, "/payroll/me"), "", "ana@pay.com"); w.Code != http.StatusBadRequest {
+	if w := e.do(t, "GET", e.url(e.Salon, "/payroll/me"), "", "ana@pay.com"); w.Code != http.StatusBadRequest {
 		t.Fatalf("me sin parámetros: %d %s", w.Code, w.Body.String())
 	}
 }
@@ -589,44 +591,44 @@ func TestHTTP_payroll_preserva_ventas_dashboard_caja_y_equipo(t *testing.T) {
 	e := newPayEnv(t)
 
 	// GET /sales: misma forma ({"sales":[...]}) y scope por salón.
-	w := e.do(t, "GET", e.url(e.salon, "/sales"), "", "duena@pay.com")
+	w := e.do(t, "GET", e.url(e.Salon, "/sales"), "", "duena@pay.com")
 	if w.Code != http.StatusOK {
 		t.Fatalf("ventas: %d %s", w.Code, w.Body.String())
 	}
 	var salesOut map[string]any
-	mustJSON(t, w.Body.Bytes(), &salesOut)
+	httpkit.MustJSON(t, w.Body.Bytes(), &salesOut)
 	sameKeys(t, "sales", salesOut, "sales")
 	if _, ok := salesOut["sales"].([]any); !ok {
 		t.Fatalf("sales debe ser un array: %s", w.Body.String())
 	}
 
 	// GET /dashboard: mismas cuatro claves.
-	w = e.do(t, "GET", e.url(e.salon, "/dashboard"), "", "duena@pay.com")
+	w = e.do(t, "GET", e.url(e.Salon, "/dashboard"), "", "duena@pay.com")
 	if w.Code != http.StatusOK {
 		t.Fatalf("dashboard: %d %s", w.Code, w.Body.String())
 	}
 	var dash map[string]any
-	mustJSON(t, w.Body.Bytes(), &dash)
+	httpkit.MustJSON(t, w.Body.Bytes(), &dash)
 	sameKeys(t, "dashboard", dash, "revenue_today", "appointments_today", "occupancy_rate", "top_services")
 
 	// POST /cash-closes: 201 con la forma de siempre.
-	w = e.do(t, "POST", e.url(e.salon, "/cash-closes"), `{"counted_cents":0,"note":""}`, "duena@pay.com")
+	w = e.do(t, "POST", e.url(e.Salon, "/cash-closes"), `{"counted_cents":0,"note":""}`, "duena@pay.com")
 	if w.Code != http.StatusCreated {
 		t.Fatalf("cierre: %d %s", w.Code, w.Body.String())
 	}
 	var closeOut map[string]any
-	mustJSON(t, w.Body.Bytes(), &closeOut)
+	httpkit.MustJSON(t, w.Body.Bytes(), &closeOut)
 	sameKeys(t, "cash_close", closeOut, "close_id", "expected_cash")
 
 	// GET /members: misma forma por miembro (la nómina no la cambió).
-	w = e.do(t, "GET", e.url(e.salon, "/members"), "", "duena@pay.com")
+	w = e.do(t, "GET", e.url(e.Salon, "/members"), "", "duena@pay.com")
 	if w.Code != http.StatusOK {
 		t.Fatalf("equipo: %d %s", w.Code, w.Body.String())
 	}
 	var members struct {
 		Members []map[string]any `json:"members"`
 	}
-	mustJSON(t, w.Body.Bytes(), &members)
+	httpkit.MustJSON(t, w.Body.Bytes(), &members)
 	if len(members.Members) != 5 {
 		t.Fatalf("esperaba 5 miembros, dio %d", len(members.Members))
 	}

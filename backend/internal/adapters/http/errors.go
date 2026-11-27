@@ -26,10 +26,10 @@ func statusOf(err error) int {
 	}
 }
 
-// internalErrorMessage es lo ÚNICO que ve el cliente ante un 500 (B-14): ni
+// InternalErrorMessage es lo ÚNICO que ve el cliente ante un 500 (B-14): ni
 // SQL, ni nombres de tabla, ni mensajes de pgx. El detalle va al log del
 // servidor, que es donde sirve.
-const internalErrorMessage = "error interno"
+const InternalErrorMessage = "error interno"
 
 // respondErr es el único camino de error hacia el cliente. Un 500 se registra
 // completo en el log del servidor y se responde genérico; los errores de
@@ -37,18 +37,18 @@ const internalErrorMessage = "error interno"
 // contrato.
 func respondErr(c *gin.Context, err error) {
 	if statusOf(err) == http.StatusInternalServerError {
-		respondErrLogf(c, err, log.Printf)
+		RespondErrLogf(c, err, log.Printf)
 		return
 	}
 	c.JSON(statusOf(err), gin.H{"error": err.Error()})
 }
 
-// respondErrLogf permite inyectar el logger (los tests verifican que el detalle
+// RespondErrLogf permite inyectar el logger (los tests verifican que el detalle
 // queda en el log y no en el body).
-func respondErrLogf(c *gin.Context, err error, logf func(string, ...any)) {
+func RespondErrLogf(c *gin.Context, err error, logf func(string, ...any)) {
 	if statusOf(err) == http.StatusInternalServerError {
 		logf("500 %s %s: %v", c.Request.Method, c.Request.URL.Path, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": internalErrorMessage})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": InternalErrorMessage})
 		return
 	}
 	c.JSON(statusOf(err), gin.H{"error": err.Error()})

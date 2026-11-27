@@ -1,27 +1,22 @@
-package httpapi
+package httpapi_test
 
 import (
-	"errors"
 	"net/http"
+	"salon-saas/internal/domain"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
-
-	"salon-saas/internal/domain"
 )
-
-// errFakeInfra simula un fallo de infraestructura con detalle de Postgres: no
-// puede llegar al cliente (B-14).
-var errFakeInfra = errors.New(`pq: password authentication failed for user "salon"`)
 
 // B-01/B-07/B-08 contratos de /me, /salons/:id/staff y /public/salons/:slug.
 // El frontend codifica contra estas formas exactas.
 
 func TestHTTP_me(t *testing.T) {
-	env := newPOSEnv()
-	tok, uid := env.register(t, "ana@mail.com")
-	salonID := env.salon(t, tok, "navajas-oro")
+	env := httpkit.NewPOSEnv()
+	tok, uid := env.Register(t, "ana@mail.com")
+	salonID := env.Salon(t, tok, "navajas-oro")
 
-	w := doReq(env.r, "GET", "/api/v1/me", "", tok)
+	w := httpkit.Do(env.Router, "GET", "/api/v1/me", "", tok)
 	if w.Code != http.StatusOK {
 		t.Fatalf("me: %d %s", w.Code, w.Body.String())
 	}
@@ -38,7 +33,7 @@ func TestHTTP_me(t *testing.T) {
 			Role string `json:"role"`
 		} `json:"salons"`
 	}
-	mustJSON(t, w.Body.Bytes(), &out)
+	httpkit.MustJSON(t, w.Body.Bytes(), &out)
 	if out.User.ID != uid || out.User.Email != "ana@mail.com" || out.User.Name == "" {
 		t.Fatalf("usuario: %s", w.Body.String())
 	}
@@ -47,12 +42,12 @@ func TestHTTP_me(t *testing.T) {
 		t.Fatalf("salones: %s", w.Body.String())
 	}
 	// Sin token: 401.
-	if w := doReq(env.r, "GET", "/api/v1/me", "", ""); w.Code != http.StatusUnauthorized {
+	if w := httpkit.Do(env.Router, "GET", "/api/v1/me", "", ""); w.Code != http.StatusUnauthorized {
 		t.Fatalf("sin token debe dar 401, dio %d", w.Code)
 	}
 	// Usuario sin salones: array vacío, nunca null.
-	otroTok, _ := env.register(t, "solo@mail.com")
-	w = doReq(env.r, "GET", "/api/v1/me", "", otroTok)
+	otroTok, _ := env.Register(t, "solo@mail.com")
+	w = httpkit.Do(env.Router, "GET", "/api/v1/me", "", otroTok)
 	if w.Code != http.StatusOK {
 		t.Fatalf("me sin salones: %d %s", w.Code, w.Body.String())
 	}
@@ -62,14 +57,14 @@ func TestHTTP_me(t *testing.T) {
 }
 
 func TestHTTP_staff(t *testing.T) {
-	env := newPOSEnv()
-	ownerTok, _ := env.register(t, "owner@mail.com")
-	salonID := env.salon(t, ownerTok, "equipo")
-	profTok, profID := env.register(t, "prof@mail.com")
-	_ = env.mems.Save(domain.Membership{UserID: profID, SalonID: salonID, Role: domain.RoleProfessional})
+	env := httpkit.NewPOSEnv()
+	ownerTok, _ := env.Register(t, "owner@mail.com")
+	salonID := env.Salon(t, ownerTok, "equipo")
+	profTok, profID := env.Register(t, "prof@mail.com")
+	_ = env.Mems.Save(domain.Membership{UserID: profID, SalonID: salonID, Role: domain.RoleProfessional})
 
 	// Cualquier miembro lee el equipo (el select de profesional del frontend).
-	w := doReq(env.r, "GET", "/api/v1/salons/"+salonID+"/staff", "", profTok)
+	w := httpkit.Do(env.Router, "GET", "/api/v1/salons/"+salonID+"/staff", "", profTok)
 	if w.Code != http.StatusOK {
 		t.Fatalf("staff: %d %s", w.Code, w.Body.String())
 	}
@@ -80,7 +75,7 @@ func TestHTTP_staff(t *testing.T) {
 			Role string `json:"role"`
 		} `json:"staff"`
 	}
-	mustJSON(t, w.Body.Bytes(), &out)
+	httpkit.MustJSON(t, w.Body.Bytes(), &out)
 	if len(out.Staff) != 2 {
 		t.Fatalf("esperaba owner + profesional, dio %s", w.Body.String())
 	}
@@ -95,25 +90,25 @@ func TestHTTP_staff(t *testing.T) {
 		t.Fatalf("rol del profesional: %s", w.Body.String())
 	}
 	// No-miembro: 403. Sin token: 401.
-	strangerTok, _ := env.register(t, "stranger@mail.com")
-	if w := doReq(env.r, "GET", "/api/v1/salons/"+salonID+"/staff", "", strangerTok); w.Code != http.StatusForbidden {
+	strangerTok, _ := env.Register(t, "stranger@mail.com")
+	if w := httpkit.Do(env.Router, "GET", "/api/v1/salons/"+salonID+"/staff", "", strangerTok); w.Code != http.StatusForbidden {
 		t.Fatalf("no-miembro debe dar 403, dio %d %s", w.Code, w.Body.String())
 	}
-	if w := doReq(env.r, "GET", "/api/v1/salons/"+salonID+"/staff", "", ""); w.Code != http.StatusUnauthorized {
+	if w := httpkit.Do(env.Router, "GET", "/api/v1/salons/"+salonID+"/staff", "", ""); w.Code != http.StatusUnauthorized {
 		t.Fatalf("sin token debe dar 401, dio %d", w.Code)
 	}
 }
 
 func TestHTTP_public_salon(t *testing.T) {
-	env := newPOSEnv()
-	ownerTok, _ := env.register(t, "owner@mail.com")
-	salonID := env.salon(t, ownerTok, "vidriera")
-	svcID := env.seedService(t, ownerTok, salonID, "Corte", 150000)
+	env := httpkit.NewPOSEnv()
+	ownerTok, _ := env.Register(t, "owner@mail.com")
+	salonID := env.Salon(t, ownerTok, "vidriera")
+	svcID := env.SeedService(t, ownerTok, salonID, "Corte", 150000)
 	// Un servicio inactivo no sale en la vidriera.
-	_ = doReq(env.r, "PUT", "/api/v1/salons/"+salonID+"/services/"+svcID, `{"name":"Corte","duration_min":45,"price_cents":150000,"commission_pct":20,"active":false}`, ownerTok)
+	_ = httpkit.Do(env.Router, "PUT", "/api/v1/salons/"+salonID+"/services/"+svcID, `{"name":"Corte","duration_min":45,"price_cents":150000,"commission_pct":20,"active":false}`, ownerTok)
 
 	// SIN auth: es la landing pública.
-	w := doReq(env.r, "GET", "/api/v1/public/salons/vidriera", "", "")
+	w := httpkit.Do(env.Router, "GET", "/api/v1/public/salons/vidriera", "", "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("public: %d %s", w.Code, w.Body.String())
 	}
@@ -130,7 +125,7 @@ func TestHTTP_public_salon(t *testing.T) {
 			PriceCents  int    `json:"price_cents"`
 		} `json:"services"`
 	}
-	mustJSON(t, w.Body.Bytes(), &out)
+	httpkit.MustJSON(t, w.Body.Bytes(), &out)
 	if out.Salon.ID != salonID || out.Salon.Slug != "vidriera" || out.Salon.Name != "Salón vidriera" {
 		t.Fatalf("salón: %s", w.Body.String())
 	}
@@ -138,14 +133,14 @@ func TestHTTP_public_salon(t *testing.T) {
 		t.Fatalf("solo servicios activos, dio %s", w.Body.String())
 	}
 	// Con un servicio activo, sale con la forma del contrato.
-	_ = doReq(env.r, "PUT", "/api/v1/salons/"+salonID+"/services/"+svcID, `{"name":"Corte","duration_min":45,"price_cents":150000,"commission_pct":20,"active":true}`, ownerTok)
-	w = doReq(env.r, "GET", "/api/v1/public/salons/vidriera", "", "")
-	mustJSON(t, w.Body.Bytes(), &out)
+	_ = httpkit.Do(env.Router, "PUT", "/api/v1/salons/"+salonID+"/services/"+svcID, `{"name":"Corte","duration_min":45,"price_cents":150000,"commission_pct":20,"active":true}`, ownerTok)
+	w = httpkit.Do(env.Router, "GET", "/api/v1/public/salons/vidriera", "", "")
+	httpkit.MustJSON(t, w.Body.Bytes(), &out)
 	if len(out.Services) != 1 || out.Services[0].Name != "Corte" || out.Services[0].DurationMin != 45 || out.Services[0].PriceCents != 150000 {
 		t.Fatalf("servicios: %s", w.Body.String())
 	}
 	// Slug inexistente: 404.
-	if w := doReq(env.r, "GET", "/api/v1/public/salons/no-existe", "", ""); w.Code != http.StatusNotFound {
+	if w := httpkit.Do(env.Router, "GET", "/api/v1/public/salons/no-existe", "", ""); w.Code != http.StatusNotFound {
 		t.Fatalf("slug inexistente debe dar 404, dio %d %s", w.Code, w.Body.String())
 	}
 }

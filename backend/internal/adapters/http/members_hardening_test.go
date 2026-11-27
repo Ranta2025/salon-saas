@@ -1,14 +1,14 @@
 // Endurecimiento de F2g2 por HTTP: la administración no reactiva con un rol
 // nuevo a un admin ni a un owner dados de baja (403), y TODA respuesta con forma
 // de miembro lleva `active` y `ended_at` coherentes (R3-001).
-package httpapi
+package httpapi_test
 
 import (
 	"net/http"
+	"salon-saas/internal/domain"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"testing"
 	"time"
-
-	"salon-saas/internal/domain"
 )
 
 // memberShaped afirma la forma de un miembro en el JSON: las dos claves de la
@@ -40,7 +40,7 @@ func memberShaped(t *testing.T, etiqueta string, row map[string]any) {
 
 // bajarSiembra una membresía dada de baja (sin pasar por Save, que la deja
 // activa) para probar las puertas de reactivación.
-func bajarSiembra(env *posEnv, m domain.Membership) {
+func bajarSiembra(env *httpkit.Env, m domain.Membership) {
 	at := time.Now().UTC().Add(-time.Hour)
 	m.EndedAt = &at
 	seedMembership(env, m)
@@ -49,16 +49,16 @@ func bajarSiembra(env *posEnv, m domain.Membership) {
 // F2: por `POST /members` la administración NO puede reactivar a un admin ni a
 // un owner dados de baja (403 "sin permiso") ni cambiarles el rol; el dueño sí.
 func TestHTTP_members_add_admin_cannot_reactivate_deactivated_admin_or_owner(t *testing.T) {
-	env := newPOSEnv()
-	ownerTok, _ := env.register(t, "owner@mail.com")
-	salonID := env.salon(t, ownerTok, "equipo-reactivar-rol")
+	env := httpkit.NewPOSEnv()
+	ownerTok, _ := env.Register(t, "owner@mail.com")
+	salonID := env.Salon(t, ownerTok, "equipo-reactivar-rol")
 	base := "/api/v1/salons/" + salonID + "/members"
 
-	adminTok, adminID := env.register(t, "admin@mail.com")
-	_ = env.mems.Save(domain.Membership{UserID: adminID, SalonID: salonID, Role: domain.RoleAdmin})
-	_, oldAdminID := env.register(t, "old-admin@mail.com")
+	adminTok, adminID := env.Register(t, "admin@mail.com")
+	_ = env.Mems.Save(domain.Membership{UserID: adminID, SalonID: salonID, Role: domain.RoleAdmin})
+	_, oldAdminID := env.Register(t, "old-admin@mail.com")
 	bajarSiembra(env, domain.Membership{UserID: oldAdminID, SalonID: salonID, Role: domain.RoleAdmin})
-	_, oldOwnerID := env.register(t, "old-owner@mail.com")
+	_, oldOwnerID := env.Register(t, "old-owner@mail.com")
 	bajarSiembra(env, domain.Membership{UserID: oldOwnerID, SalonID: salonID, Role: domain.RoleOwner})
 
 	casos := []struct {
@@ -71,7 +71,7 @@ func TestHTTP_members_add_admin_cannot_reactivate_deactivated_admin_or_owner(t *
 		{"admin a un owner dado de baja", "old-owner@mail.com", oldOwnerID, "owner"},
 	}
 	for _, c := range casos {
-		w := doReq(env.r, "POST", base, `{"email":"`+c.email+`","role":"professional"}`, adminTok)
+		w := httpkit.Do(env.Router, "POST", base, `{"email":"`+c.email+`","role":"professional"}`, adminTok)
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("%s: %d %s", c.nombre, w.Code, w.Body.String())
 		}
@@ -87,12 +87,12 @@ func TestHTTP_members_add_admin_cannot_reactivate_deactivated_admin_or_owner(t *
 
 	// El dueño sí reactiva al admin dado de baja, con el rol pedido (201 como un
 	// alta y la forma completa del miembro).
-	w := doReq(env.r, "POST", base, `{"email":"old-admin@mail.com","role":"professional"}`, ownerTok)
+	w := httpkit.Do(env.Router, "POST", base, `{"email":"old-admin@mail.com","role":"professional"}`, ownerTok)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("el dueño reactiva al admin dado de baja: %d %s", w.Code, w.Body.String())
 	}
 	var added map[string]any
-	mustJSON(t, w.Body.Bytes(), &added)
+	httpkit.MustJSON(t, w.Body.Bytes(), &added)
 	memberShaped(t, "alta de una baja por el dueño", added)
 	if added["id"] != oldAdminID || added["role"] != "professional" {
 		t.Fatalf("la reactivación toma el rol pedido: %s", w.Body.String())
@@ -104,16 +104,16 @@ func TestHTTP_members_add_admin_cannot_reactivate_deactivated_admin_or_owner(t *
 // (403); el dueño sí, y el canje reactiva con el rol de la invitación.
 func TestHTTP_invitation_admin_cannot_invite_deactivated_admin_or_owner(t *testing.T) {
 	env, ownerTok, salonID := invitationEnv(t)
-	adminTok, adminID := env.register(t, "admin@mail.com")
-	_ = env.mems.Save(domain.Membership{UserID: adminID, SalonID: salonID, Role: domain.RoleAdmin})
-	oldAdminTok, oldAdminID := env.register(t, "old-admin@mail.com")
+	adminTok, adminID := env.Register(t, "admin@mail.com")
+	_ = env.Mems.Save(domain.Membership{UserID: adminID, SalonID: salonID, Role: domain.RoleAdmin})
+	oldAdminTok, oldAdminID := env.Register(t, "old-admin@mail.com")
 	bajarSiembra(env, domain.Membership{UserID: oldAdminID, SalonID: salonID, Role: domain.RoleAdmin})
-	_, oldOwnerID := env.register(t, "old-owner@mail.com")
+	_, oldOwnerID := env.Register(t, "old-owner@mail.com")
 	bajarSiembra(env, domain.Membership{UserID: oldOwnerID, SalonID: salonID, Role: domain.RoleOwner})
 
 	url := "/api/v1/salons/" + salonID + "/invitations"
 	for _, email := range []string{"old-admin@mail.com", "old-owner@mail.com"} {
-		w := doReq(env.r, "POST", url, `{"email":"`+email+`","role":"professional"}`, adminTok)
+		w := httpkit.Do(env.Router, "POST", url, `{"email":"`+email+`","role":"professional"}`, adminTok)
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("admin invitando a una baja (%s): %d %s", email, w.Code, w.Body.String())
 		}
@@ -122,16 +122,16 @@ func TestHTTP_invitation_admin_cannot_invite_deactivated_admin_or_owner(t *testi
 		}
 	}
 	// Nada quedó emitido.
-	w := doReq(env.r, "GET", url, "", ownerTok)
+	w := httpkit.Do(env.Router, "GET", url, "", ownerTok)
 	if w.Code != http.StatusOK || len(mustInvitations(t, w.Body.Bytes())) != 0 {
 		t.Fatalf("una invitación rechazada no puede quedar guardada: %s", w.Body.String())
 	}
 
 	// El dueño sí invita al admin dado de baja (rol nuevo) y el canje de su
 	// cuenta existente lo reactiva con el rol de la invitación.
-	created := env.invite(t, ownerTok, salonID, "old-admin@mail.com", "reception")
+	created := invite(t, env, ownerTok, salonID, "old-admin@mail.com", "reception")
 	token := invitationToken(t, created.Link)
-	if w := doReq(env.r, "POST", "/api/v1/invitations/accept", `{"token":"`+token+`"}`, oldAdminTok); w.Code != http.StatusOK {
+	if w := httpkit.Do(env.Router, "POST", "/api/v1/invitations/accept", `{"token":"`+token+`"}`, oldAdminTok); w.Code != http.StatusOK {
 		t.Fatalf("canje de una baja invitada por el dueño: %d %s", w.Code, w.Body.String())
 	}
 	row := memberRows(t, env, ownerTok, salonID)[oldAdminID]
@@ -146,7 +146,7 @@ func mustInvitations(t *testing.T, body []byte) []map[string]any {
 	var out struct {
 		Invitations []map[string]any `json:"invitations"`
 	}
-	mustJSON(t, body, &out)
+	httpkit.MustJSON(t, body, &out)
 	return out.Invitations
 }
 
@@ -155,78 +155,78 @@ func mustInvitations(t *testing.T, body []byte) []map[string]any {
 // de una baja), el PATCH de la marca, el PATCH del oficio y la reactivación
 // pasan por la MISMA forma; el `PUT .../services` responde solo `service_ids`.
 func TestHTTP_members_every_member_response_is_active(t *testing.T) {
-	env := newPOSEnv()
-	ownerTok, ownerID := env.register(t, "owner@mail.com")
-	salonID := env.salon(t, ownerTok, "equipo-forma")
+	env := httpkit.NewPOSEnv()
+	ownerTok, ownerID := env.Register(t, "owner@mail.com")
+	salonID := env.Salon(t, ownerTok, "equipo-forma")
 	base := "/api/v1/salons/" + salonID + "/members"
-	profTok, profID := env.register(t, "profe@mail.com")
+	profTok, profID := env.Register(t, "profe@mail.com")
 
 	// Alta de alguien ACTIVO: 201 con la forma completa.
-	w := doReq(env.r, "POST", base, `{"email":"profe@mail.com","role":"professional"}`, ownerTok)
+	w := httpkit.Do(env.Router, "POST", base, `{"email":"profe@mail.com","role":"professional"}`, ownerTok)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("alta: %d %s", w.Code, w.Body.String())
 	}
 	var row map[string]any
-	mustJSON(t, w.Body.Bytes(), &row)
+	httpkit.MustJSON(t, w.Body.Bytes(), &row)
 	memberShaped(t, "POST /members (alta)", row)
 
 	// PATCH de la marca (el dueño se enciende "atiende").
-	w = doReq(env.r, "PATCH", base+"/"+ownerID, `{"attends":true}`, ownerTok)
+	w = httpkit.Do(env.Router, "PATCH", base+"/"+ownerID, `{"attends":true}`, ownerTok)
 	if w.Code != http.StatusOK {
 		t.Fatalf("PATCH attends: %d %s", w.Code, w.Body.String())
 	}
-	mustJSON(t, w.Body.Bytes(), &row)
+	httpkit.MustJSON(t, w.Body.Bytes(), &row)
 	memberShaped(t, "PATCH /members (attends)", row)
 
 	// PATCH del oficio.
-	w = doReq(env.r, "PATCH", base+"/"+profID, `{"trade":"Barbero"}`, ownerTok)
+	w = httpkit.Do(env.Router, "PATCH", base+"/"+profID, `{"trade":"Barbero"}`, ownerTok)
 	if w.Code != http.StatusOK {
 		t.Fatalf("PATCH trade: %d %s", w.Code, w.Body.String())
 	}
-	mustJSON(t, w.Body.Bytes(), &row)
+	httpkit.MustJSON(t, w.Body.Bytes(), &row)
 	memberShaped(t, "PATCH /members (trade)", row)
 	if row["trade"] != "Barbero" {
 		t.Fatalf("el PATCH devuelve el oficio nuevo: %v", row)
 	}
 
 	// PUT de servicios: NO es una respuesta de miembro (solo la lista).
-	w = doReq(env.r, "PUT", base+"/"+profID+"/services", `{"service_ids":[]}`, ownerTok)
+	w = httpkit.Do(env.Router, "PUT", base+"/"+profID+"/services", `{"service_ids":[]}`, ownerTok)
 	if w.Code != http.StatusOK {
 		t.Fatalf("PUT services: %d %s", w.Code, w.Body.String())
 	}
 	var solo struct {
 		ServiceIDs []string `json:"service_ids"`
 	}
-	mustJSON(t, w.Body.Bytes(), &solo)
+	httpkit.MustJSON(t, w.Body.Bytes(), &solo)
 	if solo.ServiceIDs == nil {
 		t.Fatalf("el PUT devuelve un array (aunque vacío): %s", w.Body.String())
 	}
 
 	// Reactivación: 200 con la forma completa y activo.
-	if w := doReq(env.r, "DELETE", base+"/"+profID, "", ownerTok); w.Code != http.StatusNoContent {
+	if w := httpkit.Do(env.Router, "DELETE", base+"/"+profID, "", ownerTok); w.Code != http.StatusNoContent {
 		t.Fatalf("baja: %d %s", w.Code, w.Body.String())
 	}
-	w = doReq(env.r, "POST", base+"/"+profID+"/reactivate", "", ownerTok)
+	w = httpkit.Do(env.Router, "POST", base+"/"+profID+"/reactivate", "", ownerTok)
 	if w.Code != http.StatusOK {
 		t.Fatalf("reactivar: %d %s", w.Code, w.Body.String())
 	}
-	mustJSON(t, w.Body.Bytes(), &row)
+	httpkit.MustJSON(t, w.Body.Bytes(), &row)
 	memberShaped(t, "POST reactivate", row)
 
 	// Y el alta de alguien dado de baja (la otra puerta) también.
-	if w := doReq(env.r, "DELETE", base+"/"+profID, "", ownerTok); w.Code != http.StatusNoContent {
+	if w := httpkit.Do(env.Router, "DELETE", base+"/"+profID, "", ownerTok); w.Code != http.StatusNoContent {
 		t.Fatalf("segunda baja: %d %s", w.Code, w.Body.String())
 	}
-	w = doReq(env.r, "POST", base, `{"email":"profe@mail.com","role":"professional"}`, ownerTok)
+	w = httpkit.Do(env.Router, "POST", base, `{"email":"profe@mail.com","role":"professional"}`, ownerTok)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("alta de una baja: %d %s", w.Code, w.Body.String())
 	}
-	mustJSON(t, w.Body.Bytes(), &row)
+	httpkit.MustJSON(t, w.Body.Bytes(), &row)
 	memberShaped(t, "POST /members (reactivación)", row)
 
 	// El listado: cada fila tiene las dos claves; las activas salen true+null y
 	// la dada de baja sale false+string.
-	if w := doReq(env.r, "DELETE", base+"/"+profID, "", ownerTok); w.Code != http.StatusNoContent {
+	if w := httpkit.Do(env.Router, "DELETE", base+"/"+profID, "", ownerTok); w.Code != http.StatusNoContent {
 		t.Fatalf("tercera baja: %d %s", w.Code, w.Body.String())
 	}
 	rows := memberRows(t, env, ownerTok, salonID)
@@ -243,7 +243,7 @@ func TestHTTP_members_every_member_response_is_active(t *testing.T) {
 		t.Fatalf("la baja sale con ended_at como string: %v", rows[profID])
 	}
 	// El propio dueño sigue entrando (la baja no le tocó el acceso).
-	if w := doReq(env.r, "GET", base, "", ownerTok); w.Code != http.StatusOK {
+	if w := httpkit.Do(env.Router, "GET", base, "", ownerTok); w.Code != http.StatusOK {
 		t.Fatalf("el dueño sigue en el equipo: %d %s", w.Code, w.Body.String())
 	}
 	_ = profTok

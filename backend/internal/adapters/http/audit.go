@@ -13,7 +13,7 @@
 //     el permiso va ANTES de mirar los parámetros.
 //
 // Qué id queda como entidad: el parámetro de ruta PROPIO de la acción
-// (auditEntityParams). Las acciones sin id propio en la ruta (altas) guardan
+// (AuditEntityParams). Las acciones sin id propio en la ruta (altas) guardan
 // NULL; las de dos ids (`payroll_run.adjust` lleva :rid y :uid) guardan el de la
 // corrida (:rid), la cosa sobre la que se actúa.
 package httpapi
@@ -29,9 +29,9 @@ import (
 	"salon-saas/internal/ports"
 )
 
-// auditEntityParams dice qué parámetro de ruta es la entidad de cada acción de
+// AuditEntityParams dice qué parámetro de ruta es la entidad de cada acción de
 // D2. Una acción que no está acá no tiene id propio: la entidad queda vacía.
-var auditEntityParams = map[string]string{
+var AuditEntityParams = map[string]string{
 	"member.update":      "uid",
 	"member.remove":      "uid",
 	"member.reactivate":  "uid",
@@ -64,7 +64,7 @@ func (h AuditHandler) logf(format string, args ...any) {
 // Audit devuelve el middleware de la acción `action` (nombre exacto de D2). Con
 // el servicio sin repositorio no hace nada.
 func (h AuditHandler) Audit(action string) gin.HandlerFunc {
-	param := auditEntityParams[action]
+	param := AuditEntityParams[action]
 	return func(c *gin.Context) {
 		c.Next()
 		if !h.Service.Enabled() {

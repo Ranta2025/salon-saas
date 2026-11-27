@@ -1,52 +1,51 @@
-package httpapi
+package httpkit
 
 import (
-	"strings"
-	"time"
-
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"strings"
+	"time"
 )
 
-// mresources: tipos y unidades de equipo con la misma semántica que pgstore
+// Resources: tipos y unidades de equipo con la misma semántica que pgstore
 // (scope por salón, ErrNotFound, unicidad case-insensitive). La ocupación sale
 // del fake de turnos para no duplicar estado.
-type mresources struct {
-	types    []domain.ResourceType
-	units    []domain.ResourceUnit
-	bookings *mb
+type Resources struct {
+	Types    []domain.ResourceType
+	Units    []domain.ResourceUnit
+	Bookings *Bookings
 }
 
-func (f *mresources) CreateType(t domain.ResourceType, units []domain.ResourceUnit) error {
+func (f *Resources) CreateType(t domain.ResourceType, units []domain.ResourceUnit) error {
 	if f.nameTaken(t.SalonID, t.Name, "") {
 		return domain.ErrAlreadyExists
 	}
-	f.types = append(f.types, t)
-	f.units = append(f.units, units...)
+	f.Types = append(f.Types, t)
+	f.Units = append(f.Units, units...)
 	return nil
 }
 
-func (f *mresources) SaveType(t domain.ResourceType) error {
-	for i := range f.types {
-		if f.types[i].ID != t.ID || f.types[i].SalonID != t.SalonID {
+func (f *Resources) SaveType(t domain.ResourceType) error {
+	for i := range f.Types {
+		if f.Types[i].ID != t.ID || f.Types[i].SalonID != t.SalonID {
 			continue
 		}
 		if f.nameTaken(t.SalonID, t.Name, t.ID) {
 			return domain.ErrAlreadyExists
 		}
-		f.types[i] = t
+		f.Types[i] = t
 		return nil
 	}
 	return domain.ErrNotFound
 }
 
-func (f *mresources) DeleteType(salonID, id string) error {
-	for i := range f.types {
-		if f.types[i].ID != id || f.types[i].SalonID != salonID {
+func (f *Resources) DeleteType(salonID, id string) error {
+	for i := range f.Types {
+		if f.Types[i].ID != id || f.Types[i].SalonID != salonID {
 			continue
 		}
-		kept := make([]domain.ResourceUnit, 0, len(f.units))
-		for _, u := range f.units {
+		kept := make([]domain.ResourceUnit, 0, len(f.Units))
+		for _, u := range f.Units {
 			if u.TypeID != id || u.SalonID != salonID {
 				kept = append(kept, u)
 				continue
@@ -55,15 +54,15 @@ func (f *mresources) DeleteType(salonID, id string) error {
 				return domain.ErrAlreadyExists
 			}
 		}
-		f.types = append(f.types[:i], f.types[i+1:]...)
-		f.units = kept
+		f.Types = append(f.Types[:i], f.Types[i+1:]...)
+		f.Units = kept
 		return nil
 	}
 	return domain.ErrNotFound
 }
 
-func (f *mresources) FindType(salonID, id string) (domain.ResourceType, error) {
-	for _, t := range f.types {
+func (f *Resources) FindType(salonID, id string) (domain.ResourceType, error) {
+	for _, t := range f.Types {
 		if t.ID == id && t.SalonID == salonID {
 			return t, nil
 		}
@@ -71,9 +70,9 @@ func (f *mresources) FindType(salonID, id string) (domain.ResourceType, error) {
 	return domain.ResourceType{}, domain.ErrNotFound
 }
 
-func (f *mresources) ListTypes(salonID string) ([]domain.ResourceType, error) {
-	out := make([]domain.ResourceType, 0, len(f.types))
-	for _, t := range f.types {
+func (f *Resources) ListTypes(salonID string) ([]domain.ResourceType, error) {
+	out := make([]domain.ResourceType, 0, len(f.Types))
+	for _, t := range f.Types {
 		if t.SalonID == salonID {
 			out = append(out, t)
 		}
@@ -81,25 +80,25 @@ func (f *mresources) ListTypes(salonID string) ([]domain.ResourceType, error) {
 	return out, nil
 }
 
-func (f *mresources) SaveUnit(u domain.ResourceUnit) error {
-	for _, other := range f.units {
+func (f *Resources) SaveUnit(u domain.ResourceUnit) error {
+	for _, other := range f.Units {
 		if other.SalonID == u.SalonID && other.TypeID == u.TypeID && other.ID != u.ID &&
 			strings.EqualFold(other.Name, u.Name) {
 			return domain.ErrAlreadyExists
 		}
 	}
-	for i := range f.units {
-		if f.units[i].ID == u.ID && f.units[i].SalonID == u.SalonID {
-			f.units[i] = u
+	for i := range f.Units {
+		if f.Units[i].ID == u.ID && f.Units[i].SalonID == u.SalonID {
+			f.Units[i] = u
 			return nil
 		}
 	}
-	f.units = append(f.units, u)
+	f.Units = append(f.Units, u)
 	return nil
 }
 
-func (f *mresources) FindUnit(salonID, id string) (domain.ResourceUnit, error) {
-	for _, u := range f.units {
+func (f *Resources) FindUnit(salonID, id string) (domain.ResourceUnit, error) {
+	for _, u := range f.Units {
 		if u.ID == id && u.SalonID == salonID {
 			return u, nil
 		}
@@ -107,9 +106,9 @@ func (f *mresources) FindUnit(salonID, id string) (domain.ResourceUnit, error) {
 	return domain.ResourceUnit{}, domain.ErrNotFound
 }
 
-func (f *mresources) ListUnits(salonID, typeID string) ([]domain.ResourceUnit, error) {
-	out := make([]domain.ResourceUnit, 0, len(f.units))
-	for _, u := range f.units {
+func (f *Resources) ListUnits(salonID, typeID string) ([]domain.ResourceUnit, error) {
+	out := make([]domain.ResourceUnit, 0, len(f.Units))
+	for _, u := range f.Units {
 		if u.SalonID == salonID && u.TypeID == typeID {
 			out = append(out, u)
 		}
@@ -117,7 +116,7 @@ func (f *mresources) ListUnits(salonID, typeID string) ([]domain.ResourceUnit, e
 	return out, nil
 }
 
-func (f *mresources) ActiveUnits(salonID, typeID string) ([]domain.ResourceUnit, error) {
+func (f *Resources) ActiveUnits(salonID, typeID string) ([]domain.ResourceUnit, error) {
 	all, err := f.ListUnits(salonID, typeID)
 	if err != nil {
 		return nil, err
@@ -131,7 +130,7 @@ func (f *mresources) ActiveUnits(salonID, typeID string) ([]domain.ResourceUnit,
 	return out, nil
 }
 
-func (f *mresources) UnitsWithBookings(salonID, typeID string) (int, error) {
+func (f *Resources) UnitsWithBookings(salonID, typeID string) (int, error) {
 	units, err := f.ListUnits(salonID, typeID)
 	if err != nil {
 		return 0, err
@@ -145,7 +144,7 @@ func (f *mresources) UnitsWithBookings(salonID, typeID string) (int, error) {
 	return n, nil
 }
 
-func (f *mresources) UnitFutureBookings(salonID, unitID string, now time.Time) (int, error) {
+func (f *Resources) UnitFutureBookings(salonID, unitID string, now time.Time) (int, error) {
 	n := 0
 	for _, b := range f.bookingList() {
 		if b.SalonID == salonID && b.ResourceUnitID == unitID && b.Status == domain.BookingBooked && b.StartsAt.After(now) {
@@ -155,7 +154,7 @@ func (f *mresources) UnitFutureBookings(salonID, unitID string, now time.Time) (
 	return n, nil
 }
 
-func (f *mresources) OccupiedUnits(salonID string, from, to time.Time, excludeBookingID string) ([]domain.UnitOccupancy, error) {
+func (f *Resources) OccupiedUnits(salonID string, from, to time.Time, excludeBookingID string) ([]domain.UnitOccupancy, error) {
 	var out []domain.UnitOccupancy
 	for _, b := range f.bookingList() {
 		if b.SalonID != salonID || b.ResourceUnitID == "" || b.Status != domain.BookingBooked || b.ID == excludeBookingID {
@@ -168,14 +167,14 @@ func (f *mresources) OccupiedUnits(salonID string, from, to time.Time, excludeBo
 	return out, nil
 }
 
-func (f *mresources) bookingList() []domain.Booking {
-	if f.bookings == nil {
+func (f *Resources) bookingList() []domain.Booking {
+	if f.Bookings == nil {
 		return nil
 	}
-	return f.bookings.all
+	return f.Bookings.All
 }
 
-func (f *mresources) unitHasBookings(salonID, unitID string) bool {
+func (f *Resources) unitHasBookings(salonID, unitID string) bool {
 	for _, b := range f.bookingList() {
 		if b.SalonID == salonID && b.ResourceUnitID == unitID && b.Status == domain.BookingBooked {
 			return true
@@ -184,8 +183,8 @@ func (f *mresources) unitHasBookings(salonID, unitID string) bool {
 	return false
 }
 
-func (f *mresources) nameTaken(salonID, name, ignoreID string) bool {
-	for _, t := range f.types {
+func (f *Resources) nameTaken(salonID, name, ignoreID string) bool {
+	for _, t := range f.Types {
 		if t.SalonID != salonID || t.ID == ignoreID {
 			continue
 		}
@@ -196,4 +195,4 @@ func (f *mresources) nameTaken(salonID, name, ignoreID string) bool {
 	return false
 }
 
-var _ ports.ResourceRepository = (*mresources)(nil)
+var _ ports.ResourceRepository = (*Resources)(nil)

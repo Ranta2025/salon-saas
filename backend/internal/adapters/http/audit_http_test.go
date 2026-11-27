@@ -2,7 +2,7 @@
 // `Audit(action)` (registra solo en 2xx, no cambia la respuesta, un fallo del
 // escritor se traga) y `GET /salons/:id/audit-log` (permiso primero, límite,
 // cursor, filtro, aislamiento).
-package httpapi
+package httpapi_test
 
 import (
 	"fmt"
@@ -10,25 +10,27 @@ import (
 	"net/http/httptest"
 	"os"
 	"regexp"
-	"sort"
-	"strings"
-	"testing"
-	"time"
-
-	"github.com/gin-gonic/gin"
+	httpapi "salon-saas/internal/adapters/http"
 	auditsvc "salon-saas/internal/audit"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/finance"
 	"salon-saas/internal/loyalty"
 	"salon-saas/internal/notifications"
 	"salon-saas/internal/products"
+	httpkit "salon-saas/internal/testutil/httpkit"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 // --- Middleware solo (router mínimo) -----------------------------------------------
 
 type mwEnv struct {
 	r    *gin.Engine
-	repo *maudit
+	repo *httpkit.AuditEvents
 	logs []string
 	// order registra lo que pasó: «handler» cuando corre la ruta y «append:<acción>»
 	// cuando se escribe, para probar que el registro va DESPUÉS de la ruta.
@@ -39,12 +41,12 @@ type mwEnv struct {
 // entidades es por acción): una con id propio (member.update, :uid), una sin id
 // (settings.update) y una con DOS ids (payroll_run.adjust, :rid y :uid). El
 // handler responde el status de ?s= y un cuerpo fijo.
-func newMWEnv(t *testing.T, users *mu) *mwEnv {
+func newMWEnv(t *testing.T, users *httpkit.Users) *mwEnv {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	e := &mwEnv{repo: &maudit{}}
-	e.repo.log = &e.order
-	h := AuditHandler{
+	e := &mwEnv{repo: &httpkit.AuditEvents{}}
+	e.repo.Log = &e.order
+	h := httpapi.AuditHandler{
 		Service: auditsvc.AuditService{Events: e.repo, Users: users},
 		Logf:    func(f string, a ...any) { e.logs = append(e.logs, fmt.Sprintf(f, a...)) },
 	}
@@ -80,8 +82,8 @@ func (e *mwEnv) call(method, path, user string) *httptest.ResponseRecorder {
 	return w
 }
 
-func mwUsers() *mu {
-	u := &mu{}
+func mwUsers() *httpkit.Users {
+	u := &httpkit.Users{}
 	_ = u.Save(domain.User{ID: "u-ana", Name: "Ana Dueña", Email: "ana@x.com"})
 	return u
 }
@@ -93,7 +95,7 @@ func TestAuditMW_recordsOnlyOn2xx(t *testing.T) {
 		if w.Code != st {
 			t.Fatalf("status %d alterado: %d", st, w.Code)
 		}
-		if got := e.repo.actions(); len(got) != 1 || got[0] != "member.update|m-7" {
+		if got := e.repo.Actions(); len(got) != 1 || got[0] != "member.update|m-7" {
 			t.Errorf("status %d: esperaba 1 evento member.update|m-7, hay %v", st, got)
 		}
 	}
@@ -103,14 +105,14 @@ func TestAuditMW_recordsOnlyOn2xx(t *testing.T) {
 		if w.Code != st {
 			t.Fatalf("status %d alterado: %d", st, w.Code)
 		}
-		if e.repo.appendCalls != 0 {
-			t.Errorf("status %d no debe registrar (appendCalls=%d)", st, e.repo.appendCalls)
+		if e.repo.AppendCalls != 0 {
+			t.Errorf("status %d no debe registrar (appendCalls=%d)", st, e.repo.AppendCalls)
 		}
 	}
 	// Un 3xx tampoco.
 	e := newMWEnv(t, mwUsers())
 	e.call("PATCH", "/api/v1/salons/s1/members/m-7?s=302", "u-ana")
-	if e.repo.appendCalls != 0 {
+	if e.repo.AppendCalls != 0 {
 		t.Error("un 302 no registra")
 	}
 }
@@ -122,11 +124,11 @@ func TestAuditMW_entityIsTheRoutesOwnParam(t *testing.T) {
 	// payroll_run.adjust: la entidad es la corrida (:rid), no la línea (:uid).
 	e.call("PATCH", "/api/v1/salons/s1/payroll/runs/run-9/lines/uid-3?s=200", "u-ana")
 	want := []string{"member.update|uid-42", "settings.update|", "payroll_run.adjust|run-9"}
-	got := e.repo.actions()
+	got := e.repo.Actions()
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("esperaba %v, hay %v", want, got)
 	}
-	ev := e.repo.rows[0]
+	ev := e.repo.Rows[0]
 	if ev.SalonID != "s1" || ev.ActorUserID != "u-ana" {
 		t.Errorf("salón y actor: %+v", ev)
 	}
@@ -136,10 +138,10 @@ func TestAuditMW_responseIsUntouched(t *testing.T) {
 	// Misma ruta con y sin el middleware, y con el escritor sano, caído y en
 	// pánico: status, cuerpo y cabeceras idénticos.
 	control := newMWEnv(t, mwUsers()).call("PATCH", "/api/v1/salons/s1/plain/m-7?s=201", "u-ana")
-	for name, mutate := range map[string]func(*maudit){
-		"sano":   func(*maudit) {},
-		"caído":  func(r *maudit) { r.appendErr = errAuditDown },
-		"pánico": func(r *maudit) { r.panicOn = true },
+	for name, mutate := range map[string]func(*httpkit.AuditEvents){
+		"sano":   func(*httpkit.AuditEvents) {},
+		"caído":  func(r *httpkit.AuditEvents) { r.AppendErr = httpkit.ErrAuditDown },
+		"pánico": func(r *httpkit.AuditEvents) { r.PanicOn = true },
 	} {
 		e := newMWEnv(t, mwUsers())
 		mutate(e.repo)
@@ -158,7 +160,7 @@ func TestAuditMW_responseIsUntouched(t *testing.T) {
 
 func TestAuditMW_writerFailureIsLoggedAndSwallowed(t *testing.T) {
 	e := newMWEnv(t, mwUsers())
-	e.repo.appendErr = errAuditDown
+	e.repo.AppendErr = httpkit.ErrAuditDown
 	w := e.call("PATCH", "/api/v1/salons/s1/members/m-7?s=200", "u-ana")
 	if w.Code != 200 || w.Body.String() != `{"echo":"m-7"}` {
 		t.Fatalf("la respuesta original debe quedar: %d %s", w.Code, w.Body.String())
@@ -168,7 +170,7 @@ func TestAuditMW_writerFailureIsLoggedAndSwallowed(t *testing.T) {
 	}
 	// Un pánico del escritor también se traga y se loguea.
 	e = newMWEnv(t, mwUsers())
-	e.repo.panicOn = true
+	e.repo.PanicOn = true
 	w = e.call("PATCH", "/api/v1/salons/s1/members/m-7?s=200", "u-ana")
 	if w.Code != 200 || w.Body.String() != `{"echo":"m-7"}` {
 		t.Fatalf("pánico: la respuesta original debe quedar: %d %s", w.Code, w.Body.String())
@@ -201,12 +203,12 @@ func TestAuditMW_actorNameSnapshot(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("un actor sin resolver no rompe nada: %d", w.Code)
 	}
-	if len(e.repo.rows) != 2 || e.repo.rows[0].ActorName != "Ana Dueña" || e.repo.rows[1].ActorName != "" {
-		t.Fatalf("snapshot del nombre: %+v", e.repo.rows)
+	if len(e.repo.Rows) != 2 || e.repo.Rows[0].ActorName != "Ana Dueña" || e.repo.Rows[1].ActorName != "" {
+		t.Fatalf("snapshot del nombre: %+v", e.repo.Rows)
 	}
 	// Renombrar después no cambia lo ya escrito.
 	_ = users.Save(domain.User{ID: "u-ana", Name: "Ana Nueva", Email: "ana@x.com"})
-	if e.repo.rows[0].ActorName != "Ana Dueña" {
+	if e.repo.Rows[0].ActorName != "Ana Dueña" {
 		t.Fatal("el nombre es una foto")
 	}
 }
@@ -217,13 +219,13 @@ func TestAuditMW_noActorOrDisabledIsPassThrough(t *testing.T) {
 	if w := e.call("PATCH", "/api/v1/salons/s1/members/m-7?s=200", ""); w.Code != 200 {
 		t.Fatalf("sin actor: %d", w.Code)
 	}
-	if e.repo.appendCalls != 0 {
+	if e.repo.AppendCalls != 0 {
 		t.Fatal("sin actor no se escribe")
 	}
-	// Servicio sin repositorio (el Deps de los tests unitarios): pass-through.
+	// Servicio sin repositorio (el httpapi.Deps de los tests unitarios): pass-through.
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	h := AuditHandler{}
+	h := httpapi.AuditHandler{}
 	r.PUT("/x/:id", func(c *gin.Context) { c.Set("userID", "u"); c.Next() }, h.Audit("settings.update"),
 		func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 	w := httptest.NewRecorder()
@@ -236,81 +238,81 @@ func TestAuditMW_noActorOrDisabledIsPassThrough(t *testing.T) {
 // --- Rutas reales ---------------------------------------------------------------------
 
 type audWorld struct {
-	env  *posEnv
-	repo *maudit
+	Env  *httpkit.Env
+	repo *httpkit.AuditEvents
 	logs []string
 
-	salon, otherSalon                                    string
-	owner, admin, recep, prof, client, removed, outsider string
-	ownerID, adminID, profID                             string
+	Salon, otherSalon                                    string
+	Owner, Admin, Recep, Prof, Client, Removed, Outsider string
+	OwnerID, adminID, ProfID                             string
 }
 
 var audClock = time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 
 func newAudWorld(t *testing.T) *audWorld {
 	t.Helper()
-	env := newPOSEnv()
-	w := &audWorld{env: env, repo: &maudit{}}
-	// Fakes de gastos, fidelidad y productos montados sobre el mismo posEnv.
-	notifSvc := notifications.NotificationService{Notifications: env.notifs, Salons: env.mems, Events: env.events}
-	inv := &mproducts{}
-	env.d.Products = ProductHandler{
-		Products:    products.ProductService{Products: inv, Memberships: env.mems, Events: env.events, Notifier: notifSvc},
-		Memberships: env.mems,
+	env := httpkit.NewPOSEnv()
+	w := &audWorld{Env: env, repo: &httpkit.AuditEvents{}}
+	// Fakes de gastos, fidelidad y productos montados sobre el mismo httpkit.Env.
+	notifSvc := notifications.NotificationService{Notifications: env.Notifications, Salons: env.Mems, Events: env.Events}
+	inv := &httpkit.Products{}
+	env.Deps.Products = httpapi.ProductHandler{
+		Products:    products.ProductService{Products: inv, Memberships: env.Mems, Events: env.Events, Notifier: notifSvc},
+		Memberships: env.Mems,
 	}
-	env.d.Expenses = ExpenseHandler{
+	env.Deps.Expenses = httpapi.ExpenseHandler{
 		Expenses: finance.ExpenseService{
-			Expenses: newMExpenses(), Memberships: env.mems, Settings: env.settings,
+			Expenses: httpkit.NewExpenses(), Memberships: env.Mems, Settings: env.Settings,
 			Now: func() time.Time { return audClock },
 		},
-		Memberships: env.mems,
+		Memberships: env.Mems,
 	}
-	programs := &mloyPrograms{services: env.services}
-	rewards := &mloyRewards{programs: programs, visits: map[string]int{}}
-	env.d.Loyalty = LoyaltyHandler{
+	programs := &httpkit.LoyaltyPrograms{Services: env.Services}
+	rewards := &httpkit.LoyaltyRewards{Programs: programs, VisitCounts: map[string]int{}}
+	env.Deps.Loyalty = httpapi.LoyaltyHandler{
 		Loyalty: loyalty.LoyaltyService{
-			Programs: programs, Rewards: rewards, Services: env.services, Clients: env.clients,
-			Memberships: env.mems, Settings: env.settings,
+			Programs: programs, Rewards: rewards, Services: env.Services, Clients: env.Clients,
+			Memberships: env.Mems, Settings: env.Settings,
 		},
-		Memberships: env.mems,
+		Memberships: env.Mems,
 	}
-	env.d.Audit = AuditHandler{
+	env.Deps.Audit = httpapi.AuditHandler{
 		Service: auditsvc.AuditService{
-			Events: w.repo, Users: env.users, Memberships: env.mems,
+			Events: w.repo, Users: env.Users, Memberships: env.Mems,
 			Now: func() time.Time { return audClock },
 		},
-		Memberships: env.mems,
+		Memberships: env.Mems,
 		Logf:        func(f string, a ...any) { w.logs = append(w.logs, fmt.Sprintf(f, a...)) },
 	}
-	env.r = gin.New()
-	RegisterRoutes(env.r, env.d)
+	env.Router = gin.New()
+	httpapi.RegisterRoutes(env.Router, env.Deps)
 
-	w.owner, w.ownerID = env.register(t, "owner-aud@mail.com")
-	w.salon = env.salon(t, w.owner, "auditoria-uno")
+	w.Owner, w.OwnerID = env.Register(t, "owner-aud@mail.com")
+	w.Salon = env.Salon(t, w.Owner, "auditoria-uno")
 	var id string
-	w.admin, w.adminID = env.register(t, "admin-aud@mail.com")
-	seedRole(t, env, w.salon, w.adminID, domain.RoleAdmin)
-	w.recep, id = env.register(t, "recep-aud@mail.com")
-	seedRole(t, env, w.salon, id, domain.RoleReception)
-	w.prof, w.profID = env.register(t, "prof-aud@mail.com")
-	seedRole(t, env, w.salon, w.profID, domain.RoleProfessional)
-	w.client, id = env.register(t, "client-aud@mail.com")
-	seedRole(t, env, w.salon, id, domain.RoleClient)
-	w.removed, id = env.register(t, "removed-aud@mail.com")
-	seedRole(t, env, w.salon, id, domain.RoleAdmin)
+	w.Admin, w.adminID = env.Register(t, "admin-aud@mail.com")
+	httpkit.SeedRole(t, env, w.Salon, w.adminID, domain.RoleAdmin)
+	w.Recep, id = env.Register(t, "recep-aud@mail.com")
+	httpkit.SeedRole(t, env, w.Salon, id, domain.RoleReception)
+	w.Prof, w.ProfID = env.Register(t, "prof-aud@mail.com")
+	httpkit.SeedRole(t, env, w.Salon, w.ProfID, domain.RoleProfessional)
+	w.Client, id = env.Register(t, "client-aud@mail.com")
+	httpkit.SeedRole(t, env, w.Salon, id, domain.RoleClient)
+	w.Removed, id = env.Register(t, "removed-aud@mail.com")
+	httpkit.SeedRole(t, env, w.Salon, id, domain.RoleAdmin)
 	at := time.Now().Add(-time.Hour)
-	m := env.mems.byKey[id+"|"+w.salon]
+	m := env.Mems.ByKey[id+"|"+w.Salon]
 	m.EndedAt = &at
-	env.mems.byKey[id+"|"+w.salon] = m
-	w.outsider, _ = env.register(t, "outsider-aud@mail.com")
-	w.otherSalon = env.salon(t, w.outsider, "auditoria-dos")
+	env.Mems.ByKey[id+"|"+w.Salon] = m
+	w.Outsider, _ = env.Register(t, "outsider-aud@mail.com")
+	w.otherSalon = env.Salon(t, w.Outsider, "auditoria-dos")
 	return w
 }
 
-func (w *audWorld) path(suffix string) string { return "/api/v1/salons/" + w.salon + suffix }
+func (w *audWorld) path(suffix string) string { return "/api/v1/salons/" + w.Salon + suffix }
 
 func (w *audWorld) do(method, path, body, token string) *httptest.ResponseRecorder {
-	return doReq(w.env.r, method, path, body, token)
+	return httpkit.Do(w.Env.Router, method, path, body, token)
 }
 
 // seed escribe n eventos directamente en el repositorio, uno por minuto hacia
@@ -318,7 +320,7 @@ func (w *audWorld) do(method, path, body, token string) *httptest.ResponseRecord
 func (w *audWorld) seed(t *testing.T, salon string, n int, action string) {
 	t.Helper()
 	for i := 0; i < n; i++ {
-		ev, err := domain.NewAuditEvent(salon, w.ownerID, "Dueña", action, fmt.Sprintf("e%03d", i), audClock.Add(-time.Duration(i)*time.Minute))
+		ev, err := domain.NewAuditEvent(salon, w.OwnerID, "Dueña", action, fmt.Sprintf("e%03d", i), audClock.Add(-time.Duration(i)*time.Minute))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -343,7 +345,7 @@ func (w *audWorld) page(t *testing.T, token, query string) (auditPageJSON, *http
 	r := w.do("GET", w.path("/audit-log"+query), "", token)
 	var p auditPageJSON
 	if r.Code == http.StatusOK {
-		mustJSON(t, r.Body.Bytes(), &p)
+		httpkit.MustJSON(t, r.Body.Bytes(), &p)
 	}
 	return p, r
 }
@@ -359,8 +361,8 @@ func wantErrBody(t *testing.T, r *httptest.ResponseRecorder, code int, msg strin
 // 403 «sin acceso al salón»; sin token 401.
 func TestAuditLog_rolesAndPermissionFirst(t *testing.T) {
 	w := newAudWorld(t)
-	w.seed(t, w.salon, 3, "member.add")
-	for name, tok := range map[string]string{"dueña": w.owner, "admin": w.admin} {
+	w.seed(t, w.Salon, 3, "member.add")
+	for name, tok := range map[string]string{"dueña": w.Owner, "admin": w.Admin} {
 		p, r := w.page(t, tok, "")
 		if r.Code != 200 || len(p.Events) != 3 {
 			t.Errorf("%s: %d %s", name, r.Code, r.Body.String())
@@ -368,41 +370,41 @@ func TestAuditLog_rolesAndPermissionFirst(t *testing.T) {
 	}
 	// Con parámetros inválidos a propósito: gana el 403, y la base no se toca.
 	bad := "?limit=999&before=basura&action=%00"
-	for name, tok := range map[string]string{"recepción": w.recep, "profesional": w.prof, "clienta": w.client} {
+	for name, tok := range map[string]string{"recepción": w.Recep, "profesional": w.Prof, "clienta": w.Client} {
 		r := w.do("GET", w.path("/audit-log"+bad), "", tok)
 		wantErrBody(t, r, 403, "sin permiso")
 		if r2 := w.do("GET", w.path("/audit-log"), "", tok); r2.Code != 403 {
 			t.Errorf("%s: %d", name, r2.Code)
 		}
 	}
-	for name, tok := range map[string]string{"dada de baja": w.removed, "otro salón": w.outsider} {
+	for name, tok := range map[string]string{"dada de baja": w.Removed, "otro salón": w.Outsider} {
 		wantErrBody(t, w.do("GET", w.path("/audit-log"+bad), "", tok), 403, "sin acceso al salón")
 		_ = name
 	}
 	if r := w.do("GET", w.path("/audit-log"), "", ""); r.Code != 401 {
 		t.Errorf("sin token: %d", r.Code)
 	}
-	if w.repo.listCalls != 2 {
-		t.Fatalf("solo las dos lecturas permitidas tocan la base: %d", w.repo.listCalls)
+	if w.repo.ListCalls != 2 {
+		t.Fatalf("solo las dos lecturas permitidas tocan la base: %d", w.repo.ListCalls)
 	}
 }
 
 func TestAuditLog_shapeAndEmpty(t *testing.T) {
 	w := newAudWorld(t)
-	r := w.do("GET", w.path("/audit-log"), "", w.owner)
+	r := w.do("GET", w.path("/audit-log"), "", w.Owner)
 	if r.Code != 200 || strings.TrimSpace(r.Body.String()) != `{"events":[],"next_cursor":null}` {
 		t.Fatalf("vacío: %d %s", r.Code, r.Body.String())
 	}
-	ev, _ := domain.NewAuditEvent(w.salon, "u1", "Ana", "member.update", "m-1", audClock)
+	ev, _ := domain.NewAuditEvent(w.Salon, "u1", "Ana", "member.update", "m-1", audClock)
 	_ = w.repo.Append(ev)
-	noEnt, _ := domain.NewAuditEvent(w.salon, "u1", "", "settings.update", "", audClock.Add(-time.Minute))
+	noEnt, _ := domain.NewAuditEvent(w.Salon, "u1", "", "settings.update", "", audClock.Add(-time.Minute))
 	_ = w.repo.Append(noEnt)
-	r = w.do("GET", w.path("/audit-log"), "", w.owner)
+	r = w.do("GET", w.path("/audit-log"), "", w.Owner)
 	var raw struct {
 		Events     []map[string]any `json:"events"`
 		NextCursor any              `json:"next_cursor"`
 	}
-	mustJSON(t, r.Body.Bytes(), &raw)
+	httpkit.MustJSON(t, r.Body.Bytes(), &raw)
 	if len(raw.Events) != 2 || raw.NextCursor != nil {
 		t.Fatalf("forma: %s", r.Body.String())
 	}
@@ -420,9 +422,9 @@ func TestAuditLog_shapeAndEmpty(t *testing.T) {
 
 func TestAuditLog_limitDefaultAndBounds(t *testing.T) {
 	w := newAudWorld(t)
-	w.seed(t, w.salon, 130, "sale.x")
+	w.seed(t, w.Salon, 130, "sale.x")
 	count := func(q string) int {
-		p, r := w.page(t, w.owner, q)
+		p, r := w.page(t, w.Owner, q)
 		if r.Code != 200 {
 			t.Fatalf("%s: %d %s", q, r.Code, r.Body.String())
 		}
@@ -437,24 +439,24 @@ func TestAuditLog_limitDefaultAndBounds(t *testing.T) {
 	if n := count("?limit=1"); n != 1 {
 		t.Errorf("límite 1: %d", n)
 	}
-	calls := w.repo.listCalls
+	calls := w.repo.ListCalls
 	for _, q := range []string{"?limit=0", "?limit=101", "?limit=-1", "?limit=abc", "?limit=1.5", "?limit=%20"} {
-		wantErrBody(t, w.do("GET", w.path("/audit-log"+q), "", w.owner), 400, "El limite debe ser entre 1 y 100")
+		wantErrBody(t, w.do("GET", w.path("/audit-log"+q), "", w.Owner), 400, "El limite debe ser entre 1 y 100")
 	}
-	if w.repo.listCalls != calls {
+	if w.repo.ListCalls != calls {
 		t.Error("un límite inválido no toca la base")
 	}
 }
 
 func TestAuditLog_threePagesAndCursor(t *testing.T) {
 	w := newAudWorld(t)
-	w.seed(t, w.salon, 25, "sale.x")
+	w.seed(t, w.Salon, 25, "sale.x")
 	var seen []string
 	q := "?limit=10"
 	var sizes []int
 	var cursors []string
 	for i := 0; i < 5; i++ {
-		p, r := w.page(t, w.owner, q)
+		p, r := w.page(t, w.Owner, q)
 		if r.Code != 200 {
 			t.Fatalf("página %d: %d %s", i, r.Code, r.Body.String())
 		}
@@ -477,7 +479,7 @@ func TestAuditLog_threePagesAndCursor(t *testing.T) {
 		}
 	}
 	// La última página lleva next_cursor null explícito en el JSON.
-	r := w.do("GET", w.path("/audit-log?limit=10&before="+cursors[1]), "", w.owner)
+	r := w.do("GET", w.path("/audit-log?limit=10&before="+cursors[1]), "", w.Owner)
 	if !strings.Contains(r.Body.String(), `"next_cursor":null`) {
 		t.Fatalf("última página: %s", r.Body.String())
 	}
@@ -489,24 +491,24 @@ func TestAuditLog_threePagesAndCursor(t *testing.T) {
 
 func TestAuditLog_invalidCursor(t *testing.T) {
 	w := newAudWorld(t)
-	w.seed(t, w.salon, 3, "sale.x")
-	calls := w.repo.listCalls
+	w.seed(t, w.Salon, 3, "sale.x")
+	calls := w.repo.ListCalls
 	for _, c := range []string{"basura", "AAAA", "!!!", strings.Repeat("A", 500), "MjAyNi0wNi0wMVQxMjowMDowMFo"} {
-		wantErrBody(t, w.do("GET", w.path("/audit-log?before="+c), "", w.owner), 400, "Cursor invalido")
+		wantErrBody(t, w.do("GET", w.path("/audit-log?before="+c), "", w.Owner), 400, "Cursor invalido")
 	}
-	if w.repo.listCalls != calls {
+	if w.repo.ListCalls != calls {
 		t.Error("un cursor inválido no toca la base")
 	}
 }
 
 func TestAuditLog_actionFilter(t *testing.T) {
 	w := newAudWorld(t)
-	w.seed(t, w.salon, 2, "member.add")
-	w.seed(t, w.salon, 2, "member.update")
-	w.seed(t, w.salon, 2, "memberx.add")
-	w.seed(t, w.salon, 2, "payroll_run.pay")
+	w.seed(t, w.Salon, 2, "member.add")
+	w.seed(t, w.Salon, 2, "member.update")
+	w.seed(t, w.Salon, 2, "memberx.add")
+	w.seed(t, w.Salon, 2, "payroll_run.pay")
 	count := func(q string) int {
-		p, r := w.page(t, w.owner, q)
+		p, r := w.page(t, w.Owner, q)
 		if r.Code != 200 {
 			t.Fatalf("%s: %d %s", q, r.Code, r.Body.String())
 		}
@@ -521,14 +523,14 @@ func TestAuditLog_actionFilter(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{"%00", "a%00b", "a%0Ab", "a%0Db", "%0A"} {
-		wantErrBody(t, w.do("GET", w.path("/audit-log?action="+bad), "", w.owner), 400, "Accion invalida")
+		wantErrBody(t, w.do("GET", w.path("/audit-log?action="+bad), "", w.Owner), 400, "Accion invalida")
 	}
 	// Filtro + paginación juntos.
-	p, _ := w.page(t, w.owner, "?action=member&limit=3")
+	p, _ := w.page(t, w.Owner, "?action=member&limit=3")
 	if len(p.Events) != 3 || p.NextCursor == nil {
 		t.Fatalf("filtro con página: %d %v", len(p.Events), p.NextCursor)
 	}
-	p2, _ := w.page(t, w.owner, "?action=member&limit=3&before="+*p.NextCursor)
+	p2, _ := w.page(t, w.Owner, "?action=member&limit=3&before="+*p.NextCursor)
 	if len(p2.Events) != 1 || p2.NextCursor != nil {
 		t.Fatalf("segunda página filtrada: %d %v", len(p2.Events), p2.NextCursor)
 	}
@@ -536,9 +538,9 @@ func TestAuditLog_actionFilter(t *testing.T) {
 
 func TestAuditLog_salonIsolation(t *testing.T) {
 	w := newAudWorld(t)
-	w.seed(t, w.salon, 3, "member.add")
+	w.seed(t, w.Salon, 3, "member.add")
 	w.seed(t, w.otherSalon, 5, "secret.action")
-	p, _ := w.page(t, w.owner, "")
+	p, _ := w.page(t, w.Owner, "")
 	if len(p.Events) != 3 {
 		t.Fatalf("el salón uno ve solo lo suyo: %d", len(p.Events))
 	}
@@ -548,21 +550,21 @@ func TestAuditLog_salonIsolation(t *testing.T) {
 		}
 	}
 	// La dueña del otro salón lee el suyo y NO el ajeno.
-	r := w.do("GET", "/api/v1/salons/"+w.otherSalon+"/audit-log", "", w.outsider)
+	r := w.do("GET", "/api/v1/salons/"+w.otherSalon+"/audit-log", "", w.Outsider)
 	var po auditPageJSON
-	mustJSON(t, r.Body.Bytes(), &po)
+	httpkit.MustJSON(t, r.Body.Bytes(), &po)
 	if r.Code != 200 || len(po.Events) != 5 {
 		t.Fatalf("el otro salón: %d %s", r.Code, r.Body.String())
 	}
-	wantErrBody(t, w.do("GET", w.path("/audit-log"), "", w.outsider), 403, "sin acceso al salón")
+	wantErrBody(t, w.do("GET", w.path("/audit-log"), "", w.Outsider), 403, "sin acceso al salón")
 	// Un cursor de OTRO salón usado acá no filtra eventos ajenos.
 	po2, _ := func() (auditPageJSON, int) {
 		var x auditPageJSON
-		rr := w.do("GET", "/api/v1/salons/"+w.otherSalon+"/audit-log?limit=2", "", w.outsider)
-		mustJSON(t, rr.Body.Bytes(), &x)
+		rr := w.do("GET", "/api/v1/salons/"+w.otherSalon+"/audit-log?limit=2", "", w.Outsider)
+		httpkit.MustJSON(t, rr.Body.Bytes(), &x)
 		return x, rr.Code
 	}()
-	p3, r3 := w.page(t, w.owner, "?before="+*po2.NextCursor)
+	p3, r3 := w.page(t, w.Owner, "?before="+*po2.NextCursor)
 	if r3.Code != 200 {
 		t.Fatalf("cursor de otro salón: %d", r3.Code)
 	}
@@ -575,58 +577,58 @@ func TestAuditLog_salonIsolation(t *testing.T) {
 
 func TestAuditLog_repoFailureIs500Generic(t *testing.T) {
 	w := newAudWorld(t)
-	w.repo.listErr = errAuditDown
-	wantErrBody(t, w.do("GET", w.path("/audit-log"), "", w.owner), 500, "error interno")
+	w.repo.ListErr = httpkit.ErrAuditDown
+	wantErrBody(t, w.do("GET", w.path("/audit-log"), "", w.Owner), 500, "error interno")
 }
 
 // Leer el registro no se audita, y los eventos de un salón no aparecen por
 // escribir en otro.
 func TestAuditLog_readingIsNotAudited(t *testing.T) {
 	w := newAudWorld(t)
-	w.do("GET", w.path("/audit-log"), "", w.owner)
-	w.do("GET", w.path("/services"), "", w.owner)
-	if w.repo.appendCalls != 0 {
-		t.Fatalf("leer no registra: %d", w.repo.appendCalls)
+	w.do("GET", w.path("/audit-log"), "", w.Owner)
+	w.do("GET", w.path("/services"), "", w.Owner)
+	if w.repo.AppendCalls != 0 {
+		t.Fatalf("leer no registra: %d", w.repo.AppendCalls)
 	}
 }
 
 // --- D2 sobre las rutas reales -------------------------------------------------------
 
-func (w *audWorld) lastActions() []string { return w.repo.actions() }
+func (w *audWorld) lastActions() []string { return w.repo.Actions() }
 
 func TestAuditRoutes_membersInvitationsSettingsCashClose(t *testing.T) {
 	w := newAudWorld(t)
-	env := w.env
-	newTok, newID := env.register(t, "nuevo-aud@mail.com")
+	env := w.Env
+	newTok, newID := env.Register(t, "nuevo-aud@mail.com")
 	_ = newTok
 	steps := []struct {
 		method, path, body, token string
 		status                    int
 		want                      string // «acción|entidad» o "" si NO debe registrar
 	}{
-		{"PUT", w.path("/settings"), `{"timezone":"America/Bogota","open_time":"08:00","close_time":"17:30","slot_step_min":20}`, w.owner, 200, "settings.update|"},
-		{"PUT", w.path("/settings"), `{"timezone":"Marte/Olympus","open_time":"08:00","close_time":"17:00","slot_step_min":30}`, w.owner, 400, ""},
-		{"PUT", w.path("/settings"), `{"timezone":"America/Bogota","open_time":"08:00","close_time":"17:30","slot_step_min":20}`, w.recep, 403, ""},
-		{"POST", w.path("/members"), `{"email":"nuevo-aud@mail.com","role":"professional"}`, w.owner, 201, "member.add|"},
-		{"POST", w.path("/members"), `{"email":"nuevo-aud@mail.com","role":"professional"}`, w.recep, 403, ""},
-		{"PATCH", w.path("/members/" + newID), `{"attends":true}`, w.owner, 200, "member.update|" + newID},
-		{"PUT", w.path("/members/" + newID + "/services"), `{"service_ids":[]}`, w.owner, 200, "member.services|" + newID},
-		{"DELETE", w.path("/members/" + newID), "", w.owner, 204, "member.remove|" + newID},
-		{"DELETE", w.path("/members/" + newID), "", w.owner, 404, ""},
-		{"POST", w.path("/members/" + newID + "/reactivate"), "", w.owner, 200, "member.reactivate|" + newID},
-		{"POST", w.path("/members/" + newID + "/reactivate"), "", w.owner, 409, ""},
-		{"POST", w.path("/invitations"), `{"email":"invitada-aud@mail.com","role":"reception"}`, w.owner, 201, "invitation.create|"},
-		{"POST", w.path("/invitations"), `{"email":"mal"}`, w.owner, 400, ""},
-		{"POST", w.path("/cash-closes"), `{"counted_cents":0,"note":"x"}`, w.recep, 403, ""},
-		{"POST", w.path("/cash-closes"), `{"counted_cents":0,"note":"x"}`, w.owner, 201, "cash_close.create|"},
+		{"PUT", w.path("/settings"), `{"timezone":"America/Bogota","open_time":"08:00","close_time":"17:30","slot_step_min":20}`, w.Owner, 200, "settings.update|"},
+		{"PUT", w.path("/settings"), `{"timezone":"Marte/Olympus","open_time":"08:00","close_time":"17:00","slot_step_min":30}`, w.Owner, 400, ""},
+		{"PUT", w.path("/settings"), `{"timezone":"America/Bogota","open_time":"08:00","close_time":"17:30","slot_step_min":20}`, w.Recep, 403, ""},
+		{"POST", w.path("/members"), `{"email":"nuevo-aud@mail.com","role":"professional"}`, w.Owner, 201, "member.add|"},
+		{"POST", w.path("/members"), `{"email":"nuevo-aud@mail.com","role":"professional"}`, w.Recep, 403, ""},
+		{"PATCH", w.path("/members/" + newID), `{"attends":true}`, w.Owner, 200, "member.update|" + newID},
+		{"PUT", w.path("/members/" + newID + "/services"), `{"service_ids":[]}`, w.Owner, 200, "member.services|" + newID},
+		{"DELETE", w.path("/members/" + newID), "", w.Owner, 204, "member.remove|" + newID},
+		{"DELETE", w.path("/members/" + newID), "", w.Owner, 404, ""},
+		{"POST", w.path("/members/" + newID + "/reactivate"), "", w.Owner, 200, "member.reactivate|" + newID},
+		{"POST", w.path("/members/" + newID + "/reactivate"), "", w.Owner, 409, ""},
+		{"POST", w.path("/invitations"), `{"email":"invitada-aud@mail.com","role":"reception"}`, w.Owner, 201, "invitation.create|"},
+		{"POST", w.path("/invitations"), `{"email":"mal"}`, w.Owner, 400, ""},
+		{"POST", w.path("/cash-closes"), `{"counted_cents":0,"note":"x"}`, w.Recep, 403, ""},
+		{"POST", w.path("/cash-closes"), `{"counted_cents":0,"note":"x"}`, w.Owner, 201, "cash_close.create|"},
 	}
 	for i, s := range steps {
-		before := len(w.repo.rows)
+		before := len(w.repo.Rows)
 		r := w.do(s.method, s.path, s.body, s.token)
 		if r.Code != s.status {
 			t.Fatalf("paso %d %s %s: %d %s (quería %d)", i, s.method, s.path, r.Code, r.Body.String(), s.status)
 		}
-		got := w.repo.actions()
+		got := w.repo.Actions()
 		if s.want == "" {
 			if len(got) != before {
 				t.Errorf("paso %d (%d): no debe registrar, hay %v", i, s.status, got[before:])
@@ -637,8 +639,8 @@ func TestAuditRoutes_membersInvitationsSettingsCashClose(t *testing.T) {
 			t.Errorf("paso %d: esperaba %q, hay %v", i, s.want, got[before:])
 			continue
 		}
-		ev := w.repo.rows[len(w.repo.rows)-1]
-		if ev.SalonID != w.salon || ev.ActorUserID != w.ownerID || ev.ActorName != "owner-aud@mail.com" {
+		ev := w.repo.Rows[len(w.repo.Rows)-1]
+		if ev.SalonID != w.Salon || ev.ActorUserID != w.OwnerID || ev.ActorName != "owner-aud@mail.com" {
 			t.Errorf("paso %d: actor/salón: %+v", i, ev)
 		}
 	}
@@ -648,25 +650,25 @@ func TestAuditRoutes_membersInvitationsSettingsCashClose(t *testing.T) {
 			ID string `json:"id"`
 		} `json:"invitations"`
 	}
-	mustJSON(t, w.do("GET", w.path("/invitations"), "", w.owner).Body.Bytes(), &invs)
+	httpkit.MustJSON(t, w.do("GET", w.path("/invitations"), "", w.Owner).Body.Bytes(), &invs)
 	if len(invs.Invitations) != 1 {
 		t.Fatalf("esperaba 1 invitación pendiente: %+v", invs)
 	}
 	iid := invs.Invitations[0].ID
-	if r := w.do("DELETE", w.path("/invitations/"+iid), "", w.recep); r.Code != 403 {
+	if r := w.do("DELETE", w.path("/invitations/"+iid), "", w.Recep); r.Code != 403 {
 		t.Fatalf("recepción revocando: %d", r.Code)
 	}
-	if r := w.do("DELETE", w.path("/invitations/"+iid), "", w.owner); r.Code != 204 {
+	if r := w.do("DELETE", w.path("/invitations/"+iid), "", w.Owner); r.Code != 204 {
 		t.Fatalf("revocar: %d", r.Code)
 	}
-	got := w.repo.actions()
+	got := w.repo.Actions()
 	if len(got) == 0 || got[len(got)-1] != "invitation.revoke|"+iid {
 		t.Fatalf("revoke: %v", got)
 	}
 	// Un salón ajeno no escribe en el nuestro: ese 403 no registra.
 	n := len(got)
-	w.do("PUT", w.path("/settings"), `{"timezone":"America/Bogota","open_time":"08:00","close_time":"17:30","slot_step_min":20}`, w.outsider)
-	if len(w.repo.rows) != n {
+	w.do("PUT", w.path("/settings"), `{"timezone":"America/Bogota","open_time":"08:00","close_time":"17:30","slot_step_min":20}`, w.Outsider)
+	if len(w.repo.Rows) != n {
 		t.Fatal("un 403 de otro salón no registra")
 	}
 	if len(w.logs) != 0 {
@@ -676,43 +678,43 @@ func TestAuditRoutes_membersInvitationsSettingsCashClose(t *testing.T) {
 
 func TestAuditRoutes_expensesLoyaltyProducts(t *testing.T) {
 	w := newAudWorld(t)
-	svcID := w.env.seedService(t, w.owner, w.salon, "Corte", 15000)
+	svcID := w.Env.SeedService(t, w.Owner, w.Salon, "Corte", 15000)
 	exp := `{"category":"rent","amount_cents":150000,"spent_on":"2026-03-19","description":"Alquiler"}`
-	r := w.do("POST", w.path("/expenses"), exp, w.owner)
+	r := w.do("POST", w.path("/expenses"), exp, w.Owner)
 	if r.Code != 201 {
 		t.Fatalf("gasto: %d %s", r.Code, r.Body.String())
 	}
 	var ex struct {
 		ID string `json:"id"`
 	}
-	mustJSON(t, r.Body.Bytes(), &ex)
-	if r := w.do("POST", w.path("/expenses"), `{}`, w.owner); r.Code != 400 {
+	httpkit.MustJSON(t, r.Body.Bytes(), &ex)
+	if r := w.do("POST", w.path("/expenses"), `{}`, w.Owner); r.Code != 400 {
 		t.Fatalf("gasto inválido: %d", r.Code)
 	}
-	if r := w.do("PUT", w.path("/expenses/"+ex.ID), exp, w.owner); r.Code != 200 {
+	if r := w.do("PUT", w.path("/expenses/"+ex.ID), exp, w.Owner); r.Code != 200 {
 		t.Fatalf("editar gasto: %d %s", r.Code, r.Body.String())
 	}
-	if r := w.do("DELETE", w.path("/expenses/"+ex.ID), "", w.recep); r.Code != 403 {
+	if r := w.do("DELETE", w.path("/expenses/"+ex.ID), "", w.Recep); r.Code != 403 {
 		t.Fatalf("recepción borrando: %d", r.Code)
 	}
-	if r := w.do("DELETE", w.path("/expenses/"+ex.ID), "", w.owner); r.Code != 204 {
+	if r := w.do("DELETE", w.path("/expenses/"+ex.ID), "", w.Owner); r.Code != 204 {
 		t.Fatalf("borrar gasto: %d", r.Code)
 	}
-	if r := w.do("PUT", w.path("/loyalty-program"), `{"enabled":true,"visits_required":5,"reward_service_id":"`+svcID+`","reward_validity_days":null}`, w.owner); r.Code != 200 {
+	if r := w.do("PUT", w.path("/loyalty-program"), `{"enabled":true,"visits_required":5,"reward_service_id":"`+svcID+`","reward_validity_days":null}`, w.Owner); r.Code != 200 {
 		t.Fatalf("programa: %d %s", r.Code, r.Body.String())
 	}
-	if r := w.do("PUT", w.path("/loyalty-program"), `{"enabled":true}`, w.owner); r.Code != 400 {
+	if r := w.do("PUT", w.path("/loyalty-program"), `{"enabled":true}`, w.Owner); r.Code != 400 {
 		t.Fatalf("programa parcial: %d", r.Code)
 	}
-	r = w.do("POST", w.path("/products"), `{"name":"Shampoo","price_cents":50000,"stock":5,"low_stock_threshold":2}`, w.owner)
+	r = w.do("POST", w.path("/products"), `{"name":"Shampoo","price_cents":50000,"stock":5,"low_stock_threshold":2}`, w.Owner)
 	var pr struct {
 		ID string `json:"id"`
 	}
-	mustJSON(t, r.Body.Bytes(), &pr)
-	if r := w.do("POST", w.path("/products/"+pr.ID+"/adjust"), `{"delta":1,"reason":"restock"}`, w.owner); r.Code != 200 {
+	httpkit.MustJSON(t, r.Body.Bytes(), &pr)
+	if r := w.do("POST", w.path("/products/"+pr.ID+"/adjust"), `{"delta":1,"reason":"restock"}`, w.Owner); r.Code != 200 {
 		t.Fatalf("ajuste: %d %s", r.Code, r.Body.String())
 	}
-	if r := w.do("POST", w.path("/products/"+pr.ID+"/adjust"), `{}`, w.owner); r.Code != 400 {
+	if r := w.do("POST", w.path("/products/"+pr.ID+"/adjust"), `{}`, w.Owner); r.Code != 400 {
 		t.Fatalf("ajuste inválido: %d", r.Code)
 	}
 	// Crear/editar productos NO está en la lista de D2: no se audita.
@@ -722,7 +724,7 @@ func TestAuditRoutes_expensesLoyaltyProducts(t *testing.T) {
 		"expense.create|", "expense.update|" + ex.ID, "expense.delete|" + ex.ID,
 		"loyalty.program|", "product.adjust|" + pr.ID,
 	}
-	if got := w.repo.actions(); fmt.Sprint(got) != fmt.Sprint(want) {
+	if got := w.repo.Actions(); fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("esperaba %v, hay %v", want, got)
 	}
 }
@@ -731,8 +733,8 @@ func TestAuditRoutes_expensesLoyaltyProducts(t *testing.T) {
 // servicios y productos, turnos...).
 func TestAuditRoutes_unwrappedRoutesDoNotWrite(t *testing.T) {
 	w := newAudWorld(t)
-	svcID := w.env.seedService(t, w.owner, w.salon, "Corte", 15000)
-	seedProfessional(w.env, w.salon, "prof-x")
+	svcID := w.Env.SeedService(t, w.Owner, w.Salon, "Corte", 15000)
+	httpkit.SeedProfessional(w.Env, w.Salon, "prof-x")
 	for _, s := range []struct{ method, path, body string }{
 		{"POST", w.path("/services"), `{"name":"Tinte","duration_min":30,"price_cents":9000}`},
 		{"POST", w.path("/sales"), `{"professional_id":"prof-x","client_name":"Lía","method":"cash","items":[{"service_id":"` + svcID + `","qty":1,"unit_price_cents":15000}]}`},
@@ -740,13 +742,13 @@ func TestAuditRoutes_unwrappedRoutesDoNotWrite(t *testing.T) {
 		{"POST", w.path("/products"), `{"name":"Gel","price_cents":100,"stock":1,"low_stock_threshold":0}`},
 		{"GET", w.path("/services"), ""},
 	} {
-		r := w.do(s.method, s.path, s.body, w.owner)
+		r := w.do(s.method, s.path, s.body, w.Owner)
 		if r.Code < 200 || r.Code > 299 {
 			t.Fatalf("%s %s: %d %s", s.method, s.path, r.Code, r.Body.String())
 		}
 	}
-	if w.repo.appendCalls != 0 {
-		t.Fatalf("rutas fuera de D2 no auditan: %v", w.repo.actions())
+	if w.repo.AppendCalls != 0 {
+		t.Fatalf("rutas fuera de D2 no auditan: %v", w.repo.Actions())
 	}
 }
 
@@ -754,9 +756,9 @@ func TestAuditRoutes_unwrappedRoutesDoNotWrite(t *testing.T) {
 func TestAuditRoutes_writerDownKeepsResponse(t *testing.T) {
 	w := newAudWorld(t)
 	body := `{"timezone":"America/Bogota","open_time":"08:00","close_time":"17:30","slot_step_min":20}`
-	ok := w.do("PUT", w.path("/settings"), body, w.owner)
-	w.repo.appendErr = errAuditDown
-	down := w.do("PUT", w.path("/settings"), body, w.owner)
+	ok := w.do("PUT", w.path("/settings"), body, w.Owner)
+	w.repo.AppendErr = httpkit.ErrAuditDown
+	down := w.do("PUT", w.path("/settings"), body, w.Owner)
 	if down.Code != ok.Code || down.Body.String() != ok.Body.String() {
 		t.Fatalf("la respuesta cambió con el escritor caído: %d %s vs %d %s", down.Code, down.Body.String(), ok.Code, ok.Body.String())
 	}
@@ -769,7 +771,7 @@ func TestAuditRoutes_writerDownKeepsResponse(t *testing.T) {
 
 // La forma de la tabla de rutas no se puede mirar en gin (solo el último
 // handler), así que se lee routes.go: EXACTAMENTE estas 22 rutas llevan
-// audit("<acción>") y ninguna otra. (D2 también nombra `export.expenses`, pero
+// audit("<acción>") y ninguna otra. (D2 también nombra `export.Expenses`, pero
 // no existe una exportación CSV de gastos: no hay ruta que envolver.) Es la guarda de que ninguna ruta de D2 se
 // quede sin envolver ni una ruta fuera de D2 quede envuelta.
 func TestAuditRoutes_exactlyTheD2ListIsWrapped(t *testing.T) {
@@ -826,7 +828,7 @@ func TestAuditRoutes_exactlyTheD2ListIsWrapped(t *testing.T) {
 	// Cada acción envuelta tiene su entrada en la tabla de entidades iff la ruta
 	// tiene un id propio.
 	for action, route := range want {
-		hasOwn := auditEntityParams[action] != ""
+		hasOwn := httpapi.AuditEntityParams[action] != ""
 		wantParam := ""
 		switch action {
 		case "payroll_run.adjust", "payroll_run.pay", "payroll_run.delete":
@@ -838,8 +840,8 @@ func TestAuditRoutes_exactlyTheD2ListIsWrapped(t *testing.T) {
 				}
 			}
 		}
-		if hasOwn != (wantParam != "") || auditEntityParams[action] != wantParam {
-			t.Errorf("%s: parámetro de entidad %q, esperaba %q", action, auditEntityParams[action], wantParam)
+		if hasOwn != (wantParam != "") || httpapi.AuditEntityParams[action] != wantParam {
+			t.Errorf("%s: parámetro de entidad %q, esperaba %q", action, httpapi.AuditEntityParams[action], wantParam)
 		}
 	}
 }

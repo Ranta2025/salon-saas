@@ -34,8 +34,8 @@ type ClientHandler struct {
 // photoURLTTL es el vencimiento de la url firmada.
 const photoURLTTL = 24 * time.Hour
 
-// photoURLNow es el reloj de la firma (variable para tests deterministas).
-var photoURLNow = time.Now
+// PhotoURLNow es el reloj de la firma (variable para tests deterministas).
+var PhotoURLNow = time.Now
 
 func (h ClientHandler) loadActor(c *gin.Context, salonID string) (domain.Membership, bool) {
 	uid, _ := c.Get("userID")
@@ -69,7 +69,7 @@ func (h ClientHandler) photoURL(p domain.ClientPhoto) string {
 	if h.Photos == nil {
 		return "/api/v1/photos/" + p.ID
 	}
-	exp := photoURLNow().Add(photoURLTTL).Unix()
+	exp := PhotoURLNow().Add(photoURLTTL).Unix()
 	return fmt.Sprintf("/api/v1/photos/%s?exp=%d&sig=%s", p.ID, exp, h.Photos.Sign(p.ID, exp))
 }
 
@@ -143,7 +143,7 @@ func (h ClientHandler) AddPhoto(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, contentType, err := readUpload(c)
+	data, contentType, err := ReadUpload(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -225,10 +225,10 @@ var errUpload = errors.New("se esperaba multipart/form-data con el archivo en el
 // nombre.
 var uploadFields = []string{"photo", "file"}
 
-// readUpload saca los bytes y el content type declarado de lo que subió el
+// ReadUpload saca los bytes y el content type declarado de lo que subió el
 // cliente. El límite de 8 MB se aplica al leer (no se carga un archivo enorme
 // en memoria para después rechazarlo).
-func readUpload(c *gin.Context) ([]byte, string, error) {
+func ReadUpload(c *gin.Context) ([]byte, string, error) {
 	// Tope del BODY antes de parsear nada (R4-001): c.Request.FormFile parsea y
 	// spoolea TODO el multipart en memoria/disco sin límite propio. Sin esta
 	// línea, un body de 1 GB con un archivo chico adentro se acepta y el

@@ -1,4 +1,4 @@
-package httpapi
+package httpapi_test
 
 import (
 	"bytes"
@@ -7,12 +7,14 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	httpapi "salon-saas/internal/adapters/http"
+	"salon-saas/internal/app"
+	"salon-saas/internal/domain"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
-	"salon-saas/internal/domain"
 )
 
 // memsCaida simula la DB caída en Memberships.Find: el repo no distingue "no
@@ -36,7 +38,7 @@ func TestStaff_find_falla_da_500_no_403(t *testing.T) {
 	r := gin.New()
 	r.GET("/staff/:id", func(c *gin.Context) {
 		c.Set("userID", "u-123")
-		StaffHandler{Staff: staffSvc, Memberships: roto}.List(c)
+		httpapi.StaffHandler{Staff: staffSvc, Memberships: roto}.List(c)
 	})
 
 	// El log del servidor se captura aparte: el detalle va ahí y no al cliente.
@@ -57,7 +59,7 @@ func TestStaff_find_falla_da_500_no_403(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("json: %v (%s)", err, w.Body.String())
 	}
-	if body.Error != internalErrorMessage {
+	if body.Error != httpapi.InternalErrorMessage {
 		t.Fatalf("el 500 debe ser genérico, dio %q", body.Error)
 	}
 	for _, fuga := range []string{"pq:", "connection reset", "u-123"} {
@@ -80,12 +82,12 @@ func TestStaff_find_falla_da_500_no_403(t *testing.T) {
 
 // H4 (PRESERVE): "no es miembro" sigue siendo 403 con el mismo mensaje.
 func TestStaff_no_miembro_sigue_dando_403(t *testing.T) {
-	env := newPOSEnv()
-	ownerTok, _ := env.register(t, "owner@mail.com")
-	salonID := env.salon(t, ownerTok, "staff-ajeno")
-	strangerTok, _ := env.register(t, "stranger@mail.com")
+	env := httpkit.NewPOSEnv()
+	ownerTok, _ := env.Register(t, "owner@mail.com")
+	salonID := env.Salon(t, ownerTok, "staff-ajeno")
+	strangerTok, _ := env.Register(t, "stranger@mail.com")
 
-	w := doReq(env.r, "GET", "/api/v1/salons/"+salonID+"/staff", "", strangerTok)
+	w := httpkit.Do(env.Router, "GET", "/api/v1/salons/"+salonID+"/staff", "", strangerTok)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("no-miembro: 403, dio %d %s", w.Code, w.Body.String())
 	}

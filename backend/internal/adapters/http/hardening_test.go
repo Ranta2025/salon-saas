@@ -1,4 +1,4 @@
-package httpapi
+package httpapi_test
 
 import (
 	"bytes"
@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	httpapi "salon-saas/internal/adapters/http"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
 	"time"
@@ -14,17 +16,17 @@ import (
 )
 
 // newHardenedRouter arma un router con TODOS los middlewares de producción
-// (CORS, tope de body, logger con redacción) y la misma tabla de rutas.
+// (httpapi.CORS, tope de body, logger con redacción) y la misma tabla de rutas.
 func newHardenedRouter(origins []string) *gin.Engine {
 	gin.SetMode(gin.TestMode)
-	env := newPOSEnv()
+	env := httpkit.NewPOSEnv()
 	r := gin.New()
-	r.Use(CORS(origins...), MaxJSONBody(1<<20), RequestLogger(gin.DefaultWriter))
-	RegisterRoutes(r, env.deps())
+	r.Use(httpapi.CORS(origins...), httpapi.MaxJSONBody(1<<20), httpapi.RequestLogger(gin.DefaultWriter))
+	httpapi.RegisterRoutes(r, env.Deps)
 	return r
 }
 
-// B-01: sin CORS el login falla en el navegador (el preflight daba 404).
+// B-01: sin httpapi.CORS el login falla en el navegador (el preflight daba 404).
 func TestCORS_preflight_y_respuesta_real(t *testing.T) {
 	r := newHardenedRouter([]string{"http://localhost:5173", "http://localhost:4173"})
 
@@ -49,7 +51,7 @@ func TestCORS_preflight_y_respuesta_real(t *testing.T) {
 		t.Fatalf("Allow-Headers debe incluir Authorization y Content-Type, dio %q", headers)
 	}
 	if w.Header().Get("Vary") == "" {
-		t.Fatal("la respuesta CORS debe declarar Vary (caché por origen)")
+		t.Fatal("la respuesta httpapi.CORS debe declarar Vary (caché por origen)")
 	}
 
 	// La respuesta real (no preflight) también lleva el header, si no el
@@ -81,7 +83,7 @@ func TestCORS_origen_no_permitido(t *testing.T) {
 		t.Fatalf("no debe permitir el origen ajeno, dio %q", got)
 	}
 
-	// Petición real de un origen ajeno: pasa (es un curl/bot), pero SIN CORS,
+	// Petición real de un origen ajeno: pasa (es un curl/bot), pero SIN httpapi.CORS,
 	// así el navegador no puede leer la respuesta.
 	req = httptest.NewRequest("GET", "/health", nil)
 	req.Header.Set("Origin", "https://evil.example")
@@ -96,9 +98,9 @@ func TestCORS_origen_no_permitido(t *testing.T) {
 func TestRateLimit_login_por_ip(t *testing.T) {
 	// Router nuevo con el mismo cableado y el limiter aplicado a /auth/.
 	r := gin.New()
-	env := newPOSEnv()
-	r.Use(RateLimit(2, time.Minute, "/api/v1/auth/"))
-	RegisterRoutes(r, env.deps())
+	env := httpkit.NewPOSEnv()
+	r.Use(httpapi.RateLimit(2, time.Minute, "/api/v1/auth/"))
+	httpapi.RegisterRoutes(r, env.Deps)
 	login := `{"email":"nadie@mail.com","password":"otraClave1"}`
 	codes := make([]int, 0, 3)
 	for i := 0; i < 3; i++ {
@@ -143,7 +145,7 @@ func TestRequestLogger_redacta_token(t *testing.T) {
 	defer func() { gin.DefaultWriter = prev }()
 
 	r := gin.New()
-	r.Use(RequestLogger(&buf))
+	r.Use(httpapi.RequestLogger(&buf))
 	r.GET("/api/v1/ws", func(c *gin.Context) { c.Status(http.StatusNoContent) })
 
 	req := httptest.NewRequest("GET", "/api/v1/ws?token=super-secreto-jwt&otro=1", nil)
@@ -167,7 +169,7 @@ func TestRequestLogger_redacta_token(t *testing.T) {
 // "multipart/form-data" está cubierto en body_limit_test.go).
 func TestMaxJSONBody(t *testing.T) {
 	r := gin.New()
-	r.Use(MaxJSONBody(1 << 20))
+	r.Use(httpapi.MaxJSONBody(1 << 20))
 	r.POST("/x", func(c *gin.Context) {
 		var in map[string]any
 		if err := c.ShouldBindJSON(&in); err != nil {
@@ -215,7 +217,7 @@ func TestRespondErr_500_generico(t *testing.T) {
 
 	r := gin.New()
 	r.GET("/boom", func(c *gin.Context) {
-		respondErrLogf(c, errFakeInfra, logf)
+		httpapi.RespondErrLogf(c, httpkit.ErrFakeInfra, logf)
 	})
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/boom", nil))

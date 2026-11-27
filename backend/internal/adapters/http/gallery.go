@@ -32,7 +32,7 @@ func (h GalleryHandler) loadActor(c *gin.Context, salonID string) (domain.Member
 }
 
 // MaxJSONBodyExceptGalleryUpload es MaxJSONBody con la subida de la galería
-// exenta (tiene su propio tope de 8 MB en readUpload, que además rechaza lo que
+// exenta (tiene su propio tope de 8 MB en ReadUpload, que además rechaza lo que
 // no es imagen). Se decide por RUTA, no por Content-Type: ninguna otra ruta se
 // libra del tope de 1 MB.
 func MaxJSONBodyExceptGalleryUpload(limit int64) gin.HandlerFunc {
@@ -70,7 +70,7 @@ func (h GalleryHandler) Add(c *gin.Context) {
 		respondErr(c, err)
 		return
 	}
-	data, contentType, err := readUpload(c)
+	data, contentType, err := ReadUpload(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

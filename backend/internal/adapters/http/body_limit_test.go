@@ -1,9 +1,11 @@
-package httpapi
+package httpapi_test
 
 import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	httpapi "salon-saas/internal/adapters/http"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
 
@@ -64,20 +66,20 @@ func TestMaxJSONBody_por_ruta_no_por_content_type(t *testing.T) {
 // que el JSON. Si el tope por ruta se comiera esta ruta, ninguna foto de más de
 // 1 MB se podría subir.
 func TestUpload_conserva_su_tope_de_8MB(t *testing.T) {
-	env := newPOSEnv()
+	env := httpkit.NewPOSEnv()
 	r := gin.New()
 	// El mismo middleware de producción: la ruta de fotos queda exenta.
-	r.Use(MaxJSONBody(1 << 20))
-	RegisterRoutes(r, env.deps())
+	r.Use(httpapi.MaxJSONBody(1 << 20))
+	httpapi.RegisterRoutes(r, env.Deps)
 
-	ownerTok, _ := env.register(t, "owner@mail.com")
-	salonID := env.salon(t, ownerTok, "fotos-tope")
+	ownerTok, _ := env.Register(t, "owner@mail.com")
+	salonID := env.Salon(t, ownerTok, "fotos-tope")
 	base := "/api/v1/salons/" + salonID + "/clients"
-	w := doReq(env.r, "POST", base, `{"name":"Lía"}`, ownerTok)
+	w := httpkit.Do(env.Router, "POST", base, `{"name":"Lía"}`, ownerTok)
 	var cl struct {
 		ID string `json:"id"`
 	}
-	mustJSON(t, w.Body.Bytes(), &cl)
+	httpkit.MustJSON(t, w.Body.Bytes(), &cl)
 	photos := base + "/" + cl.ID + "/photos"
 
 	// Foto válida de más de 1 MB (el tope JSON) y menos de 8 MB: 201.

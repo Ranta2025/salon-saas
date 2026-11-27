@@ -17,15 +17,15 @@ type IPRateLimiter struct {
 	limit  int
 	window time.Duration
 	mx     sync.Mutex
-	hits   map[string]*bucket
-	// calls cuenta llamadas desde el último barrido: cada purgeEvery se
+	Hits   map[string]*bucket
+	// calls cuenta llamadas desde el último barrido: cada PurgeEvery se
 	// desalojan los cubos vencidos (H2). Sin esto el mapa crecía con cada IP
 	// nueva y no bajaba nunca: la memoria la elegía el cliente.
 	calls int
 }
 
-// purgeEvery: cada cuántas llamadas se barren los cubos vencidos.
-const purgeEvery = 512
+// PurgeEvery: cada cuántas llamadas se barren los cubos vencidos.
+const PurgeEvery = 512
 
 type bucket struct {
 	count int
@@ -34,25 +34,25 @@ type bucket struct {
 
 // NewIPRateLimiter: limit pedidos por IP por ventana.
 func NewIPRateLimiter(limit int, window time.Duration) *IPRateLimiter {
-	return &IPRateLimiter{limit: limit, window: window, hits: map[string]*bucket{}}
+	return &IPRateLimiter{limit: limit, window: window, Hits: map[string]*bucket{}}
 }
 
 // Allow consume un intento de la IP y dice si pasa. Los buckets vencidos se
-// reciclan en el mismo paso y cada purgeEvery llamadas se barren los que ya no
-// se usan: el trabajo es amortizado (O(cubos) cada purgeEvery llamadas) y no
+// reciclan en el mismo paso y cada PurgeEvery llamadas se barren los que ya no
+// se usan: el trabajo es amortizado (O(cubos) cada PurgeEvery llamadas) y no
 // hace falta ningún goroutine que pudiera quedar colgado.
 func (rl *IPRateLimiter) Allow(ip string) bool {
 	now := time.Now()
 	rl.mx.Lock()
 	defer rl.mx.Unlock()
 	rl.calls++
-	if rl.calls >= purgeEvery {
+	if rl.calls >= PurgeEvery {
 		rl.calls = 0
 		rl.purgeLocked(now)
 	}
-	b, ok := rl.hits[ip]
+	b, ok := rl.Hits[ip]
 	if !ok || now.After(b.reset) {
-		rl.hits[ip] = &bucket{count: 1, reset: now.Add(rl.window)}
+		rl.Hits[ip] = &bucket{count: 1, reset: now.Add(rl.window)}
 		return true
 	}
 	if b.count >= rl.limit {
@@ -64,9 +64,9 @@ func (rl *IPRateLimiter) Allow(ip string) bool {
 
 // purgeLocked borra los cubos vencidos. Se llama con el mutex tomado.
 func (rl *IPRateLimiter) purgeLocked(now time.Time) {
-	for ip, b := range rl.hits {
+	for ip, b := range rl.Hits {
 		if now.After(b.reset) {
-			delete(rl.hits, ip)
+			delete(rl.Hits, ip)
 		}
 	}
 }

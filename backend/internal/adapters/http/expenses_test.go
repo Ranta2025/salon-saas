@@ -2,82 +2,84 @@
 // de la respuesta, los permisos rol por rol, el aislamiento por tenant, la
 // validación en español y el PUT que REEMPLAZA sin escribir nada si falta una
 // clave.
-package httpapi
+package httpapi_test
 
 import (
 	"net/http"
 	"net/http/httptest"
+	httpapi "salon-saas/internal/adapters/http"
+	"salon-saas/internal/domain"
+	"salon-saas/internal/finance"
+	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/domain"
-	"salon-saas/internal/finance"
 )
 
 // expNow es el «hoy» de estos tests: 20/3/2026 12:00 en CDMX.
 var expNow = time.Date(2026, 3, 20, 18, 0, 0, 0, time.UTC)
 
 type expHTTPEnv struct {
-	*posEnv
+	*httpkit.Env
 	r        *gin.Engine
-	expenses *mExpenses
-	profit   *mProfit
-	salon    string
+	Expenses *httpkit.Expenses
+	Profit   *httpkit.Profit
+	Salon    string
 	otros    string
-	users    map[string]string
+	Users    map[string]string
 	tokens   map[string]string
 }
 
 func newExpHTTPEnv(t *testing.T) *expHTTPEnv {
 	t.Helper()
-	env := newPOSEnv()
-	expenses, profit := newMExpenses(), &mProfit{}
-	d := env.d
-	d.Expenses = ExpenseHandler{
+	env := httpkit.NewPOSEnv()
+	expenses, profit := httpkit.NewExpenses(), &httpkit.Profit{}
+	d := env.Deps
+	d.Expenses = httpapi.ExpenseHandler{
 		Expenses: finance.ExpenseService{
-			Expenses: expenses, Memberships: env.mems, Settings: env.settings,
+			Expenses: expenses, Memberships: env.Mems, Settings: env.Settings,
 			Now: func() time.Time { return expNow },
 		},
-		Memberships: env.mems,
+		Memberships: env.Mems,
 	}
-	d.Profit = ProfitHandler{
+	d.Profit = httpapi.ProfitHandler{
 		Profit: finance.ProfitService{
-			Profit: profit, Memberships: env.mems, Settings: env.settings,
+			Profit: profit, Memberships: env.Mems, Settings: env.Settings,
 			Now: func() time.Time { return expNow },
 		},
-		Memberships: env.mems,
+		Memberships: env.Mems,
 	}
 	r := gin.New()
-	RegisterRoutes(r, d)
+	httpapi.RegisterRoutes(r, d)
 
 	e := &expHTTPEnv{
-		posEnv: env, r: r, expenses: expenses, profit: profit,
-		users: map[string]string{}, tokens: map[string]string{},
+		Env: env, r: r, Expenses: expenses, Profit: profit,
+		Users: map[string]string{}, tokens: map[string]string{},
 	}
 	for _, email := range []string{
 		"duena@exp.com", "admin@exp.com", "recep@exp.com", "ana@exp.com",
 		"cli@exp.com", "ajeno@exp.com",
 	} {
-		tok, uid := env.register(t, email)
-		e.tokens[email], e.users[email] = tok, uid
+		tok, uid := env.Register(t, email)
+		e.tokens[email], e.Users[email] = tok, uid
 	}
-	e.salon = env.salon(t, e.tokens["duena@exp.com"], "gastos")
-	e.otros = env.salon(t, e.tokens["ajeno@exp.com"], "gastos-otros")
+	e.Salon = env.Salon(t, e.tokens["duena@exp.com"], "gastos")
+	e.otros = env.Salon(t, e.tokens["ajeno@exp.com"], "gastos-otros")
 	for _, m := range []domain.Membership{
-		{UserID: e.users["admin@exp.com"], SalonID: e.salon, Role: domain.RoleAdmin},
-		{UserID: e.users["recep@exp.com"], SalonID: e.salon, Role: domain.RoleReception},
-		{UserID: e.users["ana@exp.com"], SalonID: e.salon, Role: domain.RoleProfessional, Attends: true},
-		{UserID: e.users["cli@exp.com"], SalonID: e.salon, Role: domain.RoleClient},
+		{UserID: e.Users["admin@exp.com"], SalonID: e.Salon, Role: domain.RoleAdmin},
+		{UserID: e.Users["recep@exp.com"], SalonID: e.Salon, Role: domain.RoleReception},
+		{UserID: e.Users["ana@exp.com"], SalonID: e.Salon, Role: domain.RoleProfessional, Attends: true},
+		{UserID: e.Users["cli@exp.com"], SalonID: e.Salon, Role: domain.RoleClient},
 	} {
-		if err := env.mems.Save(m); err != nil {
+		if err := env.Mems.Save(m); err != nil {
 			t.Fatalf("membership %s: %v", m.UserID, err)
 		}
 	}
 	// El salón vive en CDMX (UTC-6 todo el año): «hoy» es el día local.
-	if err := env.settings.SaveSettings(domain.SalonSettings{
-		SalonID: e.salon, Timezone: "America/Mexico_City",
+	if err := env.Settings.SaveSettings(domain.SalonSettings{
+		SalonID: e.Salon, Timezone: "America/Mexico_City",
 		OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}); err != nil {
 		t.Fatalf("settings: %v", err)
@@ -91,7 +93,7 @@ func (e *expHTTPEnv) url(salonID, path string) string {
 
 func (e *expHTTPEnv) do(t *testing.T, method, path, body, email string) *httptest.ResponseRecorder {
 	t.Helper()
-	return doReq(e.r, method, path, body, e.tokens[email])
+	return httpkit.Do(e.r, method, path, body, e.tokens[email])
 }
 
 func (e *expHTTPEnv) createExpense(t *testing.T, email, body string) string {
@@ -100,10 +102,10 @@ func (e *expHTTPEnv) createExpense(t *testing.T, email, body string) string {
 }
 
 // createExpenseIn crea el gasto en el salón de QUIEN lo crea (los miembros del
-// salón principal usan e.salon).
+// salón principal usan e.Salon).
 func (e *expHTTPEnv) createExpenseIn(t *testing.T, owner, email, body string) string {
 	t.Helper()
-	salonID := e.salon
+	salonID := e.Salon
 	if owner == "ajeno@exp.com" {
 		salonID = e.otros
 	}
@@ -112,7 +114,7 @@ func (e *expHTTPEnv) createExpenseIn(t *testing.T, owner, email, body string) st
 		t.Fatalf("crear: %d %s", w.Code, w.Body.String())
 	}
 	var out map[string]any
-	mustJSON(t, w.Body.Bytes(), &out)
+	httpkit.MustJSON(t, w.Body.Bytes(), &out)
 	id, _ := out["id"].(string)
 	if id == "" {
 		t.Fatalf("la respuesta no trae id: %s", w.Body.String())
@@ -126,9 +128,9 @@ const expValidBody = `{"category":"rent","amount_cents":150000,"spent_on":"2026-
 func TestHTTP_expenses_profit_permisos_por_rol(t *testing.T) {
 	e := newExpHTTPEnv(t)
 	id := e.createExpense(t, "duena@exp.com", expValidBody)
-	expenses := e.url(e.salon, "/expenses?from=2026-03-01&to=2026-03-31")
-	one := e.url(e.salon, "/expenses/"+id)
-	profit := e.url(e.salon, "/profit?kind=month&date=2026-03-10")
+	expenses := e.url(e.Salon, "/expenses?from=2026-03-01&to=2026-03-31")
+	one := e.url(e.Salon, "/expenses/"+id)
+	profit := e.url(e.Salon, "/profit?kind=month&date=2026-03-10")
 
 	for _, tc := range []struct {
 		email string
@@ -157,19 +159,19 @@ func TestHTTP_expenses_profit_permisos_por_rol(t *testing.T) {
 		}
 		if tc.want["delete"] == 204 {
 			id = e.createExpense(t, "duena@exp.com", expValidBody)
-			one = e.url(e.salon, "/expenses/"+id)
+			one = e.url(e.Salon, "/expenses/"+id)
 		}
 	}
 
 	// Sin token: 401 en las cinco rutas (el middleware corta antes del caso de uso).
 	for _, tc := range []struct{ method, path, body string }{
-		{"POST", e.url(e.salon, "/expenses"), expValidBody},
+		{"POST", e.url(e.Salon, "/expenses"), expValidBody},
 		{"GET", expenses, ""},
 		{"PUT", one, expValidBody},
 		{"DELETE", one, ""},
 		{"GET", profit, ""},
 	} {
-		if w := doReq(e.r, tc.method, tc.path, tc.body, ""); w.Code != http.StatusUnauthorized {
+		if w := httpkit.Do(e.r, tc.method, tc.path, tc.body, ""); w.Code != http.StatusUnauthorized {
 			t.Fatalf("%s %s sin token: %d", tc.method, tc.path, w.Code)
 		}
 	}
@@ -178,17 +180,17 @@ func TestHTTP_expenses_profit_permisos_por_rol(t *testing.T) {
 // Ciclo completo y forma EXACTA del objeto `expense`.
 func TestHTTP_expenses_ciclo_y_forma(t *testing.T) {
 	e := newExpHTTPEnv(t)
-	w := e.do(t, "POST", e.url(e.salon, "/expenses"), expValidBody, "duena@exp.com")
+	w := e.do(t, "POST", e.url(e.Salon, "/expenses"), expValidBody, "duena@exp.com")
 	if w.Code != http.StatusCreated {
 		t.Fatalf("crear: %d %s", w.Code, w.Body.String())
 	}
 	var got map[string]any
-	mustJSON(t, w.Body.Bytes(), &got)
+	httpkit.MustJSON(t, w.Body.Bytes(), &got)
 	sameKeys(t, "expense", got,
 		"id", "category", "amount_cents", "spent_on", "description", "created_at", "created_by")
 	if got["category"] != "rent" || got["amount_cents"] != float64(150000) ||
 		got["spent_on"] != "2026-03-19" || got["description"] != "Alquiler" ||
-		got["created_by"] != e.users["duena@exp.com"] {
+		got["created_by"] != e.Users["duena@exp.com"] {
 		t.Fatalf("expense = %v", got)
 	}
 	if _, err := time.Parse(time.RFC3339, got["created_at"].(string)); err != nil {
@@ -197,12 +199,12 @@ func TestHTTP_expenses_ciclo_y_forma(t *testing.T) {
 	id := got["id"].(string)
 
 	// Listar: forma del listado y orden.
-	w = e.do(t, "GET", e.url(e.salon, "/expenses?from=2026-03-01&to=2026-03-31"), "", "duena@exp.com")
+	w = e.do(t, "GET", e.url(e.Salon, "/expenses?from=2026-03-01&to=2026-03-31"), "", "duena@exp.com")
 	if w.Code != http.StatusOK {
 		t.Fatalf("listar: %d %s", w.Code, w.Body.String())
 	}
 	var list map[string]any
-	mustJSON(t, w.Body.Bytes(), &list)
+	httpkit.MustJSON(t, w.Body.Bytes(), &list)
 	sameKeys(t, "listado", list, "expenses", "truncated")
 	if list["truncated"] != false {
 		t.Fatalf("truncated = %v", list["truncated"])
@@ -212,26 +214,26 @@ func TestHTTP_expenses_ciclo_y_forma(t *testing.T) {
 	}
 
 	// Editar (las cuatro claves, descripción vacía permitida).
-	w = e.do(t, "PUT", e.url(e.salon, "/expenses/"+id),
+	w = e.do(t, "PUT", e.url(e.Salon, "/expenses/"+id),
 		`{"category":"utilities","amount_cents":1,"spent_on":"2026-03-01","description":""}`, "admin@exp.com")
 	if w.Code != http.StatusOK {
 		t.Fatalf("editar: %d %s", w.Code, w.Body.String())
 	}
-	mustJSON(t, w.Body.Bytes(), &got)
+	httpkit.MustJSON(t, w.Body.Bytes(), &got)
 	if got["category"] != "utilities" || got["amount_cents"] != float64(1) ||
 		got["spent_on"] != "2026-03-01" || got["description"] != "" || got["id"] != id {
 		t.Fatalf("expense editado = %v", got)
 	}
 
 	// Borrar: 204 y después 404 con la frase del contrato.
-	if w = e.do(t, "DELETE", e.url(e.salon, "/expenses/"+id), "", "duena@exp.com"); w.Code != http.StatusNoContent {
+	if w = e.do(t, "DELETE", e.url(e.Salon, "/expenses/"+id), "", "duena@exp.com"); w.Code != http.StatusNoContent {
 		t.Fatalf("borrar: %d %s", w.Code, w.Body.String())
 	}
-	w = e.do(t, "DELETE", e.url(e.salon, "/expenses/"+id), "", "duena@exp.com")
+	w = e.do(t, "DELETE", e.url(e.Salon, "/expenses/"+id), "", "duena@exp.com")
 	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "Gasto no encontrado") {
 		t.Fatalf("borrar dos veces: %d %s", w.Code, w.Body.String())
 	}
-	w = e.do(t, "PUT", e.url(e.salon, "/expenses/"+id), expValidBody, "duena@exp.com")
+	w = e.do(t, "PUT", e.url(e.Salon, "/expenses/"+id), expValidBody, "duena@exp.com")
 	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "Gasto no encontrado") {
 		t.Fatalf("editar inexistente: %d %s", w.Code, w.Body.String())
 	}
@@ -270,7 +272,7 @@ func TestHTTP_expenses_validacion(t *testing.T) {
 			"Faltan datos del gasto: categoría, monto y fecha"},
 	}
 	for _, tc := range cases {
-		w := e.do(t, "POST", e.url(e.salon, "/expenses"), tc.body, "duena@exp.com")
+		w := e.do(t, "POST", e.url(e.Salon, "/expenses"), tc.body, "duena@exp.com")
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("%s: %d %s", tc.name, w.Code, w.Body.String())
 		}
@@ -279,9 +281,9 @@ func TestHTTP_expenses_validacion(t *testing.T) {
 		}
 	}
 	// Un 400 no escribió nada.
-	w := e.do(t, "GET", e.url(e.salon, "/expenses?from=2026-03-01&to=2026-03-31"), "", "duena@exp.com")
+	w := e.do(t, "GET", e.url(e.Salon, "/expenses?from=2026-03-01&to=2026-03-31"), "", "duena@exp.com")
 	var list map[string]any
-	mustJSON(t, w.Body.Bytes(), &list)
+	httpkit.MustJSON(t, w.Body.Bytes(), &list)
 	if items := list["expenses"].([]any); len(items) != 0 {
 		t.Fatalf("un 400 escribió: %v", items)
 	}
@@ -295,7 +297,7 @@ func TestHTTP_expenses_validacion(t *testing.T) {
 		`{"category":"utilities","amount_cents":100,"spent_on":"2026-03-19","description":"` +
 			strings.Repeat("ñ", 200) + `"}`,
 	} {
-		if w := e.do(t, "POST", e.url(e.salon, "/expenses"), ok, "duena@exp.com"); w.Code != http.StatusCreated {
+		if w := e.do(t, "POST", e.url(e.Salon, "/expenses"), ok, "duena@exp.com"); w.Code != http.StatusCreated {
 			t.Fatalf("%s debería ser 201: %d %s", ok, w.Code, w.Body.String())
 		}
 	}
@@ -309,7 +311,7 @@ func TestHTTP_expenses_validacion(t *testing.T) {
 		`no-es-json`,
 		`[]`,
 	} {
-		if w := e.do(t, "POST", e.url(e.salon, "/expenses"), bad, "duena@exp.com"); w.Code != http.StatusBadRequest {
+		if w := e.do(t, "POST", e.url(e.Salon, "/expenses"), bad, "duena@exp.com"); w.Code != http.StatusBadRequest {
 			t.Fatalf("%s: %d %s", bad, w.Code, w.Body.String())
 		}
 	}
@@ -320,7 +322,7 @@ func TestHTTP_expenses_validacion(t *testing.T) {
 func TestHTTP_expenses_put_incompleto_no_escribe(t *testing.T) {
 	e := newExpHTTPEnv(t)
 	id := e.createExpense(t, "duena@exp.com", expValidBody)
-	path := e.url(e.salon, "/expenses/"+id)
+	path := e.url(e.Salon, "/expenses/"+id)
 	missing := "Faltan datos del gasto: categoría, monto, fecha y descripción"
 	for _, tc := range []struct{ body, want string }{
 		{`{"category":"other","amount_cents":5,"spent_on":"2026-03-10"}`, missing},
@@ -340,9 +342,9 @@ func TestHTTP_expenses_put_incompleto_no_escribe(t *testing.T) {
 		}
 	}
 	// El gasto sigue con sus valores originales.
-	w := e.do(t, "GET", e.url(e.salon, "/expenses?from=2026-03-01&to=2026-03-31"), "", "duena@exp.com")
+	w := e.do(t, "GET", e.url(e.Salon, "/expenses?from=2026-03-01&to=2026-03-31"), "", "duena@exp.com")
 	var list map[string]any
-	mustJSON(t, w.Body.Bytes(), &list)
+	httpkit.MustJSON(t, w.Body.Bytes(), &list)
 	item := list["expenses"].([]any)[0].(map[string]any)
 	if item["category"] != "rent" || item["amount_cents"] != float64(150000) || item["description"] != "Alquiler" {
 		t.Fatalf("el PUT incompleto escribió: %v", item)
@@ -356,11 +358,11 @@ func TestHTTP_expenses_aislamiento_de_tenant(t *testing.T) {
 	ajeno := e.createExpenseIn(t, "ajeno@exp.com", "ajeno@exp.com",
 		`{"category":"rent","amount_cents":999,"spent_on":"2026-03-10"}`)
 
-	if w := e.do(t, "PUT", e.url(e.salon, "/expenses/"+ajeno), expValidBody, "duena@exp.com"); w.Code != http.StatusNotFound ||
+	if w := e.do(t, "PUT", e.url(e.Salon, "/expenses/"+ajeno), expValidBody, "duena@exp.com"); w.Code != http.StatusNotFound ||
 		!strings.Contains(w.Body.String(), "Gasto no encontrado") {
 		t.Fatalf("editar el de otro salón: %d %s", w.Code, w.Body.String())
 	}
-	if w := e.do(t, "DELETE", e.url(e.salon, "/expenses/"+ajeno), "", "duena@exp.com"); w.Code != http.StatusNotFound ||
+	if w := e.do(t, "DELETE", e.url(e.Salon, "/expenses/"+ajeno), "", "duena@exp.com"); w.Code != http.StatusNotFound ||
 		!strings.Contains(w.Body.String(), "Gasto no encontrado") {
 		t.Fatalf("borrar el de otro salón: %d %s", w.Code, w.Body.String())
 	}
@@ -370,13 +372,13 @@ func TestHTTP_expenses_aislamiento_de_tenant(t *testing.T) {
 		t.Fatalf("listar el otro salón: %d %s", w.Code, w.Body.String())
 	}
 	var list map[string]any
-	mustJSON(t, w.Body.Bytes(), &list)
+	httpkit.MustJSON(t, w.Body.Bytes(), &list)
 	if items := list["expenses"].([]any); len(items) != 1 {
 		t.Fatalf("el gasto ajeno desapareció: %v", items)
 	}
 	// El listado del salón no trae el ajeno.
-	w = e.do(t, "GET", e.url(e.salon, "/expenses?from=2026-03-01&to=2026-03-31"), "", "duena@exp.com")
-	mustJSON(t, w.Body.Bytes(), &list)
+	w = e.do(t, "GET", e.url(e.Salon, "/expenses?from=2026-03-01&to=2026-03-31"), "", "duena@exp.com")
+	httpkit.MustJSON(t, w.Body.Bytes(), &list)
 	if items := list["expenses"].([]any); len(items) != 0 {
 		t.Fatalf("el listado trajo otro tenant: %v", items)
 	}
@@ -392,14 +394,14 @@ func TestHTTP_expenses_rango(t *testing.T) {
 		"?from=10/03/2026&to=2026-03-31",
 		"?from=2026-03-01&to=2026-13-01",
 	} {
-		w := e.do(t, "GET", e.url(e.salon, "/expenses"+q), "", "duena@exp.com")
+		w := e.do(t, "GET", e.url(e.Salon, "/expenses"+q), "", "duena@exp.com")
 		if w.Code != http.StatusBadRequest ||
 			!strings.Contains(w.Body.String(), "Rango inválido: indicá desde y hasta (AAAA-MM-DD), hasta 366 días") {
 			t.Fatalf("%q: %d %s", q, w.Code, w.Body.String())
 		}
 	}
 	// 366 días inclusive es válido y la lista vacía es [] (no null).
-	w := e.do(t, "GET", e.url(e.salon, "/expenses?from=2026-01-01&to=2027-01-01"), "", "duena@exp.com")
+	w := e.do(t, "GET", e.url(e.Salon, "/expenses?from=2026-01-01&to=2027-01-01"), "", "duena@exp.com")
 	if w.Code != http.StatusOK {
 		t.Fatalf("366 días: %d %s", w.Code, w.Body.String())
 	}
