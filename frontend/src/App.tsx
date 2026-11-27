@@ -28,7 +28,7 @@ import { PosPage } from '@/features/pos'
 import { ProfitPage } from '@/features/expenses'
 import { RequireAuth } from './app/RequireAuth'
 import { ResetPasswordPage } from '@/features/auth'
-import { ReviewPage } from '@/features/reviews'
+import { ReviewPage, ReviewsPage } from '@/features/reviews'
 import { SalonProfilePage } from '@/features/settings'
 import { SecurityPage } from '@/features/auth'
 import { ServicesPage } from '@/features/services'
@@ -147,6 +147,7 @@ export function App() {
           <Route path="mis-comisiones" element={<MyCommissionsPage />} />
           <Route path="lista-de-espera" element={<WaitlistPage />} />
           <Route path="mi-salon" element={<SalonProfilePage />} />
+          <Route path="resenas" element={<ReviewsPage />} />
           <Route path="ajustes" element={<SettingsPage />} />
           <Route path="actividad" element={<ActivityPage />} />
           <Route path="seguridad" element={<SecurityPage />} />

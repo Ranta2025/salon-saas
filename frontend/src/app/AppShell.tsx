@@ -9,6 +9,7 @@ import {
   canViewInventory,
   canViewLoyalty,
   canViewPackages,
+  canViewReviews,
   canViewSalonProfile,
   canViewWaitlist,
   isManager,
@@ -67,6 +68,11 @@ type NavEntry = {
    * professional does not and gets the notice on the page.
    */
   salonProfileOnly?: boolean
+  /**
+   * Reviews (contract F13, D6/D8): owner, admin and reception read them; a
+   * professional does not see the entry and gets the notice on the page.
+   */
+  reviewsOnly?: boolean
 }
 
 const NAV: readonly NavEntry[] = [
@@ -92,6 +98,9 @@ const NAV: readonly NavEntry[] = [
   // label is short on purpose (three columns at 390 px); the page is titled
   // «Mi salón».
   { to: '/panel/mi-salon', label: 'Mi salón', end: false, salonProfileOnly: true },
+  // F13: what clients wrote about the salon. Owner/admin hide and show a review and
+  // write the settings; reception reads the list. A professional does not see it.
+  { to: '/panel/resenas', label: 'Reseñas', end: false, reviewsOnly: true },
   { to: '/panel/clientes', label: 'Clientes', end: false },
   { to: '/panel/avisos', label: 'Avisos', end: false },
   // F7: the notices with personal data are read by owner, admin and reception.
@@ -241,6 +250,9 @@ function ShellChrome() {
       return false
     }
     if (item.salonProfileOnly && role !== null && !canViewSalonProfile(role)) {
+      return false
+    }
+    if (item.reviewsOnly && role !== null && !canViewReviews(role)) {
       return false
     }
     return !item.agendaOnly || canOpenMine

@@ -5182,3 +5182,119 @@
   color: #8c1d33;
   font-weight: 700;
 }
+
+/* ---------- F13: reseñas del panel (/panel/resenas) ---------- */
+
+.reviews-list {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.reviews-row {
+  display: grid;
+  gap: 0.5rem 1rem;
+  padding: 0.9rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.reviews-row[data-hidden='true'] {
+  background: var(--cream);
+  border-style: dashed;
+}
+
+.reviews-row__main {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.reviews-row__stars {
+  color: var(--wine);
+  letter-spacing: 0.14em;
+  font-size: 0.9rem;
+}
+
+.reviews-row__comment {
+  font-size: var(--step-0);
+  line-height: 1.5;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.reviews-row__comment--empty {
+  color: var(--ink-muted);
+  font-style: italic;
+}
+
+.reviews-row__meta {
+  font-size: var(--step--1);
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.reviews-row__side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+}
+
+.reviews-row__side .btn {
+  min-height: 44px;
+}
+
+.reviews-more {
+  display: flex;
+  justify-content: center;
+}
+
+.reviews-more .btn {
+  min-height: 44px;
+}
+
+.review-settings {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.review-settings__delay {
+  max-width: 16rem;
+}
+
+.review-settings__preview {
+  padding: 0.6rem 0.9rem;
+  background: var(--cream);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.review-settings .settings-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.review-settings .settings-form__actions .btn {
+  min-height: 44px;
+}
+
+@media (min-width: 760px) {
+  .reviews-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  .reviews-row__side {
+    justify-content: flex-end;
+  }
+}
