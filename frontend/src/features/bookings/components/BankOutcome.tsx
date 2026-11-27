@@ -30,7 +30,7 @@ export function BankOutcome({ chargeId, result }: BankOutcomeProps) {
           : 'No se cobró nada. Podés volver al salón para ver el estado de la reserva o intentar con otra tarjeta de prueba.'}
       </p>
       <Link className="btn btn--wine" to={resultPath(chargeId)}>
-        Volver al salon
+        Volver al salón
       </Link>
     </div>
   )

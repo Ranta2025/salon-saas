@@ -129,11 +129,11 @@ test('validateDepositPolicy asks for the four keys with the sentences of the con
   assert.deepEqual(missing, {
     ok: false,
     field: 'hold',
-    message: 'Faltan datos de la sena: activada, porcentaje, espera y devolucion',
+    message: 'Faltan datos de la seña: activada, porcentaje, espera y devolución',
   })
   assert.equal(
     DEPOSIT_MESSAGES.missingPolicy,
-    'Faltan datos de la sena: activada, porcentaje, espera y devolucion',
+    'Faltan datos de la seña: activada, porcentaje, espera y devolución',
   )
   // Even switched off the four keys travel: the server asks for all of them.
   const off = validateDepositPolicy({ enabled: false, percent: '', hold_minutes: '', refund_hours: '' })
@@ -162,12 +162,12 @@ test('validateDepositPolicy pins the ranges and the exact sentences of the contr
   assert.deepEqual(refund('-1'), {
     ok: false,
     field: 'refund',
-    message: 'La devolucion debe ser entre 0 y 168 horas',
+    message: 'La devolución debe ser entre 0 y 168 horas',
   })
   assert.deepEqual(refund('169'), {
     ok: false,
     field: 'refund',
-    message: 'La devolucion debe ser entre 0 y 168 horas',
+    message: 'La devolución debe ser entre 0 y 168 horas',
   })
   // The borders of each range are valid.
   assert.deepEqual(validateDepositPolicy({ enabled: true, percent: '10', hold_minutes: '5', refund_hours: '0' }), {
@@ -188,8 +188,8 @@ test('policyBody always sends the four keys, explicit and as integers', () => {
 })
 
 test('depositPreview is the sentence the client sees, with the notice of the simulation', () => {
-  assert.equal(depositPreview(30), 'Sena del 30% - pago simulado')
-  assert.equal(depositPreview(10), 'Sena del 10% - pago simulado')
+  assert.equal(depositPreview(30), 'Seña del 30% - pago simulado')
+  assert.equal(depositPreview(10), 'Seña del 10% - pago simulado')
   assert.equal(depositPreview(9), null)
   assert.equal(depositPreview(101), null)
   assert.equal(depositPreview(30.5), null)
@@ -222,7 +222,7 @@ const ROWS: DepositRow[] = [
 ]
 
 test('the chore note of the panel is the verbatim sentence of D13-a', () => {
-  assert.equal(DEPOSIT_CASH_NOTE, 'Descuenta la sena cobrada al cobrar el turno en caja')
+  assert.equal(DEPOSIT_CASH_NOTE, 'Descuenta la seña cobrada al cobrar el turno en caja')
 })
 
 test('the status chips say exactly the five words of the contract', () => {

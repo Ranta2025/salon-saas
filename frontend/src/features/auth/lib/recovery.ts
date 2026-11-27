@@ -33,7 +33,7 @@ export const RECOVERY_MESSAGES = {
   /** contract D11: the ONLY answer to a 202 of `/auth/forgot`, registered email or not. */
   forgotAccepted: 'Si el correo esta registrado, te enviamos un enlace. Revisa tu bandeja.',
   /** contract D11: the notice of the login after a reset. */
-  resetDone: 'Contrasena actualizada. Inicia sesion.',
+  resetDone: 'Contraseña actualizada. Inicia sesión.',
   /** contract D12: answer to a 202 of the resend. */
   resendSent: 'Te enviamos un nuevo correo.',
   emailRequired: 'Escribí tu correo',

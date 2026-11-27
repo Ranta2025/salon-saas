@@ -38,17 +38,17 @@ export const DEPOSIT_SIMULATED_NOTICE = 'Pago simulado'
  * Note of the panel (D13-a, verbatim): the deposit is NOT discounted by the POS, so
  * reception has to do it by hand when it charges the booking at the register.
  */
-export const DEPOSIT_CASH_NOTE = 'Descuenta la sena cobrada al cobrar el turno en caja'
+export const DEPOSIT_CASH_NOTE = 'Descuenta la seña cobrada al cobrar el turno en caja'
 
 /**
  * Sentences of the API of D3, printed verbatim (the client pre-checks the same
  * rules with the same words) plus the ones this module says itself.
  */
 export const DEPOSIT_MESSAGES = {
-  missingPolicy: 'Faltan datos de la sena: activada, porcentaje, espera y devolucion',
+  missingPolicy: 'Faltan datos de la seña: activada, porcentaje, espera y devolución',
   percentRange: 'El porcentaje debe ser entre 10 y 100',
   holdRange: 'La espera debe ser entre 5 y 120 minutos',
-  refundRange: 'La devolucion debe ser entre 0 y 168 horas',
+  refundRange: 'La devolución debe ser entre 0 y 168 horas',
 } as const
 
 /** Sentence of the write the page refused to send twice. */

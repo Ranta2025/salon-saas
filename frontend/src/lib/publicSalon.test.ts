@@ -484,9 +484,9 @@ test('the loyalty section does not depend on any other section (a salon with onl
 
 // ---------- F11 (D11): public deposit (sena) and its notice ----------
 
-test('depositSentence is the verbatim sentence of the preview «Sena del X% - pago simulado»', () => {
-  assert.equal(depositSentence(30), 'Sena del 30% - pago simulado')
-  assert.equal(depositSentence(10), 'Sena del 10% - pago simulado')
+test('depositSentence is the verbatim sentence of the preview «Seña del X% - pago simulado»', () => {
+  assert.equal(depositSentence(30), 'Seña del 30% - pago simulado')
+  assert.equal(depositSentence(10), 'Seña del 10% - pago simulado')
 })
 
 test('holdLabel and refundLabel say the policy in plain Spanish', () => {
@@ -570,7 +570,7 @@ test('buildLanding shows the deposit section ONLY from the payload `deposit`, wi
     holdMinutes: 30,
     refundHours: 24,
     simulated: true,
-    sentence: 'Sena del 30% - pago simulado',
+    sentence: 'Seña del 30% - pago simulado',
     holdLabel: 'El turno queda guardado 30 minutos.',
     refundLabel: 'Devolución hasta 24 horas antes del turno.',
   })

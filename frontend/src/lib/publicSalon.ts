@@ -248,7 +248,7 @@ const MAX_REFUND_HOURS = 168
 
 /** The sentence of the preview and of the landing (F11, D11/D13), verbatim. */
 export function depositSentence(percent: number): string {
-  return `Sena del ${percent}% - pago simulado`
+  return `Seña del ${percent}% - pago simulado`
 }
 
 /** «El turno queda guardado 30 minutos.» */
@@ -491,7 +491,7 @@ export type LandingDeposit = {
   holdMinutes: number
   refundHours: number
   simulated: boolean
-  /** `Sena del 30% - pago simulado`. */
+  /** `Seña del 30% - pago simulado`. */
   sentence: string
   /** «El turno queda guardado 30 minutos.» */
   holdLabel: string

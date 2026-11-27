@@ -344,11 +344,11 @@ export function BankPage() {
               </form>
             ) : null}
 
-            {/* The outcome card already carries «Volver al salon» once there is one. */}
+            {/* The outcome card already carries «Volver al salón» once there is one. */}
             {result === null ? (
               <p className="bank__actions">
                 <Link className="btn btn--quiet" to={`/pago-resultado#${chargeId}`}>
-                  Volver al salon
+                  Volver al salón
                 </Link>
               </p>
             ) : null}
