@@ -7,6 +7,7 @@ import (
 	"salon-saas/internal/notifications"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/products"
+	productshttpapi "salon-saas/internal/products/httpapi"
 	"sort"
 	"strings"
 	"testing"
@@ -179,7 +180,7 @@ func NewProductsEnv() (*Env, *Products) {
 	}
 	productSvc := products.ProductService{Products: inv, Memberships: env.Mems, Events: env.Events, Notifier: notifSvc}
 	env.Deps.Sales = httpapi.SaleHandler{Sales: saleSvc, Memberships: env.Mems}
-	env.Deps.Products = httpapi.ProductHandler{Products: productSvc, Memberships: env.Mems}
+	env.Deps.Products = productshttpapi.ProductHandler{Products: productSvc, Memberships: env.Mems}
 	env.Router = gin.New()
 	httpapi.RegisterRoutes(env.Router, env.Deps)
 	return env, inv

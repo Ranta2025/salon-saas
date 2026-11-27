@@ -175,17 +175,6 @@ func seedClient(t *testing.T, env *httpkit.Env, salonID string) domain.Client {
 	return c
 }
 
-func okErr(t *testing.T, body []byte) string {
-	t.Helper()
-	var out struct {
-		Error string `json:"error"`
-	}
-	if err := json.Unmarshal(body, &out); err != nil {
-		t.Fatalf("json de error inválido: %v (%s)", err, body)
-	}
-	return out.Error
-}
-
 // D5: roles en GET y PUT, las cinco claves obligatorias, el NUL, el tope de
 // alergias y el aislamiento de tenant. Un 400 no escribe nada.
 func TestHTTP_client_get_put(t *testing.T) {
@@ -233,13 +222,13 @@ func TestHTTP_client_get_put(t *testing.T) {
 	if w := httpkit.Do(env.Router, "GET", one, "", stranger); w.Code != http.StatusForbidden {
 		t.Fatalf("no-miembro: %d %s", w.Code, w.Body.String())
 	}
-	if w := httpkit.Do(env.Router, "GET", base+"/nope", "", ownerTok); w.Code != http.StatusNotFound || okErr(t, w.Body.Bytes()) != "Ficha no encontrada" {
+	if w := httpkit.Do(env.Router, "GET", base+"/nope", "", ownerTok); w.Code != http.StatusNotFound || httpkit.OkErr(t, w.Body.Bytes()) != "Ficha no encontrada" {
 		t.Fatalf("ficha inexistente: %d %s", w.Code, w.Body.String())
 	}
 
 	// PUT incompleto (falta allergies): 400 exacto y no escribe.
 	w = httpkit.Do(env.Router, "PUT", one, `{"name":"Cambio","phone":"555","email":"","notes":""}`, ownerTok)
-	if w.Code != http.StatusBadRequest || okErr(t, w.Body.Bytes()) != "Faltan datos de la ficha: nombre, teléfono, email, notas y alergias" {
+	if w.Code != http.StatusBadRequest || httpkit.OkErr(t, w.Body.Bytes()) != "Faltan datos de la ficha: nombre, teléfono, email, notas y alergias" {
 		t.Fatalf("PUT incompleto: %d %s", w.Code, w.Body.String())
 	}
 	// 500 caracteres entran; 501 (multibyte) es 400 exacto y no escribe.
@@ -248,17 +237,17 @@ func TestHTTP_client_get_put(t *testing.T) {
 		t.Fatalf("500 caracteres: %d %s", w.Code, w.Body.String())
 	}
 	w = httpkit.Do(env.Router, "PUT", one, `{"name":"Cambio","phone":"555","email":"","notes":"","allergies":"`+strings.Repeat("á", 501)+`"}`, ownerTok)
-	if w.Code != http.StatusBadRequest || okErr(t, w.Body.Bytes()) != "Las alergias no pueden superar los 500 caracteres" {
+	if w.Code != http.StatusBadRequest || httpkit.OkErr(t, w.Body.Bytes()) != "Las alergias no pueden superar los 500 caracteres" {
 		t.Fatalf("501 caracteres: %d %s", w.Code, w.Body.String())
 	}
 	// Un NUL es 400, nunca 500.
 	w = httpkit.Do(env.Router, "PUT", one, `{"name":"Lía\u0000X","phone":"555","email":"","notes":"","allergies":""}`, ownerTok)
-	if w.Code != http.StatusBadRequest || okErr(t, w.Body.Bytes()) != "La ficha tiene caracteres no válidos" {
+	if w.Code != http.StatusBadRequest || httpkit.OkErr(t, w.Body.Bytes()) != "La ficha tiene caracteres no válidos" {
 		t.Fatalf("NUL: %d %s", w.Code, w.Body.String())
 	}
 	// Profesional no edita.
 	if w := httpkit.Do(env.Router, "PUT", one, `{"name":"X","phone":"","email":"","notes":"","allergies":""}`, profTok); w.Code != http.StatusForbidden ||
-		okErr(t, w.Body.Bytes()) != "sin permiso" {
+		httpkit.OkErr(t, w.Body.Bytes()) != "sin permiso" {
 		t.Fatalf("profesional editando: %d %s", w.Code, w.Body.String())
 	}
 	// Nada de lo rechazado se escribió: sigue el PUT válido de 500.
@@ -287,7 +276,7 @@ func TestHTTP_client_get_put(t *testing.T) {
 		{"GET", "/api/v1/salons/" + otherSalon + "/clients/" + id + "/history", ""},
 	} {
 		w := httpkit.Do(env.Router, req.method, req.path, req.body, otherTok)
-		if w.Code != http.StatusNotFound || okErr(t, w.Body.Bytes()) != "Ficha no encontrada" {
+		if w.Code != http.StatusNotFound || httpkit.OkErr(t, w.Body.Bytes()) != "Ficha no encontrada" {
 			t.Fatalf("%s cross-tenant: %d %s", req.method, w.Code, w.Body.String())
 		}
 	}
@@ -415,7 +404,7 @@ func TestHTTP_pos_client_id(t *testing.T) {
 	_ = otherID
 	antes := len(env.Sales.All)
 	w = httpkit.Do(env.Router, "POST", base, body(ajena.ID, "X"), ownerTok)
-	if w.Code != http.StatusBadRequest || okErr(t, w.Body.Bytes()) != "Ficha de clienta inválida" {
+	if w.Code != http.StatusBadRequest || httpkit.OkErr(t, w.Body.Bytes()) != "Ficha de clienta inválida" {
 		t.Fatalf("ficha de otro salón: %d %s", w.Code, w.Body.String())
 	}
 	if len(env.Sales.All) != antes {

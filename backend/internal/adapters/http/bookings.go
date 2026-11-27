@@ -2,12 +2,13 @@ package httpapi
 
 import (
 	"net/http"
-	"time"
-
-	"github.com/gin-gonic/gin"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 // BookingHandler: agenda y calendario. Delgado: parsea, carga actor, llama app.
@@ -92,12 +93,7 @@ func bookingJSON(b domain.Booking) gin.H {
 
 // optionalID serializa un id opcional como texto o null (nunca ""): el
 // frontend distingue "sin servicio" de "servicio vacío".
-func optionalID(id string) any {
-	if id == "" {
-		return nil
-	}
-	return id
-}
+func optionalID(id string) any { return httpx.OptionalID(id) }
 
 // Update: PATCH /salons/:id/bookings/:bid
 // Body: {"status":"cancelled|no_show|done"} y/o {"starts_at","ends_at",

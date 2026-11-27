@@ -36,6 +36,7 @@ import (
 	"salon-saas/internal/packages"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/products"
+	productshttpapi "salon-saas/internal/products/httpapi"
 	"salon-saas/internal/staffing"
 	"syscall"
 	"time"
@@ -610,7 +611,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Profit:   financehttpapi.ProfitHandler{Profit: profitSvc, Memberships: mems},
 		Exports:  exportshttpapi.ExportHandler{Exports: exportSvc, Memberships: mems},
 		// F6: productos e inventario del POS (cinco rutas + `products` en POST /sales).
-		Products: httpapi.ProductHandler{Products: productSvc, Memberships: mems},
+		Products: productshttpapi.ProductHandler{Products: productSvc, Memberships: mems},
 		// F8: paquetes y bonos prepagos (ocho rutas: catálogo y por clienta).
 		Packages: httpapi.PackageHandler{Packages: packageSvc, Memberships: mems},
 		// F9: fidelidad (cinco rutas: programa del salón; ficha, entrega y uso por clienta).

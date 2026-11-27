@@ -534,7 +534,7 @@ func TestHTTP_products_create_exige_el_precio(t *testing.T) {
 		`{"name":"Precio nulo con stock","price_cents":null,"stock":3}`,
 	} {
 		w := httpkit.Do(env.Router, "POST", base, body, ownerTok)
-		if w.Code != http.StatusBadRequest || okErr(t, w.Body.Bytes()) != "Faltan datos del producto: nombre y precio" {
+		if w.Code != http.StatusBadRequest || httpkit.OkErr(t, w.Body.Bytes()) != "Faltan datos del producto: nombre y precio" {
 			t.Fatalf("%s: %d %s", body, w.Code, w.Body.String())
 		}
 	}

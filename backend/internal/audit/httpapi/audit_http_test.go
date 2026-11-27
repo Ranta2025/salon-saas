@@ -20,6 +20,7 @@ import (
 	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
 	"salon-saas/internal/notifications"
 	"salon-saas/internal/products"
+	productshttpapi "salon-saas/internal/products/httpapi"
 	httpkit "salon-saas/internal/testutil/httpkit"
 	"sort"
 	"strings"
@@ -259,7 +260,7 @@ func newAudWorld(t *testing.T) *audWorld {
 	// Fakes de gastos, fidelidad y productos montados sobre el mismo httpkit.Env.
 	notifSvc := notifications.NotificationService{Notifications: env.Notifications, Salons: env.Mems, Events: env.Events}
 	inv := &httpkit.Products{}
-	env.Deps.Products = httpapi.ProductHandler{
+	env.Deps.Products = productshttpapi.ProductHandler{
 		Products:    products.ProductService{Products: inv, Memberships: env.Mems, Events: env.Events, Notifier: notifSvc},
 		Memberships: env.Mems,
 	}

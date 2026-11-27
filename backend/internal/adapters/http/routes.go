@@ -6,6 +6,7 @@ import (
 	financehttpapi "salon-saas/internal/finance/httpapi"
 	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
 	"salon-saas/internal/ports"
+	productshttpapi "salon-saas/internal/products/httpapi"
 
 	"github.com/gin-gonic/gin"
 )
@@ -54,7 +55,7 @@ type Deps struct {
 	// Products es el catálogo de productos y su inventario (F6): cinco rutas.
 	// La autorización vive en el caso de uso (leer owner/admin/recepción;
 	// escribir y ver movimientos solo owner/admin).
-	Products ProductHandler
+	Products productshttpapi.ProductHandler
 	// Packages son los paquetes y bonos prepagos (F8): el catálogo del salón y,
 	// por clienta, comprar, ver el saldo, descontar una sesión y ajustarlo. La
 	// autorización vive en el caso de uso.

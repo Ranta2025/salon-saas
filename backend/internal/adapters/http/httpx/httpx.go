@@ -77,6 +77,15 @@ func LoadActor(memberships ports.MembershipRepository, c *gin.Context, salonID s
 	return m, true
 }
 
+// OptionalID devuelve nil para un id vacío: así un `professional_id` o un
+// `service_id` opcional sale como null y no como cadena vacía.
+func OptionalID(id string) any {
+	if id == "" {
+		return nil
+	}
+	return id
+}
+
 // BadBody es la respuesta única de JSON inválido o demasiado grande.
 func BadBody(c *gin.Context) {
 	c.JSON(http.StatusBadRequest, gin.H{"error": "body inválido"})

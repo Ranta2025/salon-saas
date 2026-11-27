@@ -12,13 +12,14 @@ package httpapi
 
 import (
 	"net/http"
+	httpx "salon-saas/internal/adapters/http/httpx"
+	"salon-saas/internal/domain"
+	"salon-saas/internal/ports"
+	"salon-saas/internal/products"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/domain"
-	"salon-saas/internal/ports"
-	"salon-saas/internal/products"
 )
 
 type ProductHandler struct {
@@ -59,7 +60,7 @@ func (h ProductHandler) List(c *gin.Context) {
 	}
 	list, err := h.Products.List(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -83,18 +84,18 @@ func (h ProductHandler) Create(c *gin.Context) {
 		LowStockThreshold *int   `json:"low_stock_threshold"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	// El precio es obligatorio: ausente o null es 400 y no se escribe nada (no se
 	// rellena con 0). Un 0 explícito sí es un precio válido.
 	if in.PriceCents == nil {
-		respondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgProductCreateMissing))
+		httpx.RespondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgProductCreateMissing))
 		return
 	}
 	p, err := h.Products.Create(actor, salonID, in.Name, *in.PriceCents, in.Stock, in.LowStockThreshold)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, productJSON(p))
@@ -116,16 +117,16 @@ func (h ProductHandler) Update(c *gin.Context) {
 		Active            *bool   `json:"active"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if in.Name == nil || in.PriceCents == nil || in.LowStockThreshold == nil || in.Active == nil {
-		respondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgProductMissingFields))
+		httpx.RespondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgProductMissingFields))
 		return
 	}
 	p, err := h.Products.Update(actor, salonID, productID, *in.Name, *in.PriceCents, *in.LowStockThreshold, *in.Active)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, productJSON(p))
@@ -145,12 +146,12 @@ func (h ProductHandler) Adjust(c *gin.Context) {
 		Note   string `json:"note"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	p, err := h.Products.Adjust(actor, salonID, productID, in.Delta, in.Reason, in.Note)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, productJSON(p))
@@ -169,14 +170,14 @@ func (h ProductHandler) Movements(c *gin.Context) {
 		n, err := strconv.Atoi(q)
 		// Un 0 explícito NO es "sin parámetro": el rango válido es 1..100.
 		if err != nil || n < 1 {
-			respondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgProductLimit))
+			httpx.RespondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgProductLimit))
 			return
 		}
 		limit = n
 	}
 	list, err := h.Products.Movements(actor, salonID, productID, limit)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -186,7 +187,7 @@ func (h ProductHandler) Movements(c *gin.Context) {
 			"delta":      m.Delta,
 			"reason":     string(m.Reason),
 			"note":       m.Note,
-			"sale_id":    optionalID(m.SaleID),
+			"sale_id":    httpx.OptionalID(m.SaleID),
 			"created_at": m.CreatedAt.Format(time.RFC3339),
 		})
 	}

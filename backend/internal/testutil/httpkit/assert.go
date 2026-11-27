@@ -1,6 +1,7 @@
 package httpkit
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"sort"
 	"testing"
@@ -53,4 +54,15 @@ func SameKeys(t *testing.T, what string, got map[string]any, want ...string) {
 			t.Fatalf("%s: claves %v, esperaba %v", what, g, want)
 		}
 	}
+}
+
+func OkErr(t *testing.T, body []byte) string {
+	t.Helper()
+	var out struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("json de error inválido: %v (%s)", err, body)
+	}
+	return out.Error
 }
