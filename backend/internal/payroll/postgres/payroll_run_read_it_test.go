@@ -7,7 +7,7 @@
 // separadas. Un borrado concurrente entre las dos devolvía 200 con una corrida
 // SIN líneas (una liquidación fantasma). La lectura tiene que ser UNA foto
 // consistente: o la corrida entera o 404, nunca media.
-package pgstore
+package postgres
 
 import (
 	"context"

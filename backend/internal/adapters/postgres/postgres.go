@@ -146,6 +146,23 @@ func (r Salons) Settings(salonID string) (domain.SalonSettings, error) {
 	return readSalonSettings(context.Background(), r.Pool, salonID)
 }
 
+// PayrollWriteLockPrefix separa el lock de liquidaciones de los otros locks por
+// salón ("booking-write:", "booking-cover:", "member-write:").
+const PayrollWriteLockPrefix = "payroll-write:"
+
+// dateOf formatea una DATE de Postgres como la fecha local del contrato.
+func dateOf(t time.Time) string { return t.Format("2006-01-02") }
+
+// DateOf es la versión exportada de dateOf para los adaptadores que ya viven en
+// su módulo por funcionalidad (`internal/<feature>/postgres`).
+func DateOf(t time.Time) string { return dateOf(t) }
+
+// ReadSalonSettings es la versión exportada de readSalonSettings para los
+// adaptadores que ya viven en su módulo por funcionalidad.
+func ReadSalonSettings(ctx context.Context, q Querier, salonID string) (domain.SalonSettings, error) {
+	return readSalonSettings(ctx, q, salonID)
+}
+
 // readSalonSettings es la ÚNICA lectura de la configuración: la usan el puerto
 // normal y la transacción de la liquidación, así no divergen.
 func readSalonSettings(ctx context.Context, q querier, salonID string) (domain.SalonSettings, error) {
@@ -194,7 +211,7 @@ func (r Salons) SaveSettingsGuarded(s domain.SalonSettings) error {
 	defer rollbackTx(tx) // no-op si ya commiteó
 
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`,
-		payrollWriteLockPrefix+s.SalonID); err != nil {
+		PayrollWriteLockPrefix+s.SalonID); err != nil {
 		return err
 	}
 

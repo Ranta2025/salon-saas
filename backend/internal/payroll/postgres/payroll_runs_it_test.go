@@ -9,7 +9,7 @@
 // borrado que libera días; la inmutabilidad de la pagada en las queries
 // (UPDATE/DELETE condicionales) y el rollback de una transacción que falla
 // después de marcar la corrida.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/payroll"
 	"salon-saas/internal/ports"
@@ -34,14 +35,14 @@ func payrollRunService(pool *pgxpool.Pool) payroll.PayrollRunService {
 	return payroll.PayrollRunService{
 		Runs: repo, Tx: repo,
 		PayModels: PayModels{Pool: pool}, Sales: PayrollSales{Pool: pool},
-		Memberships: Memberships{Pool: pool}, Settings: Salons{Pool: pool},
+		Memberships: pgstore.Memberships{Pool: pool}, Settings: pgstore.Salons{Pool: pool},
 		Now: func() time.Time { return payrollRunNow },
 	}
 }
 
 func payrollRunActor(t *testing.T, pool *pgxpool.Pool, userID, salonID string) domain.Membership {
 	t.Helper()
-	m, err := (Memberships{Pool: pool}).Find(userID, salonID)
+	m, err := (pgstore.Memberships{Pool: pool}).Find(userID, salonID)
 	if err != nil {
 		t.Fatalf("actor %s: %v", userID, err)
 	}
@@ -125,7 +126,7 @@ func TestPayrollRunsIT_crear_congela_la_foto(t *testing.T) {
 	// La vista previa, en cambio, SÍ es viva: ahora ve el 90% y el fijo nuevo.
 	previewSvc := payroll.PayrollService{
 		Pay: PayModels{Pool: pool}, Sales: PayrollSales{Pool: pool},
-		Memberships: Memberships{Pool: pool}, Settings: Salons{Pool: pool},
+		Memberships: pgstore.Memberships{Pool: pool}, Settings: pgstore.Salons{Pool: pool},
 		Now: func() time.Time { return payrollRunNow },
 	}
 	preview, err := previewSvc.Preview(owner, "s-it-pay", "month", "2026-02-10")
@@ -453,13 +454,13 @@ func TestPayrollRunsIT_tenant_listado_y_export(t *testing.T) {
 	owner := payrollRunActor(t, pool, "u-it-pay-owner", "s-it-pay")
 
 	// El salón 2 necesita quien lo administre y una venta propia.
-	if err := (Memberships{Pool: pool}).Save(domain.Membership{
+	if err := (pgstore.Memberships{Pool: pool}).Save(domain.Membership{
 		UserID: "u-it-pay-c", SalonID: "s-it-pay2", Role: domain.RoleOwner,
 	}); err != nil {
 		t.Fatalf("owner del salón 2: %v", err)
 	}
 	svc2, _ := domain.NewService("s-it-pay2", "Corte Ajeno PR", 45, 150000, 10)
-	if err := (Services{Pool: pool}).Save(svc2); err != nil {
+	if err := (pgstore.Services{Pool: pool}).Save(svc2); err != nil {
 		t.Fatalf("catálogo del salón 2: %v", err)
 	}
 	insertPaySale(t, ctx, pool, "sale-pr-otro", "s-it-pay2", "u-it-pay-c",

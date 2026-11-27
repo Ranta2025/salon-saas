@@ -1,6 +1,6 @@
 // Integración con Postgres real de la venta CON productos (F6, D1/D3/D4/D6/D8).
 // Se saltea sin SALON_IT=1.
-package pgstore
+package pgstore_test
 
 import (
 	"context"
@@ -10,16 +10,18 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
+	payrollpostgres "salon-saas/internal/payroll/postgres"
 	"salon-saas/internal/pos"
 	"salon-saas/internal/testutil/itdb"
 )
 
 // saleProductFixture siembra catálogo de servicios y productos en s-it-prod.
-func saleProductFixture(t *testing.T) (*pgxpool.Pool, context.Context, Services, Products, SaleProducts) {
+func saleProductFixture(t *testing.T) (*pgxpool.Pool, context.Context, pgstore.Services, pgstore.Products, pgstore.SaleProducts) {
 	t.Helper()
 	pool, ctx := productFixtures(t)
-	return pool, ctx, Services{Pool: pool}, Products{Pool: pool}, SaleProducts{Pool: pool}
+	return pool, ctx, pgstore.Services{Pool: pool}, pgstore.Products{Pool: pool}, pgstore.SaleProducts{Pool: pool}
 }
 
 type productSpec struct {
@@ -29,7 +31,7 @@ type productSpec struct {
 	low   int
 }
 
-func seedProducts(t *testing.T, repo Products, salonID string, specs ...productSpec) []domain.Product {
+func seedProducts(t *testing.T, repo pgstore.Products, salonID string, specs ...productSpec) []domain.Product {
 	t.Helper()
 	out := make([]domain.Product, 0, len(specs))
 	for _, s := range specs {
@@ -199,7 +201,7 @@ func TestSaleWithProducts_IT(t *testing.T) {
 	// D6: la nómina ve SOLO la parte de servicios de una venta mixta.
 	now := time.Now().UTC()
 	from, to := now.Add(-2*time.Hour), now.Add(2*time.Hour)
-	payroll := PayrollSales{Pool: pool}
+	payroll := payrollpostgres.PayrollSales{Pool: pool}
 	totals, err := payroll.CommissionTotals("s-it-prod", from, to)
 	if err != nil || len(totals) != 1 {
 		t.Fatalf("nómina: %v %+v", err, totals)
@@ -364,11 +366,11 @@ func TestSaleWithProducts_concurrency_IT(t *testing.T) {
 
 	// (g) App completa: 16 pedidos con el MISMO client_op_id devuelven la MISMA
 	// venta y descuentan UNA vez.
-	mems := Memberships{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
 	owner, _ := mems.Find("u-it-prod-owner", "s-it-prod")
 	idem := seedProducts(t, products, "s-it-prod", productSpec{"Idempotente App", 1000, 5, 0})[0]
 	svc := pos.SaleService{
-		Sales: Sales{Pool: pool}, Services: Services{Pool: pool}, Memberships: mems,
+		Sales: pgstore.Sales{Pool: pool}, Services: pgstore.Services{Pool: pool}, Memberships: mems,
 		Products: products, ProductSales: sales,
 	}
 	var wg5 sync.WaitGroup

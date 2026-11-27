@@ -8,7 +8,7 @@
 // cobertura de ausencias ni miembros) y después inserta cabecera + líneas. La
 // EXCLUDE de la migración es la red de seguridad: dos creaciones simultáneas
 // del mismo período dejan una sola corrida (23P01 -> ErrAlreadyExists -> 409).
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -19,13 +19,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
-
-// payrollWriteLockPrefix separa el lock de liquidaciones de los otros locks por
-// salón ("booking-write:", "booking-cover:", "member-write:").
-const payrollWriteLockPrefix = "payroll-write:"
 
 // PayrollRuns implementa ports.PayrollRunRepository y ports.PayrollTxRunner.
 type PayrollRuns struct {
@@ -79,18 +76,18 @@ func (r PayrollRuns) ListRuns(salonID string) ([]domain.PayrollRunSummary, error
 		}
 		s.Kind = domain.PayPeriodKind(kind)
 		s.Status = domain.PayrollRunStatus(status)
-		s.From, s.To = dateOf(from), dateOf(to)
+		s.From, s.To = pgstore.DateOf(from), pgstore.DateOf(to)
 		var err error
-		if s.Totals.CommissionCents, err = bigintToInt(commission, "la comisión de la liquidación"); err != nil {
+		if s.Totals.CommissionCents, err = pgstore.BigintToInt(commission, "la comisión de la liquidación"); err != nil {
 			return nil, err
 		}
-		if s.Totals.FixedCents, err = bigintToInt(fixed, "el fijo de la liquidación"); err != nil {
+		if s.Totals.FixedCents, err = pgstore.BigintToInt(fixed, "el fijo de la liquidación"); err != nil {
 			return nil, err
 		}
 		if s.Totals.AdjustmentCents, err = bigintToIntSigned(adjustment, "el ajuste de la liquidación"); err != nil {
 			return nil, err
 		}
-		if s.Totals.TotalCents, err = bigintToInt(total, "el total de la liquidación"); err != nil {
+		if s.Totals.TotalCents, err = pgstore.BigintToInt(total, "el total de la liquidación"); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
@@ -106,7 +103,7 @@ func (r PayrollRuns) ListRuns(salonID string) ([]domain.PayrollRunSummary, error
 // devolvía 200 con una corrida sin líneas. Así la respuesta es la corrida
 // ENTERA o 404, nunca media.
 func (r PayrollRuns) FindRun(salonID, runID string) (domain.PayrollRun, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.BeginTx(ctx, pgx.TxOptions{
 		IsoLevel:   pgx.RepeatableRead,
@@ -115,7 +112,7 @@ func (r PayrollRuns) FindRun(salonID, runID string) (domain.PayrollRun, error) {
 	if err != nil {
 		return domain.PayrollRun{}, err
 	}
-	defer rollbackTx(tx) // no-op si ya commiteó
+	defer pgstore.RollbackTx(tx) // no-op si ya commiteó
 
 	run, err := findPayrollRun(ctx, tx, salonID, runID)
 	if err != nil {
@@ -130,16 +127,16 @@ func (r PayrollRuns) FindRun(salonID, runID string) (domain.PayrollRun, error) {
 // InPayrollTx implementa ports.PayrollTxRunner: una transacción con advisory
 // lock por salón. El lock se libera al commitear o al revertir.
 func (r PayrollRuns) InPayrollTx(salonID string, fn func(tx ports.PayrollRunTx) error) error {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer rollbackTx(tx) // no-op si ya commiteó
+	defer pgstore.RollbackTx(tx) // no-op si ya commiteó
 
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`,
-		payrollWriteLockPrefix+salonID); err != nil {
+		pgstore.PayrollWriteLockPrefix+salonID); err != nil {
 		return err
 	}
 	if err := fn(payrollRunTx{tx: tx, ctx: ctx}); err != nil {
@@ -162,7 +159,7 @@ func (t payrollRunTx) SaveRun(run domain.PayrollRun) error {
 		 VALUES($1,$2,$3,$4::date,$5::date,$6,$7,$8,$9,$10)`,
 		run.ID, run.SalonID, string(run.Kind), run.From, run.To, string(run.Status),
 		run.CreatedBy, run.CreatedAt, run.PaidAt, run.PaidBy); err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	batch := &pgx.Batch{}
 	for _, l := range run.Lines {
@@ -178,7 +175,7 @@ func (t payrollRunTx) SaveRun(run domain.PayrollRun) error {
 	defer func() { _ = results.Close() }()
 	for range run.Lines {
 		if _, err := results.Exec(); err != nil {
-			return pgError(err)
+			return pgstore.PGError(err)
 		}
 	}
 	return nil
@@ -194,7 +191,7 @@ func (t payrollRunTx) FindRun(salonID, runID string) (domain.PayrollRun, error) 
 // que InPayrollTx tomó el advisory lock: la creación deriva el período con la
 // zona que vale bajo el lock, nunca con una que el PUT está cambiando.
 func (t payrollRunTx) Settings(salonID string) (domain.SalonSettings, error) {
-	return readSalonSettings(t.ctx, t.tx, salonID)
+	return pgstore.ReadSalonSettings(t.ctx, t.tx, salonID)
 }
 
 // PreviewSource implementa ports.PayrollPreviewSource sobre la conexión de la
@@ -206,7 +203,7 @@ func (t payrollRunTx) PreviewSource() ports.PayrollPreviewSource {
 // payrollPreviewTx son las lecturas de la vista previa dentro de la transacción.
 type payrollPreviewTx struct {
 	ctx context.Context
-	q   querier
+	q   pgstore.Querier
 }
 
 func (p payrollPreviewTx) ListPayModels(salonID string) ([]domain.MemberPayView, error) {
@@ -231,7 +228,7 @@ func (t payrollRunTx) AdjustLine(salonID, runID, userID string, adjustmentCents 
 		               WHERE r.id = $1 AND r.salon_id = $3 AND r.status = 'open')`,
 		runID, userID, salonID, adjustmentCents, note)
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() > 0 {
 		return nil
@@ -248,7 +245,7 @@ func (t payrollRunTx) PayRun(salonID, runID, paidBy string) error {
 		 WHERE id = $1 AND salon_id = $2 AND status = 'open'`,
 		runID, salonID, paidBy)
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() > 0 {
 		return nil
@@ -263,7 +260,7 @@ func (t payrollRunTx) DeleteRun(salonID, runID string) error {
 		`DELETE FROM payroll_runs WHERE id = $1 AND salon_id = $2 AND status = 'open'`,
 		runID, salonID)
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() > 0 {
 		return nil
@@ -293,13 +290,13 @@ func (t payrollRunTx) explainNoRows(salonID, runID string) error {
 }
 
 // findPayrollRun lee la cabecera y sus líneas con el scope de salón.
-func findPayrollRun(ctx context.Context, q querier, salonID, runID string) (domain.PayrollRun, error) {
+func findPayrollRun(ctx context.Context, q pgstore.Querier, salonID, runID string) (domain.PayrollRun, error) {
 	row := q.QueryRow(ctx,
 		`SELECT`+payrollRunColumns+` FROM payroll_runs r WHERE r.id = $1 AND r.salon_id = $2`,
 		runID, salonID)
 	run, err := scanPayrollRun(row)
 	if err != nil {
-		return domain.PayrollRun{}, notFound(err)
+		return domain.PayrollRun{}, pgstore.NotFound(err)
 	}
 	rows, err := q.Query(ctx,
 		`SELECT`+payrollLineColumns+`
@@ -333,7 +330,7 @@ func scanPayrollRun(row interface{ Scan(dest ...any) error }) (domain.PayrollRun
 	}
 	run.Kind = domain.PayPeriodKind(kind)
 	run.Status = domain.PayrollRunStatus(status)
-	run.From, run.To = dateOf(from), dateOf(to)
+	run.From, run.To = pgstore.DateOf(from), pgstore.DateOf(to)
 	return run, nil
 }
 
@@ -347,13 +344,6 @@ func scanPayrollLine(row interface{ Scan(dest ...any) error }) (domain.PayrollLi
 	}
 	return l, nil
 }
-
-// dateOf formatea una DATE de Postgres como la fecha local del contrato.
-func dateOf(t time.Time) string { return t.Format("2006-01-02") }
-
-// DateOf es la versión exportada de dateOf para los adaptadores que ya viven en
-// su módulo por funcionalidad (`internal/<feature>/postgres`).
-func DateOf(t time.Time) string { return dateOf(t) }
 
 // bigintToIntSigned es bigintToInt para columnas que pueden ser negativas (el
 // ajuste).

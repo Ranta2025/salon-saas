@@ -2,7 +2,7 @@
 // Se saltea sin SALON_IT=1. Corre con:
 //
 //	SALON_IT=1 go test ./internal/adapters/postgres/ -run 'Products|SaleProducts' -v
-package pgstore
+package pgstore_test
 
 import (
 	"context"
@@ -12,17 +12,19 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // productFixtures deja un salón de prueba limpio y migrado (dos pasadas) con
 // sus cuentas. Ids fijos para que el test sea re-ejecutable.
 func productFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
 	ctx := context.Background()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 	for _, q := range []string{
 		`DELETE FROM salons WHERE id LIKE 's-it-prod%'`,
 		`DELETE FROM users WHERE id LIKE 'u-it-prod%'`,
@@ -41,7 +43,7 @@ func productFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 			t.Fatalf("fixture: %v", err)
 		}
 	}
-	mems := Memberships{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
 	for _, m := range []domain.Membership{
 		{UserID: "u-it-prod-owner", SalonID: "s-it-prod", Role: domain.RoleOwner},
 		{UserID: "u-it-prod-prof", SalonID: "s-it-prod", Role: domain.RoleProfessional},
@@ -74,7 +76,7 @@ func stockOf(t *testing.T, pool *pgxpool.Pool, productID string) int {
 
 func TestProducts_IT(t *testing.T) {
 	pool, _ := productFixtures(t)
-	repo := Products{Pool: pool}
+	repo := pgstore.Products{Pool: pool}
 
 	shampoo := mustProduct(t, "s-it-prod", "Shampoo IT", 50000, 5, 2)
 	initial := domain.StockMovement{
@@ -215,7 +217,7 @@ func TestProducts_IT(t *testing.T) {
 func TestMigration029_overData_IT(t *testing.T) {
 	pool, _ := productFixtures(t)
 	ctx := context.Background()
-	servicesRepo := Services{Pool: pool}
+	servicesRepo := pgstore.Services{Pool: pool}
 	corte, _ := domain.NewService("s-it-prod", "Corte 029", 45, 150000, 30)
 	if err := servicesRepo.Save(corte); err != nil {
 		t.Fatalf("servicio: %v", err)
@@ -227,10 +229,10 @@ func TestMigration029_overData_IT(t *testing.T) {
 	if err != nil {
 		t.Fatalf("venta: %v", err)
 	}
-	if err := (Sales{Pool: pool}).Save(sale); err != nil {
+	if err := (pgstore.Sales{Pool: pool}).Save(sale); err != nil {
 		t.Fatalf("guardar venta: %v", err)
 	}
-	if err := (Products{Pool: pool}).Create(mustProduct(t, "s-it-prod", "Previo 029", 100, 1, 0), nil); err != nil {
+	if err := (pgstore.Products{Pool: pool}).Create(mustProduct(t, "s-it-prod", "Previo 029", 100, 1, 0), nil); err != nil {
 		t.Fatalf("producto previo: %v", err)
 	}
 
@@ -250,7 +252,7 @@ func TestMigration029_overData_IT(t *testing.T) {
 		t.Fatalf("ventas existentes con products_cents = 0: %d (%v)", zero, err)
 	}
 
-	applyMigrations(t, pool) // dos pasadas más de 029 (y de todo)
+	itdb.ApplyMigrations(t, pool) // dos pasadas más de 029 (y de todo)
 	if got := md5Of(`SELECT md5(COALESCE(string_agg(t::text,'|' ORDER BY t.id),'')) FROM sales t WHERE salon_id LIKE 's-it-prod%'`); got != salesMD5 {
 		t.Fatalf("md5 de sales cambió: %s != %s", got, salesMD5)
 	}
@@ -269,7 +271,7 @@ func TestMigration029_overData_IT(t *testing.T) {
 // por salón y por nombre activo: los tres casos quedan en la DB.
 func TestProducts_constraints_IT(t *testing.T) {
 	pool, _ := productFixtures(t)
-	repo := Products{Pool: pool}
+	repo := pgstore.Products{Pool: pool}
 	long := make([]rune, 0, 121)
 	for i := 0; i < 121; i++ {
 		long = append(long, 'ñ')

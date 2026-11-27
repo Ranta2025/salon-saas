@@ -4,13 +4,14 @@
 //
 // Todas las queries van scopeadas por salon_id: el modelo de pago y las ventas
 // de otro tenant no existen acá.
-package pgstore
+package postgres
 
 import (
 	"context"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -33,7 +34,7 @@ func (r PayModels) ListPayModels(salonID string) ([]domain.MemberPayView, error)
 
 // listPayModels es la ÚNICA query del listado: la usan la pantalla de Equipo y
 // la vista previa (fuera y dentro de la transacción de una liquidación).
-func listPayModels(ctx context.Context, q querier, salonID string) ([]domain.MemberPayView, error) {
+func listPayModels(ctx context.Context, q pgstore.Querier, salonID string) ([]domain.MemberPayView, error) {
 	rows, err := q.Query(ctx,
 		`SELECT`+payModelColumns+`
 		 FROM memberships m
@@ -68,7 +69,7 @@ func (r PayModels) FindPayModel(salonID, userID string) (domain.MemberPayView, e
 		 WHERE m.salon_id=$1 AND m.user_id=$2`, salonID, userID)
 	v, err := scanPayModel(row)
 	if err != nil {
-		return domain.MemberPayView{}, notFound(err)
+		return domain.MemberPayView{}, pgstore.NotFound(err)
 	}
 	return v, nil
 }
@@ -86,7 +87,7 @@ func (r PayModels) SavePayModel(p domain.MemberPay) error {
 		     fixed_period=EXCLUDED.fixed_period,
 		     commission_enabled=EXCLUDED.commission_enabled`,
 		p.SalonID, p.UserID, p.FixedCents, string(p.FixedPeriod), p.CommissionEnabled)
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // scanPayModel lee una fila de payModelColumns.
@@ -118,7 +119,7 @@ type PayrollSales struct{ Pool *pgxpool.Pool }
 // línea es anterior a F3.1 (NULL), de la tarifa ACTUAL del servicio; en ese caso
 // la fila queda marcada con estimated. El total vendido se suma por VENTA (no
 // por ítem): una venta con dos líneas cuenta una vez.
-func commissionTotals(ctx context.Context, q querier, salonID string, from, to time.Time, userID string) ([]domain.PayrollSalesTotal, error) {
+func commissionTotals(ctx context.Context, q pgstore.Querier, salonID string, from, to time.Time, userID string) ([]domain.PayrollSalesTotal, error) {
 	rows, err := q.Query(ctx,
 		`WITH ventas AS (
 		   -- F6/D6: la nómina ve SOLO la parte de servicios de una venta. Las
@@ -161,7 +162,7 @@ func commissionTotals(ctx context.Context, q querier, salonID string, from, to t
 			return nil, err
 		}
 		var err error
-		if t.SalesTotalCents, err = bigintToInt(total, "el total vendido del período"); err != nil {
+		if t.SalesTotalCents, err = pgstore.BigintToInt(total, "el total vendido del período"); err != nil {
 			return nil, err
 		}
 		out = append(out, t)

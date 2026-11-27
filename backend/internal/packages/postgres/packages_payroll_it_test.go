@@ -20,6 +20,7 @@ import (
 	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/payroll"
+	payrollpostgres "salon-saas/internal/payroll/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
@@ -81,9 +82,9 @@ func TestPackagesPayrollIT_ventas_excludes_package_sales(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	repo := pgstore.PayrollSales{Pool: pool}
+	repo := payrollpostgres.PayrollSales{Pool: pool}
 	svc := payroll.PayrollService{
-		Pay: pgstore.PayModels{Pool: pool}, Sales: repo, Memberships: pgstore.Memberships{Pool: pool}, Settings: pgstore.Salons{Pool: pool},
+		Pay: payrollpostgres.PayModels{Pool: pool}, Sales: repo, Memberships: pgstore.Memberships{Pool: pool}, Settings: pgstore.Salons{Pool: pool},
 		Now: func() time.Time { return time.Date(2026, 4, 15, 0, 0, 0, 0, time.UTC) },
 	}
 	previewLine := func() payroll.PayrollLine {

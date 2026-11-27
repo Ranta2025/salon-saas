@@ -13,7 +13,7 @@
 // advisory lock por salón que la creación (`payroll-write:<salon>`), el
 // `EXISTS` de liquidaciones DESPUÉS del lock, y que la creación deriva el
 // período con la zona leída ya bajo el lock.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -23,8 +23,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/settings"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // msgTimezoneFrozen es la frase EXACTA del contrato (literal para que el test
@@ -32,7 +34,7 @@ import (
 const msgTimezoneFrozen = "No se puede cambiar la zona horaria: ya hay liquidaciones de nómina calculadas con la zona actual"
 
 func timezoneSettingsService(pool *pgxpool.Pool) settings.SettingsService {
-	return settings.SettingsService{Settings: Salons{Pool: pool}, Memberships: Memberships{Pool: pool}}
+	return settings.SettingsService{Settings: pgstore.Salons{Pool: pool}, Memberships: pgstore.Memberships{Pool: pool}}
 }
 
 // setSalonTimezone es el seed del test: no hay liquidaciones todavía, así que
@@ -65,8 +67,8 @@ func seedBoundarySales(t *testing.T, ctx context.Context, pool *pgxpool.Pool,
 		{"e", time.Date(2026, 3, 10, 15, 0, 0, 0, time.UTC)},
 	}
 	for _, s := range sales {
-		insertPaySale(t, ctx, pool, prefix+"-"+s.suffix, salonID, profID, s.at, 1000,
-			paySaleItem{ServiceID: serviceID, Qty: 1, PriceCent: 1000, Pct: intPtr(10)})
+		itdb.InsertPaySale(t, ctx, pool, prefix+"-"+s.suffix, salonID, profID, s.at, 1000,
+			itdb.PaySaleItem{ServiceID: serviceID, Qty: 1, PriceCent: 1000, Pct: itdb.IntPtr(10)})
 	}
 }
 
@@ -163,13 +165,13 @@ func TestTimezoneFreezeIT_camino_inverso_no_pierde_ventas(t *testing.T) {
 	settings := timezoneSettingsService(pool)
 
 	// El salón 2 con su dueña y su catálogo propio.
-	if err := (Memberships{Pool: pool}).Save(domain.Membership{
+	if err := (pgstore.Memberships{Pool: pool}).Save(domain.Membership{
 		UserID: "u-it-pay-c", SalonID: "s-it-pay2", Role: domain.RoleOwner,
 	}); err != nil {
 		t.Fatalf("dueña del salón 2: %v", err)
 	}
 	otro, _ := domain.NewService("s-it-pay2", "Corte TZ IT", 45, 150000, 10)
-	if err := (Services{Pool: pool}).Save(otro); err != nil {
+	if err := (pgstore.Services{Pool: pool}).Save(otro); err != nil {
 		t.Fatalf("catálogo del salón 2: %v", err)
 	}
 	owner2 := payrollRunActor(t, pool, "u-it-pay-c", "s-it-pay2")

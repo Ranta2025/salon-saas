@@ -7,7 +7,7 @@
 // la ventana en la zona del salón, una fila legacy sin foto, un profesional dado
 // de baja que conserva sus ventas, dos salones, y los CHECK/FK del modelo de
 // pago de la migración 024.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/testutil/itdb"
 )
@@ -26,10 +27,10 @@ import (
 // y una profesional en el salón 2. Ids fijos para que el test sea re-ejecutable.
 func payrollFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
 	ctx := context.Background()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 
 	for _, q := range []string{
 		`DELETE FROM salons WHERE id LIKE 's-it-pay%'`,
@@ -51,7 +52,7 @@ func payrollFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 			t.Fatalf("fixture: %v", err)
 		}
 	}
-	mems := Memberships{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
 	for _, m := range []domain.Membership{
 		{UserID: "u-it-pay-owner", SalonID: "s-it-pay", Role: domain.RoleOwner},
 		{UserID: "u-it-pay-a", SalonID: "s-it-pay", Role: domain.RoleProfessional, Attends: true},
@@ -80,7 +81,7 @@ func intPtr(v int) *int { return itdb.IntPtr(v) }
 // payrollCatalog crea el catálogo de los dos salones y devuelve los servicios.
 func payrollCatalog(t *testing.T, pool *pgxpool.Pool) (corte, color, gratis domain.Service) {
 	t.Helper()
-	services := Services{Pool: pool}
+	services := pgstore.Services{Pool: pool}
 	corte, _ = domain.NewService("s-it-pay", "Corte IT", 45, 150000, 10)
 	color, _ = domain.NewService("s-it-pay", "Color IT", 90, 300000, 25)
 	gratis, _ = domain.NewService("s-it-pay", "Cortesía IT", 30, 0, 0)
@@ -97,7 +98,7 @@ func payrollCatalog(t *testing.T, pool *pgxpool.Pool) (corte, color, gratis doma
 // la ventana en instantes, comprobando que es la medianoche LOCAL del salón.
 func windowOfMonth(t *testing.T, pool *pgxpool.Pool, salonID, kind, date string) (time.Time, time.Time) {
 	t.Helper()
-	settings, err := Salons{Pool: pool}.Settings(salonID)
+	settings, err := pgstore.Salons{Pool: pool}.Settings(salonID)
 	if err != nil {
 		t.Fatalf("settings del salón: %v", err)
 	}
@@ -119,7 +120,7 @@ func TestPayrollIT_agregados_por_profesional(t *testing.T) {
 	pool, ctx := payrollFixtures(t)
 	corte, color, gratis := payrollCatalog(t, pool)
 	svc2, _ := domain.NewService("s-it-pay2", "Corte Ajeno B", 45, 999999, 90)
-	if err := (Services{Pool: pool}).Save(svc2); err != nil {
+	if err := (pgstore.Services{Pool: pool}).Save(svc2); err != nil {
 		t.Fatalf("catálogo del otro salón: %v", err)
 	}
 
@@ -253,7 +254,7 @@ func TestPayrollIT_foto_vs_estimado(t *testing.T) {
 
 	// El dueño sube la tarifa del corte al 60%: la línea con foto no se mueve.
 	up, _ := corte.WithDetails(corte.Name, corte.DurationMin, corte.PriceCents, 60, true)
-	if err := (Services{Pool: pool}).Save(up); err != nil {
+	if err := (pgstore.Services{Pool: pool}).Save(up); err != nil {
 		t.Fatalf("editar catálogo: %v", err)
 	}
 	after, err := repo.CommissionTotals("s-it-pay", from, to)

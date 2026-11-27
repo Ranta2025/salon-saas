@@ -48,6 +48,7 @@ import (
 	packagespostgres "salon-saas/internal/packages/postgres"
 	"salon-saas/internal/payroll"
 	payrollhttpapi "salon-saas/internal/payroll/httpapi"
+	payrollpostgres "salon-saas/internal/payroll/postgres"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/pos"
 	poshttpapi "salon-saas/internal/pos/httpapi"
@@ -299,11 +300,11 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	invitationRepo := teamstore.Invitations{Pool: pool}
 	// F3.2: modelo de pago por miembro (member_pay, migración 024) y los
 	// agregados de comisión por profesional de una ventana.
-	payModelsRepo := pgstore.PayModels{Pool: pool}
-	payrollSalesRepo := pgstore.PayrollSales{Pool: pool}
+	payModelsRepo := payrollpostgres.PayModels{Pool: pool}
+	payrollSalesRepo := payrollpostgres.PayrollSales{Pool: pool}
 	// F3.3: liquidaciones (migración 025), con la transacción y el advisory lock
 	// del salón en el mismo adaptador.
-	payrollRunsRepo := pgstore.PayrollRuns{Pool: pool}
+	payrollRunsRepo := payrollpostgres.PayrollRuns{Pool: pool}
 	// F3b: gastos (migración 026) y el reporte de ganancia neta, que lee ingresos,
 	// gastos y nómina PAGADA en UNA sola transacción REPEATABLE READ de lectura.
 	expenseRepo := financestore.Expenses{Pool: pool}
