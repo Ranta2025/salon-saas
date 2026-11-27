@@ -23,10 +23,11 @@ import {
   type ResourceType,
   type ResourceUnit,
 } from '../lib/equipment'
-import { activeRole, roleLabel } from '@/lib/permissions'
+import { activeRole } from '@/lib/permissions'
 import { useSalon } from '@/app/SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
 import { PageHeader } from '@/app/components/PageHeader'
+import { ManagerOnlyNotice } from '@/app/components/ManagerOnlyNotice'
 
 /** How many services of the catalogue use a type of equipment. */
 export function usageLabel(services: number): string {
@@ -46,7 +47,7 @@ export function usageLabel(services: number): string {
  * explains the role to everybody else, like the team page.
  */
 export function EquipmentPage() {
-  const { salonId, salons } = useSalon()
+  const { salonId, salons, loading: meLoading, refresh: refreshMe } = useSalon()
   const role = activeRole(salons, salonId)
   const allowed = canEditEquipment(role)
 
@@ -107,13 +108,12 @@ export function EquipmentPage() {
     return (
       <>
         <PageHeader eyebrow="Equipamiento" title="Equipamiento del salón" />
-        <div className="empty-state">
-          <h2>Esta sección es de la administración</h2>
-          <p>
-            Tu rol ({roleLabel(role)}) no puede ver ni cambiar el equipamiento del salón. Si
-            necesitas acceso, pídeselo a la dueña o a la administración.
-          </p>
-        </div>
+        <ManagerOnlyNotice
+          role={role}
+          what="ni cambiar el equipamiento del salón"
+          loading={meLoading}
+          onRetry={refreshMe}
+        />
       </>
     )
   }

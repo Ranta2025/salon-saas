@@ -33,7 +33,7 @@ import { PayrollRunsSection } from '../components/PayrollRunsSection'
  * some commission was estimated with the current rate of the service.
  */
 export function PayrollPage() {
-  const { salonId, salons } = useSalon()
+  const { salonId, salons, loading: meLoading, refresh: refreshMe } = useSalon()
   const role = activeRole(salons, salonId)
   const allowed = canManagePayroll(role)
 
@@ -117,7 +117,7 @@ export function PayrollPage() {
     return (
       <>
         <PageHeader eyebrow="Nómina" title="Nómina del salón" />
-        <ManagerOnlyNotice role={role} />
+        <ManagerOnlyNotice role={role} loading={meLoading} onRetry={refreshMe} />
       </>
     )
   }

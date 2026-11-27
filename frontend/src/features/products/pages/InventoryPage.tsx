@@ -40,7 +40,7 @@ type FormMode = { kind: 'closed' } | { kind: 'create' } | { kind: 'edit'; produc
  * the units on screen are never the ones the client guessed.
  */
 export function InventoryPage() {
-  const { salonId, salons } = useSalon()
+  const { salonId, salons, loading: meLoading, refresh: refreshMe } = useSalon()
   const role = activeRole(salons, salonId)
   const allowed = canViewInventory(role)
   const canManage = canManageInventory(role)
@@ -225,7 +225,12 @@ export function InventoryPage() {
     return (
       <>
         <PageHeader eyebrow="Inventario" title="Productos y stock" />
-        <ManagerOnlyNotice role={role} />
+        <ManagerOnlyNotice
+          role={role}
+          what="el inventario ni el stock de los productos"
+          loading={meLoading}
+          onRetry={refreshMe}
+        />
       </>
     )
   }

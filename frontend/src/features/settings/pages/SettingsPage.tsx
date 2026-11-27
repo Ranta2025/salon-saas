@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { describeApiError, type ApiErrorNotice } from '@/lib/api'
-import { activeRole, isManager, roleLabel } from '@/lib/permissions'
+import { activeRole, isManager } from '@/lib/permissions'
 import {
   DEFAULT_SETTINGS,
   SLOT_STEPS,
@@ -14,6 +14,7 @@ import {
 import { useSalon } from '@/app/SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
 import { PageHeader } from '@/app/components/PageHeader'
+import { ManagerOnlyNotice } from '@/app/components/ManagerOnlyNotice'
 import { SalonHoursCard } from '../components/SalonHoursCard'
 
 const STEP_LABEL: Record<number, string> = {
@@ -27,7 +28,7 @@ const STEP_LABEL: Record<number, string> = {
  * the salon (F2d1, S-F2d1-6), owner/admin.
  */
 export function SettingsPage() {
-  const { salonId, salons } = useSalon()
+  const { salonId, salons, loading: meLoading, refresh: refreshMe } = useSalon()
   const role = activeRole(salons, salonId)
   const allowed = isManager(role)
 
@@ -86,13 +87,12 @@ export function SettingsPage() {
     return (
       <>
         <PageHeader eyebrow="Ajustes" title="Configuración del salón" />
-        <div className="empty-state">
-          <h2>Esta sección es de la administración</h2>
-          <p>
-            Tu rol ({roleLabel(role)}) no puede cambiar los ajustes del salón. Si necesitas acceso,
-            pídeselo a la dueña o a la administración.
-          </p>
-        </div>
+        <ManagerOnlyNotice
+          role={role}
+          what="ni cambiar los ajustes del salón"
+          loading={meLoading}
+          onRetry={refreshMe}
+        />
       </>
     )
   }

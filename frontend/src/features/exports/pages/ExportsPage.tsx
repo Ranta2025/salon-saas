@@ -51,7 +51,7 @@ const DOWNLOAD_ACTION = 'Descargar CSV'
  * unusable range is refused before any request with the sentence of the API.
  */
 export function ExportsPage() {
-  const { salonId, salons } = useSalon()
+  const { salonId, salons, loading: meLoading, refresh: refreshMe } = useSalon()
   const role = activeRole(salons, salonId)
   const allowed = canExportCsv(role)
 
@@ -155,7 +155,12 @@ export function ExportsPage() {
     return (
       <>
         <PageHeader eyebrow="Exportar" title="Exportar datos del salón" />
-        <ManagerOnlyNotice role={role} />
+        <ManagerOnlyNotice
+          role={role}
+          what="las exportaciones de datos del salón"
+          loading={meLoading}
+          onRetry={refreshMe}
+        />
       </>
     )
   }

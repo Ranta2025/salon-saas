@@ -28,7 +28,9 @@ export function SiteHeader({ model }: SiteHeaderProps) {
     <header className="site-header">
       <div className="container site-header__inner">
         <a className="brand" href="#inicio" aria-label={`${model.name}, ir al inicio`}>
-          <span className="brand__name">{model.name}</span>
+          <span className="brand__name" title={model.name}>
+            {model.name}
+          </span>
         </a>
 
         <nav className="site-nav" aria-label="Secciones del sitio">

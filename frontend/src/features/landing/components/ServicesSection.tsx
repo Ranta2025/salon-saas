@@ -1,4 +1,3 @@
-import { formatCents } from '@/lib/money'
 import type { LandingService } from '@/lib/publicSalon'
 import { ServiceCard } from './ServiceCard'
 
@@ -23,12 +22,13 @@ export function ServicesSection({ services, whatsapp, onSelect }: ServicesSectio
         <div className="services__grid">
           {services.map((service) => (
             <div key={service.id} className="services__item">
-              <ServiceCard service={service} onSelect={onSelect} />
               {/* F11 (D11): the amount is the `deposit_cents` of the server, never a
                   percentage recomputed in the browser. */}
-              {service.depositCents !== null ? (
-                <p className="services__deposit">Sena: {formatCents(service.depositCents)}</p>
-              ) : null}
+              <ServiceCard
+                service={service}
+                depositCents={service.depositCents}
+                onSelect={onSelect}
+              />
             </div>
           ))}
         </div>

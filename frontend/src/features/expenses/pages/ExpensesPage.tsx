@@ -34,7 +34,7 @@ import { PageHeader } from '@/app/components/PageHeader'
  * the SALON (`GET /settings`), never from a fixed zone.
  */
 export function ExpensesPage() {
-  const { salonId, salons } = useSalon()
+  const { salonId, salons, loading: meLoading, refresh: refreshMe } = useSalon()
   const role = activeRole(salons, salonId)
   const allowed = canManageExpenses(role)
 
@@ -216,7 +216,12 @@ export function ExpensesPage() {
     return (
       <>
         <PageHeader eyebrow="Gastos" title="Gastos del salón" />
-        <ManagerOnlyNotice role={role} />
+        <ManagerOnlyNotice
+          role={role}
+          what="los gastos del salón"
+          loading={meLoading}
+          onRetry={refreshMe}
+        />
       </>
     )
   }

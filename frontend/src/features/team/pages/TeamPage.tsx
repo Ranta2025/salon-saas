@@ -68,13 +68,14 @@ import { useSalon } from '@/app/SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
 import { MemberHoursCard } from '../components/MemberHoursCard'
 import { PageHeader } from '@/app/components/PageHeader'
+import { ManagerOnlyNotice } from '@/app/components/ManagerOnlyNotice'
 import { PayModelCard, type PayModelDraft } from '../components/PayModelCard'
 import { TeamInvitations } from '../components/TeamInvitations'
 import { TimeOffCard } from '@/features/bookings/index'
 
 /** `/panel/equipo`: team of the salon (owner/admin). */
 export function TeamPage() {
-  const { salonId, salons, user } = useSalon()
+  const { salonId, salons, user, loading: meLoading, refresh: refreshMe } = useSalon()
   const role = activeRole(salons, salonId)
   const allowed = isManager(role)
 
@@ -326,13 +327,12 @@ export function TeamPage() {
     return (
       <>
         <PageHeader eyebrow="Equipo" title="Equipo del salón" />
-        <div className="empty-state">
-          <h2>Esta sección es de la administración</h2>
-          <p>
-            Tu rol ({roleLabel(role)}) no puede ver ni cambiar el equipo del salón. Si necesitas
-            acceso, pídeselo a la dueña o a la administración.
-          </p>
-        </div>
+        <ManagerOnlyNotice
+          role={role}
+          what="ni cambiar el equipo del salón"
+          loading={meLoading}
+          onRetry={refreshMe}
+        />
       </>
     )
   }

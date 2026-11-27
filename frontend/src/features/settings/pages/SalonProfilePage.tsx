@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { describeApiError, type ApiErrorNotice } from '@/lib/api'
-import { activeRole, canEditSalonProfile, canViewSalonProfile, roleLabel } from '@/lib/permissions'
+import { activeRole, canEditSalonProfile, canViewSalonProfile } from '@/lib/permissions'
 import {
   draftFromProfile,
   fetchGallery,
@@ -14,6 +14,7 @@ import {
 import { useSalon } from '@/app/SalonContext'
 import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
 import { PageHeader } from '@/app/components/PageHeader'
+import { ManagerOnlyNotice } from '@/app/components/ManagerOnlyNotice'
 import { SalonGalleryManager } from '../components/SalonGalleryManager'
 import { SalonPreview } from '../components/SalonPreview'
 import { SalonProfileForm } from '../components/SalonProfileForm'
@@ -34,7 +35,7 @@ const EMPTY_DRAFT: ProfileDraft = {
  * gets a notice, like the other pages that are not theirs.
  */
 export function SalonProfilePage() {
-  const { salonId, salons } = useSalon()
+  const { salonId, salons, loading: meLoading, refresh: refreshMe } = useSalon()
   const role = activeRole(salons, salonId)
   const canView = canViewSalonProfile(role)
   const canEdit = canEditSalonProfile(role)
@@ -123,13 +124,12 @@ export function SalonProfilePage() {
     return (
       <>
         <PageHeader eyebrow="Página pública" title="Mi salón" />
-        <div className="empty-state">
-          <h2>Esta sección es de la administración</h2>
-          <p>
-            Tu rol ({roleLabel(role)}) no puede ver los datos de la página pública del salón. Si
-            necesitas acceso, pídeselo a la dueña o a la administración.
-          </p>
-        </div>
+        <ManagerOnlyNotice
+          role={role}
+          what="los datos de la página pública del salón"
+          loading={meLoading}
+          onRetry={refreshMe}
+        />
       </>
     )
   }

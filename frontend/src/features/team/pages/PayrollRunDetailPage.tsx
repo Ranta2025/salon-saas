@@ -55,7 +55,7 @@ type LineError = { userId: string; message: string }
  */
 export function PayrollRunDetailPage() {
   const { rid } = useParams<{ rid: string }>()
-  const { salonId, salons } = useSalon()
+  const { salonId, salons, loading: meLoading, refresh: refreshMe } = useSalon()
   const navigate = useNavigate()
   const role = activeRole(salons, salonId)
   const allowed = canManagePayrollRuns(role)
@@ -123,7 +123,7 @@ export function PayrollRunDetailPage() {
     return (
       <>
         <PageHeader eyebrow="Liquidaciones" title="Liquidación" />
-        <ManagerOnlyNotice role={role} />
+        <ManagerOnlyNotice role={role} loading={meLoading} onRetry={refreshMe} />
       </>
     )
   }

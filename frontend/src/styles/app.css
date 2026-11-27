@@ -18,6 +18,15 @@
 
 /* ---------- sidebar / top nav ---------- */
 
+/* Disclosure of the nav: only the mobile header shows it. */
+.shell__nav-toggle {
+  display: none;
+}
+
+.shell__nav-panel {
+  display: contents;
+}
+
 .shell__sidebar {
   display: flex;
   flex-direction: column;
@@ -33,12 +42,19 @@
   gap: 0.6rem;
 }
 
+/* The brand of the panel is the salon name and can be long: it never grows the
+   header (one line on mobile, at most two on the desktop sidebar). */
 .shell__brand-name {
   font-family: var(--font-display);
   font-size: 1.5rem;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--cream);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 .shell__brand-kicker {
@@ -80,6 +96,12 @@
 }
 
 .shell__nav a:focus-visible {
+  outline-color: var(--focus-dark);
+}
+
+/* Every focusable of the dark sidebar needs the champagne ring: the wine one is
+   invisible over the plum. */
+.shell__sidebar :focus-visible {
   outline-color: var(--focus-dark);
 }
 
@@ -194,11 +216,92 @@
 
 .shell__content {
   display: grid;
+  /* minmax(0, 1fr): one unbreakable word (a long email) never widens the page. */
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: var(--space-5);
   padding: clamp(1.25rem, 3vw, 2.25rem);
   max-width: 1280px;
   width: 100%;
+  /* Wide screens: the content is centered instead of hugging the sidebar. */
+  margin-inline: auto;
+}
+
+/* Below 900 px the sidebar is a compact sticky header: the content starts on the
+   first screen and the nav opens as an overlay on top of it. */
+@media (max-width: 899px) {
+  .shell__sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.4rem clamp(1rem, 3vw, 1.25rem);
+  }
+
+  .shell__brand {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .shell__brand-name {
+    -webkit-line-clamp: 1;
+    font-size: 1.25rem;
+  }
+
+  .shell__brand-kicker {
+    flex: 0 0 auto;
+    font-size: 0.75rem;
+  }
+
+  .shell__nav-toggle {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 0.7rem;
+    border: 1px solid var(--line-dark);
+    border-radius: var(--radius-pill);
+    color: var(--cream);
+    font-size: 0.8125rem;
+    font-weight: 700;
+  }
+
+  .shell__nav-toggle:hover {
+    background: rgba(232, 217, 181, 0.12);
+  }
+
+  .shell__nav-panel {
+    display: none;
+  }
+
+  .shell__sidebar[data-nav-open='true'] .shell__nav-panel {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    display: grid;
+    gap: var(--space-3);
+    max-height: calc(100dvh - 4.5rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-4) clamp(1rem, 3vw, 1.25rem) var(--space-5);
+    background: var(--plum);
+    border-top: 1px solid var(--line-dark);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .shell__nav a {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
 
 @media (min-width: 900px) {
@@ -223,6 +326,13 @@
     overscroll-behavior: contain;
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+    /* Scroll cue: the shadow at the bottom edge only shows while more entries are
+       below (the `local` layers cover it at the ends of the list). */
+    background:
+      linear-gradient(var(--plum), rgba(59, 30, 51, 0)) top / 100% 1.1rem no-repeat local,
+      linear-gradient(rgba(59, 30, 51, 0), var(--plum)) bottom / 100% 1.1rem no-repeat local,
+      radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0)) bottom /
+        100% 0.5rem no-repeat scroll;
   }
 
   .shell__brand,
@@ -242,7 +352,7 @@
 
   .shell__nav a {
     text-align: left;
-    padding: 0.55rem 0.75rem;
+    padding: 0.4rem 0.75rem;
   }
 
   .shell__nav a {
@@ -431,12 +541,31 @@
 
 .table-wrap {
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  /* Scroll cue: while the table is wider than its box, the right edge shows a
+     shadow; the `local` layers hide it once the last column is reached. */
+  background:
+    linear-gradient(to right, var(--surface), rgba(255, 253, 250, 0)) left center / 1.5rem 100%
+      no-repeat local,
+    linear-gradient(to left, var(--surface), rgba(255, 253, 250, 0)) right center / 1.5rem 100%
+      no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgba(30, 20, 24, 0.18), rgba(30, 20, 24, 0)) left center /
+      0.8rem 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgba(30, 20, 24, 0.18), rgba(30, 20, 24, 0))
+      right center / 0.8rem 100% no-repeat scroll;
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.875rem;
+}
+
+/* A long, unbreakable word (an email, a name) wraps instead of widening the
+   table past its box. */
+.table th,
+.table td {
+  overflow-wrap: anywhere;
 }
 
 .table th,
@@ -881,6 +1010,7 @@
 .pos-service__name {
   font-weight: 600;
   font-size: 0.875rem;
+  overflow-wrap: anywhere;
 }
 
 .pos-service__meta {
@@ -922,6 +1052,84 @@
 .pos-checkout {
   position: sticky;
   top: 1rem;
+}
+
+/* Below 900 px the total and «Cobrar» live in a bar fixed to the bottom edge:
+   the checkout of the catalog is never scrolled to the end of the page. */
+.pos-sticky-bar {
+  display: none;
+}
+
+@media (max-width: 899px) {
+  .pos-layout {
+    /* Room for the fixed bar so the last row is never under it. */
+    padding-bottom: 4.5rem;
+  }
+
+  .pos-sticky-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 45;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: 0.6rem clamp(1rem, 3vw, 1.25rem);
+    padding-bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px));
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+    box-shadow: 0 -8px 24px rgba(30, 20, 24, 0.14);
+  }
+
+  .pos-sticky-bar__total {
+    display: grid;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+
+  .pos-sticky-bar__total span {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+
+  .pos-sticky-bar__total strong {
+    font-family: var(--font-mono);
+    font-size: 1.05rem;
+    color: var(--wine);
+  }
+
+  .pos-sticky-bar .btn {
+    flex: 0 0 auto;
+    min-height: 44px;
+  }
+}
+
+@media (min-width: 900px) {
+  /* The checkout no longer grows past the viewport: it scrolls inside. */
+  .pos-checkout {
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .pos-checkout .pos-panel__submit {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+  }
+}
+
+/* The optional client list of the checkout is capped: the catalog and the total
+   never sit behind a picker that lists every client of the salon. */
+.pos-client-picker .pos-services {
+  max-height: 13rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .pos-panel {
@@ -1382,6 +1590,7 @@
   font-family: var(--font-sans);
   font-size: 0.9375rem;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .notification-row__date {
@@ -1392,6 +1601,7 @@
 .notification-row__body {
   font-size: 0.875rem;
   color: var(--ink-soft);
+  overflow-wrap: anywhere;
 }
 
 .notification-row__foot {
@@ -2110,10 +2320,9 @@
   min-width: 0;
 }
 
-@media (min-width: 900px) {
-  .calendar-layout--detail {
-    grid-template-columns: minmax(0, 1fr) 22rem;
-  }
+/* The two-column layout needs 1180 px: below that the detail panel would squeeze
+   the day grid under three columns, so it becomes a sheet over the grid. */
+@media (min-width: 1180px) {
 
   /* The actions panel stays next to the grid instead of falling below the fold. */
   .calendar-layout--detail .booking-detail {
@@ -2132,7 +2341,20 @@
   }
 }
 
-@media (max-width: 899px) {
+/* The sheet over the grid (below 1180 px) and its backdrop. */
+.calendar-sheet__backdrop {
+  display: none;
+}
+
+@media (max-width: 1179px) {
+  .calendar-sheet__backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    display: block;
+    background: rgba(30, 20, 24, 0.45);
+  }
+
   /* Full-width sheet above the content: the grid is not pushed off screen. */
   .calendar-layout--detail .booking-detail {
     position: fixed;
@@ -2141,11 +2363,23 @@
     bottom: 0;
     z-index: 60;
     max-height: 82vh;
+    max-height: 82dvh;
     overflow-y: auto;
     padding: var(--space-4);
     border-radius: 1rem 1rem 0 0;
     box-shadow: 0 -14px 40px rgba(59, 30, 51, 0.28);
     background: var(--surface);
+  }
+
+  /* The close button (and the status) stay reachable while the body scrolls. */
+  .calendar-layout--detail .booking-detail__head {
+    position: sticky;
+    top: calc(-1 * var(--space-4));
+    z-index: 2;
+    margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0;
+    padding: var(--space-4) var(--space-4) var(--space-3);
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
   }
 }
 

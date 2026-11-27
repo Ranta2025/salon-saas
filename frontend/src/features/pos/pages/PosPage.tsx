@@ -384,7 +384,7 @@ export function PosPage() {
               <p className="muted">Todavía no hay ventas hoy.</p>
             ) : (
               <div className="table-wrap">
-                <table className="table">
+                <table className="table table--stack">
                   <thead>
                     <tr>
                       <th scope="col">Cliente</th>
@@ -401,21 +401,25 @@ export function PosPage() {
                       const payload = pendingSalePayload(operation)
                       return (
                         <tr key={operation.client_op_id} data-pending="true">
-                          <td>
+                          <td data-label="Cliente">
                             {payload.client_name}{' '}
                             <span className="table__id">
                               {operation.client_op_id.slice(0, 8)}
                             </span>
                           </td>
-                          <td>{SALE_METHODS[payload.method] ?? payload.method}</td>
-                          <td>{pendingSaleItems(operation) + pendingSaleProducts(operation)}</td>
-                          <td className="table__num">
+                          <td data-label="Método">
+                            {SALE_METHODS[payload.method] ?? payload.method}
+                          </td>
+                          <td data-label="Artículos">
+                            {pendingSaleItems(operation) + pendingSaleProducts(operation)}
+                          </td>
+                          <td className="table__num" data-label="Total">
                             {formatCents(pendingSaleTotal(operation))}
                             {pendingSaleHasProducts(operation) ? (
                               <span className="muted"> + productos</span>
                             ) : null}
                           </td>
-                          <td>
+                          <td data-label="Estado">
                             <span className="pill pill--pending">Pendiente de sincronizar</span>
                           </td>
                         </tr>
@@ -423,11 +427,15 @@ export function PosPage() {
                     })}
                     {sales.map((sale) => (
                       <tr key={sale.id}>
-                        <td>{sale.client_name}</td>
-                        <td>{SALE_METHODS[sale.method] ?? sale.method}</td>
-                        <td>{sale.items.reduce((count, item) => count + item.qty, 0)}</td>
-                        <td className="table__num">{formatCents(sale.total_cents)}</td>
-                        <td>
+                        <td data-label="Cliente">{sale.client_name}</td>
+                        <td data-label="Método">{SALE_METHODS[sale.method] ?? sale.method}</td>
+                        <td data-label="Artículos">
+                          {sale.items.reduce((count, item) => count + item.qty, 0)}
+                        </td>
+                        <td className="table__num" data-label="Total">
+                          {formatCents(sale.total_cents)}
+                        </td>
+                        <td data-label="Estado">
                           <span className="pill pill--on">Registrada</span>
                         </td>
                       </tr>

@@ -40,7 +40,7 @@ const NEGATIVE_COLOR = '#8c1d33'
  * salon, so the default date is today in that zone and not a fixed one (D2).
  */
 export function ProfitPage() {
-  const { salonId, salons } = useSalon()
+  const { salonId, salons, loading: meLoading, refresh: refreshMe } = useSalon()
   const role = activeRole(salons, salonId)
   const allowed = canViewProfit(role)
 
@@ -154,7 +154,12 @@ export function ProfitPage() {
     return (
       <>
         <PageHeader eyebrow="Ganancias" title="Ganancias del salón" />
-        <ManagerOnlyNotice role={role} />
+        <ManagerOnlyNotice
+          role={role}
+          what="las ganancias del salón"
+          loading={meLoading}
+          onRetry={refreshMe}
+        />
       </>
     )
   }

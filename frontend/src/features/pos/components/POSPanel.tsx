@@ -478,6 +478,18 @@ export function POSPanel({
       <button type="submit" className="btn btn--wine pos-panel__submit" disabled={pending}>
         {pending ? 'Registrando…' : `Cobrar ${formatCents(uiTotal)}`}
       </button>
+
+      {/* Below 900 px the same submit stays on a bar fixed to the bottom edge, so
+          «Cobrar» never waits at the end of the catalog. */}
+      <div className="pos-sticky-bar">
+        <div className="pos-sticky-bar__total">
+          <span>Total a cobrar</span>
+          <strong>{formatCents(uiTotal)}</strong>
+        </div>
+        <button type="submit" className="btn btn--wine" disabled={pending}>
+          {pending ? 'Registrando…' : 'Cobrar'}
+        </button>
+      </div>
     </form>
   )
 }

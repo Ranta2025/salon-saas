@@ -60,6 +60,20 @@ export function CalendarPage() {
   const [gridWindow, setGridWindow] = useState<TimelineWindow>(DEFAULT_WINDOW)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+
+  // The detail sheet over the grid closes with Escape as well as with its backdrop.
+  useEffect(() => {
+    if (!selectedId) {
+      return
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setSelectedId(null)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [selectedId])
   /** null until the person chooses; whoever attends starts on their agenda. */
   const [view, setView] = useState<CalendarView | null>(null)
   // Window of the visible day in the salon zone: the bookings and the absences
@@ -353,7 +367,15 @@ export function CalendarPage() {
         </div>
 
         {selected ? (
-          <BookingDetail
+          <>
+            <button
+              type="button"
+              className="calendar-sheet__backdrop"
+              aria-label="Cerrar el panel del turno"
+              tabIndex={-1}
+              onClick={() => setSelectedId(null)}
+            />
+            <BookingDetail
             booking={selected}
             staff={staff}
             staffError={staffError}
@@ -368,6 +390,7 @@ export function CalendarPage() {
               reload()
             }}
           />
+          </>
         ) : null}
       </div>
     </>

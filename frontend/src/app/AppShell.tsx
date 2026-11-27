@@ -191,6 +191,9 @@ function ShellChrome() {
   // F2a); the list is re-read on every salon switch, so the entry follows it.
   const [staff, setStaff] = useState<StaffMember[]>([])
   const [staffLoaded, setStaffLoaded] = useState(false)
+  // Below 900 px the nav lives behind this disclosure: the header stays a compact
+  // sticky bar so the page content starts on the first screen.
+  const [navOpen, setNavOpen] = useState(false)
 
   useEffect(() => {
     if (!salonId) {
@@ -276,31 +279,48 @@ function ShellChrome() {
         Saltar al contenido
       </a>
 
-      <aside className="shell__sidebar">
+      <aside className="shell__sidebar" data-nav-open={navOpen}>
         <div className="shell__brand">
-          <span className="shell__brand-name">{brandName}</span>
+          <span className="shell__brand-name" title={brandName}>
+            {brandName}
+          </span>
           <span className="shell__brand-kicker">Panel del salón</span>
         </div>
 
-        <nav className="shell__nav" aria-label="Navegación del panel">
-          <ul>
-            {navItems.map((item) => (
-              <li key={item.to}>
-                <NavLink to={item.to} end={item.end}>
-                  {item.label}
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-        </nav>
+        <button
+          type="button"
+          className="shell__nav-toggle"
+          aria-expanded={navOpen}
+          aria-controls="nav-panel"
+          onClick={() => setNavOpen((value) => !value)}
+        >
+          <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false">
+            <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.8" />
+          </svg>
+          <span>{navOpen ? 'Cerrar' : 'Menú'}</span>
+        </button>
 
-        <div className="shell__sidebar-foot">
-          <a href="/" className="shell__public-link">
-            Ver sitio público ↗
-          </a>
-          <button type="button" className="btn btn--quiet btn--sm" onClick={handleLogout}>
-            Cerrar sesión
-          </button>
+        <div className="shell__nav-panel" id="nav-panel">
+          <nav className="shell__nav" aria-label="Navegación del panel">
+            <ul>
+              {navItems.map((item) => (
+                <li key={item.to}>
+                  <NavLink to={item.to} end={item.end} onClick={() => setNavOpen(false)}>
+                    {item.label}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </nav>
+
+          <div className="shell__sidebar-foot">
+            <a href="/" className="shell__public-link">
+              Ver sitio público ↗
+            </a>
+            <button type="button" className="btn btn--quiet btn--sm" onClick={handleLogout}>
+              Cerrar sesión
+            </button>
+          </div>
         </div>
       </aside>
 
