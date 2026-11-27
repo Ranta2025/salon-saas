@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/testutil"
 )
@@ -27,7 +28,7 @@ func seedTimeOff(t *testing.T, env *publicEnv, userID string, start, end time.Ti
 }
 
 // slotsOf devuelve los arranques locales ("15:04") de una profesional.
-func slotsOf(t *testing.T, slots []Slot, professionalID string) []string {
+func slotsOf(t *testing.T, slots []bkg.Slot, professionalID string) []string {
 	t.Helper()
 	out := []string{}
 	for _, s := range slots {
@@ -187,7 +188,7 @@ func TestStaffBooking_ignores_time_off(t *testing.T) {
 	if err := mems.Save(pro); err != nil {
 		t.Fatalf("membership: %v", err)
 	}
-	staff := BookingService{Bookings: env.bookings, Memberships: mems}
+	staff := bkg.BookingService{Bookings: env.bookings, Memberships: mems}
 
 	start := localDay(t, 1, 10, 0)
 	b, err := staff.CreateBooking(reception, "s1", "prof1", "Lía", "555", start, start.Add(45*time.Minute))

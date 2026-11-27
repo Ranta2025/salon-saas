@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/team"
 )
@@ -15,7 +16,7 @@ import (
 func TestBooking_staff_solo_agenda_para_quien_atiende(t *testing.T) {
 	bookings := &fb{}
 	mems := &fakeMemberships{}
-	svc := BookingService{Bookings: bookings, Memberships: mems}
+	svc := bkg.BookingService{Bookings: bookings, Memberships: mems}
 	rec := recepcionista(mems)
 	day := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
 	start, end := day.Add(10*time.Hour), day.Add(11*time.Hour)

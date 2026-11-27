@@ -2,7 +2,7 @@
 // que empiezan en las próximas 24 h. Una pasada = reclamar (atómico, en la DB)
 // y enviar. La idempotencia real vive en la tabla booking_emails: lo reclamado
 // queda con dueño por 5 minutos y lo enviado no vuelve nunca.
-package app
+package bookings
 
 import (
 	"context"
@@ -70,14 +70,14 @@ func (s ReminderService) RunOnce(ctx context.Context, now time.Time) (sent, fail
 		// el recordatorio sale igual, con la línea de contacto.
 		link := ""
 		if s.Links != nil {
-			if _, token, err := mintBookingLink(s.Links, d.SalonID, d.BookingID, now); err != nil {
+			if _, token, err := kernel.MintBookingLink(s.Links, d.SalonID, d.BookingID, now); err != nil {
 				// Sin el token en el log: el id del turno y el salón alcanzan.
 				log.Printf("recordatorios: emitir el enlace del turno %s del salón %s: %v", d.BookingID, d.SalonID, err)
 			} else {
-				link = bookingLinkURL(s.AppURL, token)
+				link = kernel.BookingLinkURL(s.AppURL, token)
 			}
 		}
-		msg := bookingMailWithLink(bookingMailReminder, d.SalonName, d.ClientName, d.StartsAt, settings, link)
+		msg := kernel.BookingMailWithLink(kernel.BookingMailReminder, d.SalonName, d.ClientName, d.StartsAt, settings, link)
 		msg.To = d.Email
 
 		sendCtx, cancel := context.WithTimeout(ctx, reminderSendTimeout)

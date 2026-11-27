@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/testutil"
 )
@@ -12,7 +13,7 @@ import (
 // agendaEnv: agenda de staff (calendario) + equipamiento, para probar la
 // reprogramación y la reasignación.
 type agendaEnv struct {
-	svc      BookingService
+	svc      bkg.BookingService
 	bookings *fb
 	res      *fakeResources
 	services *testutil.FakeServices
@@ -52,7 +53,7 @@ func newAgendaEnv(t *testing.T) *agendaEnv {
 	_ = services.Save(corte)
 
 	return &agendaEnv{
-		svc: BookingService{
+		svc: bkg.BookingService{
 			Bookings: bookings, Memberships: mems, Services: services, Resources: res,
 		},
 		bookings: bookings, res: res, services: services, mems: mems,
@@ -87,7 +88,7 @@ func TestBooking_reschedule_con_unidad(t *testing.T) {
 
 	// Mover a las 12: la unidad A sigue libre -> se conserva.
 	start, end := day.Add(12*time.Hour), day.Add(13*time.Hour)
-	moved, err := env.svc.Update(env.owner, "s1", b.ID, BookingPatch{StartsAt: &start, EndsAt: &end})
+	moved, err := env.svc.Update(env.owner, "s1", b.ID, bkg.BookingPatch{StartsAt: &start, EndsAt: &end})
 	if err != nil {
 		t.Fatalf("reprogramar: %v", err)
 	}
@@ -98,7 +99,7 @@ func TestBooking_reschedule_con_unidad(t *testing.T) {
 	// Otra persona ocupa la unidad A a las 14 -> el turno se mueve a la B.
 	env.seedUnidad(t, "bea", env.unitA, day.Add(14*time.Hour), day.Add(15*time.Hour))
 	start, end = day.Add(14*time.Hour), day.Add(15*time.Hour)
-	moved, err = env.svc.Update(env.owner, "s1", b.ID, BookingPatch{StartsAt: &start, EndsAt: &end})
+	moved, err = env.svc.Update(env.owner, "s1", b.ID, bkg.BookingPatch{StartsAt: &start, EndsAt: &end})
 	if err != nil {
 		t.Fatalf("reprogramar a unidad libre: %v", err)
 	}
@@ -110,7 +111,7 @@ func TestBooking_reschedule_con_unidad(t *testing.T) {
 	env.seedUnidad(t, "ana", env.unitA, day.Add(16*time.Hour), day.Add(17*time.Hour))
 	env.seedUnidad(t, "bea", env.unitB, day.Add(16*time.Hour), day.Add(17*time.Hour))
 	start, end = day.Add(16*time.Hour), day.Add(17*time.Hour)
-	if _, err := env.svc.Update(env.owner, "s1", b.ID, BookingPatch{StartsAt: &start, EndsAt: &end}); !errors.Is(err, domain.ErrAlreadyExists) {
+	if _, err := env.svc.Update(env.owner, "s1", b.ID, bkg.BookingPatch{StartsAt: &start, EndsAt: &end}); !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("sin equipo libre es 409: %v", err)
 	}
 }
@@ -126,7 +127,7 @@ func TestBooking_cancelar_libera_unidad(t *testing.T) {
 		t.Fatalf("antes de cancelar la unidad está ocupada: %+v %v", busy, err)
 	}
 	cancelled := domain.BookingCancelled
-	if _, err := env.svc.Update(env.owner, "s1", b.ID, BookingPatch{Status: &cancelled}); err != nil {
+	if _, err := env.svc.Update(env.owner, "s1", b.ID, bkg.BookingPatch{Status: &cancelled}); err != nil {
 		t.Fatalf("cancelar: %v", err)
 	}
 	busy, err = env.res.OccupiedUnits("s1", day.Add(9*time.Hour), day.Add(12*time.Hour), "")
@@ -151,7 +152,7 @@ func TestBooking_sin_unidad_no_necesita_equipo(t *testing.T) {
 		t.Fatalf("guardar: %v", err)
 	}
 	start, end := day.Add(14*time.Hour), day.Add(15*time.Hour)
-	moved, err := env.svc.Update(env.owner, "s1", b.ID, BookingPatch{StartsAt: &start, EndsAt: &end})
+	moved, err := env.svc.Update(env.owner, "s1", b.ID, bkg.BookingPatch{StartsAt: &start, EndsAt: &end})
 	if err != nil {
 		t.Fatalf("un turno sin servicio no ocupa equipo: %v", err)
 	}

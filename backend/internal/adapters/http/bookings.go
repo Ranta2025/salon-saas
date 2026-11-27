@@ -3,7 +3,7 @@ package httpapi
 import (
 	"net/http"
 	httpx "salon-saas/internal/adapters/http/httpx"
-	"salon-saas/internal/app"
+	"salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 	"time"
@@ -13,7 +13,7 @@ import (
 
 // BookingHandler: agenda y calendario. Delgado: parsea, carga actor, llama app.
 type BookingHandler struct {
-	Bookings    app.BookingService
+	Bookings    bookings.BookingService
 	Memberships ports.MembershipRepository
 }
 
@@ -98,7 +98,7 @@ func (h BookingHandler) Update(c *gin.Context) {
 		badBody(c)
 		return
 	}
-	patch := app.BookingPatch{ProfessionalID: in.ProfessionalID}
+	patch := bookings.BookingPatch{ProfessionalID: in.ProfessionalID}
 	if in.Status != nil {
 		status := domain.BookingStatus(*in.Status)
 		patch.Status = &status

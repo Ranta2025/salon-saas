@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 	httpapi "salon-saas/internal/adapters/http"
-	"salon-saas/internal/app"
+	"salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
@@ -48,7 +48,7 @@ func (f *mDepositCreator) CreateForBooking(o domain.DepositOrder) (*domain.Booki
 	return &d, nil
 }
 
-var _ app.DepositCreator = (*mDepositCreator)(nil)
+var _ bookings.DepositCreator = (*mDepositCreator)(nil)
 
 func depJSON(t *testing.T, body []byte) map[string]any {
 	t.Helper()

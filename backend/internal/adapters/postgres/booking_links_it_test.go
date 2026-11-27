@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"salon-saas/internal/app"
+	bookingsapi "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -42,8 +42,8 @@ func (m *itLinkMailer) messages() []ports.Message {
 type itLinkEnv struct {
 	pool     *pgxpool.Pool
 	ctx      context.Context
-	svc      app.BookingLinkService
-	book     app.PublicBookingService
+	svc      bookingsapi.BookingLinkService
+	book     bookingsapi.PublicBookingService
 	links    BookingLinks
 	bookings Bookings
 	mails    *itLinkMailer
@@ -124,17 +124,17 @@ func newItLinkEnv(t *testing.T) *itLinkEnv {
 		t.Fatalf("servicios de la profesional: %v", err)
 	}
 
-	availability := app.AvailabilityService{
+	availability := bookingsapi.AvailabilityService{
 		Salons: salons, Services: services, Settings: salons, Staff: mems, Bookings: bookings,
 		Professionals: profs, Hours: hours, TimeOff: timeOff, Resources: resources,
 	}
-	svc := app.BookingLinkService{
+	svc := bookingsapi.BookingLinkService{
 		Links: links, Tx: links, Bookings: bookings, Salons: salons, Services: services,
 		Staff: mems, Settings: salons, Professionals: profs, Hours: hours, TimeOff: timeOff,
 		Resources: resources, Availability: availability,
 		Mailer: mails, Emails: emails, AppURL: "http://localhost:8081",
 	}
-	publicBook := app.PublicBookingService{
+	publicBook := bookingsapi.PublicBookingService{
 		Salons: salons, Services: services, Settings: salons, Staff: mems, Bookings: bookings,
 		Professionals: profs, Hours: hours, TimeOff: timeOff, Resources: resources,
 		Mailer: mails, Emails: emails, Links: links, AppURL: "http://localhost:8081",
@@ -164,7 +164,7 @@ func itLinkDay(t *testing.T) (string, func(minutes int) time.Time) {
 // token que salió en la confirmación.
 func (e *itLinkEnv) bookWithLink(t *testing.T, starts time.Time) (domain.Booking, string) {
 	t.Helper()
-	in := app.PublicBookingInput{
+	in := bookingsapi.PublicBookingInput{
 		ServiceID: e.service.ID, ProfessionalID: e.profID, ClientName: "Lía",
 		ClientPhone: "555", ClientEmail: "lia-it-link@mail.com", StartsAt: starts,
 	}
@@ -269,7 +269,7 @@ func TestBookingLinks_IT_flujo_y_hash(t *testing.T) {
 	if err := env.svc.Cancel(token); err != nil {
 		t.Fatalf("cancelar: %v", err)
 	}
-	in := app.PublicBookingInput{
+	in := bookingsapi.PublicBookingInput{
 		ServiceID: env.service.ID, ProfessionalID: env.profID, ClientName: "Nueva", StartsAt: at(0),
 	}
 	if _, err := env.book.Book(env.slug, in); err != nil {
@@ -337,7 +337,7 @@ func TestBookingLinks_IT_horario_ocupado_no_consume_el_token(t *testing.T) {
 	_, at := itLinkDay(t)
 	b, token := env.bookWithLink(t, at(0))
 	// Otra reserva pública en el hueco de las 10:00 (mismo profesional).
-	in := app.PublicBookingInput{
+	in := bookingsapi.PublicBookingInput{
 		ServiceID: env.service.ID, ProfessionalID: env.profID, ClientName: "Otra", StartsAt: at(60),
 	}
 	if _, err := env.book.Book(env.slug, in); err != nil {
@@ -511,7 +511,7 @@ func TestBookingLinks_IT_recordatorio(t *testing.T) {
 	}
 	tokenConfirm := env.mintLink(t, b)
 
-	reminders := app.ReminderService{
+	reminders := bookingsapi.ReminderService{
 		Emails: BookingEmails{Pool: env.pool}, Mailer: env.mails, Settings: Salons{Pool: env.pool},
 		Links: env.links, AppURL: "http://localhost:8081",
 	}

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	"salon-saas/internal/bookings"
 )
 
 // PublicHandler: las rutas del nudo en la landing, SIN auth.
@@ -14,8 +14,8 @@ import (
 //
 // La vidriera (GET /public/salons/:slug) vive en internal/settings/httpapi.
 type PublicHandler struct {
-	Avail    app.AvailabilityService
-	Bookings app.PublicBookingService
+	Avail    bookings.AvailabilityService
+	Bookings bookings.PublicBookingService
 }
 
 // Availability: GET /api/v1/public/salons/:slug/availability?date=&service_id=
@@ -64,7 +64,7 @@ func (h PublicHandler) CreateBooking(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "starts_at inválido (RFC3339)"})
 		return
 	}
-	b, payment, err := h.Bookings.BookWithDeposit(c.Param("slug"), app.PublicBookingInput{
+	b, payment, err := h.Bookings.BookWithDeposit(c.Param("slug"), bookings.PublicBookingInput{
 		ServiceID:      in.ServiceID,
 		ProfessionalID: in.ProfessionalID,
 		ClientName:     in.ClientName,

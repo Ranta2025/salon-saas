@@ -10,11 +10,12 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 )
 
 // bookingTimeEnv: agenda del salón s1 en CDMX (UTC-6, sin DST).
-func bookingTimeEnv(t *testing.T) (*BookingService, *fb, *fakeMemberships, *fakeEvents, *fakeNotifier, domain.Membership) {
+func bookingTimeEnv(t *testing.T) (*bkg.BookingService, *fb, *fakeMemberships, *fakeEvents, *fakeNotifier, domain.Membership) {
 	t.Helper()
 	bookings := &fb{}
 	mems := &fakeMemberships{}
@@ -23,7 +24,7 @@ func bookingTimeEnv(t *testing.T) (*BookingService, *fb, *fakeMemberships, *fake
 		SalonID: "s1", Timezone: "America/Mexico_City", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}}}
 	events := &fakeEvents{}
-	svc := &BookingService{Bookings: bookings, Memberships: mems, Settings: settings, Events: events, Notifier: notifier}
+	svc := &bkg.BookingService{Bookings: bookings, Memberships: mems, Settings: settings, Events: events, Notifier: notifier}
 	miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	rec := recepcionista(mems)
 	return svc, bookings, mems, events, notifier, rec
@@ -69,7 +70,7 @@ func TestBookingService_avisos_de_patch_en_hora_del_salon(t *testing.T) {
 
 	// Cancelar: "Turno cancelado" con la hora local.
 	cancelled := domain.BookingCancelled
-	if _, err := svc.Update(rec, "s1", b.ID, BookingPatch{Status: &cancelled}); err != nil {
+	if _, err := svc.Update(rec, "s1", b.ID, bkg.BookingPatch{Status: &cancelled}); err != nil {
 		t.Fatalf("cancelar: %v", err)
 	}
 	if body := notifier.lastBody(); !strings.Contains(body, "26/11 11:00 (America/Mexico_City)") {
@@ -86,7 +87,7 @@ func TestBookingService_aviso_reprogramado_en_hora_del_salon(t *testing.T) {
 	}
 	moved := time.Date(2036, 11, 27, 18, 30, 0, 0, time.UTC) // 12:30 CDMX
 	movedEnd := moved.Add(time.Hour)
-	if _, err := svc.Update(rec, "s1", b.ID, BookingPatch{StartsAt: &moved, EndsAt: &movedEnd}); err != nil {
+	if _, err := svc.Update(rec, "s1", b.ID, bkg.BookingPatch{StartsAt: &moved, EndsAt: &movedEnd}); err != nil {
 		t.Fatalf("reprogramar: %v", err)
 	}
 	body := notifier.lastBody()

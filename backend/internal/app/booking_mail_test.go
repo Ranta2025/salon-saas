@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 )
 
 // El correo lo lee una persona: nombre del salón, nombre del cliente, fecha y
@@ -15,7 +16,7 @@ func TestBookingMail_confirmacion(t *testing.T) {
 	settings := domain.SalonSettings{SalonID: "s1", Timezone: "America/Mexico_City"}
 	starts := time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC)
 
-	msg := bookingMail(bookingMailConfirmation, "Navajas de Oro", "Lía", starts, settings)
+	msg := kernel.BookingMail(kernel.BookingMailConfirmation, "Navajas de Oro", "Lía", starts, settings)
 	if msg.Subject != "Turno confirmado · Navajas de Oro" {
 		t.Fatalf("asunto: %q", msg.Subject)
 	}
@@ -40,7 +41,7 @@ func TestBookingMail_confirmacion(t *testing.T) {
 func TestBookingMail_recordatorio(t *testing.T) {
 	settings := domain.SalonSettings{SalonID: "s1", Timezone: "America/Mexico_City"}
 	starts := time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC)
-	msg := bookingMail(bookingMailReminder, "Navajas de Oro", "Lía", starts, settings)
+	msg := kernel.BookingMail(kernel.BookingMailReminder, "Navajas de Oro", "Lía", starts, settings)
 	if msg.Subject != "Recordatorio de tu turno · Navajas de Oro" {
 		t.Fatalf("asunto: %q", msg.Subject)
 	}
@@ -54,7 +55,7 @@ func TestBookingMail_recordatorio(t *testing.T) {
 func TestBookingMail_html_escapado(t *testing.T) {
 	settings := domain.SalonSettings{SalonID: "s1", Timezone: "America/Mexico_City"}
 	starts := time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC)
-	msg := bookingMail(bookingMailConfirmation, `Salón <b>"Oro"</b>`, `Lía <script>alert(1)</script>`, starts, settings)
+	msg := kernel.BookingMail(kernel.BookingMailConfirmation, `Salón <b>"Oro"</b>`, `Lía <script>alert(1)</script>`, starts, settings)
 	if strings.Contains(msg.HTML, "<script>") || strings.Contains(msg.HTML, "</b>") {
 		t.Fatalf("HTML sin escapar:\n%s", msg.HTML)
 	}

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/pos"
 	"salon-saas/internal/testutil"
@@ -18,7 +19,7 @@ func TestBookingService_publica_booking_created(t *testing.T) {
 	mems := &fakeMemberships{}
 	events := &fakeEvents{}
 	notifier := &fakeNotifier{}
-	svc := BookingService{Bookings: bookings, Memberships: mems, Events: events, Notifier: notifier}
+	svc := bkg.BookingService{Bookings: bookings, Memberships: mems, Events: events, Notifier: notifier}
 	rec := recepcionista(mems)
 	miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	day := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
@@ -48,7 +49,7 @@ func TestBookingService_solape_no_publica_evento(t *testing.T) {
 	bookings := &fb{}
 	mems := &fakeMemberships{}
 	events := &fakeEvents{}
-	svc := BookingService{Bookings: bookings, Memberships: mems, Events: events}
+	svc := bkg.BookingService{Bookings: bookings, Memberships: mems, Events: events}
 	rec := recepcionista(mems)
 	miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	day := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)

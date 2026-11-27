@@ -5,9 +5,9 @@ package main
 
 import (
 	"context"
-	"time"
 
 	"salon-saas/internal/app"
+	"time"
 )
 
 // reminderRunner es lo que la tarea necesita de ReminderService (los tests usan

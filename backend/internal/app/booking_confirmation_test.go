@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 )
 
 // fullPublicInput arma una reserva válida del fixture (09:00 local del 1/12).
-func fullPublicInput(env *publicEnv) PublicBookingInput {
+func fullPublicInput(env *publicEnv) bkg.PublicBookingInput {
 	in := publicInput()
 	in.ServiceID = env.corte.ID
 	in.ClientEmail = "Lia@Mail.com"

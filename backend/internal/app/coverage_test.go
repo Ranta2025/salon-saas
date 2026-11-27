@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/schedules"
@@ -626,12 +627,12 @@ func TestCoverage_cancel_booking_records_reason(t *testing.T) {
 // compartir la lectura de turnos y el aviso.
 func TestCoverage_preserve_booking_patch_status_and_reschedule(t *testing.T) {
 	env := newCoverEnv(t)
-	bookSvc := BookingService{Bookings: env.bookings, Memberships: env.mems, Settings: env.svc.Settings, Notifier: env.notifier}
+	bookSvc := bkg.BookingService{Bookings: env.bookings, Memberships: env.mems, Settings: env.svc.Settings, Notifier: env.notifier}
 	b := seedBooking(t, env, "b-10", "ana", localAt(t, 10, 0), 45, "")
 
 	// Estado: cancelar por el PATCH clásico.
 	status := domain.BookingCancelled
-	got, err := bookSvc.Update(env.reception, "s1", b.ID, BookingPatch{Status: &status})
+	got, err := bookSvc.Update(env.reception, "s1", b.ID, bkg.BookingPatch{Status: &status})
 	if err != nil {
 		t.Fatalf("PATCH estado: %v", err)
 	}
@@ -643,7 +644,7 @@ func TestCoverage_preserve_booking_patch_status_and_reschedule(t *testing.T) {
 	reservado := seedBooking(t, env, "b-11", "ana", localAt(t, 11, 0), 45, "")
 	newStart := localAt(t, 15, 0)
 	newEnd := localAt(t, 15, 45)
-	moved, err := bookSvc.Update(env.owner, "s1", reservado.ID, BookingPatch{StartsAt: &newStart, EndsAt: &newEnd})
+	moved, err := bookSvc.Update(env.owner, "s1", reservado.ID, bkg.BookingPatch{StartsAt: &newStart, EndsAt: &newEnd})
 	if err != nil {
 		t.Fatalf("reprogramar: %v", err)
 	}
@@ -758,7 +759,7 @@ func TestCoverage_reassign_tracks_who_covered(t *testing.T) {
 func TestBooking_patch_leaves_covered_from(t *testing.T) {
 	bookings := &fb{}
 	mems := &fakeMemberships{}
-	svc := BookingService{Bookings: bookings, Memberships: mems}
+	svc := bkg.BookingService{Bookings: bookings, Memberships: mems}
 	rec := recepcionista(mems)
 	miembro(mems, "prof1", "s1", domain.RoleProfessional)
 
@@ -775,7 +776,7 @@ func TestBooking_patch_leaves_covered_from(t *testing.T) {
 
 	newStart := start.Add(24 * time.Hour)
 	newEnd := newStart.Add(45 * time.Minute)
-	updated, err := svc.Update(rec, "s1", "b-1", BookingPatch{StartsAt: &newStart, EndsAt: &newEnd})
+	updated, err := svc.Update(rec, "s1", "b-1", bkg.BookingPatch{StartsAt: &newStart, EndsAt: &newEnd})
 	if err != nil {
 		t.Fatalf("reprogramar: %v", err)
 	}
@@ -783,7 +784,7 @@ func TestBooking_patch_leaves_covered_from(t *testing.T) {
 		t.Fatalf("reprogramar no toca covered_from: %q", updated.CoveredFrom)
 	}
 	status := domain.BookingDone
-	updated, err = svc.Update(rec, "s1", "b-1", BookingPatch{Status: &status})
+	updated, err = svc.Update(rec, "s1", "b-1", bkg.BookingPatch{Status: &status})
 	if err != nil {
 		t.Fatalf("cambiar estado: %v", err)
 	}

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"salon-saas/internal/app"
+	bookingsapi "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 )
 
@@ -324,7 +324,7 @@ func TestIT_public_booking_concurrent_two_pairs(t *testing.T) {
 // --- fixture de la reserva pública contra Postgres ---
 
 type itBookingEnv struct {
-	book      app.PublicBookingService
+	book      bookingsapi.PublicBookingService
 	slug      string
 	serviceID string
 }
@@ -363,7 +363,7 @@ func newITBookingEnv(t *testing.T, pool *pgxpool.Pool, salonID string, professio
 	return &itBookingEnv{
 		slug:      salonID,
 		serviceID: svc.ID,
-		book: app.PublicBookingService{
+		book: bookingsapi.PublicBookingService{
 			Salons: Salons{Pool: pool}, Services: Services{Pool: pool}, Settings: Salons{Pool: pool},
 			Staff: Memberships{Pool: pool}, Bookings: Bookings{Pool: pool},
 			Professionals: ProfessionalServices{Pool: pool}, Resources: repo,
@@ -371,8 +371,8 @@ func newITBookingEnv(t *testing.T, pool *pgxpool.Pool, salonID string, professio
 	}
 }
 
-func itInput(serviceID string, start time.Time, name string) app.PublicBookingInput {
-	return app.PublicBookingInput{ServiceID: serviceID, ClientName: name, StartsAt: start}
+func itInput(serviceID string, start time.Time, name string) bookingsapi.PublicBookingInput {
+	return bookingsapi.PublicBookingInput{ServiceID: serviceID, ClientName: name, StartsAt: start}
 }
 
 type raceResult struct {

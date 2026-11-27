@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/staffing"
 	"salon-saas/internal/team"
@@ -158,13 +159,13 @@ func TestPublicBooking_asigna_quien_hace_el_servicio(t *testing.T) {
 	env.profs.Assign("s1", keratina.ID, "prof2")
 
 	start := time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC) // 09:00 en CDMX
-	corteBooking, err := env.book.Book("navajas-oro", PublicBookingInput{
+	corteBooking, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: env.corte.ID, ClientName: "Lía", ClientPhone: "555", StartsAt: start,
 	})
 	if err != nil {
 		t.Fatalf("reserva de corte: %v", err)
 	}
-	keratinaBooking, err := env.book.Book("navajas-oro", PublicBookingInput{
+	keratinaBooking, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: keratina.ID, ClientName: "Ana", ClientPhone: "556", StartsAt: start,
 	})
 	if err != nil {
@@ -193,7 +194,7 @@ func TestPublicBooking_servicio_sin_profesional_409(t *testing.T) {
 	env.profs.Assign("s1", manicura.ID) // nadie la hace
 
 	start := time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC)
-	_, err = env.book.Book("navajas-oro", PublicBookingInput{
+	_, err = env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: manicura.ID, ClientName: "Lía", ClientPhone: "555", StartsAt: start,
 	})
 	if !errors.Is(err, domain.ErrAlreadyExists) {
@@ -206,7 +207,7 @@ func TestPublicBooking_servicio_sin_profesional_409(t *testing.T) {
 	// Con profesional explícito que no hace ese servicio: 400 con el motivo,
 	// tampoco se guarda nada. (Antes se aceptaba porque solo se miraba que
 	// atendiera.)
-	_, err = env.book.Book("navajas-oro", PublicBookingInput{
+	_, err = env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: manicura.ID, ProfessionalID: "prof1", ClientName: "Lía", ClientPhone: "555", StartsAt: start,
 	})
 	if !errors.Is(err, domain.ErrValidation) {
@@ -222,7 +223,7 @@ func TestPublicBooking_servicio_sin_profesional_409(t *testing.T) {
 func TestBookingService_staff_sin_servicio(t *testing.T) {
 	bookings := &fb{}
 	mems := &fakeMemberships{}
-	svc := BookingService{Bookings: bookings, Memberships: mems}
+	svc := bkg.BookingService{Bookings: bookings, Memberships: mems}
 	rec := recepcionista(mems)
 	miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	day := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
@@ -513,13 +514,13 @@ func TestAvailability_backfill_todos_hacen_todo(t *testing.T) {
 	}
 
 	start := time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC)
-	first, err := env.book.Book("navajas-oro", PublicBookingInput{
+	first, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: env.corte.ID, ClientName: "Lía", ClientPhone: "555", StartsAt: start,
 	})
 	if err != nil {
 		t.Fatalf("primera reserva: %v", err)
 	}
-	second, err := env.book.Book("navajas-oro", PublicBookingInput{
+	second, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: env.corte.ID, ClientName: "Ana", ClientPhone: "556", StartsAt: start,
 	})
 	if err != nil {

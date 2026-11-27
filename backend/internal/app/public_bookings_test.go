@@ -5,11 +5,12 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 )
 
-func publicInput() PublicBookingInput {
-	return PublicBookingInput{
+func publicInput() bkg.PublicBookingInput {
+	return bkg.PublicBookingInput{
 		ServiceID:   "",
 		ClientName:  "Lía",
 		ClientPhone: "555",
@@ -80,7 +81,7 @@ func TestPublicBooking_sin_profesional_elige_uno_libre(t *testing.T) {
 
 func TestPublicBooking_validacion(t *testing.T) {
 	env := newPublicEnv(t)
-	base := func() PublicBookingInput {
+	base := func() bkg.PublicBookingInput {
 		in := publicInput()
 		in.ServiceID = env.corte.ID
 		return in
@@ -88,17 +89,17 @@ func TestPublicBooking_validacion(t *testing.T) {
 	// Datos faltantes / inválidos: 400 de dominio, nunca 500.
 	cases := []struct {
 		name string
-		mut  func(*PublicBookingInput)
+		mut  func(*bkg.PublicBookingInput)
 	}{
-		{"sin servicio", func(in *PublicBookingInput) { in.ServiceID = "" }},
-		{"servicio inexistente", func(in *PublicBookingInput) { in.ServiceID = "svc-no" }},
-		{"servicio inactivo", func(in *PublicBookingInput) { in.ServiceID = env.viejo.ID }},
-		{"sin nombre", func(in *PublicBookingInput) { in.ClientName = "" }},
-		{"sin fecha", func(in *PublicBookingInput) { in.StartsAt = time.Time{} }},
-		{"en el pasado", func(in *PublicBookingInput) { in.StartsAt = time.Now().UTC().Add(-48 * time.Hour) }},
-		{"antes de abrir", func(in *PublicBookingInput) { in.StartsAt = time.Date(2026, 12, 1, 14, 0, 0, 0, time.UTC) }},
-		{"termina después de cerrar", func(in *PublicBookingInput) { in.StartsAt = time.Date(2026, 12, 1, 17, 30, 0, 0, time.UTC) }},
-		{"profesional ajeno", func(in *PublicBookingInput) { in.ProfessionalID = "prof-ajeno" }},
+		{"sin servicio", func(in *bkg.PublicBookingInput) { in.ServiceID = "" }},
+		{"servicio inexistente", func(in *bkg.PublicBookingInput) { in.ServiceID = "svc-no" }},
+		{"servicio inactivo", func(in *bkg.PublicBookingInput) { in.ServiceID = env.viejo.ID }},
+		{"sin nombre", func(in *bkg.PublicBookingInput) { in.ClientName = "" }},
+		{"sin fecha", func(in *bkg.PublicBookingInput) { in.StartsAt = time.Time{} }},
+		{"en el pasado", func(in *bkg.PublicBookingInput) { in.StartsAt = time.Now().UTC().Add(-48 * time.Hour) }},
+		{"antes de abrir", func(in *bkg.PublicBookingInput) { in.StartsAt = time.Date(2026, 12, 1, 14, 0, 0, 0, time.UTC) }},
+		{"termina después de cerrar", func(in *bkg.PublicBookingInput) { in.StartsAt = time.Date(2026, 12, 1, 17, 30, 0, 0, time.UTC) }},
+		{"profesional ajeno", func(in *bkg.PublicBookingInput) { in.ProfessionalID = "prof-ajeno" }},
 	}
 	for _, c := range cases {
 		in := base()

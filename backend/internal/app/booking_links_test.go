@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -20,7 +21,7 @@ const linkAppURL = "http://localhost:8081"
 type linkEnv struct {
 	*publicEnv
 	links *fakeBookingLinks
-	svc   BookingLinkService
+	svc   bkg.BookingLinkService
 }
 
 // newLinkEnv arma el caso de uso del enlace sobre los fakes de la agenda pública
@@ -30,7 +31,7 @@ func newLinkEnv(t *testing.T) *linkEnv {
 	t.Helper()
 	pub := newPublicEnv(t)
 	links := &fakeBookingLinks{bookings: pub.bookings}
-	svc := BookingLinkService{
+	svc := bkg.BookingLinkService{
 		Links: links, Tx: links, Bookings: pub.bookings, Salons: pub.avail.Salons,
 		Services: pub.services, Settings: pub.settings, Staff: pub.staff,
 		Professionals: pub.profs, Hours: pub.hours, TimeOff: pub.timeOff,
@@ -365,7 +366,7 @@ func TestBookingLink_confirmacion_y_recordatorio_llevan_enlace(t *testing.T) {
 		Email: "lia@mail.com", StartsAt: b.StartsAt,
 	}}}
 	mailer := &fakeMailer{}
-	reminders := ReminderService{
+	reminders := bkg.ReminderService{
 		Emails: emails, Mailer: mailer, Settings: env.settings,
 		Links: env.links, AppURL: linkAppURL,
 	}
@@ -388,7 +389,7 @@ func TestBookingLink_confirmacion_y_recordatorio_llevan_enlace(t *testing.T) {
 }
 
 // D8: cancelar publica el MISMO evento de tiempo real y el MISMO aviso interno
-// que BookingService.Update, y manda el correo de cancelación.
+// que bkg.BookingService.Update, y manda el correo de cancelación.
 func TestBookingLink_cancel(t *testing.T) {
 	env := newLinkEnv(t)
 	mailer := env.withMailer()
@@ -426,7 +427,7 @@ func TestBookingLink_cancel(t *testing.T) {
 	if ev.SalonID != "s1" {
 		t.Fatalf("salón del evento: %q", ev.SalonID)
 	}
-	if len(notices.titles) != 1 || notices.titles[0] != bookingChangeTitle(domain.BookingCancelled) {
+	if len(notices.titles) != 1 || notices.titles[0] != bkg.BookingChangeTitle(domain.BookingCancelled) {
 		t.Fatalf("el aviso tiene que ser el mismo del PATCH: %+v", notices.titles)
 	}
 	if !strings.HasPrefix(notices.bodies[0], "Lía · ") || notices.kinds[0] != domain.KindBooking {
@@ -502,7 +503,7 @@ func TestBookingLink_reschedule(t *testing.T) {
 	if stored.ProfessionalID != "prof1" || stored.ServiceID != env.corte.ID {
 		t.Fatalf("mismo profesional y servicio: %+v", stored)
 	}
-	// Mismo evento y aviso que BookingService.Update.
+	// Mismo evento y aviso que bkg.BookingService.Update.
 	if _, n := env.events.typed("booking.updated"); n != 1 {
 		t.Fatalf("esperaba un booking.updated, hubo %d", n)
 	}

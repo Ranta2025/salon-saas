@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 )
 
@@ -45,7 +46,7 @@ func startsLocal(t *testing.T, year int, month time.Month, day, hour, minute int
 }
 
 // startLabels devuelve los arranques de los huecos en hora local del salón.
-func startLabels(t *testing.T, slots []Slot) []string {
+func startLabels(t *testing.T, slots []bkg.Slot) []string {
 	t.Helper()
 	loc, err := time.LoadLocation("America/Mexico_City")
 	if err != nil {
@@ -120,7 +121,7 @@ func TestAvailability_diaCerradoDelSalon(t *testing.T) {
 	}
 
 	// Reservar un domingo cerrado: 409, sin excepción de 500.
-	_, err = env.book.Book("navajas-oro", PublicBookingInput{
+	_, err = env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID:  env.corte.ID,
 		ClientName: "Lía",
 		StartsAt:   startsLocal(t, 2026, 12, 6, 10, 0),
@@ -184,7 +185,7 @@ func TestAvailability_tramosDeLaProfesional(t *testing.T) {
 	}
 
 	// Y la reserva de ese turno largo que cruza el descanso es 409.
-	_, err = env.book.Book("navajas-oro", PublicBookingInput{
+	_, err = env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID:      alisado.ID,
 		ProfessionalID: "prof1",
 		ClientName:     "Lía",
@@ -229,7 +230,7 @@ func TestAvailability_profesionalConHorarioPropio_automatico(t *testing.T) {
 	}
 
 	// El lunes la asignación automática elige a Bruno.
-	b, err := env.book.Book("navajas-oro", PublicBookingInput{
+	b, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID:  env.corte.ID,
 		ClientName: "Lía",
 		StartsAt:   startsLocal(t, 2026, 12, 7, 10, 0),
@@ -254,7 +255,7 @@ func TestAvailability_profesionalConHorarioPropio_automatico(t *testing.T) {
 	if len(monday.Slots) != 0 {
 		t.Fatalf("nadie trabaja el lunes: %+v", monday.Slots)
 	}
-	_, err = env.book.Book("navajas-oro", PublicBookingInput{
+	_, err = env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID:  env.corte.ID,
 		ClientName: "Otra",
 		StartsAt:   startsLocal(t, 2026, 12, 7, 11, 0),
@@ -264,7 +265,7 @@ func TestAvailability_profesionalConHorarioPropio_automatico(t *testing.T) {
 	}
 
 	// El martes Ana sí está y el turno se le puede asignar a ella.
-	if _, err := env.book.Book("navajas-oro", PublicBookingInput{
+	if _, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID:      env.corte.ID,
 		ProfessionalID: "prof1",
 		ClientName:     "Caro",
@@ -311,7 +312,7 @@ func TestAvailability_diaDeLaSemana_enLaZonaDelSalon(t *testing.T) {
 	}
 
 	// Y la reserva de las 23:30 del domingo entra como turno del domingo.
-	if _, err := env.book.Book("navajas-oro", PublicBookingInput{
+	if _, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID:  servicio.ID,
 		ClientName: "Noche",
 		StartsAt:   startsLocal(t, 2026, 12, 6, 23, 30),
@@ -335,7 +336,7 @@ func TestPublicBooking_horarioSemanal(t *testing.T) {
 		}
 
 		// Fuera de la ventana del salón: 400 (validación, como antes).
-		_, err := env.book.Book("navajas-oro", PublicBookingInput{
+		_, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 			ServiceID:      env.corte.ID,
 			ProfessionalID: id,
 			ClientName:     "Lía",
@@ -346,7 +347,7 @@ func TestPublicBooking_horarioSemanal(t *testing.T) {
 		}
 
 		// En el descanso: 409 (el hueco no existe).
-		_, err = env.book.Book("navajas-oro", PublicBookingInput{
+		_, err = env.book.Book("navajas-oro", bkg.PublicBookingInput{
 			ServiceID:      env.corte.ID,
 			ProfessionalID: id,
 			ClientName:     "Lía",
@@ -357,7 +358,7 @@ func TestPublicBooking_horarioSemanal(t *testing.T) {
 		}
 
 		// Cruzando el cierre de la profesional: 409.
-		_, err = env.book.Book("navajas-oro", PublicBookingInput{
+		_, err = env.book.Book("navajas-oro", bkg.PublicBookingInput{
 			ServiceID:      env.corte.ID,
 			ProfessionalID: id,
 			ClientName:     "Lía",

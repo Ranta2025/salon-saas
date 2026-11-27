@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -183,7 +184,7 @@ func (t *fakeBookingLinkTx) UpdateBooking(b domain.Booking) error {
 
 // fakeLinkNotifier registra el aviso interno COMPLETO (título, cuerpo y tipo)
 // para comprobar que cancelar o reprogramar por enlace deja exactamente el mismo
-// aviso que BookingService.Update (D8).
+// aviso que bkg.BookingService.Update (D8).
 type fakeLinkNotifier struct {
 	titles []string
 	bodies []string
@@ -197,4 +198,4 @@ func (f *fakeLinkNotifier) Create(salonID, userID, title, body string, kind doma
 	return domain.NewNotification(salonID, userID, title, body, kind)
 }
 
-var _ Notifier = (*fakeLinkNotifier)(nil)
+var _ kernel.Notifier = (*fakeLinkNotifier)(nil)

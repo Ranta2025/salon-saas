@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/pos"
 	"salon-saas/internal/testutil"
@@ -62,7 +63,7 @@ func TestBooking_link_best_effort_y_replay(t *testing.T) {
 	bookings := &fb{}
 	mems := &fakeMemberships{}
 	links := &fakeClientLinks{}
-	svc := BookingService{Bookings: bookings, Memberships: mems, ClientLinks: links}
+	svc := bkg.BookingService{Bookings: bookings, Memberships: mems, ClientLinks: links}
 	rec := recepcionista(mems)
 	miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	day := time.Date(2026, 12, 1, 10, 0, 0, 0, time.UTC)

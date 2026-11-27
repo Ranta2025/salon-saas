@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 )
 
@@ -16,7 +17,7 @@ func TestStaffBooking_noSeRestringePorHorarioSemanal(t *testing.T) {
 	mems := &fakeMemberships{}
 	actor := recepcionista(mems)
 	_ = mems.Save(domain.Membership{UserID: "prof1", SalonID: "s1", Role: domain.RoleProfessional, Attends: true})
-	svc := BookingService{Bookings: bookings, Memberships: mems}
+	svc := bkg.BookingService{Bookings: bookings, Memberships: mems}
 
 	start := time.Date(2026, 12, 5, 21, 0, 0, 0, time.UTC)
 	end := start.Add(45 * time.Minute)

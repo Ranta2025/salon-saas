@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/testutil"
 )
@@ -13,8 +14,8 @@ import (
 // 09:00-12:00 cada 30 minutos, un servicio ACTIVO de 45 minutos y dos
 // profesionales. 09:00 local = 15:00Z (CDMX no tiene DST desde 2022).
 type publicEnv struct {
-	avail    AvailabilityService
-	book     PublicBookingService
+	avail    bkg.AvailabilityService
+	book     bkg.PublicBookingService
 	bookings *fb
 	staff    *testutil.FakeStaffLister
 	profs    *testutil.FakeProfessionalServices
@@ -70,12 +71,12 @@ func newPublicEnv(t *testing.T) *publicEnv {
 	timeOff := &testutil.FakeTimeOff{}
 	resources := &fakeResources{bookings: bookings}
 	return &publicEnv{
-		avail: AvailabilityService{
+		avail: bkg.AvailabilityService{
 			Salons: salons, Services: services, Settings: settings, Staff: staff,
 			Bookings: bookings, Professionals: profs, Hours: hours, TimeOff: timeOff,
 			Resources: resources,
 		},
-		book: PublicBookingService{
+		book: bkg.PublicBookingService{
 			Salons: salons, Services: services, Settings: settings, Staff: staff,
 			Bookings: bookings, Professionals: profs, Clients: clients,
 			Events: events, Notifier: notifier, Hours: hours, TimeOff: timeOff,

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 )
 
@@ -12,13 +13,13 @@ import (
 // reprogramar, con permisos: recepción y superiores sobre cualquiera, el
 // profesional solo los suyos.
 
-func bookingFixture(t *testing.T) (*BookingService, *fb, *fakeMemberships, *fakeEvents, *fakeNotifier, domain.Booking) {
+func bookingFixture(t *testing.T) (*bkg.BookingService, *fb, *fakeMemberships, *fakeEvents, *fakeNotifier, domain.Booking) {
 	t.Helper()
 	bookings := &fb{}
 	mems := &fakeMemberships{}
 	events := &fakeEvents{}
 	notifier := &fakeNotifier{}
-	svc := BookingService{Bookings: bookings, Memberships: mems, Events: events, Notifier: notifier}
+	svc := bkg.BookingService{Bookings: bookings, Memberships: mems, Events: events, Notifier: notifier}
 	miembro(mems, "recep", "s1", domain.RoleReception)
 	miembro(mems, "owner", "s1", domain.RoleOwner)
 	miembro(mems, "prof1", "s1", domain.RoleProfessional)
@@ -39,7 +40,7 @@ func TestBookingUpdate_cancelar(t *testing.T) {
 	actor, _ := mems.Find("recep", "s1")
 	status := domain.BookingCancelled
 
-	got, err := svc.Update(actor, "s1", b.ID, BookingPatch{Status: &status})
+	got, err := svc.Update(actor, "s1", b.ID, bkg.BookingPatch{Status: &status})
 	if err != nil {
 		t.Fatalf("cancelar: %v", err)
 	}
@@ -75,38 +76,38 @@ func TestBookingUpdate_permisos(t *testing.T) {
 
 	// Profesional ajeno al turno: 403. Profesional dueño del turno: puede.
 	prof2, _ := mems.Find("prof2", "s1")
-	if _, err := svc.Update(prof2, "s1", b.ID, BookingPatch{Status: &status}); !errors.Is(err, domain.ErrForbidden) {
+	if _, err := svc.Update(prof2, "s1", b.ID, bkg.BookingPatch{Status: &status}); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("profesional ajeno debe dar Forbidden, dio %v", err)
 	}
 	prof1, _ := mems.Find("prof1", "s1")
-	if _, err := svc.Update(prof1, "s1", b.ID, BookingPatch{Status: &status}); err != nil {
+	if _, err := svc.Update(prof1, "s1", b.ID, bkg.BookingPatch{Status: &status}); err != nil {
 		t.Fatalf("profesional dueño del turno: %v", err)
 	}
 	// Admin: manda sobre cualquier turno.
 	admin := miembro(mems, "admin", "s1", domain.RoleAdmin)
 	noShow := domain.BookingNoShow
-	if _, err := svc.Update(admin, "s1", b.ID, BookingPatch{Status: &noShow}); err != nil {
+	if _, err := svc.Update(admin, "s1", b.ID, bkg.BookingPatch{Status: &noShow}); err != nil {
 		t.Fatalf("admin: %v", err)
 	}
 	// Profesional de otro salón / miembro ajeno: 403.
 	otro := miembro(mems, "ajeno", "s2", domain.RoleOwner)
-	if _, err := svc.Update(otro, "s1", b.ID, BookingPatch{Status: &status}); !errors.Is(err, domain.ErrForbidden) {
+	if _, err := svc.Update(otro, "s1", b.ID, bkg.BookingPatch{Status: &status}); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("otro salón: %v", err)
 	}
 	// Recepción de otro salón: 403. Recepción propia: puede (ya probado arriba).
 	// Turno inexistente: 404. Turno de otro salón: 404 (no se filtra).
 	owner, _ := mems.Find("owner", "s1")
-	if _, err := svc.Update(owner, "s1", "no-existe", BookingPatch{Status: &status}); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := svc.Update(owner, "s1", "no-existe", bkg.BookingPatch{Status: &status}); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("turno inexistente: %v", err)
 	}
 	ajena, _ := domain.NewBooking("s2", "prof1", "Otra", "", time.Date(2026, 12, 1, 10, 0, 0, 0, time.UTC), time.Date(2026, 12, 1, 11, 0, 0, 0, time.UTC))
 	_ = svc.Bookings.Save(ajena)
-	if _, err := svc.Update(owner, "s1", ajena.ID, BookingPatch{Status: &status}); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := svc.Update(owner, "s1", ajena.ID, bkg.BookingPatch{Status: &status}); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("turno de otro salón: %v", err)
 	}
 	// Estado inválido: 400 de dominio.
 	bad := domain.BookingStatus("cancelado")
-	if _, err := svc.Update(owner, "s1", b.ID, BookingPatch{Status: &bad}); !errors.Is(err, domain.ErrValidation) {
+	if _, err := svc.Update(owner, "s1", b.ID, bkg.BookingPatch{Status: &bad}); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("estado inválido: %v", err)
 	}
 }
@@ -117,7 +118,7 @@ func TestBookingUpdate_reprogramar(t *testing.T) {
 	start := b.StartsAt.Add(3 * time.Hour)
 	end := b.EndsAt.Add(3 * time.Hour)
 
-	got, err := svc.Update(owner, "s1", b.ID, BookingPatch{StartsAt: &start, EndsAt: &end})
+	got, err := svc.Update(owner, "s1", b.ID, bkg.BookingPatch{StartsAt: &start, EndsAt: &end})
 	if err != nil {
 		t.Fatalf("reprogramar: %v", err)
 	}
@@ -132,12 +133,12 @@ func TestBookingUpdate_reprogramar(t *testing.T) {
 	ocupada, _ := domain.NewBooking("s1", "prof1", "Ocupa", "", start.Add(5*time.Hour), start.Add(6*time.Hour))
 	_ = svc.Bookings.Save(ocupada)
 	badStart, badEnd := ocupada.StartsAt, ocupada.EndsAt
-	if _, err := svc.Update(owner, "s1", b.ID, BookingPatch{StartsAt: &badStart, EndsAt: &badEnd}); !errors.Is(err, domain.ErrAlreadyExists) {
+	if _, err := svc.Update(owner, "s1", b.ID, bkg.BookingPatch{StartsAt: &badStart, EndsAt: &badEnd}); !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("hueco ocupado debe dar AlreadyExists, dio %v", err)
 	}
 	// Cambiar de profesional a uno libre, mismo horario: ok.
 	other := "prof2"
-	got, err = svc.Update(owner, "s1", b.ID, BookingPatch{ProfessionalID: &other})
+	got, err = svc.Update(owner, "s1", b.ID, bkg.BookingPatch{ProfessionalID: &other})
 	if err != nil {
 		t.Fatalf("cambiar profesional: %v", err)
 	}
@@ -145,20 +146,20 @@ func TestBookingUpdate_reprogramar(t *testing.T) {
 		t.Fatalf("profesional: %q", got.ProfessionalID)
 	}
 	// Respetar el mismo hueco (idempotente) no es un auto-solape.
-	got, err = svc.Update(owner, "s1", b.ID, BookingPatch{StartsAt: &got.StartsAt, EndsAt: &got.EndsAt})
+	got, err = svc.Update(owner, "s1", b.ID, bkg.BookingPatch{StartsAt: &got.StartsAt, EndsAt: &got.EndsAt})
 	if err != nil {
 		t.Fatalf("mismo horario debe ser idempotente: %v", err)
 	}
 	// Un turno cerrado no se reprograma (el hueco ya se liberó).
 	cancelStatus := domain.BookingCancelled
-	cancelled, _ := svc.Update(owner, "s1", b.ID, BookingPatch{Status: &cancelStatus})
+	cancelled, _ := svc.Update(owner, "s1", b.ID, bkg.BookingPatch{Status: &cancelStatus})
 	movedStart, movedEnd := cancelled.StartsAt.Add(time.Hour), cancelled.EndsAt.Add(time.Hour)
-	if _, err := svc.Update(owner, "s1", b.ID, BookingPatch{StartsAt: &movedStart, EndsAt: &movedEnd}); !errors.Is(err, domain.ErrValidation) {
+	if _, err := svc.Update(owner, "s1", b.ID, bkg.BookingPatch{StartsAt: &movedStart, EndsAt: &movedEnd}); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("reprogramar cancelado: %v", err)
 	}
 	// Reprogramar a un profesional que no atiende: 400.
 	ajeno := "prof-ajeno"
-	if _, err := svc.Update(owner, "s1", b.ID, BookingPatch{ProfessionalID: &ajeno}); !errors.Is(err, domain.ErrValidation) {
+	if _, err := svc.Update(owner, "s1", b.ID, bkg.BookingPatch{ProfessionalID: &ajeno}); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("profesional ajeno: %v", err)
 	}
 }
@@ -170,7 +171,7 @@ func TestBookingUpdate_estado_y_horario_juntos(t *testing.T) {
 	end := b.EndsAt.Add(4 * time.Hour)
 	status := domain.BookingDone
 
-	got, err := svc.Update(owner, "s1", b.ID, BookingPatch{Status: &status, StartsAt: &start, EndsAt: &end})
+	got, err := svc.Update(owner, "s1", b.ID, bkg.BookingPatch{Status: &status, StartsAt: &start, EndsAt: &end})
 	if err != nil {
 		t.Fatalf("patch combinado: %v", err)
 	}

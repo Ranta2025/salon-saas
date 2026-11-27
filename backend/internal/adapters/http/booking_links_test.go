@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	httpapi "salon-saas/internal/adapters/http"
-	"salon-saas/internal/app"
+	"salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
@@ -23,7 +23,7 @@ type linkHTTPEnv struct {
 	*httpkit.Env
 	r     *gin.Engine
 	Links *httpkit.Links
-	svc   app.BookingLinkService
+	svc   bookings.BookingLinkService
 }
 
 // newLinkHTTPEnv arma el router con el caso de uso del enlace sobre los fakes del
@@ -42,7 +42,7 @@ func buildLinkHTTPEnv(t *testing.T, withLimits bool) *linkHTTPEnv {
 	pub.Links = links
 	pub.AppURL = linkHTTPAppURL
 	d.Public.Bookings = pub
-	svc := app.BookingLinkService{
+	svc := bookings.BookingLinkService{
 		Links: links, Tx: links, Bookings: env.Bookings, Salons: env.Salons,
 		Services: env.Services, Staff: env.Mems, Settings: env.Settings,
 		Professionals: env.Professionals, Hours: env.Weekly, TimeOff: env.TimeOff,

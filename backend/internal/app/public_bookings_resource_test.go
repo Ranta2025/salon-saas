@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -40,7 +41,7 @@ func TestPublicBooking_reintenta_con_otra_unidad(t *testing.T) {
 	flaky := &flakyBookings{fb: env.bookings, failSaves: 1}
 	env.book.Bookings = flaky
 
-	b, err := env.book.Book("navajas-oro", PublicBookingInput{
+	b, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: svc.ID, ClientName: "Clienta",
 		StartsAt: time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC),
 	})
@@ -69,18 +70,18 @@ func TestPublicBooking_agota_todos_los_pares_409(t *testing.T) {
 	flaky := &flakyBookings{fb: env.bookings, failSaves: 1000}
 	env.book.Bookings = flaky
 
-	_, err := env.book.Book("navajas-oro", PublicBookingInput{
+	_, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: svc.ID, ClientName: "Clienta",
 		StartsAt: time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC),
 	})
 	if !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("esperaba 409 tras agotar los pares, dio %v", err)
 	}
-	if len(flaky.attempts) <= maxBookingAttempts {
-		t.Fatalf("tiene que barrer todos los pares, no rendirse a los %d intentos: dio %d", maxBookingAttempts, len(flaky.attempts))
+	if len(flaky.attempts) <= bkg.MaxBookingAttempts {
+		t.Fatalf("tiene que barrer todos los pares, no rendirse a los %d intentos: dio %d", bkg.MaxBookingAttempts, len(flaky.attempts))
 	}
-	if len(flaky.attempts) > maxPairAttempts {
-		t.Fatalf("el barrido está acotado a %d, dio %d", maxPairAttempts, len(flaky.attempts))
+	if len(flaky.attempts) > bkg.MaxPairAttempts {
+		t.Fatalf("el barrido está acotado a %d, dio %d", bkg.MaxPairAttempts, len(flaky.attempts))
 	}
 	seen := map[string]bool{}
 	for _, a := range flaky.attempts {
@@ -106,7 +107,7 @@ func TestPublicBooking_tres_rechazos_no_alcanzan_si_quedan_pares(t *testing.T) {
 	flaky := &flakyBookings{fb: env.bookings, failSaves: 3}
 	env.book.Bookings = flaky
 
-	b, err := env.book.Book("navajas-oro", PublicBookingInput{
+	b, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: svc.ID, ClientName: "Clienta",
 		StartsAt: time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC),
 	})
@@ -131,7 +132,7 @@ func TestPublicBooking_profesional_elegido_ocupa_unidad_libre(t *testing.T) {
 
 	seen := map[string]bool{}
 	for i, prof := range []string{"prof1", "prof2", "prof3"} {
-		b, err := env.book.Book("navajas-oro", PublicBookingInput{
+		b, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 			ServiceID: svc.ID, ProfessionalID: prof, ClientName: "Clienta", StartsAt: start,
 		})
 		if err != nil {
@@ -145,7 +146,7 @@ func TestPublicBooking_profesional_elegido_ocupa_unidad_libre(t *testing.T) {
 	if len(seen) != 3 {
 		t.Fatalf("3 turnos ocupan 3 unidades distintas: %v", seen)
 	}
-	if _, err := env.book.Book("navajas-oro", PublicBookingInput{
+	if _, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: svc.ID, ProfessionalID: "prof4", ClientName: "Cuarta", StartsAt: start,
 	}); !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("sin unidad libre la reserva es 409: %v", err)

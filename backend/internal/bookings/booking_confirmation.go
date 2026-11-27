@@ -1,7 +1,7 @@
 // Confirmación de la reserva pública: el correo que sale apenas el turno queda
 // agendado. Va en una goroutine con su propio timeout para que un SMTP lento o
 // caído no demore ni tumbe la respuesta del navegador.
-package app
+package bookings
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 )
 
 // confirmationTimeout es el techo de la confirmación. Si el SMTP no contesta
@@ -29,7 +30,7 @@ func (s PublicBookingService) sendBookingConfirmation(salonName string, b domain
 	if s.Mailer == nil || strings.TrimSpace(email) == "" {
 		return
 	}
-	msg := bookingMailWithLink(bookingMailConfirmation, salonName, b.ClientName, b.StartsAt, settings, link)
+	msg := kernel.BookingMailWithLink(kernel.BookingMailConfirmation, salonName, b.ClientName, b.StartsAt, settings, link)
 	msg.To = email
 	go func() {
 		// Un panic del adaptador no puede tumbar el proceso desde una goroutine

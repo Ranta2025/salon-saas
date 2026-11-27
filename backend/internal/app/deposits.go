@@ -309,14 +309,14 @@ func (s DepositService) sendConfirmation(deposit domain.BookingDeposit, now time
 	}
 	link := ""
 	if s.Links != nil {
-		if _, token, lerr := mintBookingLink(s.Links, deposit.SalonID, deposit.BookingID, now); lerr != nil {
+		if _, token, lerr := kernel.MintBookingLink(s.Links, deposit.SalonID, deposit.BookingID, now); lerr != nil {
 			// Sin el token en el log: el id del turno y el salón alcanzan.
 			log.Printf("sena: emitir el enlace del turno %s del salon %s: %v", deposit.BookingID, deposit.SalonID, lerr)
 		} else {
-			link = bookingLinkURL(s.AppURL, token)
+			link = kernel.BookingLinkURL(s.AppURL, token)
 		}
 	}
-	msg := bookingMailWithLink(bookingMailConfirmation, notice.SalonName, notice.ClientName, notice.StartsAt, settings, link)
+	msg := kernel.BookingMailWithLink(kernel.BookingMailConfirmation, notice.SalonName, notice.ClientName, notice.StartsAt, settings, link)
 	msg.To = email
 	runAsync(s.Run, func(ctx context.Context) {
 		if err := s.Mailer.Send(ctx, msg); err != nil {

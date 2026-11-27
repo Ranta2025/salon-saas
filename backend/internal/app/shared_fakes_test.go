@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -52,7 +53,7 @@ func (f *fakeNotifier) lastBody() string {
 	return f.bodies[len(f.bodies)-1]
 }
 
-var _ Notifier = (*fakeNotifier)(nil)
+var _ kernel.Notifier = (*fakeNotifier)(nil)
 
 // fakeResources: el equipamiento con capacidad (copia para los casos de uso que
 // todavía viven acá; internal/staffing tiene la suya).

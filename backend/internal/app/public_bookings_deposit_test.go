@@ -5,10 +5,11 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 )
 
-// fakeDepositCreator es el DepositCreator de la reserva pública (F11, D8): crea
+// fakeDepositCreator es el bkg.DepositCreator de la reserva pública (F11, D8): crea
 // una sena con un porcentaje fijo, o falla si el test lo pide.
 type fakeDepositCreator struct {
 	rows     map[string]domain.BookingDeposit
@@ -52,11 +53,11 @@ func (f *fakeDepositCreator) CreateForBooking(o domain.DepositOrder) (*domain.Bo
 	return &d, nil
 }
 
-var _ DepositCreator = (*fakeDepositCreator)(nil)
+var _ bkg.DepositCreator = (*fakeDepositCreator)(nil)
 
 // depPublicEnv deja la reserva pública lista para cobrar seña: el creator
 // cableado, APP_URL y un mailer que cuenta.
-func depPublicEnv(t *testing.T, creator DepositCreator) (*publicEnv, *fakeMailer) {
+func depPublicEnv(t *testing.T, creator bkg.DepositCreator) (*publicEnv, *fakeMailer) {
 	t.Helper()
 	env := newPublicEnv(t)
 	mailer := &fakeMailer{}
@@ -66,7 +67,7 @@ func depPublicEnv(t *testing.T, creator DepositCreator) (*publicEnv, *fakeMailer
 	return env, mailer
 }
 
-func depInput(env *publicEnv, opID string) PublicBookingInput {
+func depInput(env *publicEnv, opID string) bkg.PublicBookingInput {
 	in := publicInput()
 	in.ServiceID = env.corte.ID
 	in.ClientEmail = "lia@mail.com"

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 )
 
@@ -85,7 +86,7 @@ func TestAvailability_tope_por_unidades(t *testing.T) {
 	start := time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC)
 	used := map[string]bool{}
 	for i := 0; i < 3; i++ {
-		b, err := env.book.Book("navajas-oro", PublicBookingInput{
+		b, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 			ServiceID: svc.ID, ClientName: "Clienta", StartsAt: start,
 		})
 		if err != nil {
@@ -96,7 +97,7 @@ func TestAvailability_tope_por_unidades(t *testing.T) {
 		}
 		used[b.ResourceUnitID] = true
 	}
-	if _, err := env.book.Book("navajas-oro", PublicBookingInput{
+	if _, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: svc.ID, ClientName: "Cuarta", StartsAt: start,
 	}); !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("la cuarta con las 3 unidades tomadas: %v", err)
@@ -124,7 +125,7 @@ func TestAvailability_sin_unidades_activas(t *testing.T) {
 	if day.Slots == nil || len(day.Slots) != 0 {
 		t.Fatalf("esperaba [] sin unidades activas: %+v", day.Slots)
 	}
-	_, err = env.book.Book("navajas-oro", PublicBookingInput{
+	_, err = env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: svc.ID, ClientName: "Clienta",
 		StartsAt: time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC),
 	})
@@ -149,7 +150,7 @@ func TestAvailability_duraciones_distintas(t *testing.T) {
 
 	// 3 horas: 09:00 local = 15:00Z.
 	start := time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC)
-	b, err := env.book.Book("navajas-oro", PublicBookingInput{
+	b, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: larga.ID, ClientName: "Clienta", StartsAt: start,
 	})
 	if err != nil {
@@ -184,7 +185,7 @@ func TestAvailability_duraciones_distintas(t *testing.T) {
 		t.Fatalf("a las 12:00 la unidad del alisado está libre: esperaba 3, dio %d", at12)
 	}
 	// Un corte de 30 minutos entra a las 11:00 en otra unidad.
-	if _, err := env.book.Book("navajas-oro", PublicBookingInput{
+	if _, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: corta.ID, ClientName: "Otro", StartsAt: time.Date(2026, 12, 1, 17, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("el corte de 30 minutos entra en otra unidad: %v", err)
@@ -198,7 +199,7 @@ func TestAvailability_desactivar_unidad_conserva_turno(t *testing.T) {
 	rt, _ := equipa(t, env, "Puesto", 3)
 	svc := conEquipo(t, env, "Corte con equipo", 45, rt.ID)
 
-	b, err := env.book.Book("navajas-oro", PublicBookingInput{
+	b, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: svc.ID, ClientName: "Clienta",
 		StartsAt: time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC),
 	})
@@ -248,7 +249,7 @@ func TestAvailability_servicio_sin_equipo_no_cambia(t *testing.T) {
 	if len(day.Slots) != 10 {
 		t.Fatalf("sin equipo: 10 huecos como antes, dio %d", len(day.Slots))
 	}
-	b, err := env.book.Book("navajas-oro", PublicBookingInput{
+	b, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: env.corte.ID, ClientName: "Clienta",
 		StartsAt: time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC),
 	})

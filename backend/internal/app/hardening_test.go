@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"salon-saas/internal/auth"
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/pos"
 	"salon-saas/internal/settings"
@@ -147,7 +148,7 @@ func TestSaleService_profesional_debe_ser_del_salon(t *testing.T) {
 
 func TestBookingService_profesional_debe_ser_del_salon(t *testing.T) {
 	mems := &fakeMemberships{}
-	svc := BookingService{Bookings: &fb{}, Memberships: mems}
+	svc := bkg.BookingService{Bookings: &fb{}, Memberships: mems}
 	rec := miembro(mems, "u-recep", "s1", domain.RoleReception)
 	start := time.Now().UTC().Add(24 * time.Hour)
 

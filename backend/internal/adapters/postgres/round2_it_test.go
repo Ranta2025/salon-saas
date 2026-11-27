@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"salon-saas/internal/app"
+	bookingsapi "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 )
 
@@ -263,7 +263,7 @@ func TestPublicBooking_IT_carrera_un_solo_gana(t *testing.T) {
 	if err := professionals.SetServices("s-it-r2", "u-it-r2-prof", []string{svc.ID}); err != nil {
 		t.Fatalf("servicios de la profesional: %v", err)
 	}
-	svcBooking := app.PublicBookingService{
+	svcBooking := bookingsapi.PublicBookingService{
 		Salons: salons, Services: services, Settings: salons, Staff: mems,
 		Bookings: bookings, Professionals: professionals,
 	}
@@ -275,7 +275,7 @@ func TestPublicBooking_IT_carrera_un_solo_gana(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_, errs[i] = svcBooking.Book("s-it-r2", app.PublicBookingInput{
+			_, errs[i] = svcBooking.Book("s-it-r2", bookingsapi.PublicBookingInput{
 				ServiceID:  svc.ID,
 				ClientName: "Cliente",
 				StartsAt:   start,

@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
+
+	"salon-saas/internal/app"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"salon-saas/internal/app"
 )
 
 // fakeDepositRunner cuenta pasadas y permite fallar o reventar.

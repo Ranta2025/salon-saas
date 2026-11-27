@@ -7,20 +7,21 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
 
 // newReminderEnv: salón s1 en CDMX y una cola vacía. La configuración del salón
 // es la misma del resto de los tests (round2_fakes_test.go).
-func newReminderEnv(t *testing.T) (ReminderService, *fakeBookingEmails, *fakeMailer, *fakeSettings) {
+func newReminderEnv(t *testing.T) (bkg.ReminderService, *fakeBookingEmails, *fakeMailer, *fakeSettings) {
 	t.Helper()
 	settings := &fakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
 		SalonID: "s1", Timezone: "America/Mexico_City", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}}}
 	emails := &fakeBookingEmails{}
 	mailer := &fakeMailer{}
-	return ReminderService{Emails: emails, Mailer: mailer, Settings: settings}, emails, mailer, settings
+	return bkg.ReminderService{Emails: emails, Mailer: mailer, Settings: settings}, emails, mailer, settings
 }
 
 func dueFor(bookingID, email string, startsAt time.Time) ports.DueReminder {
@@ -124,13 +125,13 @@ func TestReminderService_settings_rota(t *testing.T) {
 // reclama nada y no rompe el proceso.
 func TestReminderService_deshabilitado(t *testing.T) {
 	emails := &fakeBookingEmails{due: []ports.DueReminder{dueFor("b1", "l@mail.com", time.Now())}}
-	if sent, failed := (ReminderService{Emails: emails}).RunOnce(context.Background(), time.Now()); sent != 0 || failed != 0 {
+	if sent, failed := (bkg.ReminderService{Emails: emails}).RunOnce(context.Background(), time.Now()); sent != 0 || failed != 0 {
 		t.Fatalf("sin sender: enviados=%d fallidos=%d", sent, failed)
 	}
 	if emails.claims != 0 {
 		t.Fatal("sin sender no se reclama nada")
 	}
-	if sent, failed := (ReminderService{Mailer: &fakeMailer{}}).RunOnce(context.Background(), time.Now()); sent != 0 || failed != 0 {
+	if sent, failed := (bkg.ReminderService{Mailer: &fakeMailer{}}).RunOnce(context.Background(), time.Now()); sent != 0 || failed != 0 {
 		t.Fatalf("sin repositorio: enviados=%d fallidos=%d", sent, failed)
 	}
 }

@@ -4,7 +4,7 @@
 // esto en este salón" y no saben si atrás hay websockets, Redis o nadie.
 // Ambos ganchos son OPCIONALES (nil = noop) para que los tests y las
 // herramientas puedan usar los casos de uso sin infraestructura.
-package app
+package bookings
 
 import (
 	"time"

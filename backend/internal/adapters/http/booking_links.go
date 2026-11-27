@@ -17,18 +17,18 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	"salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 )
 
 // BookingLinkHandler traduce HTTP <-> el caso de uso del enlace.
 type BookingLinkHandler struct {
-	Links app.BookingLinkService
+	Links bookings.BookingLinkService
 }
 
 // bookingLinkJSON es la forma única de un turno abierto por su enlace. Es la
 // misma en `lookup` y en `reschedule` (contrato congelado para el frontend).
-func bookingLinkJSON(v app.BookingLinkView) gin.H {
+func bookingLinkJSON(v bookings.BookingLinkView) gin.H {
 	return gin.H{
 		"salon_name":        v.SalonName,
 		"service_name":      v.ServiceName,

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -77,7 +78,7 @@ func recepcionista(m *fakeMemberships) domain.Membership {
 func TestBooking_create_ok_y_solape_409(t *testing.T) {
 	bookings := &fb{}
 	mems := &fakeMemberships{}
-	svc := BookingService{Bookings: bookings, Memberships: mems}
+	svc := bkg.BookingService{Bookings: bookings, Memberships: mems}
 	rec := recepcionista(mems)
 	// B-12: solo agenda quien atiende en el salón.
 	miembro(mems, "prof1", "s1", domain.RoleProfessional)
@@ -105,7 +106,7 @@ func TestBooking_create_ok_y_solape_409(t *testing.T) {
 func TestBooking_permisos(t *testing.T) {
 	bookings := &fb{}
 	mems := &fakeMemberships{}
-	svc := BookingService{Bookings: bookings, Memberships: mems}
+	svc := bkg.BookingService{Bookings: bookings, Memberships: mems}
 	day := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
 
 	// Profesional agenda para sí mismo: ok.
@@ -130,7 +131,7 @@ func TestBooking_permisos(t *testing.T) {
 func TestBooking_idempotente_por_client_op(t *testing.T) {
 	bookings := &fb{}
 	mems := &fakeMemberships{}
-	svc := BookingService{Bookings: bookings, Memberships: mems}
+	svc := bkg.BookingService{Bookings: bookings, Memberships: mems}
 	rec := recepcionista(mems)
 	miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	day := time.Date(2026, 12, 5, 0, 0, 0, 0, time.UTC)

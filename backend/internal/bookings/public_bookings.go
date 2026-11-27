@@ -2,7 +2,7 @@
 // La duración la pone el servicio, el profesional es opcional (se elige uno
 // libre) y la garantía anti-solape sigue siendo la EXCLUDE de Postgres: dos
 // personas reservando el mismo hueco a la vez terminan en 409 para una.
-package app
+package bookings
 
 import (
 	"errors"
@@ -267,18 +267,18 @@ func (s PublicBookingService) book(slug string, in PublicBookingInput, out *depo
 
 	// Un turno ocupa UNA profesional Y UNA unidad. La EXCLUDE de Postgres decide
 	// el doble turno; si rechaza el par (otra reserva entró entre el chequeo y el
-	// INSERT), se reintenta con OTRO par hasta maxBookingAttempts veces. Nunca
+	// INSERT), se reintenta con OTRO par hasta MaxBookingAttempts veces. Nunca
 	// 500 y nunca dos turnos en la misma unidad/hora.
 	// Se prueba CADA par posible antes de rendirse: con las escrituras
 	// serializadas por salón, un intento fallido significa que ese par ya está
 	// tomado, no un interbloqueo, así que si queda un par libre se lo encuentra
 	// (un "sin lugar" falso es peor que un 500: la clienta se va).
-	attempts := maxBookingAttempts
+	attempts := MaxBookingAttempts
 	if pairs := len(candidates) * maxInt(1, len(units)); pairs > attempts {
 		attempts = pairs
 	}
-	if attempts > maxPairAttempts {
-		attempts = maxPairAttempts
+	if attempts > MaxPairAttempts {
+		attempts = MaxPairAttempts
 	}
 	busy := make(map[string]bool, attempts)
 	var booking domain.Booking
@@ -363,11 +363,11 @@ func (s PublicBookingService) book(slug string, in PublicBookingInput, out *depo
 	// y un enlace que falta no puede dejar a la persona sin su correo.
 	link := ""
 	if clientEmail != "" && s.Links != nil {
-		if _, token, err := mintBookingLink(s.Links, salon.ID, b.ID, time.Now().UTC()); err != nil {
+		if _, token, err := kernel.MintBookingLink(s.Links, salon.ID, b.ID, time.Now().UTC()); err != nil {
 			// Sin el token en el log: el id del turno y el salón alcanzan.
 			log.Printf("reserva pública: emitir el enlace del turno %s en el salón %s: %v", b.ID, salon.ID, err)
 		} else {
-			link = bookingLinkURL(s.AppURL, token)
+			link = kernel.BookingLinkURL(s.AppURL, token)
 		}
 	}
 	// La confirmación sale en segundo plano: la respuesta 201 no espera al SMTP.
@@ -523,13 +523,13 @@ func (s PublicBookingService) upsertClient(salonID, name, phone string) string {
 	return c.ID
 }
 
-// maxBookingAttempts es cuántas veces se reintenta un par (profesional, unidad)
+// MaxBookingAttempts es cuántas veces se reintenta un par (profesional, unidad)
 // cuando la EXCLUDE rechaza el guardado por la carrera (S-F2e-4).
-const maxBookingAttempts = 3
+const MaxBookingAttempts = 3
 
-// maxPairAttempts acota el barrido de pares (profesional, unidad) de una
+// MaxPairAttempts acota el barrido de pares (profesional, unidad) de una
 // reserva: 5 profesionales x 6 unidades ya son 30 intentos.
-const maxPairAttempts = 40
+const MaxPairAttempts = 40
 
 func maxInt(a, b int) int {
 	if a > b {

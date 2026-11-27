@@ -18,7 +18,7 @@
 //   - los eventos de tiempo real y los avisos internos son los MISMOS que publica
 //     BookingService.Update, y los correos salen en segundo plano: un SMTP caído
 //     nunca cambia la respuesta.
-package app
+package bookings
 
 import (
 	"context"
@@ -265,7 +265,7 @@ func (s BookingLinkService) Reschedule(token string, startsAt time.Time) (Bookin
 	// persona se entera por el próximo correo, no con un aviso sin enlace).
 	sent := false
 	if newToken != "" {
-		sent = s.sendChangeMail(done.booking, mailRescheduleNotice, bookingLinkURL(s.AppURL, newToken))
+		sent = s.sendChangeMail(done.booking, mailRescheduleNotice, kernel.BookingLinkURL(s.AppURL, newToken))
 	}
 	view, err := s.describe(done)
 	if err != nil {
@@ -572,7 +572,7 @@ func (s BookingLinkService) announce(b domain.Booking, rescheduled bool) {
 	})
 	title := "Turno reprogramado"
 	if !rescheduled {
-		title = bookingChangeTitle(b.Status)
+		title = BookingChangeTitle(b.Status)
 	}
 	kernel.Notify(s.Notifier, b.SalonID, "", title,
 		b.ClientName+" · "+salonTimeLabel(s.Settings, b.SalonID, b.StartsAt), domain.KindBooking)
@@ -607,11 +607,11 @@ func (s BookingLinkService) sendChangeMail(b domain.Booking, kind int, link stri
 	}
 	// La reprogramación reusa la plantilla de confirmación (el turno nuevo queda
 	// confirmado con SU enlace) y la cancelación tiene su propio asunto.
-	mailKind := bookingMailCancelled
+	mailKind := kernel.BookingMailCancelled
 	if kind == mailRescheduleNotice {
-		mailKind = bookingMailConfirmation
+		mailKind = kernel.BookingMailConfirmation
 	}
-	msg := bookingMailWithLink(mailKind, salon.Name, b.ClientName, b.StartsAt, settings, link)
+	msg := kernel.BookingMailWithLink(mailKind, salon.Name, b.ClientName, b.StartsAt, settings, link)
 	msg.To = email
 	go func() {
 		defer func() {
@@ -644,23 +644,6 @@ func (s BookingLinkService) now() time.Time {
 		return s.Now().UTC()
 	}
 	return time.Now().UTC()
-}
-
-// mintBookingLink emite un token NUEVO y guarda SOLO su SHA-256. Devuelve el
-// enlace y el token en claro (que solo vive en la llamada y en el correo).
-func mintBookingLink(repo ports.BookingLinkRepository, salonID, bookingID string, now time.Time) (domain.BookingLink, string, error) {
-	token, err := domain.NewBookingLinkToken()
-	if err != nil {
-		return domain.BookingLink{}, "", err
-	}
-	link, err := domain.NewBookingLink(salonID, bookingID, domain.HashBookingLinkToken(token), now)
-	if err != nil {
-		return domain.BookingLink{}, "", err
-	}
-	if err := repo.Save(link); err != nil {
-		return domain.BookingLink{}, "", err
-	}
-	return link, token, nil
 }
 
 // --- errores del contrato (mismo texto y mismo status en todas las rutas) ---

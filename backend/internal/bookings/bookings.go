@@ -1,8 +1,20 @@
+// Package bookings: la familia de RESERVAS — agenda del salón, disponibilidad
+// pública, reserva sin sesión, enlaces firmados del turno (cancelar/reprogramar),
+// correos de confirmación y recordatorio y el barrido de recordatorios (F1, F2,
+// F3 y T12).
+//
+// Es un módulo por funcionalidad: el núcleo compartido vive en internal/kernel,
+// los puertos en internal/ports y los adaptadores en bookings/postgres y
+// bookings/httpapi, que importan este paquete y nunca al revés.
+//
+// La seña (F11) es otra funcionalidad (internal/deposits): acá solo se usa la
+// interfaz DepositCreator, que implementa su caso de uso. Así ninguno de los dos
+// módulos importa al otro.
 // BookingService: agenda del salón. La regla de negocio vive acá:
 // quién puede reservar, y el filtro amable de solape. La garantía dura es la
 // EXCLUDE de Postgres (migración 002): si dos requests corren a la vez, la DB
 // deja pasar una y la otra vuelve como ErrAlreadyExists -> 409.
-package app
+package bookings
 
 import (
 	"errors"
@@ -244,7 +256,7 @@ func (s BookingService) Update(actor domain.Membership, salonID, bookingID strin
 		TS: time.Now().UTC(),
 	})
 	if patch.Status != nil {
-		kernel.Notify(s.Notifier, salonID, "", bookingChangeTitle(b.Status),
+		kernel.Notify(s.Notifier, salonID, "", BookingChangeTitle(b.Status),
 			b.ClientName+" · "+salonTimeLabel(s.Settings, salonID, b.StartsAt), domain.KindBooking)
 	} else if rescheduled {
 		kernel.Notify(s.Notifier, salonID, "", "Turno reprogramado",
@@ -253,8 +265,8 @@ func (s BookingService) Update(actor domain.Membership, salonID, bookingID strin
 	return b, nil
 }
 
-// bookingChangeTitle es el título del aviso de un cambio de estado.
-func bookingChangeTitle(status domain.BookingStatus) string {
+// BookingChangeTitle es el título del aviso de un cambio de estado.
+func BookingChangeTitle(status domain.BookingStatus) string {
 	switch status {
 	case domain.BookingCancelled:
 		return "Turno cancelado"

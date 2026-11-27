@@ -1,7 +1,7 @@
 // AvailabilityService: los huecos libres que ofrece la reserva pública.
 // El cálculo depende del salón (zona horaria, apertura/cierre y paso) y del
 // servicio (duración): por eso no es una query SQL sino un caso de uso.
-package app
+package bookings
 
 import (
 	"fmt"

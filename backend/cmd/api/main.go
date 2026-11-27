@@ -23,6 +23,7 @@ import (
 	"salon-saas/internal/auth"
 	authhttpapi "salon-saas/internal/auth/httpapi"
 	"salon-saas/internal/auth/security"
+	"salon-saas/internal/bookings"
 	"salon-saas/internal/clients"
 	clientshttpapi "salon-saas/internal/clients/httpapi"
 	"salon-saas/internal/domain"
@@ -239,7 +240,7 @@ func photoStorage(cfg config) (ports.PhotoStorage, error) {
 
 // buildRouter arma los adaptadores y monta las rutas. Devuelve el router y las
 // dependencias (los tests de humo lo usan).
-func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app.ReminderService) {
+func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, bookings.ReminderService) {
 	users := pgstore.Users{Pool: pool}
 	salons := pgstore.Salons{Pool: pool}
 	mems := pgstore.Memberships{Pool: pool}
@@ -254,7 +255,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	recoveryRepo := pgstore.AccountRecovery{Pool: pool}
 	sessionGate := pgstore.SessionGate{Pool: pool}
 	tenSvc := team.TenantService{Salons: salons, Memberships: mems}
-	bookings := pgstore.Bookings{Pool: pool}
+	bookingRepo := pgstore.Bookings{Pool: pool}
 	salesRepo := pgstore.Sales{Pool: pool}
 	// F6: catálogo de productos (con su libro de stock) y la venta CON productos
 	// en una sola transacción con tope de tiempo. Una venta sin productos sigue
@@ -326,8 +327,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	clientLinks := pgstore.ClientLinks{Pool: pool}
 	clientHistoryRepo := pgstore.ClientHistory{Pool: pool}
 	clientsRepo := pgstore.Clients{Pool: pool}
-	bookSvc := app.BookingService{
-		Bookings: bookings, Memberships: mems, Settings: salons, Events: hub, Notifier: notifSvc,
+	bookSvc := bookings.BookingService{
+		Bookings: bookingRepo, Memberships: mems, Settings: salons, Events: hub, Notifier: notifSvc,
 		Services: servicesRepo, Resources: resourceRepo,
 		ClientLinks: clientLinks,
 	}
@@ -387,7 +388,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		CashCloses: closesRepo, Sales: salesRepo, Memberships: mems, Tx: closesRepo,
 		Settings: salons, Events: hub, Notifier: notifSvc,
 	}
-	dashSvc := pos.DashboardService{Sales: salesRepo, Agenda: bookings, Staff: mems, Memberships: mems}
+	dashSvc := pos.DashboardService{Sales: salesRepo, Agenda: bookingRepo, Staff: mems, Memberships: mems}
 	clientSvc := clients.ClientService{
 		Clients:     clientsRepo,
 		Memberships: mems,
@@ -424,13 +425,13 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	professionalHoursSvc := schedules.ProfessionalHoursService{Hours: weeklyHours, Memberships: mems}
 	// F2d2: las ausencias se cargan desde Equipo y las consultan la agenda (con
 	// los turnos en conflicto) y la disponibilidad pública.
-	timeOffSvc := schedules.TimeOffService{TimeOff: timeOffRepo, Bookings: bookings, Memberships: mems}
+	timeOffSvc := schedules.TimeOffService{TimeOff: timeOffRepo, Bookings: bookingRepo, Memberships: mems}
 	// F2d3: cubrir una ausencia reasignando los turnos a otra profesional. La
 	// transacción con lock por salón es lo que hace el "todo o nada".
 	coverageSvc := schedules.CoverageService{
-		Bookings: bookings, Memberships: mems, Staff: mems, Professionals: professionals,
+		Bookings: bookingRepo, Memberships: mems, Staff: mems, Professionals: professionals,
 		Hours: weeklyHours, TimeOff: timeOffRepo, Services: servicesRepo,
-		Settings: salons, Salons: salons, Tx: bookings,
+		Settings: salons, Salons: salons, Tx: bookingRepo,
 		Events: hub, Notifier: notifSvc,
 	}
 	memberSvc := team.MemberService{
@@ -466,9 +467,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	exportSvc := exports.ExportService{
 		Exports: exportRepo, Memberships: mems, Settings: salons,
 	}
-	availabilitySvc := app.AvailabilityService{
+	availabilitySvc := bookings.AvailabilityService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems,
-		Bookings: bookings, Professionals: professionals, Hours: weeklyHours,
+		Bookings: bookingRepo, Professionals: professionals, Hours: weeklyHours,
 		TimeOff: timeOffRepo, Resources: resourceRepo,
 	}
 	// F7: lista de espera del salón (migración 030). El barrido periódico reclama
@@ -483,7 +484,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		AppURL: cfg.AppURL,
 	}
 	// F13: reseñas posvisita (migración 038). Un solo adaptador implementa los
-	// pedidos de reseña y las reseñas; el módulo SOLO LEE bookings por su propia
+	// pedidos de reseña y las reseñas; el módulo SOLO LEE bookingRepo por su propia
 	// consulta (D1) y no toca la agenda. El sender y APP_URL se completan abajo,
 	// cuando el mailer existe: sin SMTP el barrido no pide nada.
 	reviewsRepo := reviewsstore.Reviews{Pool: pool}
@@ -544,7 +545,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F1: el enlace de un solo uso que viaja en la confirmación, el recordatorio y
 	// el aviso de cambio. Guarda solo el SHA-256 del token (migración 027).
 	bookingLinks := pgstore.BookingLinks{Pool: pool}
-	reminders := app.ReminderService{
+	reminders := bookings.ReminderService{
 		Emails: bookingEmails, Mailer: mailer, Settings: salons,
 		Links: bookingLinks, AppURL: cfg.AppURL,
 	}
@@ -565,7 +566,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// (SetStatus(cancelled) bajo el lock `booking-write:`): no reimplementa turnos.
 	depositsSvc := app.DepositService{
 		Policies: depositPoliciesRepo, Deposits: depositRepo, Gateway: gateway,
-		Bookings: pgstore.BookingCanceller{Bookings: bookings},
+		Bookings: pgstore.BookingCanceller{Bookings: bookingRepo},
 		Notices:  depositRepo, Mailer: mailer, Links: bookingLinks,
 		Settings: salons, Memberships: mems, AppURL: cfg.AppURL,
 	}
@@ -583,8 +584,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		simbankLookup, simbankPay = simbankHandler.Lookup, simbankHandler.Pay
 		paymentsCallback = httpapi.PaymentsHandler{Deposits: depositsSvc}.Callback
 	}
-	publicBookingSvc := app.PublicBookingService{
-		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems, Bookings: bookings,
+	publicBookingSvc := bookings.PublicBookingService{
+		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems, Bookings: bookingRepo,
 		Professionals: professionals, Hours: weeklyHours, TimeOff: timeOffRepo,
 		Resources:   resourceRepo, // el turno ocupa una unidad de equipo (F2e)
 		Clients:     clientsRepo,  // cada reserva pública deja la ficha de la clienta (E-03)
@@ -600,9 +601,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F1: las cuatro rutas públicas del enlace (lookup, horarios, cancelar y
 	// reprogramar). Toma el MISMO lock `booking-write:<salón>` de Book y Update en
 	// UNA transacción: dos pedidos con el mismo token no pueden ganar los dos.
-	bookingLinkSvc := app.BookingLinkService{
+	bookingLinkSvc := bookings.BookingLinkService{
 		Links: bookingLinks, Tx: bookingLinks,
-		Bookings: bookings, Salons: salons, Services: servicesRepo, Staff: mems,
+		Bookings: bookingRepo, Salons: salons, Services: servicesRepo, Staff: mems,
 		Settings: salons, Professionals: professionals, Hours: weeklyHours,
 		TimeOff: timeOffRepo, Resources: resourceRepo, Availability: availabilitySvc,
 		Events: hub, Notifier: notifSvc, Mailer: mailer, Emails: bookingEmails,

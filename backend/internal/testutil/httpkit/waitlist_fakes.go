@@ -3,7 +3,7 @@ package httpkit
 import (
 	"errors"
 	httpapi "salon-saas/internal/adapters/http"
-	"salon-saas/internal/app"
+	"salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/waitlist"
@@ -290,7 +290,7 @@ func (e *WaitlistHTTPEnv) wire(t *testing.T, mutate func(d *httpapi.Deps)) {
 		Service: waitlist.WaitlistService{
 			Waitlist: e.Wl, Tx: e.Wl,
 			Salons: e.Salons, Services: e.Services, Professionals: e.Professionals,
-			Settings: e.Settings, Availability: app.AvailabilityService{
+			Settings: e.Settings, Availability: bookings.AvailabilityService{
 				Salons: e.Salons, Services: e.Services, Settings: e.Settings,
 				Staff: e.Mems, Bookings: e.Bookings, Professionals: e.Professionals,
 				Hours: e.Weekly, TimeOff: e.TimeOff,

@@ -19,7 +19,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	pgstore "salon-saas/internal/adapters/postgres"
-	"salon-saas/internal/app"
+	bookingsapi "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/testutil/itdb"
@@ -144,7 +144,7 @@ func newItWaitlistEnv(t *testing.T) *itWaitlistEnv {
 		t.Fatalf("servicios de la profesional: %v", err)
 	}
 
-	availability := app.AvailabilityService{
+	availability := bookingsapi.AvailabilityService{
 		Salons: salons, Services: services, Settings: salons, Staff: mems, Bookings: bookings,
 		Professionals: profs, Hours: hours, TimeOff: timeOff, Resources: resources,
 	}

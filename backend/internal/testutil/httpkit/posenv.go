@@ -5,10 +5,10 @@ import (
 	"net/http"
 	httpapi "salon-saas/internal/adapters/http"
 	"salon-saas/internal/adapters/realtime"
-	"salon-saas/internal/app"
 	"salon-saas/internal/auth"
 	authhttpapi "salon-saas/internal/auth/httpapi"
 	"salon-saas/internal/auth/security"
+	"salon-saas/internal/bookings"
 	"salon-saas/internal/clients"
 	clientshttpapi "salon-saas/internal/clients/httpapi"
 	"salon-saas/internal/domain"
@@ -226,7 +226,7 @@ func NewPOSEnv() *Env {
 	authSvc := auth.AuthService{Users: env.Users, Hasher: hasher, Tokens: tokens}
 	tenSvc := team.TenantService{Salons: env.Salons, Memberships: env.Mems}
 	notifSvc := notifications.NotificationService{Notifications: env.Notifications, Salons: env.Mems, Events: env.Events}
-	bookSvc := app.BookingService{Bookings: env.Bookings, Memberships: env.Mems, Events: env.Events, Notifier: notifSvc}
+	bookSvc := bookings.BookingService{Bookings: env.Bookings, Memberships: env.Mems, Events: env.Events, Notifier: notifSvc}
 	svcSvc := staffing.ServiceService{Services: env.Services, Memberships: env.Mems, Professionals: env.Professionals, Resources: env.Resources}
 	saleSvc := pos.SaleService{Sales: env.Sales, Services: env.Services, Memberships: env.Mems, Events: env.Events}
 	cashSvc := pos.CashCloseService{CashCloses: env.Closes, Sales: env.Sales, Memberships: env.Mems, Tx: &CashTx{Closes: env.Closes, Sales: env.Sales}, Events: env.Events, Notifier: notifSvc}
@@ -272,12 +272,12 @@ func NewPOSEnv() *Env {
 		Invitations: env.Invitations, Tx: env.Invitations, Users: env.Users, Salons: env.Salons,
 		Hasher: hasher, Tokens: tokens, Now: env.Invitations.now,
 	}
-	availabilitySvc := app.AvailabilityService{
+	availabilitySvc := bookings.AvailabilityService{
 		Salons: env.Salons, Services: env.Services, Settings: env.Settings,
 		Staff: env.Mems, Bookings: env.Bookings, Professionals: env.Professionals, Hours: env.Weekly,
 		TimeOff: env.TimeOff,
 	}
-	publicBookingSvc := app.PublicBookingService{
+	publicBookingSvc := bookings.PublicBookingService{
 		Salons: env.Salons, Services: env.Services, Settings: env.Settings,
 		Staff: env.Mems, Bookings: env.Bookings, Professionals: env.Professionals, Hours: env.Weekly,
 		TimeOff: env.TimeOff,
