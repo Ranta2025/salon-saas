@@ -289,3 +289,30 @@ func TestBookWithDeposit_reintentoSanaUnaReservaSinSena(t *testing.T) {
 		t.Fatalf("la confirmación espera al pago: %d", n)
 	}
 }
+
+// F11 verifier V2 advisory 2: replaying the key of a CANCELLED booking (expired hold
+// or cancelled in the panel) must not hand out a payment link for a dead deposit.
+func TestBookWithDeposit_reintentoDeUnTurnoCanceladoNoDevuelveSena(t *testing.T) {
+	creator := newFakeDepositCreator(30)
+	env, _ := depPublicEnv(t, creator)
+
+	first, payment, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-cancelado"))
+	if err != nil || payment == nil {
+		t.Fatalf("precondición: reserva con seña: %v %v", payment, err)
+	}
+	for i := range env.bookings.all {
+		if env.bookings.all[i].ID == first.ID {
+			env.bookings.all[i].Status = domain.BookingCancelled
+		}
+	}
+	again, payment2, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-cancelado"))
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if again.Status != domain.BookingCancelled {
+		t.Fatalf("el replay devuelve el turno tal como quedó: %q", again.Status)
+	}
+	if payment2 != nil {
+		t.Fatalf("un turno cancelado no ofrece pago: %+v", payment2)
+	}
+}

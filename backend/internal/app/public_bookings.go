@@ -429,8 +429,8 @@ const depositHealWindow = 30 * time.Minute
 // cuya compensación también (F11 native review R4-COMPENSATION). En cualquier otro
 // caso es solo lectura (PriceCents 0 no crea ningún cargo).
 func (s PublicBookingService) replayPayment(salonID string, b domain.Booking) *PublicPayment {
-	if s.Deposits == nil {
-		return nil
+	if s.Deposits == nil || b.Status == domain.BookingCancelled {
+		return nil // a dead booking never offers a payment link (F11 verifier V2)
 	}
 	order := domain.DepositOrder{SalonID: salonID, BookingID: b.ID}
 	if b.Status == domain.BookingBooked && b.ServiceID != "" && time.Since(b.CreatedAt) <= depositHealWindow {
