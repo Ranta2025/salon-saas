@@ -27,6 +27,7 @@ import (
 	"salon-saas/internal/audit"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/exports"
+	exportsstore "salon-saas/internal/exports/postgres"
 	"salon-saas/internal/finance"
 	"salon-saas/internal/loyalty"
 	loyaltystore "salon-saas/internal/loyalty/postgres"
@@ -257,7 +258,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F4: lecturas masivas del export (ventas con el nombre del profesional y la
 	// suma de ítems, cierres por closed_at y clientes por nombre), una sentencia
 	// SQL por archivo y con LIMIT.
-	exportRepo := pgstore.Exports{Pool: pool}
+	exportRepo := exportsstore.Exports{Pool: pool}
 
 	// Realtime: el hub es el EventPublisher de los casos de uso (no saben que
 	// hay websockets). Autentica el JWT del query param, valida el Origin con la

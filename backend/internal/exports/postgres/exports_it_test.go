@@ -7,7 +7,7 @@
 // Corre con:
 //
 //	SALON_IT=1 DATABASE_URL=... go test ./internal/adapters/postgres/ -run ExportsIT -v
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -17,6 +17,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // exportCleanup deja los salones de la prueba vacíos y sin filas hijas.
@@ -121,7 +122,7 @@ func exportZone(t *testing.T, name string) *time.Location {
 // La lectura real: ventana local, orden del contrato, nombre profesional unido
 // desde users, suma de cantidades, tenant isolation y LIMIT.
 func TestExportsIT_ventas_cierres_y_clientes(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 
 	const salon, other = "s-f4w-main", "s-f4w-other"
@@ -237,7 +238,7 @@ func TestExportsIT_ventas_cierres_y_clientes(t *testing.T) {
 // ventana, en CDMX, en Nueva York con su día de 23 h y el de 25 h, y en
 // Auckland. Vale para ventas y para cierres.
 func TestExportsIT_bordes_de_dia_local(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 
 	cases := []struct {
@@ -316,7 +317,7 @@ func TestExportsIT_bordes_de_dia_local(t *testing.T) {
 // conexiones del pool aunque el cliente ya se hubiera ido. Ahora cada lectura
 // tiene su propio tope y termina con error.
 func TestExportsIT_la_consulta_tiene_tope_de_tiempo(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	ctx := context.Background()
 

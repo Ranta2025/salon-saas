@@ -2,13 +2,14 @@
 // NUEVOS, cada uno UNA sola sentencia SQL y siempre scopeados por salon_id. No
 // tocan los repositorios existentes (`GET /sales`, `/cash-closes`, `/clients`)
 // ni sus queries: así el mismo archivo no puede mezclar dos fotos distintas.
-package pgstore
+package postgres
 
 import (
 	"context"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 )
 
@@ -74,7 +75,7 @@ func (r Exports) ListExportSales(salonID string, from, to time.Time, limit int) 
 		}
 		row.CreatedAt = row.CreatedAt.UTC()
 		row.Method = domain.PaymentMethod(method)
-		if row.Items, err = bigintToInt(items, "la cantidad de ítems de la venta"); err != nil {
+		if row.Items, err = pgstore.BigintToInt(items, "la cantidad de ítems de la venta"); err != nil {
 			return nil, err
 		}
 		out = append(out, row)

@@ -173,7 +173,11 @@ func (r Sales) sumCents(ctx context.Context, q querier, salonID string, from, to
 
 // bigintToInt baja una suma de Postgres a int con guarda de overflow: en 64 bits
 // nunca se activa, pero deja el límite explícito en vez de truncar en silencio.
-func bigintToInt(v int64, what string) (int, error) {
+func bigintToInt(v int64, what string) (int, error) { return BigintToInt(v, what) }
+
+// BigintToInt es la versión exportada de bigintToInt para los adaptadores que
+// ya viven en su módulo por funcionalidad (`internal/<feature>/postgres`).
+func BigintToInt(v int64, what string) (int, error) {
 	if v < 0 || v > math.MaxInt {
 		return 0, fmt.Errorf("%w: %s supera el máximo representable", domain.ErrValidation, what)
 	}
