@@ -5,7 +5,7 @@
 // (`used_at IS NULL AND expires_at > now()`) toma el row lock de la fila y el
 // perdedor ve 0 filas. Si se quita `used_at IS NULL` del WHERE, los 30 canjes
 // "ganan" (éxito) y este test falla: es el mutante que pide el contrato.
-package pgstore
+package postgres
 
 import (
 	"sync"

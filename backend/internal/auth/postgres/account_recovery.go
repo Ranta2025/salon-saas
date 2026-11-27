@@ -1,4 +1,4 @@
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -48,7 +49,7 @@ func verificationLockKey(userID string) string { return "email-verification:" + 
 func scanReset(scan func(...any) error) (domain.PasswordReset, error) {
 	var r domain.PasswordReset
 	if err := scan(&r.ID, &r.UserID, &r.TokenHash, &r.CreatedAt, &r.ExpiresAt, &r.UsedAt); err != nil {
-		return domain.PasswordReset{}, notFound(err)
+		return domain.PasswordReset{}, pgstore.NotFound(err)
 	}
 	r.CreatedAt = r.CreatedAt.UTC()
 	r.ExpiresAt = r.ExpiresAt.UTC()
@@ -62,7 +63,7 @@ func scanReset(scan func(...any) error) (domain.PasswordReset, error) {
 func scanVerification(scan func(...any) error) (domain.EmailVerification, error) {
 	var v domain.EmailVerification
 	if err := scan(&v.ID, &v.UserID, &v.Email, &v.TokenHash, &v.CreatedAt, &v.ExpiresAt, &v.UsedAt); err != nil {
-		return domain.EmailVerification{}, notFound(err)
+		return domain.EmailVerification{}, pgstore.NotFound(err)
 	}
 	v.CreatedAt = v.CreatedAt.UTC()
 	v.ExpiresAt = v.ExpiresAt.UTC()
@@ -78,13 +79,13 @@ func scanVerification(scan func(...any) error) (domain.EmailVerification, error)
 // nuevo como «ahora»), invalida los anteriores sin usar y guarda este. Un pedido
 // frenado no escribe NADA.
 func (r AccountRecovery) IssueReset(reset domain.PasswordReset) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return false, err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, resetLockKey(reset.UserID)); err != nil {
 		return false, err
 	}
@@ -120,7 +121,7 @@ func (r AccountRecovery) IssueReset(reset domain.PasswordReset) (bool, error) {
 		reset.ID, reset.UserID, reset.TokenHash, reset.CreatedAt, reset.ExpiresAt); err != nil {
 		// 23503 (usuario inexistente) y 23505 (hash repetido) salen como error,
 		// nunca como «emitido».
-		return false, pgError(err)
+		return false, pgstore.PGError(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return false, err
@@ -145,13 +146,13 @@ func (r AccountRecovery) FindReset(tokenHash string) (domain.PasswordReset, erro
 // vencido o perdió la carrera): los 30 canjes paralelos del mismo token dejan
 // exactamente uno.
 func (r AccountRecovery) ConsumeReset(tokenHash, newPassHash string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 	// UN solo valor del reloj de la base para used_at, password_changed_at y
 	// email_verified_at: la comparación de D4 (`ia` > password_changed_at) es
 	// consistente con el instante en que el enlace se gastó.
@@ -166,7 +167,7 @@ func (r AccountRecovery) ConsumeReset(tokenHash, newPassHash string) error {
 		`UPDATE password_resets SET used_at=$2
 		 WHERE token_hash=$1 AND used_at IS NULL AND expires_at > $2
 		 RETURNING user_id`, tokenHash, at).Scan(&userID); err != nil {
-		return notFound(err)
+		return pgstore.NotFound(err)
 	}
 	if _, err := tx.Exec(ctx,
 		`UPDATE users SET pass_hash=$2, password_changed_at=$3, email_verified_at=COALESCE(email_verified_at,$3)
@@ -186,13 +187,13 @@ func (r AccountRecovery) ConsumeReset(tokenHash, newPassHash string) error {
 // devuelve issued=false sin escribir nada (el reenvío: 429). El primero del
 // registro (minInterval 0) nunca se frena.
 func (r AccountRecovery) IssueVerification(v domain.EmailVerification, minInterval time.Duration) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return false, err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, verificationLockKey(v.UserID)); err != nil {
 		return false, err
 	}
@@ -210,7 +211,7 @@ func (r AccountRecovery) IssueVerification(v domain.EmailVerification, minInterv
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO email_verifications(id,user_id,email,token_hash,created_at,expires_at) VALUES($1,$2,$3,$4,$5,$6)`,
 		v.ID, v.UserID, v.Email, v.TokenHash, v.CreatedAt, v.ExpiresAt); err != nil {
-		return false, pgError(err)
+		return false, pgstore.PGError(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return false, err
@@ -226,13 +227,13 @@ func (r AccountRecovery) IssueVerification(v domain.EmailVerification, minInterv
 // Idempotente: un token ya usado de una cuenta ya verificada es nil. Cualquier
 // otro caso es ErrNotFound (el 400 uniforme del caso de uso).
 func (r AccountRecovery) ConsumeVerification(tokenHash string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 	var at time.Time
 	if err := tx.QueryRow(ctx, `SELECT now()`).Scan(&at); err != nil {
 		return err
@@ -258,7 +259,7 @@ func (r AccountRecovery) ConsumeVerification(tokenHash string) error {
 			`SELECT true FROM email_verifications v JOIN users u ON u.id = v.user_id
 			 WHERE v.token_hash=$1 AND v.used_at IS NOT NULL AND u.email_verified_at IS NOT NULL`,
 			tokenHash).Scan(&already); err != nil {
-			return notFound(err)
+			return pgstore.NotFound(err)
 		}
 		return nil
 	default:
@@ -278,11 +279,11 @@ type SessionGate struct {
 // Usuario inexistente = ErrNotFound; cualquier otro fallo se propaga como error
 // (nunca como «nunca cambió»).
 func (g SessionGate) PasswordChangedAt(userID string) (*time.Time, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(g.Timeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(g.Timeout))
 	defer cancel()
 	var at *time.Time
 	if err := g.Pool.QueryRow(ctx, `SELECT password_changed_at FROM users WHERE id=$1`, userID).Scan(&at); err != nil {
-		return nil, notFound(err)
+		return nil, pgstore.NotFound(err)
 	}
 	if at != nil {
 		utc := at.UTC()

@@ -1,4 +1,4 @@
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -52,7 +53,7 @@ func (r TwoFactor) Find(userID string) (domain.TwoFactorState, error) {
 		return domain.TwoFactorState{}, domain.ErrNotFound
 	}
 	if err != nil {
-		return domain.TwoFactorState{}, pgError(err)
+		return domain.TwoFactorState{}, pgstore.PGError(err)
 	}
 	return st, nil
 }
@@ -69,7 +70,7 @@ func (r TwoFactor) SavePending(userID string, secretEnc []byte) error {
 		       locked_until = NULL, created_at = now()
 		   WHERE user_totp.enabled = false`, userID, secretEnc)
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrAlreadyExists
@@ -81,19 +82,19 @@ func (r TwoFactor) SavePending(userID string, secretEnc []byte) error {
 // transacción. El UPDATE exige que siga pendiente y con el MISMO secreto con el
 // que se verificó el código.
 func (r TwoFactor) Enable(userID string, secretEnc []byte, step int64, codeHashes []string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 	tag, err := tx.Exec(ctx,
 		`UPDATE user_totp
 		 SET enabled = true, enabled_at = now(), last_step = $3, failed_count = 0, locked_until = NULL
 		 WHERE user_id = $1 AND enabled = false AND secret_enc = $2`, userID, secretEnc, step)
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		var enabled bool
@@ -102,7 +103,7 @@ func (r TwoFactor) Enable(userID string, secretEnc []byte, step int64, codeHashe
 		case errors.Is(err, pgx.ErrNoRows):
 			return domain.ErrNotFound
 		case err != nil:
-			return pgError(err)
+			return pgstore.PGError(err)
 		case enabled:
 			return domain.ErrAlreadyExists
 		}
@@ -112,10 +113,10 @@ func (r TwoFactor) Enable(userID string, secretEnc []byte, step int64, codeHashe
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO user_recovery_codes(id, user_id, code_hash) VALUES($1, $2, $3)`,
 			domain.NewID(), userID, h); err != nil {
-			return pgError(err)
+			return pgstore.PGError(err)
 		}
 	}
-	return pgError(tx.Commit(ctx))
+	return pgstore.PGError(tx.Commit(ctx))
 }
 
 // attemptSQL es el UPDATE atómico de D9. Lee y escribe la fila bajo su lock de
@@ -145,14 +146,14 @@ func (r TwoFactor) BeginAttempt(userID string) (domain.TwoFactorAttempt, error) 
 		return att, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		return domain.TwoFactorAttempt{}, pgError(err)
+		return domain.TwoFactorAttempt{}, pgstore.PGError(err)
 	}
 	// Ninguna fila actualizada: o está bloqueado o no hay 2FA activo.
 	var locked bool
 	if err := r.Pool.QueryRow(ctx,
 		`SELECT EXISTS (SELECT 1 FROM user_totp WHERE user_id=$1 AND enabled = true AND locked_until > now())`,
 		userID).Scan(&locked); err != nil {
-		return domain.TwoFactorAttempt{}, pgError(err)
+		return domain.TwoFactorAttempt{}, pgstore.PGError(err)
 	}
 	if locked {
 		return domain.TwoFactorAttempt{}, domain.ErrTooManyAttempts
@@ -169,7 +170,7 @@ func (r TwoFactor) CompleteStep(userID string, step int64) (bool, error) {
 		`UPDATE user_totp SET last_step = $2, failed_count = 0, locked_until = NULL
 		 WHERE user_id = $1 AND enabled = true AND last_step < $2`, userID, step)
 	if err != nil {
-		return false, pgError(err)
+		return false, pgstore.PGError(err)
 	}
 	return tag.RowsAffected() == 1, nil
 }
@@ -188,31 +189,31 @@ func (r TwoFactor) UseRecoveryCode(userID, codeHash string) (bool, error) {
 		 UPDATE user_totp SET failed_count = 0, locked_until = NULL
 		 WHERE user_id = $1 AND EXISTS (SELECT 1 FROM used)`, userID, codeHash)
 	if err != nil {
-		return false, pgError(err)
+		return false, pgstore.PGError(err)
 	}
 	return tag.RowsAffected() == 1, nil
 }
 
 // Disable borra los códigos y el secreto en UNA transacción.
 func (r TwoFactor) Disable(userID string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 	if _, err := tx.Exec(ctx, `DELETE FROM user_recovery_codes WHERE user_id=$1`, userID); err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	tag, err := tx.Exec(ctx, `DELETE FROM user_totp WHERE user_id=$1`, userID)
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
 	}
-	return pgError(tx.Commit(ctx))
+	return pgstore.PGError(tx.Commit(ctx))
 }
 
 var _ ports.TwoFactorRepository = TwoFactor{}

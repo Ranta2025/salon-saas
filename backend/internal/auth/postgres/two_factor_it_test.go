@@ -3,7 +3,7 @@
 // dos veces sin tocar datos previos, cada CHECK/FK/UNIQUE, y que cada operación
 // del adaptador haga lo que dice su sentencia SQL (UPDATE atómico del intento,
 // `last_step < paso`, `used_at IS NULL`, transacciones de enable y disable).
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 const (
@@ -31,10 +32,10 @@ type tfFix struct {
 
 func tfFixtures(t *testing.T) *tfFix {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
 	ctx := context.Background()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 	for _, q := range []string{
 		`DELETE FROM users WHERE id LIKE 'u-it-tf%'`,
 		`INSERT INTO users(id,name,email,pass_hash) VALUES('u-it-tf','Tefe Uno','tf-it-1@test.com','x')`,

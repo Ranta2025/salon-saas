@@ -20,6 +20,7 @@ import (
 	audithttpapi "salon-saas/internal/audit/httpapi"
 	"salon-saas/internal/auth"
 	authhttpapi "salon-saas/internal/auth/httpapi"
+	authpostgres "salon-saas/internal/auth/postgres"
 	"salon-saas/internal/auth/security"
 	"salon-saas/internal/bookings"
 	bookingspostgres "salon-saas/internal/bookings/postgres"
@@ -256,8 +257,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	// autenticada (`SELECT password_changed_at FROM users WHERE id=$1`); un fallo
 	// falla CERRADO (401). Los repositorios de restablecer/verificar email guardan
 	// SOLO el SHA-256 del token (migración 036).
-	recoveryRepo := pgstore.AccountRecovery{Pool: pool}
-	sessionGate := pgstore.SessionGate{Pool: pool}
+	recoveryRepo := authpostgres.AccountRecovery{Pool: pool}
+	sessionGate := authpostgres.SessionGate{Pool: pool}
 	tenSvc := team.TenantService{Salons: salons, Memberships: mems}
 	bookingRepo := bookingspostgres.Bookings{Pool: pool}
 	salesRepo := pgstore.Sales{Pool: pool}
@@ -379,7 +380,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 		log.Fatalf("2fa: %v", err)
 	}
 	twoFactorSvc := auth.TwoFactorService{
-		Repo: pgstore.TwoFactor{Pool: pool}, Users: users, Hasher: hasher, Tokens: tokens,
+		Repo: authpostgres.TwoFactor{Pool: pool}, Users: users, Hasher: hasher, Tokens: tokens,
 		Challenges: tokens, Box: totpBox, Memberships: mems, Audit: auditSvc,
 		// F15 D4: un desafío emitido antes del último cambio de contraseña no se
 		// canjea (el 2FA no se toca, pero el reinicio mata lo que estaba a medias).

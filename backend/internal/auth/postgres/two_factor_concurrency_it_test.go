@@ -3,7 +3,7 @@
 // de bloqueo del UPDATE de BeginAttempt, sin el `last_step < paso` o sin el
 // `used_at IS NULL`, pedidos simultáneos pasarían de 5 verificaciones o se
 // llevarían el mismo código dos veces.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/audit"
 	"salon-saas/internal/auth"
 	"salon-saas/internal/auth/security"
@@ -94,9 +95,9 @@ func tfStackFor(t *testing.T) *tfStack {
 	cnt := &countingRepo{TwoFactorRepository: f.repo}
 	jwtIssuer := security.JWTIssuer{Secret: "jwt-secret-de-prueba-it"}
 	svc := auth.TwoFactorService{
-		Repo: cnt, Users: Users{Pool: pool}, Hasher: security.BcryptHasher{Cost: bcrypt.MinCost},
-		Tokens: jwtIssuer, Challenges: jwtIssuer, Box: box, Memberships: Memberships{Pool: pool},
-		Audit: audit.AuditService{Events: Audit{Pool: pool}, Users: Users{Pool: pool}},
+		Repo: cnt, Users: pgstore.Users{Pool: pool}, Hasher: security.BcryptHasher{Cost: bcrypt.MinCost},
+		Tokens: jwtIssuer, Challenges: jwtIssuer, Box: box, Memberships: pgstore.Memberships{Pool: pool},
+		Audit: audit.AuditService{Events: pgstore.Audit{Pool: pool}, Users: pgstore.Users{Pool: pool}},
 	}
 	return &tfStack{tfFix: f, svc: svc, counter: cnt, box: box, pass: "clave-secreta-1"}
 }

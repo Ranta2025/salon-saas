@@ -3,7 +3,7 @@
 // SOLO se prueba contra la DB: la migración 036 dos veces con md5 y relleno,
 // cada CHECK/FK/UNIQUE a mano, y que cada operación del adaptador haga lo que
 // dice su sentencia SQL.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -15,9 +15,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/auth"
 	"salon-saas/internal/auth/security"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 const (
@@ -34,10 +36,10 @@ type f15Fix struct {
 
 func f15Fixtures(t *testing.T) *f15Fix {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
 	ctx := context.Background()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 	clean := func() {
 		for _, q := range []string{
 			`DELETE FROM memberships WHERE user_id LIKE 'u-f15-%'`,
@@ -110,7 +112,7 @@ func (f *f15Fix) reset(t *testing.T, user string, created time.Time) (token stri
 // corrida anterior antes de crear.
 func migFreshDBPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	base := itPool(t) // saltea sin SALON_IT=1
+	base := itdb.Pool(t) // saltea sin SALON_IT=1
 	ctx := context.Background()
 	t.Cleanup(base.Close)
 	const name = "salon_f15_mig"
@@ -340,7 +342,7 @@ func TestF15_constraints(t *testing.T) {
 // registro abierto).
 func TestF15_usersRoundTripEmailVerifiedAt(t *testing.T) {
 	f := f15Fixtures(t)
-	users := Users{Pool: f.pool}
+	users := pgstore.Users{Pool: f.pool}
 	u, _ := domain.NewUser("Nuevo", "f15-nuevo@test.com", "h")
 	u.ID = "u-f15-nuevo"
 	if err := users.Save(u); err != nil {
@@ -556,7 +558,7 @@ func TestF15_ConsumeReset_leavesTwoFactorAloneAndLoginStillAsksForTheCode(t *tes
 	jwtIss := security.JWTIssuer{Secret: "test-secret"}
 	box, _ := domain.NewTOTPSecretBox("test-secret")
 	auth := auth.AuthService{
-		Users: Users{Pool: f.pool}, Hasher: hasher, Tokens: jwtIss,
+		Users: pgstore.Users{Pool: f.pool}, Hasher: hasher, Tokens: jwtIss,
 		TwoFactor: auth.TwoFactorService{Repo: tf, Challenges: jwtIss, Box: box},
 	}
 	res, err := auth.Authenticate("f15-ana@test.com", "claveNueva1")
@@ -680,7 +682,7 @@ func TestF15_SessionGate(t *testing.T) {
 
 func f15ClosedPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	p := itPool(t)
+	p := itdb.Pool(t)
 	p.Close()
 	return p
 }
