@@ -351,6 +351,10 @@ func scanPayrollLine(row interface{ Scan(dest ...any) error }) (domain.PayrollLi
 // dateOf formatea una DATE de Postgres como la fecha local del contrato.
 func dateOf(t time.Time) string { return t.Format("2006-01-02") }
 
+// DateOf es la versión exportada de dateOf para los adaptadores que ya viven en
+// su módulo por funcionalidad (`internal/<feature>/postgres`).
+func DateOf(t time.Time) string { return dateOf(t) }
+
 // bigintToIntSigned es bigintToInt para columnas que pueden ser negativas (el
 // ajuste).
 func bigintToIntSigned(v int64, what string) (int, error) {

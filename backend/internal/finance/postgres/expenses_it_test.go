@@ -5,7 +5,7 @@
 // Lo que SOLO se prueba contra la DB: los CHECK y las FK de la migración 026, el
 // scope por salón en las cuatro operaciones, el orden y el tope del listado, y
 // que las lecturas concurrentes con altas y borrados no fallen.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -18,17 +18,19 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // expensesFixtures deja tres salones limpios: el principal, uno de OTRO tenant y
 // uno sin movimientos. Ids fijos para que el test sea re-ejecutable.
 func expensesFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
 	ctx := context.Background()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 
 	// Los dos fixtures de F3b (gastos y ganancia) comparten la limpieza: el
 	// reporte inserta gastos, así que borrar los salones primero (cascade) deja a
@@ -53,7 +55,7 @@ func expensesFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 			t.Fatalf("fixture: %v", err)
 		}
 	}
-	mems := Memberships{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
 	for _, m := range []domain.Membership{
 		{UserID: "u-it-exp-owner", SalonID: "s-it-exp", Role: domain.RoleOwner},
 		{UserID: "u-it-exp-otro", SalonID: "s-it-exp2", Role: domain.RoleOwner},

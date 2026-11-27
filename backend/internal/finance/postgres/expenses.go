@@ -4,13 +4,14 @@
 // lista, no se encuentra, no se edita y no se borra (ErrNotFound -> 404 «Gasto no
 // encontrado»). El gasto guarda un DÍA LOCAL (`spent_on DATE`): no depende de la
 // zona horaria y el adaptador no la toca.
-package pgstore
+package postgres
 
 import (
 	"context"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -33,7 +34,7 @@ func (r Expenses) Save(e domain.Expense) error {
 		 VALUES($1,$2,$3,$4,$5::date,$6,NULLIF($7,''),$8)`,
 		e.ID, e.SalonID, string(e.Category), e.AmountCents, e.SpentOn, e.Description,
 		e.CreatedBy, e.CreatedAt)
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // ListRange trae hasta limit gastos del salón con spent_on en [from, to]
@@ -77,7 +78,7 @@ func (r Expenses) FindByID(salonID, id string) (domain.Expense, error) {
 		`SELECT`+expenseColumns+` FROM expenses WHERE id=$1 AND salon_id=$2`, id, salonID)
 	e, err := scanExpense(row)
 	if err != nil {
-		return domain.Expense{}, notFound(err)
+		return domain.Expense{}, pgstore.NotFound(err)
 	}
 	return e, nil
 }
@@ -91,7 +92,7 @@ func (r Expenses) Update(e domain.Expense) error {
 		 WHERE id=$1 AND salon_id=$2`,
 		e.ID, e.SalonID, string(e.Category), e.AmountCents, e.SpentOn, e.Description)
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
@@ -105,7 +106,7 @@ func (r Expenses) Delete(salonID, id string) error {
 	tag, err := r.Pool.Exec(context.Background(),
 		`DELETE FROM expenses WHERE id=$1 AND salon_id=$2`, id, salonID)
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
@@ -123,7 +124,7 @@ func scanExpense(row interface{ Scan(dest ...any) error }) (domain.Expense, erro
 		return domain.Expense{}, err
 	}
 	e.Category = domain.ExpenseCategory(category)
-	e.SpentOn = dateOf(spentOn)
+	e.SpentOn = pgstore.DateOf(spentOn)
 	e.CreatedAt = e.CreatedAt.UTC()
 	return e, nil
 }

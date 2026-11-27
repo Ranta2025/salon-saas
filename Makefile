@@ -43,7 +43,7 @@ test:
 # Integración real contra Postgres: requiere DATABASE_URL a una base con las
 # migraciones aplicadas y SALON_IT=1 (ver README).
 test-it:
-	cd backend && SALON_IT=1 go test -count=1 ./internal/adapters/postgres/ ./internal/loyalty/postgres/ ./internal/exports/postgres/ ./internal/notifications/postgres/
+	cd backend && SALON_IT=1 go test -count=1 ./internal/adapters/postgres/ ./internal/loyalty/postgres/ ./internal/exports/postgres/ ./internal/notifications/postgres/ ./internal/finance/postgres/
 
 lint:
 	cd backend && go vet ./...

@@ -10,7 +10,7 @@
 // El día es el LOCAL del salón (`AT TIME ZONE $2`), nunca UTC: la ventana es
 // [from, to), las medianoches locales que derivó el dominio con time.Date, así
 // que los días de 23 y 25 horas de los cambios de horario entran enteros.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -32,7 +33,7 @@ type Profit struct {
 // DailyProfit devuelve los montos por día local y el total por categoría de los
 // gastos del período. Ver el comentario del paquete: una sola transacción.
 func (r Profit) DailyProfit(salonID, timezone string, from, to time.Time) (domain.ProfitData, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.BeginTx(ctx, pgx.TxOptions{
 		IsoLevel:   pgx.RepeatableRead,
@@ -41,7 +42,7 @@ func (r Profit) DailyProfit(salonID, timezone string, from, to time.Time) (domai
 	if err != nil {
 		return domain.ProfitData{}, err
 	}
-	defer rollbackTx(tx) // no-op si ya commiteó
+	defer pgstore.RollbackTx(tx) // no-op si ya commiteó
 
 	data := domain.ProfitData{
 		RevenueByDay:  map[string]int{},
@@ -81,7 +82,7 @@ func (r Profit) DailyProfit(salonID, timezone string, from, to time.Time) (domai
 }
 
 // dailyTotals corre la query de un componente y llena el mapa día -> centavos.
-func dailyTotals(ctx context.Context, q querier, out *map[string]int,
+func dailyTotals(ctx context.Context, q pgstore.Querier, out *map[string]int,
 	query, salonID, timezone string, from, to time.Time) error {
 	rows, err := q.Query(ctx, query, salonID, timezone, from.UTC(), to.UTC())
 	if err != nil {
@@ -94,18 +95,18 @@ func dailyTotals(ctx context.Context, q querier, out *map[string]int,
 		if err := rows.Scan(&day, &total); err != nil {
 			return err
 		}
-		cents, err := bigintToInt(total, "el total del día")
+		cents, err := pgstore.BigintToInt(total, "el total del día")
 		if err != nil {
 			return err
 		}
-		(*out)[dateOf(day)] = cents
+		(*out)[pgstore.DateOf(day)] = cents
 	}
 	return rows.Err()
 }
 
 // expenseTotals llena el total por día y el desglose por categoría con UNA sola
 // lectura de gastos agrupada por (día, categoría).
-func expenseTotals(ctx context.Context, q querier, data *domain.ProfitData,
+func expenseTotals(ctx context.Context, q pgstore.Querier, data *domain.ProfitData,
 	salonID, timezone string, from, to time.Time) error {
 	rows, err := q.Query(ctx,
 		`SELECT e.spent_on, e.category, SUM(e.amount_cents)::bigint
@@ -127,11 +128,11 @@ func expenseTotals(ctx context.Context, q querier, data *domain.ProfitData,
 		if err := rows.Scan(&day, &category, &total); err != nil {
 			return err
 		}
-		cents, err := bigintToInt(total, "el total del día")
+		cents, err := pgstore.BigintToInt(total, "el total del día")
 		if err != nil {
 			return err
 		}
-		date := dateOf(day)
+		date := pgstore.DateOf(day)
 		data.ExpensesByDay[date] += cents
 		byCategory[domain.ExpenseCategory(category)] += cents
 	}

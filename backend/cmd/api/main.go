@@ -29,6 +29,7 @@ import (
 	"salon-saas/internal/exports"
 	exportsstore "salon-saas/internal/exports/postgres"
 	"salon-saas/internal/finance"
+	financestore "salon-saas/internal/finance/postgres"
 	"salon-saas/internal/loyalty"
 	loyaltystore "salon-saas/internal/loyalty/postgres"
 	notifsvc "salon-saas/internal/notifications"
@@ -254,8 +255,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	payrollRunsRepo := pgstore.PayrollRuns{Pool: pool}
 	// F3b: gastos (migración 026) y el reporte de ganancia neta, que lee ingresos,
 	// gastos y nómina PAGADA en UNA sola transacción REPEATABLE READ de lectura.
-	expenseRepo := pgstore.Expenses{Pool: pool}
-	profitRepo := pgstore.Profit{Pool: pool}
+	expenseRepo := financestore.Expenses{Pool: pool}
+	profitRepo := financestore.Profit{Pool: pool}
 	// F4: lecturas masivas del export (ventas con el nombre del profesional y la
 	// suma de ítems, cierres por closed_at y clientes por nombre), una sentencia
 	// SQL por archivo y con LIMIT.

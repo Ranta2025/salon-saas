@@ -96,7 +96,7 @@ jobs:
           done
 
       - name: Tests de integración
-        run: SALON_IT=1 go test -count=1 ./internal/adapters/postgres/ ./internal/loyalty/postgres/ ./internal/exports/postgres/ ./internal/notifications/postgres/
+        run: SALON_IT=1 go test -count=1 ./internal/adapters/postgres/ ./internal/loyalty/postgres/ ./internal/exports/postgres/ ./internal/notifications/postgres/ ./internal/finance/postgres/
 
   # ─── Frontend: typecheck + tests + build de producción ─────────────────────
   frontend:

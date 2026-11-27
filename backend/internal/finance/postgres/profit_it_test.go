@@ -9,7 +9,7 @@
 // liquidación ABIERTA no sume y al pagarse sume en el día de `paid_at`, el salón
 // sin movimientos (ceros, no un 500), el aislamiento por tenant y las lecturas
 // concurrentes con altas y borrados de gastos.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -18,17 +18,19 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // profitFixtures deja los salones del reporte limpios: uno en Nueva York, uno en
 // Auckland, uno sin movimientos y uno de OTRO tenant.
 func profitFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
 	ctx := context.Background()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 
 	// Misma limpieza compartida que expensesFixtures: los salones primero (el
 	// cascade se lleva ventas, gastos y liquidaciones) y después las cuentas.
@@ -52,7 +54,7 @@ func profitFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 			t.Fatalf("fixture: %v", err)
 		}
 	}
-	mems := Memberships{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
 	for _, m := range []domain.Membership{
 		{UserID: "u-it-profit-owner", SalonID: "s-it-profit-ny", Role: domain.RoleOwner},
 		{UserID: "u-it-profit-owner", SalonID: "s-it-profit-auck", Role: domain.RoleOwner},
