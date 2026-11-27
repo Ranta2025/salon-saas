@@ -954,3 +954,46 @@ func TestDepositsIT_bankEventIndexIsTheGuard(t *testing.T) {
 		}
 	}
 }
+
+// F11 native review R4-RETRY-CANCELLED / R4-COMPENSATION: cancelling a booking and
+// freeing its idempotency key is ONE statement and only applies to a BOOKED
+// booking of that salon.
+func TestBookingsIT_cancelReleasingClientOpIsAtomicAndScoped(t *testing.T) {
+	f := depFixtures(t)
+	bookings := Bookings{Pool: f.pool}
+	start := time.Now().UTC().Add(48 * time.Hour)
+
+	booked := f.booking(t, depSalon, domain.BookingBooked, start)
+	done := f.booking(t, depSalon, domain.BookingDone, start.Add(24*time.Hour))
+	other := f.booking(t, depSalon2, domain.BookingBooked, start)
+	for id, op := range map[string]string{booked: "op-rel-1", done: "op-rel-2", other: "op-rel-3"} {
+		if _, err := f.pool.Exec(f.ctx, `UPDATE bookings SET client_op_id=$2 WHERE id=$1`, id, op); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := bookings.CancelBookingReleasingClientOp(depSalon, booked); err != nil {
+		t.Fatalf("cancelar y soltar la agendada: %v", err)
+	}
+	var status string
+	if err := f.pool.QueryRow(f.ctx, `SELECT status FROM bookings WHERE id=$1`, booked).Scan(&status); err != nil || status != "cancelled" {
+		t.Fatalf("la agendada queda cancelada: %q %v", status, err)
+	}
+	if _, err := bookings.FindByClientOpID(depSalon, "op-rel-1"); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("su clave queda libre: %v", err)
+	}
+	// Una atendida (done) ni se cancela ni suelta su clave.
+	if err := bookings.CancelBookingReleasingClientOp(depSalon, done); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := bookings.FindByClientOpID(depSalon, "op-rel-2"); err != nil || got.ID != done || got.Status != domain.BookingDone {
+		t.Fatalf("la atendida no se toca: %+v %v", got, err)
+	}
+	// Otro salón: nunca.
+	if err := bookings.CancelBookingReleasingClientOp(depSalon, other); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := bookings.FindByClientOpID(depSalon2, "op-rel-3"); err != nil || got.ID != other || got.Status != domain.BookingBooked {
+		t.Fatalf("la reserva de otro salón no se toca: %+v %v", got, err)
+	}
+}

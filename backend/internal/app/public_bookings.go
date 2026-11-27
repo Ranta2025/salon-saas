@@ -136,7 +136,7 @@ func (s PublicBookingService) book(slug string, in PublicBookingInput, out *depo
 			// F11/D8: el mismo client_op_id devuelve el MISMO payment (un solo
 			// cargo). Es una LECTURA: si no hay seña no se crea nada acá.
 			if out != nil {
-				out.payment = s.replayPayment(salon.ID, existing.ID)
+				out.payment = s.replayPayment(salon.ID, existing)
 			}
 			return existing, nil
 		}
@@ -307,7 +307,7 @@ func (s PublicBookingService) book(slug string, in PublicBookingInput, out *depo
 		if opID != "" {
 			if existing, rerr := s.Bookings.FindByClientOpID(salon.ID, opID); rerr == nil {
 				if out != nil {
-					out.payment = s.replayPayment(salon.ID, existing.ID)
+					out.payment = s.replayPayment(salon.ID, existing)
 				}
 				return existing, nil
 			}
@@ -417,14 +417,28 @@ func (s PublicBookingService) createDeposit(salonID string, b domain.Booking, se
 	}, nil
 }
 
-// replayPayment devuelve la seña YA creada de un turno, si existe (D8: el
-// reintento devuelve el MISMO payment). Es solo lectura: con PriceCents 0 el
-// caso de uso no crea ningún cargo.
-func (s PublicBookingService) replayPayment(salonID, bookingID string) *PublicPayment {
+// depositHealWindow acota cuándo un reintento puede CREAR la seña de un turno
+// agendado que no la tiene: solo el rastro de un fallo reciente (el cargo falló y la
+// compensación no llegó a cancelar el turno). Un turno viejo, de antes de activar la
+// política, nunca recibe una seña retroactiva.
+const depositHealWindow = 30 * time.Minute
+
+// replayPayment devuelve la seña de un turno en un reintento (D8: el MISMO payment).
+// Si el turno sigue agendado, es reciente y no tiene seña, la CREA con el precio real
+// (idempotente por turno): nunca se devuelve gratis una reserva cuyo cargo falló y
+// cuya compensación también (F11 native review R4-COMPENSATION). En cualquier otro
+// caso es solo lectura (PriceCents 0 no crea ningún cargo).
+func (s PublicBookingService) replayPayment(salonID string, b domain.Booking) *PublicPayment {
 	if s.Deposits == nil {
 		return nil
 	}
-	deposit, err := s.Deposits.CreateForBooking(domain.DepositOrder{SalonID: salonID, BookingID: bookingID})
+	order := domain.DepositOrder{SalonID: salonID, BookingID: b.ID}
+	if b.Status == domain.BookingBooked && b.ServiceID != "" && time.Since(b.CreatedAt) <= depositHealWindow {
+		if svc, err := s.Services.FindByID(salonID, b.ServiceID); err == nil {
+			order.PriceCents, order.ClientOpID, order.Description = svc.PriceCents, b.ClientOpID, svc.Name
+		}
+	}
+	deposit, err := s.Deposits.CreateForBooking(order)
 	if err != nil || deposit == nil {
 		return nil
 	}
@@ -437,10 +451,19 @@ func (s PublicBookingService) replayPayment(salonID, bookingID string) *PublicPa
 	}
 }
 
-// cancelDepositBooking deshace el turno cuando el cargo no se pudo crear: la
-// MISMA regla del panel (SetStatus(cancelled)) y el MISMO repositorio, que toma
-// el lock `booking-write:<salón>`. Best-effort: el error del cargo manda.
+// cancelDepositBooking deshace el turno cuando el cargo no se pudo crear. Con el
+// adaptador real lo cancela Y suelta su client_op_id en UN solo paso (si fallara,
+// el turno sigue agendado sin seña y el reintento crea la seña: replayPayment); sin
+// esa capacidad usa la MISMA regla del panel (SetStatus(cancelled)) y el MISMO
+// repositorio. Best-effort: el error del cargo manda (F11 native review
+// R4-RETRY-CANCELLED y R4-COMPENSATION).
 func (s PublicBookingService) cancelDepositBooking(b domain.Booking) {
+	if atomic, ok := s.Bookings.(cancelReleaser); ok {
+		if err := atomic.CancelBookingReleasingClientOp(b.SalonID, b.ID); err != nil {
+			log.Printf("reserva pública: cancelar el turno %s del salón %s sin seña: %v", b.ID, b.SalonID, err)
+		}
+		return
+	}
 	cancelled, err := b.SetStatus(domain.BookingCancelled)
 	if err != nil {
 		return
@@ -448,6 +471,13 @@ func (s PublicBookingService) cancelDepositBooking(b domain.Booking) {
 	if err := s.Bookings.Update(cancelled); err != nil {
 		log.Printf("reserva pública: cancelar el turno %s del salón %s sin seña: %v", b.ID, b.SalonID, err)
 	}
+}
+
+// cancelReleaser is the OPTIONAL capability of a booking repository to cancel a
+// booking and free its idempotency key atomically (not part of the shared port, so
+// no other implementation or fake has to change).
+type cancelReleaser interface {
+	CancelBookingReleasingClientOp(salonID, bookingID string) error
 }
 
 // upsertClient deja la ficha del visitante en el salón de la reserva. Busca

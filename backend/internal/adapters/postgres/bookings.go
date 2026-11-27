@@ -158,6 +158,22 @@ func updateBooking(q querier, b domain.Booking) error {
 	return nil
 }
 
+// CancelBookingReleasingClientOp cancels a BOOKED booking and frees its idempotency
+// key in ONE statement, so a retry with the same key creates a fresh booking
+// instead of getting the cancelled one back as a success (F11 native review
+// R4-RETRY-CANCELLED, R4-COMPENSATION: either both happen or neither does). It is an
+// optional capability used by the public booking flow when the deposit charge could
+// not be created; a booking that is not `booked`, or another salon's, is never touched.
+func (r Bookings) CancelBookingReleasingClientOp(salonID, bookingID string) error {
+	return r.inWriteLock(salonID, func(q querier) error {
+		_, err := q.Exec(context.Background(),
+			`UPDATE bookings SET status='cancelled', client_op_id=''
+			 WHERE salon_id=$1 AND id=$2 AND status='booked'`,
+			salonID, bookingID)
+		return bookingWriteError(err)
+	})
+}
+
 func (r Bookings) FindOverlapping(salonID, professionalID string, start, end time.Time) ([]domain.Booking, error) {
 	return findOverlapping(r.Pool, salonID, professionalID, start, end)
 }

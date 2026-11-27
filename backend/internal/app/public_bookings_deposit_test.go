@@ -192,3 +192,100 @@ func TestBookWithDeposit_fallaElCargoCancelaLaReserva(t *testing.T) {
 		t.Fatalf("sin pago no hay confirmación: %d", n)
 	}
 }
+
+// atomicCancelBookings adds the OPTIONAL adapter capability the service uses to
+// cancel a booking AND free its idempotency key in ONE step when the deposit
+// charge could not be created (F11 native review R4-RETRY-CANCELLED and
+// R4-COMPENSATION). It wraps the shared fake `fb`.
+type atomicCancelBookings struct{ *fb }
+
+func (r *atomicCancelBookings) CancelBookingReleasingClientOp(salonID, bookingID string) error {
+	for i := range r.fb.all {
+		b := r.fb.all[i]
+		if b.SalonID == salonID && b.ID == bookingID && b.Status == domain.BookingBooked {
+			b.Status = domain.BookingCancelled
+			b.ClientOpID = ""
+			r.fb.all[i] = b
+		}
+	}
+	return nil
+}
+
+// A retry with the SAME client_op_id after a failed charge must not get the
+// cancelled booking back as a 201: it is a fresh attempt that holds the slot again
+// and returns its payment.
+func TestBookWithDeposit_reintentoTrasFallaDelCargoEsUnaReservaNueva(t *testing.T) {
+	creator := newFakeDepositCreator(30)
+	creator.fail = errors.New("banco caído")
+	env, mailer := depPublicEnv(t, creator)
+	env.book.Bookings = &atomicCancelBookings{fb: env.bookings}
+
+	if _, _, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-retry")); err == nil {
+		t.Fatal("el primer intento debía fallar por el cargo")
+	}
+	first := env.bookings.all[0]
+	if first.Status != domain.BookingCancelled || first.ClientOpID != "" {
+		t.Fatalf("el turno sin cargo se cancela y suelta su clave: %+v", first)
+	}
+
+	creator.fail = nil
+	b, payment, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-retry"))
+	if err != nil {
+		t.Fatalf("el reintento debe poder reservar de nuevo: %v", err)
+	}
+	if b.ID == first.ID || b.Status != domain.BookingBooked {
+		t.Fatalf("tiene que ser un turno NUEVO y agendado, no el cancelado: %+v", b)
+	}
+	if payment == nil || payment.AmountCents <= 0 {
+		t.Fatalf("el reintento devuelve su seña: %+v", payment)
+	}
+	if n := mailer.count(); n != 0 {
+		t.Fatalf("la confirmación sigue esperando al pago: %d", n)
+	}
+	// Un reintento más de la MISMA clave ya devuelve el turno nuevo y la misma seña.
+	again, payment2, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-retry"))
+	if err != nil || again.ID != b.ID || payment2 == nil || payment2.DepositID != payment.DepositID {
+		t.Fatalf("el segundo reintento repite el mismo turno y la misma seña: %+v %+v %v", again, payment2, err)
+	}
+}
+
+// failingUpdateBookings makes the compensation fail (the database is down for the
+// cancel): the booking stays `booked` with no deposit.
+type failingUpdateBookings struct{ *fb }
+
+func (r *failingUpdateBookings) Update(domain.Booking) error {
+	return errors.New("la base no responde")
+}
+
+// F11 native review R4-COMPENSATION: if the charge creation AND the compensation
+// both fail, the booking stays booked with no deposit. The retry with the same key
+// must create the deposit now (idempotent by booking), never return a free booking.
+func TestBookWithDeposit_reintentoSanaUnaReservaSinSena(t *testing.T) {
+	creator := newFakeDepositCreator(30)
+	creator.fail = errors.New("banco caído")
+	env, mailer := depPublicEnv(t, creator)
+	env.book.Bookings = &failingUpdateBookings{fb: env.bookings}
+
+	if _, _, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-sana")); err == nil {
+		t.Fatal("el primer intento debía fallar por el cargo")
+	}
+	first := env.bookings.all[0]
+	if first.Status != domain.BookingBooked {
+		t.Fatalf("precondición: la compensación falló y el turno sigue agendado: %q", first.Status)
+	}
+
+	creator.fail = nil
+	b, payment, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-sana"))
+	if err != nil {
+		t.Fatalf("el reintento: %v", err)
+	}
+	if b.ID != first.ID {
+		t.Fatalf("es la MISMA reserva: %s != %s", b.ID, first.ID)
+	}
+	if payment == nil || payment.AmountCents <= 0 {
+		t.Fatalf("una reserva agendada sin seña no se devuelve gratis: %+v", payment)
+	}
+	if n := mailer.count(); n != 0 {
+		t.Fatalf("la confirmación espera al pago: %d", n)
+	}
+}
