@@ -1,4 +1,4 @@
-package app
+package notifications
 
 import (
 	"errors"
@@ -7,6 +7,7 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil"
 )
 
 // fakeNotifications imita a pgstore.Notifications: scoping por salón, avisos
@@ -62,56 +63,14 @@ func (f *fakeNotifications) UnreadCount(salonID, userID string) (int, error) {
 
 var _ ports.NotificationRepository = (*fakeNotifications)(nil)
 
-// fakeEvents guarda lo publicado: los casos de uso no saben que hay websockets.
-type fakeEvents struct{ all []ports.Event }
-
-func (f *fakeEvents) Publish(ev ports.Event) error { f.all = append(f.all, ev); return nil }
-
-// typed cuenta los eventos de un tipo y devuelve el último.
-func (f *fakeEvents) typed(t string) (ports.Event, int) {
-	var last ports.Event
-	n := 0
-	for _, ev := range f.all {
-		if ev.Type == t {
-			last, n = ev, n+1
-		}
-	}
-	return last, n
-}
-
-var _ ports.EventPublisher = (*fakeEvents)(nil)
-
-// fakeNotifier registra los avisos que los casos de uso piden crear.
-type fakeNotifier struct {
-	calls  int
-	bodies []string
-}
-
-func (f *fakeNotifier) Create(salonID, userID, title, body string, kind domain.NotificationKind) (domain.Notification, error) {
-	f.calls++
-	f.bodies = append(f.bodies, body)
-	return domain.NewNotification(salonID, userID, title, body, kind)
-}
-
-// lastBody es el texto del último aviso: los tests de la hora local miran el
-// texto que ve la persona, no el evento.
-func (f *fakeNotifier) lastBody() string {
-	if len(f.bodies) == 0 {
-		return ""
-	}
-	return f.bodies[len(f.bodies)-1]
-}
-
-var _ Notifier = (*fakeNotifier)(nil)
-
-func notificationRecep(m *fakeMemberships, salonID string) domain.Membership {
-	return miembro(m, "u-recep", salonID, domain.RoleReception)
+func notificationRecep(m *testutil.FakeMemberships, salonID string) domain.Membership {
+	return testutil.Miembro(m, "u-recep", salonID, domain.RoleReception)
 }
 
 func TestNotificationService_create_persiste_y_publica_notify(t *testing.T) {
 	reps := &fakeNotifications{}
-	events := &fakeEvents{}
-	svc := NotificationService{Notifications: reps, Salons: &fakeMemberships{}, Events: events}
+	events := &testutil.FakeEvents{}
+	svc := NotificationService{Notifications: reps, Salons: &testutil.FakeMemberships{}, Events: events}
 
 	n, err := svc.Create("s1", "", "Cierre de caja", "faltante de $200", domain.KindCash)
 	if err != nil {
@@ -123,9 +82,9 @@ func TestNotificationService_create_persiste_y_publica_notify(t *testing.T) {
 	if n.Read() {
 		t.Fatal("un aviso nuevo nace no leído")
 	}
-	ev, count := events.typed("notify")
+	ev, count := events.Typed("notify")
 	if count != 1 {
-		t.Fatalf("esperaba 1 evento notify, dio %d (%+v)", count, events.all)
+		t.Fatalf("esperaba 1 evento notify, dio %d (%+v)", count, events.All)
 	}
 	if ev.SalonID != "s1" || ev.TS.IsZero() {
 		t.Fatalf("evento notify sin salón/ts: %+v", ev)
@@ -138,21 +97,21 @@ func TestNotificationService_create_persiste_y_publica_notify(t *testing.T) {
 
 func TestNotificationService_create_invalido_no_persiste(t *testing.T) {
 	reps := &fakeNotifications{}
-	events := &fakeEvents{}
-	svc := NotificationService{Notifications: reps, Salons: &fakeMemberships{}, Events: events}
+	events := &testutil.FakeEvents{}
+	svc := NotificationService{Notifications: reps, Salons: &testutil.FakeMemberships{}, Events: events}
 
 	if _, err := svc.Create("s1", "", "  ", "", domain.KindInfo); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("título vacío debe dar ErrValidation, dio %v", err)
 	}
-	if len(reps.all) != 0 || len(events.all) != 0 {
-		t.Fatalf("un aviso inválido no debe persistirse ni publicarse: %+v / %+v", reps.all, events.all)
+	if len(reps.all) != 0 || len(events.All) != 0 {
+		t.Fatalf("un aviso inválido no debe persistirse ni publicarse: %+v / %+v", reps.all, events.All)
 	}
 }
 
 // Sin publisher (tests, herramientas) crear un aviso no puede romper.
 func TestNotificationService_create_sin_publisher(t *testing.T) {
 	reps := &fakeNotifications{}
-	svc := NotificationService{Notifications: reps, Salons: &fakeMemberships{}}
+	svc := NotificationService{Notifications: reps, Salons: &testutil.FakeMemberships{}}
 	if _, err := svc.Create("s1", "", "Aviso", "", domain.KindInfo); err != nil {
 		t.Fatalf("sin publisher debe funcionar igual: %v", err)
 	}
@@ -160,10 +119,10 @@ func TestNotificationService_create_sin_publisher(t *testing.T) {
 
 func TestNotificationService_list_scoped_por_salon(t *testing.T) {
 	reps := &fakeNotifications{}
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	svc := NotificationService{Notifications: reps, Salons: mems}
 	recep := notificationRecep(mems, "s1")
-	_ = miembro(mems, "u-otro", "s2", domain.RoleOwner)
+	_ = testutil.Miembro(mems, "u-otro", "s2", domain.RoleOwner)
 
 	// Un aviso para todo s1, uno para la recepcionista de s1 y uno de otro salón.
 	wide, _ := domain.NewNotification("s1", "", "Para todos", "", domain.KindInfo)
@@ -192,7 +151,7 @@ func TestNotificationService_list_scoped_por_salon(t *testing.T) {
 		t.Fatalf("limit grande debe recortarse a %d, dio %d", maxNotificationLimit, reps.last)
 	}
 	// Un miembro de otro salón no puede leer s1 (403), ni siquiera el owner.
-	ajeno := miembro(mems, "u-otro", "s2", domain.RoleOwner)
+	ajeno := testutil.Miembro(mems, "u-otro", "s2", domain.RoleOwner)
 	if _, err := svc.List(ajeno, "s1", 10); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("otro salón debe dar Forbidden, dio %v", err)
 	}
@@ -200,10 +159,10 @@ func TestNotificationService_list_scoped_por_salon(t *testing.T) {
 
 func TestNotificationService_markread_solo_del_salon(t *testing.T) {
 	reps := &fakeNotifications{}
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	svc := NotificationService{Notifications: reps, Salons: mems}
 	recep := notificationRecep(mems, "s1")
-	_ = miembro(mems, "u-otro", "s2", domain.RoleOwner)
+	_ = testutil.Miembro(mems, "u-otro", "s2", domain.RoleOwner)
 
 	wide, _ := domain.NewNotification("s1", "", "Para todos", "", domain.KindInfo)
 	own, _ := domain.NewNotification("s1", "u-recep", "Para vos", "", domain.KindBooking)
@@ -227,7 +186,7 @@ func TestNotificationService_markread_solo_del_salon(t *testing.T) {
 		t.Fatalf("aviso de otro salón debe dar NotFound, dio %v", err)
 	}
 	// Aviso dirigido a otra persona del mismo salón: tampoco.
-	_ = miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	_ = testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
 	personal, _ := domain.NewNotification("s1", "u-prof", "Solo para el profe", "", domain.KindInfo)
 	_ = reps.Save(personal)
 	if err := svc.MarkRead(recep, personal.ID); !errors.Is(err, domain.ErrNotFound) {
@@ -241,7 +200,7 @@ func TestNotificationService_markread_solo_del_salon(t *testing.T) {
 
 func TestNotificationService_unread_count(t *testing.T) {
 	reps := &fakeNotifications{}
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	svc := NotificationService{Notifications: reps, Salons: mems}
 	recep := notificationRecep(mems, "s1")
 	for _, title := range []string{"uno", "dos"} {
@@ -256,8 +215,29 @@ func TestNotificationService_unread_count(t *testing.T) {
 	if err != nil || n != 2 {
 		t.Fatalf("no leídas: %d %v (esperaba 2)", n, err)
 	}
-	ajeno := miembro(mems, "u-otro", "s2", domain.RoleOwner)
+	ajeno := testutil.Miembro(mems, "u-otro", "s2", domain.RoleOwner)
 	if _, err := svc.UnreadCount(ajeno, "s1"); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("otro salón debe dar Forbidden, dio %v", err)
 	}
+}
+
+// fakeNotifier registra los avisos que los casos de uso piden crear (la copia
+// que usa el paquete: la de app sigue con los casos de uso que quedan allí).
+type fakeNotifier struct {
+	calls  int
+	bodies []string
+}
+
+func (f *fakeNotifier) Create(salonID, userID, title, body string, kind domain.NotificationKind) (domain.Notification, error) {
+	f.calls++
+	f.bodies = append(f.bodies, body)
+	return domain.NewNotification(salonID, userID, title, body, kind)
+}
+
+// lastBody es el texto del último aviso.
+func (f *fakeNotifier) lastBody() string {
+	if len(f.bodies) == 0 {
+		return ""
+	}
+	return f.bodies[len(f.bodies)-1]
 }

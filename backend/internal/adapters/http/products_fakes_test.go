@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/notifications"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/products"
 )
@@ -170,7 +171,7 @@ var _ ports.SaleProductsRepository = (*mproductSales)(nil)
 func newProductsEnv() (*posEnv, *mproducts) {
 	env := newPOSEnv()
 	inv := &mproducts{}
-	notifSvc := app.NotificationService{Notifications: env.notifs, Salons: env.mems, Events: env.events}
+	notifSvc := notifications.NotificationService{Notifications: env.notifs, Salons: env.mems, Events: env.events}
 	saleSvc := app.SaleService{
 		Sales: env.sales, Services: env.services, Memberships: env.mems, Events: env.events,
 		Products: inv, ProductSales: &mproductSales{inv: inv, sales: env.sales}, Notifier: notifSvc,

@@ -16,11 +16,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
 	auditsvc "salon-saas/internal/audit"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/finance"
 	"salon-saas/internal/loyalty"
+	"salon-saas/internal/notifications"
 	"salon-saas/internal/products"
 )
 
@@ -252,7 +252,7 @@ func newAudWorld(t *testing.T) *audWorld {
 	env := newPOSEnv()
 	w := &audWorld{env: env, repo: &maudit{}}
 	// Fakes de gastos, fidelidad y productos montados sobre el mismo posEnv.
-	notifSvc := app.NotificationService{Notifications: env.notifs, Salons: env.mems, Events: env.events}
+	notifSvc := notifications.NotificationService{Notifications: env.notifs, Salons: env.mems, Events: env.events}
 	inv := &mproducts{}
 	env.d.Products = ProductHandler{
 		Products:    products.ProductService{Products: inv, Memberships: env.mems, Events: env.events, Notifier: notifSvc},

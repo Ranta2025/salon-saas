@@ -6,16 +6,16 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/notifications"
 	"salon-saas/internal/ports"
 )
 
 // NotificationHandler: bandeja de avisos del salón. Delgado: carga actor,
 // llama app, serializa con la MISMA forma que el evento `notify` del websocket
-// (app.NotificationPayload), así el frontend parsea lo mismo por donde venga.
+// (notifications.NotificationPayload), así el frontend parsea lo mismo por donde venga.
 type NotificationHandler struct {
-	Notifications app.NotificationService
+	Notifications notifications.NotificationService
 	Memberships   ports.MembershipRepository
 }
 
@@ -49,7 +49,7 @@ func (h NotificationHandler) List(c *gin.Context) {
 	}
 	out := make([]map[string]any, 0, len(list))
 	for _, n := range list {
-		out = append(out, app.NotificationPayload(n))
+		out = append(out, notifications.NotificationPayload(n))
 	}
 	// El contador va en la misma respuesta: el badge del frontend no necesita
 	// otra vuelta a la API (campo extra, aditivo al contrato).

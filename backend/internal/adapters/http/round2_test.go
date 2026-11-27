@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/notifications"
 )
 
 // Contrato ronda 2 (T6). El frontend codifica contra estas formas exactas.
@@ -698,7 +698,7 @@ func TestHTTP_notifications_unread_failure(t *testing.T) {
 
 	d := env.deps()
 	d.Notifications = NotificationHandler{
-		Notifications: app.NotificationService{Notifications: failUnread{inner: env.notifs}, Salons: env.mems, Events: env.events},
+		Notifications: notifications.NotificationService{Notifications: failUnread{inner: env.notifs}, Salons: env.mems, Events: env.events},
 		Memberships:   env.mems,
 	}
 	r := gin.New()

@@ -30,6 +30,7 @@ import (
 	"salon-saas/internal/finance"
 	"salon-saas/internal/loyalty"
 	loyaltystore "salon-saas/internal/loyalty/postgres"
+	notifsvc "salon-saas/internal/notifications"
 	"salon-saas/internal/packages"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/products"
@@ -262,7 +263,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// MISMA allowlist de CORS (B-01) y arma una room por salón.
 	hub := realtime.NewHub(tokens, mems, realtime.HubOrigins(cfg.CORSOrigins...), realtime.HubSessionGate(sessionGate))
 	notifications := pgstore.Notifications{Pool: pool}
-	notifSvc := app.NotificationService{Notifications: notifications, Salons: mems, Events: hub}
+	notifSvc := notifsvc.NotificationService{Notifications: notifications, Salons: mems, Events: hub}
 
 	// Adjuntos: S3 si S3_ENDPOINT está definido; si no, filesystem local. El
 	// puerto es el mismo (ports.PhotoStorage): cambiar de adapter es esta línea.

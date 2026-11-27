@@ -12,6 +12,7 @@ import (
 	"salon-saas/internal/adapters/security"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/notifications"
 	"salon-saas/internal/ports"
 )
 
@@ -207,7 +208,7 @@ func newPOSEnv() *posEnv {
 	tokens := security.JWTIssuer{Secret: "test-secret"}
 	authSvc := app.AuthService{Users: env.users, Hasher: hasher, Tokens: tokens}
 	tenSvc := app.TenantService{Salons: env.salons, Memberships: env.mems}
-	notifSvc := app.NotificationService{Notifications: env.notifs, Salons: env.mems, Events: env.events}
+	notifSvc := notifications.NotificationService{Notifications: env.notifs, Salons: env.mems, Events: env.events}
 	bookSvc := app.BookingService{Bookings: env.bookings, Memberships: env.mems, Events: env.events, Notifier: notifSvc}
 	svcSvc := app.ServiceService{Services: env.services, Memberships: env.mems, Professionals: env.profs, Resources: env.resources}
 	saleSvc := app.SaleService{Sales: env.sales, Services: env.services, Memberships: env.mems, Events: env.events}

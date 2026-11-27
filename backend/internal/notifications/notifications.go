@@ -1,7 +1,7 @@
 // NotificationService: avisos del salón (los persistidos, los que quedan en la
 // bandeja cuando el navegador estaba cerrado). El event publisher avisa en el
 // momento; esto es lo que sobrevive al refresh.
-package app
+package notifications
 
 import (
 	"errors"
