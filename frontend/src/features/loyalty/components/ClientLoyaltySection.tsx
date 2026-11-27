@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { describeApiError, fetchStaff, type ApiErrorNotice } from '../../lib/api'
-import { TIME_ZONE } from '../../lib/datetime'
+import { describeApiError, fetchStaff, type ApiErrorNotice } from '@/lib/api'
+import { TIME_ZONE } from '@/lib/datetime'
 import {
   canGrantReward,
   canUseReward,
@@ -23,13 +23,13 @@ import {
   type LoyaltyWrite,
   type LoyaltyWriteOutcome,
   type RedeemRewardDraft,
-} from '../../lib/loyalty'
-import { activeRole, canEditLoyaltyProgram, canViewLoyalty } from '../../lib/permissions'
-import { fetchSettings } from '../../lib/settings'
-import type { StaffMember } from '../../lib/staff'
-import { useOffline } from '../OfflineContext'
-import { useSalon } from '../SalonContext'
-import { ErrorNotice, LoadingState } from './Feedback'
+} from '../lib/loyalty'
+import { activeRole, canEditLoyaltyProgram, canViewLoyalty } from '@/lib/permissions'
+import { fetchSettings } from '@/lib/settings'
+import type { StaffMember } from '@/lib/staff'
+import { useOffline } from '@/app/OfflineContext'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState } from '@/app/components/Feedback'
 import { LoyaltyNotice } from './LoyaltyNotice'
 
 type ClientLoyaltySectionProps = {

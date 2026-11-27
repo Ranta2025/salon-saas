@@ -14,11 +14,11 @@
  * of a voucher the person was told had been delivered.
  */
 
-import { ApiError, NetworkError, request } from './api.ts'
-import { isBrowserOnline } from './connectivity.ts'
-import { toDateInputValue, TIME_ZONE } from './datetime.ts'
-import { createOpAttempt, createPackagesGate, type OpAttempt, type PackagesGate } from './packages.ts'
-import { loyaltySentence } from './publicSalon.ts'
+import { ApiError, NetworkError, request } from '../../../lib/api.ts'
+import { isBrowserOnline } from '../../../lib/connectivity.ts'
+import { toDateInputValue, TIME_ZONE } from '../../../lib/datetime.ts'
+import { createOpAttempt, createPackagesGate, type OpAttempt, type PackagesGate } from '../../../lib/packages.ts'
+import { loyaltySentence } from '../../../lib/publicSalon.ts'
 
 export { createOpAttempt }
 export type { OpAttempt }

@@ -10,7 +10,7 @@ import {
   type LoyaltyField,
   type LoyaltyProgramPayload,
   type LoyaltyServiceOption,
-} from '../../lib/loyalty'
+} from '../lib/loyalty'
 
 type LoyaltyProgramFormProps = {
   draft: LoyaltyDraft

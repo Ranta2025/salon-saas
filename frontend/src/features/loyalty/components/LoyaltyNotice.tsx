@@ -1,4 +1,4 @@
-import { roleLabel, type Role } from '../../lib/permissions'
+import { roleLabel, type Role } from '@/lib/permissions'
 
 /**
  * Explanation a role without access to loyalty sees instead of the page or of the

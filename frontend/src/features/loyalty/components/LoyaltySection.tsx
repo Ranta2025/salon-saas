@@ -1,4 +1,4 @@
-import type { LandingLoyalty } from '../../lib/publicSalon'
+import type { LandingLoyalty } from '@/lib/publicSalon'
 
 type LoyaltySectionProps = {
   loyalty: LandingLoyalty

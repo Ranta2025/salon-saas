@@ -1,14 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, NetworkError } from './api.ts'
+import { ApiError, NetworkError } from '../../../lib/api.ts'
 import {
   canEditLoyaltyProgram,
   canViewLoyalty,
   canManagePackages,
   canViewPackages,
   isManager,
-} from './permissions.ts'
-import { clearToken, setToken } from './session.ts'
+} from '../../../lib/permissions.ts'
+import { clearToken, setToken } from '../../../lib/session.ts'
 import {
   createLoyaltyGate,
   createOpAttempt,

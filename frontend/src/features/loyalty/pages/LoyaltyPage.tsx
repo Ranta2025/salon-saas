@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { describeApiError, fetchServices, type ApiErrorNotice } from '../lib/api'
-import { toDateInputValue, TIME_ZONE } from '../lib/datetime'
+import { describeApiError, fetchServices, type ApiErrorNotice } from '@/lib/api'
+import { toDateInputValue, TIME_ZONE } from '@/lib/datetime'
 import {
   createLoyaltyGate,
   draftFromProgram,
@@ -11,15 +11,15 @@ import {
   type LoyaltyProgram,
   type LoyaltyProgramPayload,
 } from '../lib/loyalty'
-import { activeRole, canEditLoyaltyProgram, canViewLoyalty } from '../lib/permissions'
-import { fetchSettings } from '../lib/settings'
-import type { Service } from '../types'
-import { useOffline } from './OfflineContext'
-import { useSalon } from './SalonContext'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { LoyaltyNotice } from './components/LoyaltyNotice'
-import { LoyaltyProgramForm } from './components/LoyaltyProgramForm'
-import { PageHeader } from './components/PageHeader'
+import { activeRole, canEditLoyaltyProgram, canViewLoyalty } from '@/lib/permissions'
+import { fetchSettings } from '@/lib/settings'
+import type { Service } from '@/types'
+import { useOffline } from '@/app/OfflineContext'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { LoyaltyNotice } from '../components/LoyaltyNotice'
+import { LoyaltyProgramForm } from '../components/LoyaltyProgramForm'
+import { PageHeader } from '@/app/components/PageHeader'
 
 const EMPTY_DRAFT: LoyaltyDraft = draftFromProgram(null)
 
