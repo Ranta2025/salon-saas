@@ -550,8 +550,8 @@ const MaxPublicReviews = 6
 // un token nuevo. Si el proceso muere entre el reclamo y el envío, el arriendo
 // vence a los 15 minutos y otro tick lo reintenta: como solo se guarda el hash,
 // el token del intento muerto no se puede reenviar. El resultado es
-// AL-MENOS-UNA-VEZ: en el peor caso salen dos correos con tokens distintos (los
-// dos enlaces sirven) y el UNIQUE(booking_id) de `reviews` sigue dejando UNA sola
+// AL-MENOS-UNA-VEZ: en el peor caso salen dos correos con tokens distintos (solo
+// sirve el del ÚLTIMO: el reintento rota el token) y el UNIQUE(booking_id) de `reviews` sigue dejando UNA sola
 // reseña. Un pedido entregado no vuelve a salir nunca.
 func (s Service) RunOnce(ctx context.Context, now time.Time) (sent, failed int) {
 	if s.Mailer == nil || s.Requests == nil {
@@ -606,8 +606,8 @@ func (s Service) requestOne(ctx context.Context, d ports.DueReview, now time.Tim
 	}
 	// El correo salió: se sella la entrega para que este turno no vuelva a salir.
 	// Si este UPDATE falla, el correo YA se mandó y el arriendo vence en 15
-	// minutos: a lo sumo saldrá un segundo correo con otro token (los dos enlaces
-	// sirven y la reseña sigue siendo una sola). Se cuenta como fallo para que
+	// minutos: a lo sumo saldrá un segundo correo con otro token (solo sirve el último
+	// enlace y la reseña sigue siendo una sola). Se cuenta como fallo para que
 	// quede en el log.
 	return s.Requests.MarkDelivered(requestID, now)
 }

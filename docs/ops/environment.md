@@ -244,8 +244,8 @@ Cómo funciona el envío (**al menos una vez**, con arriendo de 15 minutos):
   se queda sin enlace por un proceso que se cayó.
 - El precio de esa resiliencia: un correo puede salir **dos veces** (por ejemplo,
   si el proceso murió justo después de entregarlo al SMTP y antes de sellar la
-  entrega). Cada correo lleva un token **distinto**, los dos enlaces sirven y
-  sigue habiendo **UNA sola reseña por turno** (`reviews.booking_id` es UNIQUE).
+  entrega). Cada correo lleva un token **distinto** y el reintento rota el token:
+  solo sirve el enlace del ÚLTIMO correo (el anterior da el 404 uniforme). Sigue habiendo **UNA sola reseña por turno** (`reviews.booking_id` es UNIQUE).
 - El enlace es un token de 32 bytes aleatorios; la base guarda **solo su
   SHA-256**. Vence a los **30 días** y sirve **una sola vez** (el canje es un
   `UPDATE` condicional en la misma transacción que crea la reseña).
