@@ -1,4 +1,4 @@
-import { formatAuditWhen } from '../../lib/audit'
+import { formatAuditWhen } from '@/features/audit/lib/audit'
 import {
   depositStatusLabel,
   depositStatusTone,

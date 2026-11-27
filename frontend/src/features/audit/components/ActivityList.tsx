@@ -3,7 +3,7 @@ import {
   auditActionLabel,
   formatAuditWhen,
   type AuditEvent,
-} from '../../lib/audit'
+} from '../lib/audit'
 
 type ActivityListProps = {
   events: readonly AuditEvent[]

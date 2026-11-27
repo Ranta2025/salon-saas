@@ -9,8 +9,8 @@
  * the server said so.
  */
 
-import { ApiError, request } from './api.ts'
-import { toDateInputValue, formatTimeOfDay, TIME_ZONE } from './datetime.ts'
+import { ApiError, request } from '../../../lib/api.ts'
+import { toDateInputValue, formatTimeOfDay, TIME_ZONE } from '../../../lib/datetime.ts'
 
 /** Rows per request (D3: default 50, maximum 100). */
 export const AUDIT_PAGE_SIZE = 50

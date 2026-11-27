@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError } from './api.ts'
+import { ApiError } from '../../../lib/api.ts'
 import {
   AUDIT_ACTIONS,
   AUDIT_FILTER_OPTIONS,
@@ -15,8 +15,8 @@ import {
   normalizeAuditPage,
   type AuditEvent,
 } from './audit.ts'
-import { canViewAuditLog } from './permissions.ts'
-import { clearToken, setToken } from './session.ts'
+import { canViewAuditLog } from '../../../lib/permissions.ts'
+import { clearToken, setToken } from '../../../lib/session.ts'
 
 type Call = { url: string; method: string; headers: Record<string, string> }
 

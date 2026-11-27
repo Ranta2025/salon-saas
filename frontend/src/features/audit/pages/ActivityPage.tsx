@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { describeApiError, type ApiErrorNotice } from '../lib/api'
+import { describeApiError, type ApiErrorNotice } from '@/lib/api'
 import {
   AUDIT_FILTER_OPTIONS,
   auditEmptyMessage,
@@ -7,15 +7,15 @@ import {
   mergeAuditEvents,
   type AuditEvent,
 } from '../lib/audit'
-import { TIME_ZONE } from '../lib/datetime'
-import { activeRole, canViewAuditLog } from '../lib/permissions'
-import { fetchSettings } from '../lib/settings'
-import { useOffline } from './OfflineContext'
-import { useSalon } from './SalonContext'
-import { ActivityList } from './components/ActivityList'
-import { ActivityNotice } from './components/ActivityNotice'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { PageHeader } from './components/PageHeader'
+import { TIME_ZONE } from '@/lib/datetime'
+import { activeRole, canViewAuditLog } from '@/lib/permissions'
+import { fetchSettings } from '@/lib/settings'
+import { useOffline } from '@/app/OfflineContext'
+import { useSalon } from '@/app/SalonContext'
+import { ActivityList } from '../components/ActivityList'
+import { ActivityNotice } from '../components/ActivityNotice'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { PageHeader } from '@/app/components/PageHeader'
 
 /**
  * `/panel/actividad` (contract F10, D3/D13): the audit log of the salon, newest

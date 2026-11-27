@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import { ActivityPage } from './app/ActivityPage'
+import { ActivityPage } from '@/features/audit'
 import { AppShell } from './app/AppShell'
 import { BankPage } from './app/BankPage'
 import { BookingLinkPage } from './app/BookingLinkPage'
