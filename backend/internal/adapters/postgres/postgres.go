@@ -23,12 +23,21 @@ type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
+// Querier es la versión exportada de querier: la firma que comparten el pool y
+// la transacción, para los adaptadores que ya viven en su módulo por
+// funcionalidad (`internal/<feature>/postgres`).
+type Querier = querier
+
 func notFound(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.ErrNotFound
 	}
 	return err
 }
+
+// NotFound es la versión exportada de notFound para los adaptadores que ya
+// viven en su módulo por funcionalidad (`internal/<feature>/postgres`).
+func NotFound(err error) error { return notFound(err) }
 
 type Users struct{ Pool *pgxpool.Pool }
 

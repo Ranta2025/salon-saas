@@ -1,4 +1,4 @@
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -40,7 +40,7 @@ func (r LoyaltyPrograms) Find(salonID string) (domain.LoyaltyProgram, error) {
 	row := r.Pool.QueryRow(context.Background(), loyaltyProgramSelect+` WHERE lp.salon_id=$1`, salonID)
 	p, err := scanLoyaltyProgram(row.Scan)
 	if err != nil {
-		return domain.LoyaltyProgram{}, notFound(err)
+		return domain.LoyaltyProgram{}, pgstore.NotFound(err)
 	}
 	return p, nil
 }
@@ -60,7 +60,7 @@ func (r LoyaltyPrograms) Save(p domain.LoyaltyProgram) (domain.LoyaltyProgram, e
 		   updated_at=EXCLUDED.updated_at`,
 		p.SalonID, p.Enabled, p.VisitsRequired, p.RewardServiceID, p.ValidityDays, p.CountingFrom.UTC(), p.UpdatedAt.UTC())
 	if err != nil {
-		return domain.LoyaltyProgram{}, pgError(err)
+		return domain.LoyaltyProgram{}, pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.LoyaltyProgram{}, domain.NewMessage(domain.ErrValidation, domain.MsgLoyaltyServiceInvalid)
@@ -110,7 +110,7 @@ func (r LoyaltyRewards) Visits(salonID, clientID string, since time.Time) (int, 
 	return countLoyaltyVisits(context.Background(), r.Pool, salonID, clientID, since)
 }
 
-func countLoyaltyVisits(ctx context.Context, q querier, salonID, clientID string, since time.Time) (int, error) {
+func countLoyaltyVisits(ctx context.Context, q pgstore.Querier, salonID, clientID string, since time.Time) (int, error) {
 	var n int
 	err := q.QueryRow(ctx,
 		`SELECT count(*) FROM sales s
@@ -125,7 +125,7 @@ func (r LoyaltyRewards) CountGranted(salonID, clientID string) (int, error) {
 	return countLoyaltyGranted(context.Background(), r.Pool, salonID, clientID)
 }
 
-func countLoyaltyGranted(ctx context.Context, q querier, salonID, clientID string) (int, error) {
+func countLoyaltyGranted(ctx context.Context, q pgstore.Querier, salonID, clientID string) (int, error) {
 	var n int
 	err := q.QueryRow(ctx,
 		`SELECT count(*) FROM loyalty_rewards WHERE salon_id=$1 AND client_id=$2`, salonID, clientID).Scan(&n)
@@ -154,14 +154,6 @@ func (r LoyaltyRewards) ListByClient(salonID, clientID string) ([]domain.Loyalty
 }
 
 // constraintOf devuelve el nombre de la restricción de un 23505, o "".
-func constraintOf(err error) string {
-	var pg *pgconn.PgError
-	if errors.As(err, &pg) && pg.Code == "23505" {
-		return pg.ConstraintName
-	}
-	return ""
-}
-
 func loyaltyOpReused() error {
 	return domain.NewMessage(domain.ErrAlreadyExists, domain.MsgLoyaltyOpReused)
 }
@@ -177,22 +169,22 @@ func loyaltyOpReused() error {
 // MISMO vale sin entregar otro; se detecta bajo el lock y, si dos pedidos
 // gemelos igual llegaran al INSERT, por el 23505 de ese índice.
 func (r LoyaltyRewards) Grant(q domain.LoyaltyGrantRequest) (domain.LoyaltyReward, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return domain.LoyaltyReward{}, err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`,
 		"loyalty:"+q.SalonID+":"+q.ClientID); err != nil {
-		return domain.LoyaltyReward{}, packageWriteError(err)
+		return domain.LoyaltyReward{}, pgstore.BusyError(err, domain.MsgLoyaltyBusy)
 	}
 	// La clienta tiene que ser DE ESTE salón: un id ajeno no entrega nada.
 	var one int
 	if err := tx.QueryRow(ctx, `SELECT 1 FROM clients WHERE id=$1 AND salon_id=$2`, q.ClientID, q.SalonID).Scan(&one); err != nil {
-		return domain.LoyaltyReward{}, notFound(err)
+		return domain.LoyaltyReward{}, pgstore.NotFound(err)
 	}
 	if q.ClientOpID != "" {
 		if x, done, err := replayLoyaltyGrant(ctx, tx, q); err != nil || done {
@@ -205,14 +197,14 @@ func (r LoyaltyRewards) Grant(q domain.LoyaltyGrantRequest) (domain.LoyaltyRewar
 	if p, err := scanLoyaltyProgram(row.Scan); err == nil {
 		prog = p
 		if visits, err = countLoyaltyVisits(ctx, tx, q.SalonID, q.ClientID, p.CountingFrom); err != nil {
-			return domain.LoyaltyReward{}, packageWriteError(err)
+			return domain.LoyaltyReward{}, pgstore.BusyError(err, domain.MsgLoyaltyBusy)
 		}
 	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return domain.LoyaltyReward{}, packageWriteError(err)
+		return domain.LoyaltyReward{}, pgstore.BusyError(err, domain.MsgLoyaltyBusy)
 	}
 	granted, err := countLoyaltyGranted(ctx, tx, q.SalonID, q.ClientID)
 	if err != nil {
-		return domain.LoyaltyReward{}, packageWriteError(err)
+		return domain.LoyaltyReward{}, pgstore.BusyError(err, domain.MsgLoyaltyBusy)
 	}
 	reward, err := domain.NewLoyaltyGrant(prog, q.ClientID, visits, granted, q.ClientOpID, q.Now, q.Loc)
 	if err != nil {
@@ -223,19 +215,19 @@ func (r LoyaltyRewards) Grant(q domain.LoyaltyGrantRequest) (domain.LoyaltyRewar
 		 VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,''))`,
 		reward.ID, reward.SalonID, reward.ClientID, reward.RewardNumber, reward.ServiceID, reward.ServiceName,
 		reward.GrantedAt, reward.ExpiresAt, reward.GrantOpID); err != nil {
-		switch constraintOf(err) {
+		switch pgstore.ConstraintOf(err) {
 		case "loyalty_rewards_client_number_uniq":
 			// Perdió la carrera por el hito: ya lo tiene otro vale.
 			return domain.LoyaltyReward{}, domain.NewMessage(domain.ErrAlreadyExists, domain.MsgLoyaltyNoReward)
 		case "loyalty_rewards_grant_op_uniq":
 			// Un pedido gemelo ganó: se devuelve SU vale, fuera de esta transacción.
-			rollbackTx(tx)
+			pgstore.RollbackTx(tx)
 			return r.replayGrantAfterRace(q)
 		}
-		return domain.LoyaltyReward{}, packageWriteError(err)
+		return domain.LoyaltyReward{}, pgstore.BusyError(err, domain.MsgLoyaltyBusy)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return domain.LoyaltyReward{}, packageWriteError(err)
+		return domain.LoyaltyReward{}, pgstore.BusyError(err, domain.MsgLoyaltyBusy)
 	}
 	return reward, nil
 }
@@ -243,7 +235,7 @@ func (r LoyaltyRewards) Grant(q domain.LoyaltyGrantRequest) (domain.LoyaltyRewar
 // replayLoyaltyGrant mira si el client_op_id ya entregó un vale. done=true es
 // «ya está resuelto»: devuelve el MISMO vale o el 409 de un id usado para otra
 // clienta.
-func replayLoyaltyGrant(ctx context.Context, q querier, req domain.LoyaltyGrantRequest) (domain.LoyaltyReward, bool, error) {
+func replayLoyaltyGrant(ctx context.Context, q pgstore.Querier, req domain.LoyaltyGrantRequest) (domain.LoyaltyReward, bool, error) {
 	row := q.QueryRow(ctx,
 		`SELECT `+loyaltyRewardColumns+` FROM loyalty_rewards WHERE salon_id=$1 AND grant_op_id=$2`,
 		req.SalonID, req.ClientOpID)
@@ -252,7 +244,7 @@ func replayLoyaltyGrant(ctx context.Context, q querier, req domain.LoyaltyGrantR
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.LoyaltyReward{}, false, nil
 		}
-		return domain.LoyaltyReward{}, true, packageWriteError(err)
+		return domain.LoyaltyReward{}, true, pgstore.BusyError(err, domain.MsgLoyaltyBusy)
 	}
 	if x.ClientID != req.ClientID {
 		return domain.LoyaltyReward{}, true, loyaltyOpReused()
@@ -261,7 +253,7 @@ func replayLoyaltyGrant(ctx context.Context, q querier, req domain.LoyaltyGrantR
 }
 
 func (r LoyaltyRewards) replayGrantAfterRace(req domain.LoyaltyGrantRequest) (domain.LoyaltyReward, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	x, done, err := replayLoyaltyGrant(ctx, r.Pool, req)
 	if err != nil {
@@ -284,13 +276,13 @@ func (r LoyaltyRewards) replayGrantAfterRace(req domain.LoyaltyGrantRequest) (do
 // UPDATE, cuando el UPDATE no afecta filas (el pedido gemelo acaba de usar el
 // vale) y por el 23505 del índice.
 func (r LoyaltyRewards) Redeem(q domain.LoyaltyRedeemRequest) (domain.LoyaltyReward, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return domain.LoyaltyReward{}, err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 
 	if q.ClientOpID != "" {
 		if x, done, err := replayLoyaltyRedeem(ctx, tx, q); err != nil || done {
@@ -301,7 +293,7 @@ func (r LoyaltyRewards) Redeem(q domain.LoyaltyRedeemRequest) (domain.LoyaltyRew
 	// entregados se conservan intactos.
 	var enabled bool
 	if err := tx.QueryRow(ctx, `SELECT enabled FROM loyalty_programs WHERE salon_id=$1`, q.SalonID).Scan(&enabled); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return domain.LoyaltyReward{}, packageWriteError(err)
+		return domain.LoyaltyReward{}, pgstore.BusyError(err, domain.MsgLoyaltyBusy)
 	}
 	if !enabled {
 		return domain.LoyaltyReward{}, domain.NewMessage(domain.ErrAlreadyExists, domain.MsgLoyaltyDisabled)
@@ -328,16 +320,16 @@ func (r LoyaltyRewards) Redeem(q domain.LoyaltyRedeemRequest) (domain.LoyaltyRew
 			return domain.LoyaltyReward{}, err
 		}
 		return domain.LoyaltyReward{}, domain.NewMessage(domain.ErrAlreadyExists, domain.MsgLoyaltyBusy)
-	case constraintOf(err) == "loyalty_rewards_redeem_op_uniq":
+	case pgstore.ConstraintOf(err) == "loyalty_rewards_redeem_op_uniq":
 		// Un pedido gemelo (u otro vale) ya tiene ese op id: la transacción se
 		// deshace y se resuelve el repetido FUERA de ella.
-		rollbackTx(tx)
+		pgstore.RollbackTx(tx)
 		return r.replayRedeemAfterRace(q)
 	default:
-		return domain.LoyaltyReward{}, packageWriteError(err)
+		return domain.LoyaltyReward{}, pgstore.BusyError(err, domain.MsgLoyaltyBusy)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return domain.LoyaltyReward{}, packageWriteError(err)
+		return domain.LoyaltyReward{}, pgstore.BusyError(err, domain.MsgLoyaltyBusy)
 	}
 	return x, nil
 }
@@ -345,7 +337,7 @@ func (r LoyaltyRewards) Redeem(q domain.LoyaltyRedeemRequest) (domain.LoyaltyRew
 // replayLoyaltyRedeem mira si el client_op_id ya se usó. done=true es «ya está
 // resuelto»: devuelve el estado actual de ESTE vale (sin usar otra vez) o el 409
 // de un id usado para otro vale o para otra clienta.
-func replayLoyaltyRedeem(ctx context.Context, q querier, req domain.LoyaltyRedeemRequest) (domain.LoyaltyReward, bool, error) {
+func replayLoyaltyRedeem(ctx context.Context, q pgstore.Querier, req domain.LoyaltyRedeemRequest) (domain.LoyaltyReward, bool, error) {
 	row := q.QueryRow(ctx,
 		`SELECT `+loyaltyRewardColumns+` FROM loyalty_rewards WHERE salon_id=$1 AND redeem_op_id=$2`,
 		req.SalonID, req.ClientOpID)
@@ -354,7 +346,7 @@ func replayLoyaltyRedeem(ctx context.Context, q querier, req domain.LoyaltyRedee
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.LoyaltyReward{}, false, nil
 		}
-		return domain.LoyaltyReward{}, true, packageWriteError(err)
+		return domain.LoyaltyReward{}, true, pgstore.BusyError(err, domain.MsgLoyaltyBusy)
 	}
 	if x.ID != req.RewardID || x.ClientID != req.ClientID {
 		return domain.LoyaltyReward{}, true, loyaltyOpReused()
@@ -363,7 +355,7 @@ func replayLoyaltyRedeem(ctx context.Context, q querier, req domain.LoyaltyRedee
 }
 
 func (r LoyaltyRewards) replayRedeemAfterRace(req domain.LoyaltyRedeemRequest) (domain.LoyaltyReward, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	x, done, err := replayLoyaltyRedeem(ctx, r.Pool, req)
 	if err != nil {
@@ -380,7 +372,7 @@ func (r LoyaltyRewards) replayRedeemAfterRace(req domain.LoyaltyRedeemRequest) (
 // Usado gana sobre vencido: no hay nada que consumir. Corre en la MISMA
 // transacción y bloquea la fila (FOR UPDATE). Un vale que ni está usado ni
 // vencido (no debería pasar) es «chocó con otra operación».
-func explainFailedLoyaltyRedeem(ctx context.Context, q querier, req domain.LoyaltyRedeemRequest) error {
+func explainFailedLoyaltyRedeem(ctx context.Context, q pgstore.Querier, req domain.LoyaltyRedeemRequest) error {
 	var redeemedAt, expiresAt *time.Time
 	err := q.QueryRow(ctx,
 		`SELECT redeemed_at, expires_at FROM loyalty_rewards
@@ -390,7 +382,7 @@ func explainFailedLoyaltyRedeem(ctx context.Context, q querier, req domain.Loyal
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.ErrNotFound
 		}
-		return packageWriteError(err)
+		return pgstore.BusyError(err, domain.MsgLoyaltyBusy)
 	}
 	switch {
 	case redeemedAt != nil:

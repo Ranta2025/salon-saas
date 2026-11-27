@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // saleProductFixture siembra catálogo de servicios y productos en s-it-prod.
@@ -43,15 +44,6 @@ func seedProducts(t *testing.T, repo Products, salonID string, specs ...productS
 		out = append(out, p)
 	}
 	return out
-}
-
-func countRows(t *testing.T, pool *pgxpool.Pool, query string, args ...any) int {
-	t.Helper()
-	var n int
-	if err := pool.QueryRow(context.Background(), query, args...).Scan(&n); err != nil {
-		t.Fatalf("contar: %v", err)
-	}
-	return n
 }
 
 func sumMovements(t *testing.T, pool *pgxpool.Pool, productID string) int {
@@ -100,7 +92,7 @@ func TestSaleWithProducts_IT(t *testing.T) {
 	if total != 130000 || productsCents != 130000 {
 		t.Fatalf("venta guardada: total=%d productos=%d", total, productsCents)
 	}
-	if n := countRows(t, pool, `SELECT count(*) FROM sale_products WHERE sale_id=$1`, only.ID); n != 2 {
+	if n := itdb.CountRows(t, pool, `SELECT count(*) FROM sale_products WHERE sale_id=$1`, only.ID); n != 2 {
 		t.Fatalf("sale_products = 2, dio %d", n)
 	}
 	if got := stockOf(t, pool, shampoo.ID); got != 8 {
@@ -110,7 +102,7 @@ func TestSaleWithProducts_IT(t *testing.T) {
 		t.Fatalf("el libro no cuadra con el stock")
 	}
 	// Un movimiento `sale` por línea, apuntando a la venta.
-	if n := countRows(t, pool, `SELECT count(*) FROM stock_movements WHERE sale_id=$1 AND reason='sale' AND delta < 0`, only.ID); n != 2 {
+	if n := itdb.CountRows(t, pool, `SELECT count(*) FROM stock_movements WHERE sale_id=$1 AND reason='sale' AND delta < 0`, only.ID); n != 2 {
 		t.Fatalf("movimientos de venta = 2, dio %d", n)
 	}
 
@@ -149,12 +141,12 @@ func TestSaleWithProducts_IT(t *testing.T) {
 	if total != 200000 || productsCents != 50000 {
 		t.Fatalf("mixta: total=%d productos=%d", total, productsCents)
 	}
-	if n := countRows(t, pool, `SELECT count(*) FROM sale_items WHERE sale_id=$1`, mixed.ID); n != 1 {
+	if n := itdb.CountRows(t, pool, `SELECT count(*) FROM sale_items WHERE sale_id=$1`, mixed.ID); n != 1 {
 		t.Fatalf("sale_items de la mixta = 1, dio %d", n)
 	}
 
 	// Sin stock: 409 con el nombre y NADA guardado (ni la venta ni el descuento).
-	salesBefore := countRows(t, pool, `SELECT count(*) FROM sales WHERE salon_id='s-it-prod'`)
+	salesBefore := itdb.CountRows(t, pool, `SELECT count(*) FROM sales WHERE salon_id='s-it-prod'`)
 	_, err = sales.SaveWithProducts(domain.SaleWithProducts{
 		Sale:          domain.Sale{ID: domain.NewID(), SalonID: "s-it-prod", ProfessionalID: "u-it-prod-prof", ClientName: "X", Method: domain.MethodCash, CreatedAt: time.Now().UTC()},
 		Products:      []domain.SaleProduct{{ProductID: casi.ID, Qty: 2, UnitPriceCents: 10000}},
@@ -163,7 +155,7 @@ func TestSaleWithProducts_IT(t *testing.T) {
 	if err == nil || err.Error() != domain.NoStockMessage("Casi F6") || !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("sin stock: %v", err)
 	}
-	if got := countRows(t, pool, `SELECT count(*) FROM sales WHERE salon_id='s-it-prod'`); got != salesBefore {
+	if got := itdb.CountRows(t, pool, `SELECT count(*) FROM sales WHERE salon_id='s-it-prod'`); got != salesBefore {
 		t.Fatalf("la venta fallida no se guarda: %d -> %d", salesBefore, got)
 	}
 	if got := stockOf(t, pool, casi.ID); got != 1 {
@@ -186,7 +178,7 @@ func TestSaleWithProducts_IT(t *testing.T) {
 	if got := stockOf(t, pool, shampoo.ID); got != shampooBefore {
 		t.Fatalf("el primer producto quedó descontado: %d -> %d", shampooBefore, got)
 	}
-	if got := countRows(t, pool, `SELECT count(*) FROM sales WHERE salon_id='s-it-prod'`); got != salesBefore {
+	if got := itdb.CountRows(t, pool, `SELECT count(*) FROM sales WHERE salon_id='s-it-prod'`); got != salesBefore {
 		t.Fatalf("la venta fallida no se guarda: %d -> %d", salesBefore, got)
 	}
 
@@ -262,7 +254,7 @@ func TestSaleWithProducts_concurrency_IT(t *testing.T) {
 	if sumMovements(t, pool, limited.ID) != 0 {
 		t.Fatalf("stock != Σ movimientos: %d", sumMovements(t, pool, limited.ID))
 	}
-	if n := countRows(t, pool, `SELECT COALESCE(SUM(qty),0) FROM sale_products WHERE product_id=$1`, limited.ID); n != 4 {
+	if n := itdb.CountRows(t, pool, `SELECT COALESCE(SUM(qty),0) FROM sale_products WHERE product_id=$1`, limited.ID); n != 4 {
 		t.Fatalf("unidades vendidas = 4, dio %d", n)
 	}
 
@@ -340,7 +332,7 @@ func TestSaleWithProducts_concurrency_IT(t *testing.T) {
 	if got := stockOf(t, pool, op.ID); got != 4 {
 		t.Fatalf("descontó %d vez/veces (stock %d)", 5-got, got)
 	}
-	if n := countRows(t, pool, `SELECT count(*) FROM sales WHERE salon_id='s-it-prod' AND client_op_id='op-f6'`); n != 1 {
+	if n := itdb.CountRows(t, pool, `SELECT count(*) FROM sales WHERE salon_id='s-it-prod' AND client_op_id='op-f6'`); n != 1 {
 		t.Fatalf("ventas con el mismo op id = 1, dio %d", n)
 	}
 

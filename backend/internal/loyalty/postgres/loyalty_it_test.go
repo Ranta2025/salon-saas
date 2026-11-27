@@ -3,7 +3,7 @@
 // visitas (qué cuenta y qué no), el upsert que conserva counting_from, la
 // entrega atómica con su guarda final, el UPDATE condicional del uso, la
 // idempotencia por los índices únicos y el aislamiento por salón.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 type loyFix struct {
@@ -39,10 +41,10 @@ const (
 // servicios y clientas.
 func loyFixtures(t *testing.T) *loyFix {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
 	ctx := context.Background()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 	for _, q := range []string{
 		`DELETE FROM salons WHERE id LIKE 's-it-loy%'`,
 		`DELETE FROM users WHERE id LIKE 'u-it-loy%'`,
@@ -72,7 +74,7 @@ func loyFixtures(t *testing.T) *loyFix {
 	}
 	f := &loyFix{pool: pool, ctx: ctx, programs: LoyaltyPrograms{Pool: pool}, rewards: LoyaltyRewards{Pool: pool}, auckland: loc,
 		t0: time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Microsecond)}
-	services := Services{Pool: pool}
+	services := pgstore.Services{Pool: pool}
 	mk := func(salon, name string) domain.Service {
 		s, err := domain.NewService(salon, name, 45, 15000, 10)
 		if err != nil {
@@ -84,7 +86,7 @@ func loyFixtures(t *testing.T) *loyFix {
 		return s
 	}
 	f.svcA, f.svcB, f.svcOther = mk(loySalon, "Corte A"), mk(loySalon, "Tinte B"), mk(loySalon2, "Corte Ajeno")
-	clients := Clients{Pool: pool}
+	clients := pgstore.Clients{Pool: pool}
 	mc := func(salon, name string) domain.Client {
 		c, err := domain.NewClient(salon, name, "", "", "")
 		if err != nil {
@@ -179,7 +181,7 @@ func (f *loyFix) visitSales(t *testing.T, clientID string, n int) {
 
 func (f *loyFix) count(t *testing.T, q string, args ...any) int {
 	t.Helper()
-	return countRows(t, f.pool, q, args...)
+	return itdb.CountRows(t, f.pool, q, args...)
 }
 
 func wantLoyErr(t *testing.T, err error, kind error, text string) {

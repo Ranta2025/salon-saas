@@ -19,6 +19,7 @@ import (
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // tfBigPool: 40 conexiones para que los 30 pedidos lleguen DE VERDAD a la vez.
@@ -140,7 +141,7 @@ func TestTwoFactorConcurrency_wrongCodesNeverMoreThanFiveVerifications(t *testin
 	s.enroll(t)
 	ch := s.challenge(t)
 	var unauth, locked, other atomic.Int64
-	race(30, func(int) {
+	itdb.Race(30, func(int) {
 		_, err := s.svc.VerifyLogin(ch, "000000")
 		switch {
 		case errors.Is(err, domain.ErrTooManyAttempts):
@@ -189,7 +190,7 @@ func TestTwoFactorConcurrency_sameTOTPCodeExactlyOneSuccess(t *testing.T) {
 	ch := s.challenge(t)
 	code := domain.TOTPCode(secret, domain.TOTPStepAt(time.Now())+1, domain.TOTPDigits)
 	var ok atomic.Int64
-	race(30, func(int) {
+	itdb.Race(30, func(int) {
 		if tok, err := s.svc.VerifyLogin(ch, code); err == nil && tok != "" {
 			ok.Add(1)
 		}
@@ -207,7 +208,7 @@ func TestTwoFactorConcurrency_completeStepOneWinner(t *testing.T) {
 	s := tfStackFor(t)
 	s.enroll(t)
 	var won atomic.Int64
-	race(30, func(int) {
+	itdb.Race(30, func(int) {
 		if ok, err := s.repo.CompleteStep(tfUser, 4_000_000_000); err == nil && ok {
 			won.Add(1)
 		}
@@ -226,7 +227,7 @@ func TestTwoFactorConcurrency_recoveryCodeExactlyOneSuccess(t *testing.T) {
 	hash := domain.HashRecoveryCode(norm)
 
 	var won atomic.Int64
-	race(30, func(int) {
+	itdb.Race(30, func(int) {
 		if ok, err := s.repo.UseRecoveryCode(tfUser, hash); err == nil && ok {
 			won.Add(1)
 		}
@@ -241,7 +242,7 @@ func TestTwoFactorConcurrency_recoveryCodeExactlyOneSuccess(t *testing.T) {
 	// Por el login (con el tope de intentos de por medio).
 	ch := s.challenge(t)
 	var logged atomic.Int64
-	race(30, func(int) {
+	itdb.Race(30, func(int) {
 		if tok, err := s.svc.VerifyLogin(ch, recovery[1]); err == nil && tok != "" {
 			logged.Add(1)
 		}

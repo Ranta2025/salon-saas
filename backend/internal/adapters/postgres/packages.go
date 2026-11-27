@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
@@ -127,13 +126,7 @@ func scanClientPackage(scan func(dest ...any) error) (domain.ClientPackage, erro
 // packageWriteError traduce el error de escribir. Un interbloqueo (40P01) o una
 // serialización perdida (40001) son una carrera perdida, no un 500: la
 // transacción ya se deshizo y reintentar es seguro.
-func packageWriteError(err error) error {
-	var pg *pgconn.PgError
-	if errors.As(err, &pg) && (pg.Code == "40P01" || pg.Code == "40001") {
-		return domain.NewMessage(domain.ErrAlreadyExists, domain.MsgPackageBusy)
-	}
-	return pgError(err)
-}
+func packageWriteError(err error) error { return BusyError(err, domain.MsgPackageBusy) }
 
 // Purchase escribe la compra en UNA transacción: la venta (sin líneas), el
 // paquete de la clienta y el movimiento `purchase`. El INSERT del paquete es un

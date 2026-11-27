@@ -2,17 +2,17 @@
 // SALON_IT=1. Son las pruebas que un mutante tiene que romper: sin el lock por
 // clienta Y el UNIQUE (client_id, reward_number), o sin el `redeemed_at IS NULL`
 // del UPDATE, dos pedidos simultáneos se llevarían el mismo premio.
-package pgstore
+package postgres
 
 import (
 	"context"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // bigLoyaltyRewards devuelve el adaptador sobre un pool de 40 conexiones: con el
@@ -38,22 +38,6 @@ func bigLoyaltyRewards(t *testing.T) LoyaltyRewards {
 	return LoyaltyRewards{Pool: pool}
 }
 
-// race corre n funciones a la vez, soltadas todas juntas, y espera a todas.
-func race(n int, fn func(i int)) {
-	start := make(chan struct{})
-	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			<-start
-			fn(i)
-		}(i)
-	}
-	close(start)
-	wg.Wait()
-}
-
 // D6: 30 entregas simultáneas con UN solo premio disponible => UNA gana, 29
 // reciben «No hay premios disponibles» y queda UNA fila.
 func TestLoyaltyRewards_grantRaceOneAvailable(t *testing.T) {
@@ -64,7 +48,7 @@ func TestLoyaltyRewards_grantRaceOneAvailable(t *testing.T) {
 	const n = 30
 	errs := make([]error, n)
 	got := make([]domain.LoyaltyReward, n)
-	race(n, func(i int) {
+	itdb.Race(n, func(i int) {
 		got[i], errs[i] = f.rewards.Grant(grantReq(f.lia.ID, "", time.Now(), time.UTC))
 	})
 	ok, noReward, other := 0, 0, 0
@@ -97,7 +81,7 @@ func TestLoyaltyRewards_grantRaceTwoAvailable(t *testing.T) {
 	f.visitSales(t, f.mora.ID, 5) // otra clienta en paralelo: cada una con lo suyo
 	const n = 30
 	errs := make([]error, 2*n)
-	race(2*n, func(i int) {
+	itdb.Race(2*n, func(i int) {
 		client := f.lia.ID
 		if i%2 == 1 {
 			client = f.mora.ID
@@ -130,7 +114,7 @@ func TestLoyaltyRewards_grantRaceSameOp(t *testing.T) {
 	const n = 16
 	errs := make([]error, n)
 	got := make([]domain.LoyaltyReward, n)
-	race(n, func(i int) {
+	itdb.Race(n, func(i int) {
 		got[i], errs[i] = f.rewards.Grant(grantReq(f.lia.ID, "op-race-grant", time.Now(), time.UTC))
 	})
 	for i, err := range errs {
@@ -154,7 +138,7 @@ func TestLoyaltyRewards_redeemRace(t *testing.T) {
 	r := f.grantOne(t, nil, now)
 	const n = 30
 	errs := make([]error, n)
-	race(n, func(i int) {
+	itdb.Race(n, func(i int) {
 		_, errs[i] = f.rewards.Redeem(redeemReq(f.lia.ID, r.ID, "", time.Now().UTC()))
 	})
 	ok, used := 0, 0
@@ -185,7 +169,7 @@ func TestLoyaltyRewards_redeemRaceSameOp(t *testing.T) {
 	const n = 16
 	errs := make([]error, n)
 	got := make([]domain.LoyaltyReward, n)
-	race(n, func(i int) {
+	itdb.Race(n, func(i int) {
 		got[i], errs[i] = f.rewards.Redeem(redeemReq(f.lia.ID, r.ID, "op-race-redeem", time.Now().UTC()))
 	})
 	for i, err := range errs {

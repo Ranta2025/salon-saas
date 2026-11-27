@@ -13,7 +13,11 @@ import (
 // del salón de forma indefinida.
 const txDefaultTimeout = 30 * time.Second
 
-func txTimeout(configured time.Duration) time.Duration {
+func txTimeout(configured time.Duration) time.Duration { return TxTimeout(configured) }
+
+// TxTimeout es la versión exportada de txTimeout para los adaptadores que ya
+// viven en su módulo por funcionalidad (`internal/<feature>/postgres`).
+func TxTimeout(configured time.Duration) time.Duration {
 	if configured > 0 {
 		return configured
 	}
@@ -27,3 +31,7 @@ func rollbackTx(tx pgx.Tx) {
 	defer cancel()
 	_ = tx.Rollback(ctx)
 }
+
+// RollbackTx es la versión exportada de rollbackTx para los adaptadores que ya
+// viven en su módulo por funcionalidad (`internal/<feature>/postgres`).
+func RollbackTx(tx pgx.Tx) { rollbackTx(tx) }

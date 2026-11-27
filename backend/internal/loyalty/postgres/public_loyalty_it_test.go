@@ -1,10 +1,11 @@
 // Integración con Postgres real del programa de fidelidad en la vidriera pública
 // (F9, D8). Se saltea sin SALON_IT=1.
-package pgstore
+package postgres
 
 import (
 	"testing"
 
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/app"
 )
 
@@ -14,8 +15,8 @@ import (
 func TestPublicSalon_loyaltyOnlyWhenEnabledAndServiceActive(t *testing.T) {
 	f := loyFixtures(t)
 	pub := app.PublicSalonService{
-		Salons: Salons{Pool: f.pool}, Services: Services{Pool: f.pool}, Settings: Salons{Pool: f.pool},
-		Hours: WeeklyHours{Pool: f.pool}, Loyalty: f.programs,
+		Salons: pgstore.Salons{Pool: f.pool}, Services: pgstore.Services{Pool: f.pool}, Settings: pgstore.Salons{Pool: f.pool},
+		Hours: pgstore.WeeklyHours{Pool: f.pool}, Loyalty: f.programs,
 	}
 	loyalty := func(slug string) *app.PublicLoyalty {
 		t.Helper()

@@ -26,6 +26,7 @@ import (
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/loyalty"
+	loyaltystore "salon-saas/internal/loyalty/postgres"
 	"salon-saas/internal/ports"
 )
 
@@ -214,8 +215,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	packagesRepo := pgstore.Packages{Pool: pool}
 	clientPackagesRepo := pgstore.ClientPackages{Pool: pool}
 	// F9: fidelidad (programa del salón y vales entregados; migración 033).
-	loyaltyProgramsRepo := pgstore.LoyaltyPrograms{Pool: pool}
-	loyaltyRewardsRepo := pgstore.LoyaltyRewards{Pool: pool}
+	loyaltyProgramsRepo := loyaltystore.LoyaltyPrograms{Pool: pool}
+	loyaltyRewardsRepo := loyaltystore.LoyaltyRewards{Pool: pool}
 	// F10: registro de auditoría (migración 034). Lo escribe el middleware
 	// `Audit(action)` de las rutas sensibles; es append-only y de mejor esfuerzo.
 	auditRepo := pgstore.Audit{Pool: pool}

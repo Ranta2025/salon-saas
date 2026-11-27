@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 type pkgFix struct {
@@ -124,7 +125,7 @@ func (f *pkgFix) buy(t *testing.T, sessions int, price int, validity *int) domai
 
 func (f *pkgFix) count(t *testing.T, q string, args ...any) int {
 	t.Helper()
-	return countRows(t, f.pool, q, args...)
+	return itdb.CountRows(t, f.pool, q, args...)
 }
 
 func (f *pkgFix) left(t *testing.T, id string) int {
