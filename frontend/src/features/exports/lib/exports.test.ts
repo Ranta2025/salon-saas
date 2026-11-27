@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, NetworkError, UNAUTHORIZED_EVENT } from './api.ts'
-import { todayInTimeZone } from './datetime.ts'
-import { clearToken, getToken, setToken } from './session.ts'
+import { ApiError, NetworkError, UNAUTHORIZED_EVENT } from '../../../lib/api.ts'
+import { todayInTimeZone } from '../../../lib/datetime.ts'
+import { clearToken, getToken, setToken } from '../../../lib/session.ts'
 import {
   canExportCsv,
   checkExportRange,
@@ -22,7 +22,7 @@ import {
   type ExportCsvFile,
   type ExportKind,
 } from './exports.ts'
-import { EXPORT_ERROR_MESSAGE } from './payrollRuns.ts'
+import { EXPORT_ERROR_MESSAGE } from '../../../lib/payrollRuns.ts'
 
 type Call = { url: string; method: string; headers: Record<string, string> }
 

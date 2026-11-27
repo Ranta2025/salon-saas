@@ -20,23 +20,23 @@ import {
   API_BASE,
   NetworkError,
   UNAUTHORIZED_EVENT,
-} from './api.ts'
-import { todayInTimeZone } from './datetime.ts'
+} from '../../../lib/api.ts'
+import { todayInTimeZone } from '../../../lib/datetime.ts'
 import {
   checkExpenseRange,
   defaultExpenseRange,
   INVALID_RANGE_MESSAGE as EXPENSE_INVALID_RANGE_MESSAGE,
   MAX_RANGE_DAYS,
   type ExpenseRange,
-} from './expenses.ts'
+} from '../../../lib/expenses.ts'
 import {
   csvDownloadFilename,
   EXPORT_ERROR_MESSAGE,
   savePayrollRunCsv,
-} from './payrollRuns.ts'
-import { isManager, type Role } from './permissions.ts'
-import { fetchSettings } from './settings.ts'
-import { clearToken, getToken } from './session.ts'
+} from '../../../lib/payrollRuns.ts'
+import { isManager, type Role } from '../../../lib/permissions.ts'
+import { fetchSettings } from '../../../lib/settings.ts'
+import { clearToken, getToken } from '../../../lib/session.ts'
 
 /** The three files of the contract. */
 export type ExportKind = 'sales' | 'cash-closes' | 'clients'

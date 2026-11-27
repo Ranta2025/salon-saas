@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { TIME_ZONE, todayInTimeZone } from '../lib/datetime'
+import { TIME_ZONE, todayInTimeZone } from '@/lib/datetime'
 import {
   canExportCsv,
   checkExportRange,
@@ -14,11 +14,11 @@ import {
   type ExportRange,
   type ExportRequest,
 } from '../lib/exports'
-import { activeRole } from '../lib/permissions'
-import { useSalon } from './SalonContext'
-import { SalonRequired } from './components/Feedback'
-import { ManagerOnlyNotice } from './components/ManagerOnlyNotice'
-import { PageHeader } from './components/PageHeader'
+import { activeRole } from '@/lib/permissions'
+import { useSalon } from '@/app/SalonContext'
+import { SalonRequired } from '@/app/components/Feedback'
+import { ManagerOnlyNotice } from '@/app/components/ManagerOnlyNotice'
+import { PageHeader } from '@/app/components/PageHeader'
 
 /** One-line description of each file, with the columns of the frozen contract. */
 const CARD_COPY: Record<ExportKind, { title: string; description: string }> = {
