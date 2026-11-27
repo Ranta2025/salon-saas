@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { describeApiError, friendlyApiMessage, type ApiErrorNotice } from '../lib/api'
+import { describeApiError, friendlyApiMessage, type ApiErrorNotice } from '@/lib/api'
 import {
   activeUnitCount,
   addResourceUnits,
@@ -23,10 +23,10 @@ import {
   type ResourceType,
   type ResourceUnit,
 } from '../lib/equipment'
-import { activeRole, roleLabel } from '../lib/permissions'
-import { useSalon } from './SalonContext'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { PageHeader } from './components/PageHeader'
+import { activeRole, roleLabel } from '@/lib/permissions'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { PageHeader } from '@/app/components/PageHeader'
 
 /** How many services of the catalogue use a type of equipment. */
 export function usageLabel(services: number): string {

@@ -1,4 +1,4 @@
-import { MAX_SERVICE_DESCRIPTION_LENGTH } from '../../lib/salonProfile'
+import { MAX_SERVICE_DESCRIPTION_LENGTH } from '@/lib/salonProfile'
 
 type SalonServiceDescriptionProps = {
   value: string

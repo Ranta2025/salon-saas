@@ -10,9 +10,9 @@
  * the domain limits lives here with the exact API wording.
  */
 
-import { request } from './api.ts'
-import { isManager, type Role } from './permissions.ts'
-import type { Service } from '../types'
+import { request } from '../../../lib/api.ts'
+import { isManager, type Role } from '../../../lib/permissions.ts'
+import type { Service } from '../../../types.ts'
 
 /** Domain limit of `resource_types` per salon (S-F2e-2). */
 export const MAX_RESOURCE_TYPES = 20

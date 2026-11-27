@@ -5,7 +5,7 @@ import {
   fetchServices,
   updateService,
   type ApiErrorNotice,
-} from '../lib/api'
+} from '@/lib/api'
 import {
   fetchEquipment,
   NO_ACTIVE_EQUIPMENT_NOTICE,
@@ -21,13 +21,13 @@ import {
   nobodyDoesService,
   professionalCount,
   professionalsCountLabel,
-} from '../lib/tradeServices'
-import { formatCents, formatMinutes } from '../lib/money'
-import type { Service, ServiceInput, ServiceUpdateInput } from '../types'
-import { useSalon } from './SalonContext'
-import { ErrorNotice, LoadingState, SalonRequired } from './components/Feedback'
-import { PageHeader } from './components/PageHeader'
-import { ServiceForm } from './components/ServiceForm'
+} from '@/lib/tradeServices'
+import { formatCents, formatMinutes } from '@/lib/money'
+import type { Service, ServiceInput, ServiceUpdateInput } from '@/types'
+import { useSalon } from '@/app/SalonContext'
+import { ErrorNotice, LoadingState, SalonRequired } from '@/app/components/Feedback'
+import { PageHeader } from '@/app/components/PageHeader'
+import { ServiceForm } from '../components/ServiceForm'
 
 type FormMode = { kind: 'closed' } | { kind: 'create' } | { kind: 'edit'; service: Service }
 

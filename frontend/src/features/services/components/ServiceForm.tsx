@@ -4,15 +4,15 @@ import {
   NO_ACTIVE_EQUIPMENT_NOTICE,
   serviceResourceTypeId,
   type ResourceType,
-} from '../../lib/equipment'
-import { formatCents, parseAmountToCents } from '../../lib/money'
-import { normalizeServiceIds } from '../../lib/tradeServices'
+} from '../lib/equipment'
+import { formatCents, parseAmountToCents } from '@/lib/money'
+import { normalizeServiceIds } from '@/lib/tradeServices'
 import type { SalonMember } from '@/features/team/lib/members'
 import {
   serviceDescriptionBody,
   validateServiceDescription,
-} from '../../lib/salonProfile'
-import type { Service, ServiceInput, ServiceUpdateInput } from '../../types'
+} from '@/lib/salonProfile'
+import type { Service, ServiceInput, ServiceUpdateInput } from '@/types'
 import { SalonServiceDescription } from './SalonServiceDescription'
 
 type ServiceFormProps = {
