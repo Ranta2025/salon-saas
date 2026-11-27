@@ -12,13 +12,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	httpx "salon-saas/internal/adapters/http/httpx"
-	"salon-saas/internal/app"
+	"salon-saas/internal/deposits"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
 
 type DepositPolicyHandler struct {
-	Policy      app.DepositPolicyService
+	Policy      deposits.DepositPolicyService
 	Memberships ports.MembershipRepository
 }
 
@@ -85,7 +85,7 @@ func (h DepositPolicyHandler) Put(c *gin.Context) {
 		badBody(c)
 		return
 	}
-	p, err := h.Policy.Put(actor, salonID, app.DepositPolicyInput{
+	p, err := h.Policy.Put(actor, salonID, deposits.DepositPolicyInput{
 		Enabled:     in.Enabled,
 		Percent:     in.Percent,
 		HoldMinutes: in.HoldMinutes,

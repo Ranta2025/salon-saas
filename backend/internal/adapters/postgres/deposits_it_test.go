@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"salon-saas/internal/app"
+	"salon-saas/internal/deposits"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -583,9 +583,9 @@ func (m *itMailer) count() int {
 }
 
 // sweepEnv cablea el caso de uso de la seña con los adaptadores REALES.
-func (f *depFix) sweepEnv(t *testing.T, gateway *itGateway, mailer *itMailer) app.DepositService {
+func (f *depFix) sweepEnv(t *testing.T, gateway *itGateway, mailer *itMailer) deposits.DepositService {
 	t.Helper()
-	return app.DepositService{
+	return deposits.DepositService{
 		Policies: f.policies, Deposits: f.deposits, Gateway: gateway,
 		Bookings: BookingCanceller{Bookings: Bookings{Pool: f.pool}},
 		Notices:  f.deposits, Mailer: mailer,

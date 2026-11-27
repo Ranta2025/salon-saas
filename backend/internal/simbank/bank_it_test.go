@@ -41,7 +41,7 @@ func itPool(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatalf("pool: %v", err)
 	}
-	if err := pgstore.Migrate(context.Background(), pool, filepath.Join("..", "..", "..", "migrations")); err != nil {
+	if err := pgstore.Migrate(context.Background(), pool, filepath.Join("..", "..", "migrations")); err != nil {
 		t.Fatalf("migrar: %v", err)
 	}
 	return pool

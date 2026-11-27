@@ -12,13 +12,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	httpx "salon-saas/internal/adapters/http/httpx"
-	"salon-saas/internal/app"
+	"salon-saas/internal/deposits"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
 
 type DepositHandler struct {
-	Deposits    app.DepositService
+	Deposits    deposits.DepositService
 	Memberships ports.MembershipRepository
 }
 

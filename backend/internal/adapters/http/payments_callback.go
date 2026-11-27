@@ -14,7 +14,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	"salon-saas/internal/deposits"
 	"salon-saas/internal/domain"
 )
 
@@ -23,7 +23,7 @@ import (
 const maxPaymentCallbackBody = 8 << 10
 
 type PaymentsHandler struct {
-	Deposits app.DepositService
+	Deposits deposits.DepositService
 }
 
 // Callback: POST /api/v1/payments/callback -> 200 {"ok":true}.

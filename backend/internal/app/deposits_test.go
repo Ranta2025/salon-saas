@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	dep "salon-saas/internal/deposits"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -23,8 +24,8 @@ var depClock = time.Date(2026, 4, 20, 15, 0, 0, 0, time.UTC)
 // depEnv arma un salón s1 con todos los roles, el banco simulado, la tienda de
 // señas en memoria y un reloj fijo.
 type depEnv struct {
-	svc      *DepositService
-	policy   *DepositPolicyService
+	svc      *dep.DepositService
+	policy   *dep.DepositPolicyService
 	mems     *fakeMemberships
 	policies *fakeDepositPolicies
 	deposits *fakeDeposits
@@ -52,7 +53,7 @@ func newDepEnv(t *testing.T) *depEnv {
 	}}
 	// El correo se manda en línea: el test no espera goroutines.
 	run := func(job func(ctx context.Context)) { job(context.Background()) }
-	e.svc = &DepositService{
+	e.svc = &dep.DepositService{
 		Policies: e.policies, Deposits: e.deposits, Gateway: e.gateway,
 		Bookings: e.bookings, Notices: e.notices, Mailer: e.mailer,
 		Settings: settings, Memberships: e.mems,
@@ -60,7 +61,7 @@ func newDepEnv(t *testing.T) *depEnv {
 		Run:    run,
 		Now:    func() time.Time { return depClock },
 	}
-	e.policy = &DepositPolicyService{
+	e.policy = &dep.DepositPolicyService{
 		Policies: e.policies, Memberships: e.mems, Gateway: e.gateway,
 		Now: func() time.Time { return depClock },
 	}
@@ -304,7 +305,7 @@ func (e *depEnv) callback(kind, eventID, chargeID string, amount int) (http.Head
 	}
 	// Se firma con el reloj ACTUAL del caso de uso: la ventana es de +-300 s.
 	h := http.Header{}
-	h.Set("X-Simbank-Signature", domain.SignPayment(depSecret, e.svc.now(), body))
+	h.Set("X-Simbank-Signature", domain.SignPayment(depSecret, e.svc.NowUTC(), body))
 	return h, body
 }
 

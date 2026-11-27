@@ -3,7 +3,8 @@ package main
 import (
 	"context"
 
-	"salon-saas/internal/app"
+	"salon-saas/internal/deposits"
+
 	"strings"
 	"sync"
 	"testing"
@@ -16,10 +17,10 @@ type fakeDepositRunner struct {
 	calls int
 	err   error
 	panic bool
-	res   app.DepositSweepResult
+	res   deposits.DepositSweepResult
 }
 
-func (f *fakeDepositRunner) Sweep(int) (app.DepositSweepResult, error) {
+func (f *fakeDepositRunner) Sweep(int) (deposits.DepositSweepResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
@@ -99,7 +100,7 @@ func TestRunDeposits_disabled(t *testing.T) {
 // Un panic de una pasada no se lleva la goroutine ni los ticks siguientes.
 func TestRunDeposits_panicSafe(t *testing.T) {
 	runner := &fakeDepositRunner{panic: true}
-	runner.res = app.DepositSweepResult{Expired: 1, Cancelled: 1}
+	runner.res = deposits.DepositSweepResult{Expired: 1, Cancelled: 1}
 	runDepositPass(runner, func(string, ...any) {})
 	if runner.count() != 1 {
 		t.Fatalf("la pasada corre: %d", runner.count())

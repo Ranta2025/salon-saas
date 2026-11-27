@@ -4,12 +4,13 @@ import (
 	"errors"
 	"testing"
 
+	dep "salon-saas/internal/deposits"
 	"salon-saas/internal/domain"
 )
 
 // input arma el cuerpo de PUT con las cuatro claves presentes.
-func policyInput(enabled bool, percent, hold, refund int) DepositPolicyInput {
-	return DepositPolicyInput{Enabled: &enabled, Percent: &percent, HoldMinutes: &hold, RefundHours: &refund}
+func policyInput(enabled bool, percent, hold, refund int) dep.DepositPolicyInput {
+	return dep.DepositPolicyInput{Enabled: &enabled, Percent: &percent, HoldMinutes: &hold, RefundHours: &refund}
 }
 
 func TestDepositPolicy_Get_roles(t *testing.T) {
@@ -37,7 +38,7 @@ func TestDepositPolicy_Put_permiso_antes_del_cuerpo(t *testing.T) {
 	e := newDepEnv(t)
 	// Reception, profesional, clienta y baja: 403 aunque el cuerpo esté VACÍO.
 	for _, actor := range []domain.Membership{e.recep, e.prof, e.client, e.removed} {
-		_, err := e.policy.Put(actor, "s1", DepositPolicyInput{})
+		_, err := e.policy.Put(actor, "s1", dep.DepositPolicyInput{})
 		if !errors.Is(err, domain.ErrForbidden) {
 			t.Fatalf("%s: %v", actor.Role, err)
 		}
@@ -57,7 +58,7 @@ func TestDepositPolicy_Put_permiso_antes_del_cuerpo(t *testing.T) {
 func TestDepositPolicy_Put_claves_obligatorias(t *testing.T) {
 	e := newDepEnv(t)
 	enabled, percent, hold, refund := true, 30, 30, 24
-	cases := map[string]DepositPolicyInput{
+	cases := map[string]dep.DepositPolicyInput{
 		"todas":   {},
 		"enabled": {Percent: &percent, HoldMinutes: &hold, RefundHours: &refund},
 		"percent": {Enabled: &enabled, HoldMinutes: &hold, RefundHours: &refund},
@@ -79,7 +80,7 @@ func TestDepositPolicy_Put_rangos(t *testing.T) {
 	e := newDepEnv(t)
 	cases := []struct {
 		name     string
-		in       DepositPolicyInput
+		in       dep.DepositPolicyInput
 		wantText string
 	}{
 		{"porcentaje bajo", policyInput(true, 9, 30, 24), domain.MsgDepositPercentRange},

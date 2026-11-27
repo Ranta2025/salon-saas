@@ -10,7 +10,7 @@
 //   - activar la sena sin banco configurado es 409 (D12);
 //   - sin fila guardada la respuesta es `enabled:false` y el resto null: nunca se
 //     inventan valores (D3).
-package app
+package deposits
 
 import (
 	"errors"
@@ -40,7 +40,7 @@ type DepositPolicyService struct {
 	Now func() time.Time
 }
 
-func (s DepositPolicyService) now() time.Time {
+func (s DepositPolicyService) NowUTC() time.Time {
 	if s.Now != nil {
 		return s.Now().UTC()
 	}
@@ -83,7 +83,7 @@ func (s DepositPolicyService) Put(actor domain.Membership, salonID string, in De
 		return domain.DepositPolicy{}, domain.NewMessage(domain.ErrValidation, domain.MsgDepositPolicyMissing)
 	}
 	// 3) Rangos, en el orden del contrato.
-	p, err := domain.NewDepositPolicy(salonID, *in.Enabled, *in.Percent, *in.HoldMinutes, *in.RefundHours, s.now())
+	p, err := domain.NewDepositPolicy(salonID, *in.Enabled, *in.Percent, *in.HoldMinutes, *in.RefundHours, s.NowUTC())
 	if err != nil {
 		return domain.DepositPolicy{}, err
 	}

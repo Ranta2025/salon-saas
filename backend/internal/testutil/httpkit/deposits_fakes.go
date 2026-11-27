@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	httpapi "salon-saas/internal/adapters/http"
-	"salon-saas/internal/app"
 	"salon-saas/internal/auth/security"
+	"salon-saas/internal/deposits"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/settings"
@@ -553,12 +553,12 @@ func NewDepositEnv(t *testing.T) *DepWorld {
 // wire monta los servicios de F11 en el router con sus handlers y rutas.
 func (w *DepWorld) wire(t *testing.T) {
 	t.Helper()
-	svc := app.DepositService{
+	svc := deposits.DepositService{
 		Policies: w.Policies, Deposits: w.Deposits, Gateway: w.Gateway,
 		Bookings: w.Bookings, Notices: w.Notices, Memberships: w.Env.Mems,
 		AppURL: "http://localhost:8081", Settings: w.Env.Settings,
 	}
-	policySvc := app.DepositPolicyService{Policies: w.Policies, Memberships: w.Env.Mems, Gateway: w.Gateway}
+	policySvc := deposits.DepositPolicyService{Policies: w.Policies, Memberships: w.Env.Mems, Gateway: w.Gateway}
 	w.Env.Deps.DepositPolicy = httpapi.DepositPolicyHandler{Policy: policySvc, Memberships: w.Env.Mems}
 	w.Env.Deps.Deposits = httpapi.DepositHandler{Deposits: svc, Memberships: w.Env.Mems}
 	w.Env.Deps.PaymentsCallback = httpapi.PaymentsHandler{Deposits: svc}.Callback

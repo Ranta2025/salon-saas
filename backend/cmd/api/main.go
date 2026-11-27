@@ -15,9 +15,7 @@ import (
 	"salon-saas/internal/adapters/mail"
 	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/adapters/realtime"
-	"salon-saas/internal/adapters/simbank"
 	"salon-saas/internal/adapters/storage"
-	"salon-saas/internal/app"
 	"salon-saas/internal/audit"
 	audithttpapi "salon-saas/internal/audit/httpapi"
 	"salon-saas/internal/auth"
@@ -26,6 +24,7 @@ import (
 	"salon-saas/internal/bookings"
 	"salon-saas/internal/clients"
 	clientshttpapi "salon-saas/internal/clients/httpapi"
+	"salon-saas/internal/deposits"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/exports"
 	exportshttpapi "salon-saas/internal/exports/httpapi"
@@ -55,6 +54,7 @@ import (
 	scheduleshttpapi "salon-saas/internal/schedules/httpapi"
 	"salon-saas/internal/settings"
 	settingshttpapi "salon-saas/internal/settings/httpapi"
+	"salon-saas/internal/simbank"
 	"salon-saas/internal/staffing"
 	staffinghttpapi "salon-saas/internal/staffing/httpapi"
 	"salon-saas/internal/team"
@@ -564,13 +564,13 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	}
 	// El barrido cancela la reserva por el camino EXISTENTE de la agenda
 	// (SetStatus(cancelled) bajo el lock `booking-write:`): no reimplementa turnos.
-	depositsSvc := app.DepositService{
+	depositsSvc := deposits.DepositService{
 		Policies: depositPoliciesRepo, Deposits: depositRepo, Gateway: gateway,
 		Bookings: pgstore.BookingCanceller{Bookings: bookingRepo},
 		Notices:  depositRepo, Mailer: mailer, Links: bookingLinks,
 		Settings: salons, Memberships: mems, AppURL: cfg.AppURL,
 	}
-	depositPolicySvc := app.DepositPolicyService{
+	depositPolicySvc := deposits.DepositPolicyService{
 		Policies: depositPoliciesRepo, Memberships: mems, Gateway: gateway,
 	}
 	// El payload público (D11) lee la misma política de señas.

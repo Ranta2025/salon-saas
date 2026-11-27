@@ -6,7 +6,8 @@ package main
 import (
 	"context"
 
-	"salon-saas/internal/app"
+	"salon-saas/internal/deposits"
+
 	"time"
 )
 
@@ -94,7 +95,7 @@ func runWaitlistPass(ctx context.Context, runner waitlistRunner, logf func(strin
 // depositRunner es lo que la tarea de señas necesita (F11, D9): el caso de uso
 // real o un doble en los tests.
 type depositRunner interface {
-	Sweep(limit int) (app.DepositSweepResult, error)
+	Sweep(limit int) (deposits.DepositSweepResult, error)
 }
 
 // depositSweepLimit es el tamaño de página de cada tick del barrido de señas.
