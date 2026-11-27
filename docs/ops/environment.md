@@ -194,7 +194,7 @@ respuesta vuelve a estar disponible).
 ## Seña online y banco simulado (`PAYMENT_SIM_SECRET`, `PAYMENT_CALLBACK_URL`, `DEPOSIT_INTERVAL`)
 
 La seña (F11) se cobra a través del puerto `ports.PaymentGateway`; el adaptador de
-hoy es un **banco simulado** (paquete `internal/adapters/simbank`, montado en el
+hoy es un **banco simulado** (paquete `internal/simbank`, montado en el
 mismo binario bajo `/api/v1/simbank/`). No se cobra dinero real: la página
 `/pagar` lo avisa con un cartel permanente.
 
