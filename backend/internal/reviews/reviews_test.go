@@ -658,3 +658,25 @@ func TestValidateComment_rejectsTheReplacementCharacterInvalidUTF8BecomesInJSON(
 		t.Fatalf("el texto válido sigue entrando: %q %v", got, err)
 	}
 }
+
+// F13 verifier V2 advisory: with two sweepers the second one's Claim loses; that
+// attempt sent nothing, so it must not be counted as "sent" in the log numbers.
+func TestRequestOne_reportsWhetherItActuallySentTheMail(t *testing.T) {
+	svc, store, mailer, _ := newWorld()
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	d := dueReview("b1")
+	store.due = []ports.DueReview{d}
+
+	sent, err := svc.requestOne(context.Background(), d, now)
+	if err != nil || !sent {
+		t.Fatalf("el primer barredor manda: %v %v", sent, err)
+	}
+	// The other sweeper holds the same (stale) due list: its Claim loses.
+	sent, err = svc.requestOne(context.Background(), d, now.Add(time.Minute))
+	if err != nil || sent {
+		t.Fatalf("el que pierde el reclamo no manda ni cuenta: %v %v", sent, err)
+	}
+	if got := len(mailer.messages()); got != 1 {
+		t.Fatalf("un solo correo: %d", got)
+	}
+}

@@ -567,20 +567,25 @@ func (s Service) RunOnce(ctx context.Context, now time.Time) (sent, failed int) 
 		if ctx.Err() != nil {
 			break
 		}
-		if err := s.requestOne(ctx, d, now); err != nil {
+		ok, err := s.requestOne(ctx, d, now)
+		if err != nil {
 			failed++
 			continue
 		}
-		sent++
+		if ok {
+			sent++
+		}
 	}
 	return sent, failed
 }
 
-// requestOne crea/reutiliza el pedido, reclama el envío y manda UN correo.
-func (s Service) requestOne(ctx context.Context, d ports.DueReview, now time.Time) error {
+// requestOne crea/reutiliza el pedido, reclama el envío y manda UN correo. Devuelve
+// true solo si ESTE barredor mandó el correo (perder el reclamo ante otro barredor
+// no cuenta como enviado).
+func (s Service) requestOne(ctx context.Context, d ports.DueReview, now time.Time) (bool, error) {
 	token, err := NewToken()
 	if err != nil {
-		return err
+		return false, err
 	}
 	requestID, claimed, err := s.Requests.Claim(ports.ReviewClaim{
 		ID:        domain.NewID(),
@@ -591,26 +596,26 @@ func (s Service) requestOne(ctx context.Context, d ports.DueReview, now time.Tim
 		ExpiresAt: now.Add(RequestTTL),
 	})
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !claimed {
 		// Otro barredor ya lo tiene o ya se envió: este tick no manda nada.
-		return nil
+		return false, nil
 	}
 	if s.Mailer == nil {
-		return nil
+		return false, nil
 	}
 	if err := s.Mailer.Send(ctx, reviewRequestMail(d, ReviewLinkURL(s.AppURL, token))); err != nil {
 		// El correo no salió: se deshace el arriendo y el próximo tick reintenta.
 		_ = s.Requests.Unclaim(requestID, now)
-		return err
+		return false, err
 	}
 	// El correo salió: se sella la entrega para que este turno no vuelva a salir.
 	// Si este UPDATE falla, el correo YA se mandó y el arriendo vence en 15
 	// minutos: a lo sumo saldrá un segundo correo con otro token (solo sirve el último
 	// enlace y la reseña sigue siendo una sola). Se cuenta como fallo para que
 	// quede en el log.
-	return s.Requests.MarkDelivered(requestID, now)
+	return true, s.Requests.MarkDelivered(requestID, now)
 }
 
 // --- Auxiliares -------------------------------------------------------------------
