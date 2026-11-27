@@ -5,6 +5,7 @@ import (
 	exportshttpapi "salon-saas/internal/exports/httpapi"
 	financehttpapi "salon-saas/internal/finance/httpapi"
 	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
+	notificationshttpapi "salon-saas/internal/notifications/httpapi"
 	packageshttpapi "salon-saas/internal/packages/httpapi"
 	"salon-saas/internal/ports"
 	productshttpapi "salon-saas/internal/products/httpapi"
@@ -21,7 +22,7 @@ type Deps struct {
 	Sales         SaleHandler
 	CashCloses    CashCloseHandler
 	Dashboard     DashboardHandler
-	Notifications NotificationHandler
+	Notifications notificationshttpapi.NotificationHandler
 	Clients       ClientHandler
 	Me            MeHandler
 	Staff         StaffHandler

@@ -32,6 +32,7 @@ import (
 	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
 	loyaltystore "salon-saas/internal/loyalty/postgres"
 	notifsvc "salon-saas/internal/notifications"
+	notificationshttpapi "salon-saas/internal/notifications/httpapi"
 	notifstore "salon-saas/internal/notifications/postgres"
 	"salon-saas/internal/packages"
 	packageshttpapi "salon-saas/internal/packages/httpapi"
@@ -587,7 +588,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Sales:         httpapi.SaleHandler{Sales: saleSvc, Memberships: mems},
 		CashCloses:    httpapi.CashCloseHandler{CashCloses: cashCloseSvc, Memberships: mems},
 		Dashboard:     httpapi.DashboardHandler{Dashboard: dashSvc, Memberships: mems},
-		Notifications: httpapi.NotificationHandler{Notifications: notifSvc, Memberships: mems},
+		Notifications: notificationshttpapi.NotificationHandler{Notifications: notifSvc, Memberships: mems},
 		Clients:       httpapi.ClientHandler{Clients: clientSvc, Memberships: mems, Photos: photoSigner, History: clientHistorySvc},
 		Me:            httpapi.MeHandler{Me: meSvc},
 		Staff:         httpapi.StaffHandler{Staff: staffSvc, Memberships: mems},

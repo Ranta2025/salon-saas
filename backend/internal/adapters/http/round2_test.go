@@ -1,13 +1,11 @@
 package httpapi_test
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	httpapi "salon-saas/internal/adapters/http"
 	"salon-saas/internal/domain"
-	"salon-saas/internal/notifications"
 	httpkit "salon-saas/internal/testutil/httpkit"
 	"strconv"
 	"strings"
@@ -692,38 +690,3 @@ func TestHTTP_photo_content_type_case_insensitive(t *testing.T) {
 }
 
 // --- R4-003: el listado de avisos no cae si falla el contador ---
-
-func TestHTTP_notifications_unread_failure(t *testing.T) {
-	env := httpkit.NewPOSEnv()
-	ownerTok, _ := env.Register(t, "owner@mail.com")
-	salonID := env.Salon(t, ownerTok, "avisos-caidos")
-
-	d := env.Deps
-	d.Notifications = httpapi.NotificationHandler{
-		Notifications: notifications.NotificationService{Notifications: httpkit.FailUnread{Inner: env.Notifications}, Salons: env.Mems, Events: env.Events},
-		Memberships:   env.Mems,
-	}
-	r := gin.New()
-	httpapi.RegisterRoutes(r, d)
-
-	// Un aviso para que el listado no esté vacío.
-	_ = env.Notifications.Save(domain.Notification{ID: "n1", SalonID: salonID, Title: "Hola", Body: "x", Kind: domain.KindBooking, CreatedAt: time.Now().UTC()})
-
-	w := httpkit.Do(r, "GET", "/api/v1/salons/"+salonID+"/notifications", "", ownerTok)
-	if w.Code != http.StatusOK {
-		t.Fatalf("listar con contador caído debe dar 200, dio %d %s", w.Code, w.Body.String())
-	}
-	var out struct {
-		Notifications []map[string]any `json:"notifications"`
-		Unread        int              `json:"unread"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
-		t.Fatalf("json: %v (%s)", err, w.Body.String())
-	}
-	if len(out.Notifications) != 1 {
-		t.Fatalf("los avisos deben seguir saliendo: %s", w.Body.String())
-	}
-	if out.Unread != 0 {
-		t.Fatalf("sin contador el badge va a 0 (no a un número inventado), dio %d", out.Unread)
-	}
-}

@@ -9,6 +9,7 @@ import (
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/notifications"
+	notificationshttpapi "salon-saas/internal/notifications/httpapi"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/staffing"
 	"testing"
@@ -268,7 +269,7 @@ func NewPOSEnv() *Env {
 		Sales:         httpapi.SaleHandler{Sales: saleSvc, Memberships: env.Mems},
 		CashCloses:    httpapi.CashCloseHandler{CashCloses: cashSvc, Memberships: env.Mems},
 		Dashboard:     httpapi.DashboardHandler{Dashboard: dashSvc, Memberships: env.Mems},
-		Notifications: httpapi.NotificationHandler{Notifications: notifSvc, Memberships: env.Mems},
+		Notifications: notificationshttpapi.NotificationHandler{Notifications: notifSvc, Memberships: env.Mems},
 		Clients:       httpapi.ClientHandler{Clients: clientSvc, Memberships: env.Mems, Photos: env.Signer},
 		Me:            httpapi.MeHandler{Me: meSvc},
 		Staff:         httpapi.StaffHandler{Staff: staffSvc, Memberships: env.Mems},

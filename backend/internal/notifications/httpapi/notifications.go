@@ -3,12 +3,13 @@ package httpapi
 import (
 	"log"
 	"net/http"
-	"strconv"
-
-	"github.com/gin-gonic/gin"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/notifications"
 	"salon-saas/internal/ports"
+	"strconv"
+
+	"github.com/gin-gonic/gin"
 )
 
 // NotificationHandler: bandeja de avisos del salón. Delgado: carga actor,
@@ -44,7 +45,7 @@ func (h NotificationHandler) List(c *gin.Context) {
 	}
 	list, err := h.Notifications.List(actor, salonID, limit)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]map[string]any, 0, len(list))
@@ -72,7 +73,7 @@ func (h NotificationHandler) MarkRead(c *gin.Context) {
 	uid, _ := c.Get("userID")
 	actor := domain.Membership{UserID: uid.(string)}
 	if err := h.Notifications.MarkRead(actor, c.Param("nid")); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
