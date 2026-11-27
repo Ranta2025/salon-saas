@@ -1,8 +1,10 @@
 package httpapi
 
 import (
-	"github.com/gin-gonic/gin"
+	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
 	"salon-saas/internal/ports"
+
+	"github.com/gin-gonic/gin"
 )
 
 // Deps agrupa lo que HTTP necesita (todo interfaces: DIP hasta el borde).
@@ -57,7 +59,7 @@ type Deps struct {
 	// Loyalty es la fidelidad «cada N visitas, un servicio de regalo» (F9): el
 	// programa del salón y, por clienta, la ficha, entregar y usar un vale. La
 	// autorización vive en el caso de uso.
-	Loyalty LoyaltyHandler
+	Loyalty loyaltyhttpapi.LoyaltyHandler
 	// Audit es el registro de auditoría (F10): el middleware `Audit(action)` que
 	// cuelga de las rutas sensibles y `GET /salons/:id/audit-log`. Sin servicio
 	// configurado el middleware no hace nada (los routers de los tests unitarios

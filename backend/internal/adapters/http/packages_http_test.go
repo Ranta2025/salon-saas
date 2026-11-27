@@ -3,10 +3,8 @@ package httpapi_test
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"salon-saas/internal/domain"
 	httpkit "salon-saas/internal/testutil/httpkit"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -119,31 +117,6 @@ func (w *pkgWorld) buy(t *testing.T, op string) (cpID, saleID string) {
 	return out.ClientPackage["id"].(string), out.SaleID
 }
 
-func keysOf(m map[string]any) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func errText(t *testing.T, w *httptest.ResponseRecorder) string {
-	t.Helper()
-	var e struct {
-		Error string `json:"error"`
-	}
-	httpkit.MustJSON(t, w.Body.Bytes(), &e)
-	return e.Error
-}
-
-func wantHTTP(t *testing.T, w *httptest.ResponseRecorder, code int, text string) {
-	t.Helper()
-	if w.Code != code || (text != "" && errText(t, w) != text) {
-		t.Fatalf("esperaba %d %q, dio %d %s", code, text, w.Code, w.Body.String())
-	}
-}
-
 // --- Formas y códigos EXACTOS del contrato ----------------------------------------
 
 func TestHTTP_packages_shapes(t *testing.T) {
@@ -162,7 +135,7 @@ func TestHTTP_packages_shapes(t *testing.T) {
 		t.Fatalf("catálogo: %s", r.Body.String())
 	}
 	p := cat.Packages[0]
-	if got := strings.Join(keysOf(p), ","); got != "active,created_at,id,name,price_cents,service_id,service_name,sessions,validity_days" {
+	if got := strings.Join(httpkit.KeysOf(p), ","); got != "active,created_at,id,name,price_cents,service_id,service_name,sessions,validity_days" {
 		t.Fatalf("claves del paquete: %s", got)
 	}
 	if p["name"] != "Pack 3 cortes" || p["service_name"] != "Corte" || p["sessions"] != float64(3) || p["price_cents"] != float64(40000) ||
@@ -191,11 +164,11 @@ func TestHTTP_packages_shapes(t *testing.T) {
 	}
 	var bought map[string]any
 	httpkit.MustJSON(t, r.Body.Bytes(), &bought)
-	if got := strings.Join(keysOf(bought), ","); got != "client_package,sale_id" {
+	if got := strings.Join(httpkit.KeysOf(bought), ","); got != "client_package,sale_id" {
 		t.Fatalf("claves de la compra: %s", got)
 	}
 	cp := bought["client_package"].(map[string]any)
-	if got := strings.Join(keysOf(cp), ","); got != "expired,expires_at,id,name,price_cents,purchased_at,service_id,service_name,sessions_left,sessions_total" {
+	if got := strings.Join(httpkit.KeysOf(cp), ","); got != "expired,expires_at,id,name,price_cents,purchased_at,service_id,service_name,sessions_left,sessions_total" {
 		t.Fatalf("claves del paquete de la clienta (forma D8): %s", got)
 	}
 	if bought["sale_id"] == "" || cp["name"] != "Pack 3 cortes" || cp["sessions_total"] != float64(3) || cp["sessions_left"] != float64(3) ||
@@ -220,7 +193,7 @@ func TestHTTP_packages_shapes(t *testing.T) {
 	}
 	var red map[string]any
 	httpkit.MustJSON(t, r.Body.Bytes(), &red)
-	if got := strings.Join(keysOf(red), ","); got != "client_package" {
+	if got := strings.Join(httpkit.KeysOf(red), ","); got != "client_package" {
 		t.Fatalf("claves del redeem: %s", got)
 	}
 	if red["client_package"].(map[string]any)["sessions_left"] != float64(2) {
@@ -263,7 +236,7 @@ func TestHTTP_packages_shapes(t *testing.T) {
 		t.Fatalf("movimientos: %d %s", r.Code, r.Body.String())
 	}
 	for _, m := range mv.Movements {
-		if got := strings.Join(keysOf(m), ","); got != "created_at,delta,id,note,professional_id,reason" {
+		if got := strings.Join(httpkit.KeysOf(m), ","); got != "created_at,delta,id,note,professional_id,reason" {
 			t.Fatalf("claves del movimiento: %s", got)
 		}
 	}
@@ -319,7 +292,7 @@ func TestHTTP_packages_purchase_replay(t *testing.T) {
 	}
 	// Otra clienta con el mismo op id: 409.
 	r := httpkit.Do(w.Env.Router, "POST", w.clientPath(w.clientTwoID), w.buyBody("op-http-1"), w.Recep)
-	wantHTTP(t, r, http.StatusConflict, "Esa operación ya se usó en otro pedido")
+	httpkit.WantHTTP(t, r, http.StatusConflict, "Esa operación ya se usó en otro pedido")
 }
 
 func TestHTTP_packages_redeem_replay_does_not_decrement(t *testing.T) {
@@ -414,17 +387,17 @@ func TestHTTP_packages_catalog_validations(t *testing.T) {
 		`{"name":"X","service_id":"` + svc + `","sessions":null,"price_cents":100}`,
 		`{"name":"  ","service_id":"` + svc + `","sessions":2,"price_cents":100}`,
 	} {
-		wantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, body, w.Owner), 400, "Faltan datos del paquete: nombre, servicio, sesiones y precio")
+		httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, body, w.Owner), 400, "Faltan datos del paquete: nombre, servicio, sesiones y precio")
 	}
 	// Servicio inexistente: 400 «Paquete inválido».
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"X","service_id":"nope","sessions":2,"price_cents":100}`, w.Owner), 400, "Paquete inválido")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"X","service_id":"nope","sessions":2,"price_cents":100}`, w.Owner), 400, "Paquete inválido")
 	// Rangos.
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"X","service_id":"`+svc+`","sessions":0,"price_cents":100}`, w.Owner), 400, domain.MsgPackageSessions)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"X","service_id":"`+svc+`","sessions":101,"price_cents":100}`, w.Owner), 400, domain.MsgPackageSessions)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"X","service_id":"`+svc+`","sessions":2,"price_cents":-1}`, w.Owner), 400, domain.MsgPackagePriceRange)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"X","service_id":"`+svc+`","sessions":2,"price_cents":10000001}`, w.Owner), 400, domain.MsgPackagePriceRange)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"X","service_id":"`+svc+`","sessions":2,"price_cents":1,"validity_days":0}`, w.Owner), 400, domain.MsgPackageValidity)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"X","service_id":"`+svc+`","sessions":2,"price_cents":1,"validity_days":3651}`, w.Owner), 400, domain.MsgPackageValidity)
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"X","service_id":"`+svc+`","sessions":0,"price_cents":100}`, w.Owner), 400, domain.MsgPackageSessions)
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"X","service_id":"`+svc+`","sessions":101,"price_cents":100}`, w.Owner), 400, domain.MsgPackageSessions)
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"X","service_id":"`+svc+`","sessions":2,"price_cents":-1}`, w.Owner), 400, domain.MsgPackagePriceRange)
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"X","service_id":"`+svc+`","sessions":2,"price_cents":10000001}`, w.Owner), 400, domain.MsgPackagePriceRange)
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"X","service_id":"`+svc+`","sessions":2,"price_cents":1,"validity_days":0}`, w.Owner), 400, domain.MsgPackageValidity)
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"X","service_id":"`+svc+`","sessions":2,"price_cents":1,"validity_days":3651}`, w.Owner), 400, domain.MsgPackageValidity)
 	// Tipos equivocados: 400 «body inválido», nunca 500; los números con decimales, tampoco.
 	for _, body := range []string{
 		`{"name":123,"service_id":"` + svc + `","sessions":2,"price_cents":1}`,
@@ -435,17 +408,17 @@ func TestHTTP_packages_catalog_validations(t *testing.T) {
 		`{"name":"X","service_id":"` + svc + `","sessions":99999999999999999999,"price_cents":1}`,
 		`no es json`,
 	} {
-		wantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, body, w.Owner), 400, "body inválido")
+		httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, body, w.Owner), 400, "body inválido")
 	}
 	// NUL y salto de línea en el nombre: 400 del dominio, nunca 500.
 	for _, name := range []string{`a\u0000b`, `a\nb`, `a\rb`, `a\u2028b`} {
-		wantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"`+name+`","service_id":"`+svc+`","sessions":2,"price_cents":1}`, w.Owner), 400, domain.MsgPackageInvalidChars)
+		httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"`+name+`","service_id":"`+svc+`","sessions":2,"price_cents":1}`, w.Owner), 400, domain.MsgPackageInvalidChars)
 	}
 	if len(w.catalog.All) != n {
 		t.Fatalf("un 400 escribió: %d -> %d", n, len(w.catalog.All))
 	}
 	// Nombre activo repetido: 409 con el texto exacto (y sin importar mayúsculas).
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"PACK 3 CORTES","service_id":"`+svc+`","sessions":2,"price_cents":1}`, w.Owner), 409, "Ya hay un paquete activo con ese nombre")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", base, `{"name":"PACK 3 CORTES","service_id":"`+svc+`","sessions":2,"price_cents":1}`, w.Owner), 409, "Ya hay un paquete activo con ese nombre")
 	// Un 0 explícito es un precio válido.
 	if r := httpkit.Do(w.Env.Router, "POST", base, `{"name":"Regalo","service_id":"`+svc+`","sessions":1,"price_cents":0}`, w.Admin); r.Code != http.StatusCreated {
 		t.Fatalf("precio 0: %d %s", r.Code, r.Body.String())
@@ -470,7 +443,7 @@ func TestHTTP_packages_put_requires_all_four_keys(t *testing.T) {
 		`{"name":"X","price_cents":null,"validity_days":null,"active":true}`,
 		`{"name":"X","price_cents":1,"validity_days":null,"active":null}`,
 	} {
-		wantHTTP(t, httpkit.Do(w.Env.Router, "PUT", path, body, w.Owner), 400, missing)
+		httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "PUT", path, body, w.Owner), 400, missing)
 	}
 	// Tipos equivocados: 400 body inválido.
 	for _, body := range []string{
@@ -479,13 +452,13 @@ func TestHTTP_packages_put_requires_all_four_keys(t *testing.T) {
 		`{"name":"X","price_cents":1,"validity_days":1.5,"active":true}`,
 		`{"name":"X","price_cents":1,"validity_days":null,"active":"si"}`,
 	} {
-		wantHTTP(t, httpkit.Do(w.Env.Router, "PUT", path, body, w.Owner), 400, "body inválido")
+		httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "PUT", path, body, w.Owner), 400, "body inválido")
 	}
 	// Validaciones del dominio.
-	wantHTTP(t, httpkit.Do(w.Env.Router, "PUT", path, `{"name":"X","price_cents":1,"validity_days":0,"active":true}`, w.Owner), 400, domain.MsgPackageValidity)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "PUT", path, `{"name":"a\u0000b","price_cents":1,"validity_days":null,"active":true}`, w.Owner), 400, domain.MsgPackageInvalidChars)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "PUT", path, `{"name":"a\nb","price_cents":1,"validity_days":null,"active":true}`, w.Owner), 400, domain.MsgPackageInvalidChars)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "PUT", path, `{"name":"","price_cents":1,"validity_days":null,"active":true}`, w.Owner), 400, domain.MsgPackageNameRequired)
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "PUT", path, `{"name":"X","price_cents":1,"validity_days":0,"active":true}`, w.Owner), 400, domain.MsgPackageValidity)
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "PUT", path, `{"name":"a\u0000b","price_cents":1,"validity_days":null,"active":true}`, w.Owner), 400, domain.MsgPackageInvalidChars)
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "PUT", path, `{"name":"a\nb","price_cents":1,"validity_days":null,"active":true}`, w.Owner), 400, domain.MsgPackageInvalidChars)
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "PUT", path, `{"name":"","price_cents":1,"validity_days":null,"active":true}`, w.Owner), 400, domain.MsgPackageNameRequired)
 	// Nada de lo anterior escribió.
 	if got := w.catalog.All[0]; got.Name != before.Name || got.PriceCents != before.PriceCents || got.ValidityDays == nil || *got.ValidityDays != 30 || !got.Active {
 		t.Fatalf("un 400 modificó el paquete: %+v", got)
@@ -512,13 +485,13 @@ func TestHTTP_packages_put_requires_all_four_keys(t *testing.T) {
 		t.Fatalf("PUT con número: %d %s %+v", r.Code, r.Body.String(), w.catalog.All[0])
 	}
 	// 404 inexistente / de otro salón y 409 de nombre.
-	wantHTTP(t, httpkit.Do(w.Env.Router, "PUT", w.catalogPath()+"/no-existe", `{"name":"X","price_cents":1,"validity_days":null,"active":true}`, w.Owner), 404, "Paquete no encontrado")
-	wantHTTP(t, httpkit.Do(w.Env.Router, "PUT", "/api/v1/salons/"+w.otherSalon+"/packages/"+w.pkgID, `{"name":"X","price_cents":1,"validity_days":null,"active":true}`, w.other), 404, "Paquete no encontrado")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "PUT", w.catalogPath()+"/no-existe", `{"name":"X","price_cents":1,"validity_days":null,"active":true}`, w.Owner), 404, "Paquete no encontrado")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "PUT", "/api/v1/salons/"+w.otherSalon+"/packages/"+w.pkgID, `{"name":"X","price_cents":1,"validity_days":null,"active":true}`, w.other), 404, "Paquete no encontrado")
 	if r := httpkit.Do(w.Env.Router, "PUT", path, `{"name":"Pack renombrado","price_cents":55000,"validity_days":null,"active":true}`, w.Owner); r.Code != http.StatusOK {
 		t.Fatalf("reactivar: %d %s", r.Code, r.Body.String())
 	}
 	second := w.createPkg(t, `{"name":"Segundo","service_id":"`+w.svcID+`","sessions":1,"price_cents":1}`)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "PUT", w.catalogPath()+"/"+second, `{"name":"pack RENOMBRADO","price_cents":1,"validity_days":null,"active":true}`, w.Owner), 409, "Ya hay un paquete activo con ese nombre")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "PUT", w.catalogPath()+"/"+second, `{"name":"pack RENOMBRADO","price_cents":1,"validity_days":null,"active":true}`, w.Owner), 409, "Ya hay un paquete activo con ese nombre")
 	if w.catalog.All[1].Name != "Segundo" {
 		t.Fatalf("un 409 modificó el paquete")
 	}
@@ -538,12 +511,12 @@ func TestHTTP_packages_client_routes_errors_write_nothing(t *testing.T) {
 	// Comprar: paquete inválido (inexistente / vacío / null / NUL), 400 exactos.
 	for _, pid := range []string{`"no-existe"`, `""`, `null`, `"a\u0000b"`} {
 		body := `{"package_id":` + pid + `,"professional_id":"` + w.OwnerID + `","method":"cash"}`
-		wantHTTP(t, httpkit.Do(w.Env.Router, "POST", cl, body, w.Recep), 400, "Paquete inválido")
+		httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", cl, body, w.Recep), 400, "Paquete inválido")
 	}
 	// Paquete inactivo / servicio inactivo.
 	off := w.createPkg(t, `{"name":"Apagado","service_id":"`+w.svcID+`","sessions":2,"price_cents":100}`)
 	httpkit.Do(w.Env.Router, "PUT", w.catalogPath()+"/"+off, `{"name":"Apagado","price_cents":100,"validity_days":null,"active":false}`, w.Owner)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", cl, `{"package_id":"`+off+`","professional_id":"`+w.OwnerID+`","method":"cash"}`, w.Recep), 400, "Paquete inválido")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", cl, `{"package_id":"`+off+`","professional_id":"`+w.OwnerID+`","method":"cash"}`, w.Recep), 400, "Paquete inválido")
 	// Método inválido, profesional inválido o ausente, op id con NUL: 400 y nada.
 	if r := httpkit.Do(w.Env.Router, "POST", cl, `{"package_id":"`+w.pkgID+`","professional_id":"`+w.OwnerID+`","method":"bitcoin"}`, w.Recep); r.Code != http.StatusBadRequest {
 		t.Fatalf("método: %d %s", r.Code, r.Body.String())
@@ -567,8 +540,8 @@ func TestHTTP_packages_client_routes_errors_write_nothing(t *testing.T) {
 	foreignClient := w.newClient(t, w.otherSalon, w.other, "Clienta Ajena")
 	for _, cid := range []string{foreignClient, "no-existe", "%00"} {
 		r := httpkit.Do(w.Env.Router, "POST", w.clientPath(cid), w.buyBody(""), w.Recep)
-		wantHTTP(t, r, 404, "Ficha no encontrada")
-		wantHTTP(t, httpkit.Do(w.Env.Router, "GET", w.clientPath(cid), "", w.Recep), 404, "Ficha no encontrada")
+		httpkit.WantHTTP(t, r, 404, "Ficha no encontrada")
+		httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "GET", w.clientPath(cid), "", w.Recep), 404, "Ficha no encontrada")
 	}
 	// Consumir/ajustar/ver movimientos: id de paquete inexistente, de OTRA clienta
 	// del mismo salón, de OTRO salón (y NUL): 404 «Paquete no encontrado».
@@ -576,15 +549,15 @@ func TestHTTP_packages_client_routes_errors_write_nothing(t *testing.T) {
 		{w.ClientID, "no-existe"}, {w.clientTwoID, cpID}, {foreignClient, cpID}, {w.ClientID, "%00"}, {"%00", cpID},
 	} {
 		base := w.clientPath(c.client) + "/" + c.pkg
-		wantHTTP(t, httpkit.Do(w.Env.Router, "POST", base+"/redeem", `{}`, w.Recep), 404, "Paquete no encontrado")
-		wantHTTP(t, httpkit.Do(w.Env.Router, "POST", base+"/adjust", `{"delta":1,"note":"x"}`, w.Owner), 404, "Paquete no encontrado")
-		wantHTTP(t, httpkit.Do(w.Env.Router, "GET", base+"/movements", "", w.Owner), 404, "Paquete no encontrado")
+		httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", base+"/redeem", `{}`, w.Recep), 404, "Paquete no encontrado")
+		httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", base+"/adjust", `{"delta":1,"note":"x"}`, w.Owner), 404, "Paquete no encontrado")
+		httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "GET", base+"/movements", "", w.Owner), 404, "Paquete no encontrado")
 	}
 	// Una persona de OTRO salón no toca los paquetes de este: 403 en la ruta de
 	// este salón, y en la suya el paquete no existe (404).
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", cl+"/"+cpID+"/redeem", `{}`, w.other), 403, "")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", cl+"/"+cpID+"/redeem", `{}`, w.other), 403, "")
 	otherBase := "/api/v1/salons/" + w.otherSalon + "/clients/" + w.ClientID + "/packages/" + cpID
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", otherBase+"/redeem", `{}`, w.other), 404, "Paquete no encontrado")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", otherBase+"/redeem", `{}`, w.other), 404, "Paquete no encontrado")
 
 	// Descontar: nota con NUL / salto / demasiado larga, profesional inválido, op con NUL.
 	for _, body := range []string{
@@ -602,17 +575,17 @@ func TestHTTP_packages_client_routes_errors_write_nothing(t *testing.T) {
 	}
 	// Ajustar: textos exactos.
 	adj := cl + "/" + cpID + "/adjust"
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"delta":1,"note":""}`, w.Owner), 400, "Escribí el motivo del ajuste")
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"delta":1}`, w.Owner), 400, "Escribí el motivo del ajuste")
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"delta":0,"note":"x"}`, w.Owner), 400, "El ajuste no puede ser cero")
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"note":"x"}`, w.Owner), 400, "El ajuste no puede ser cero")
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"delta":1,"note":"x"}`, w.Owner), 409, "El ajuste deja el saldo fuera de rango")
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"delta":-4,"note":"x"}`, w.Owner), 409, "El ajuste deja el saldo fuera de rango")
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"delta":9999999999,"note":"x"}`, w.Owner), 409, "El ajuste deja el saldo fuera de rango")
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"delta":1,"note":"a\u0000b"}`, w.Owner), 400, domain.MsgPackageInvalidChars)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"delta":1,"note":"a\nb"}`, w.Owner), 400, domain.MsgPackageInvalidChars)
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"delta":1,"note":""}`, w.Owner), 400, "Escribí el motivo del ajuste")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"delta":1}`, w.Owner), 400, "Escribí el motivo del ajuste")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"delta":0,"note":"x"}`, w.Owner), 400, "El ajuste no puede ser cero")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"note":"x"}`, w.Owner), 400, "El ajuste no puede ser cero")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"delta":1,"note":"x"}`, w.Owner), 409, "El ajuste deja el saldo fuera de rango")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"delta":-4,"note":"x"}`, w.Owner), 409, "El ajuste deja el saldo fuera de rango")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"delta":9999999999,"note":"x"}`, w.Owner), 409, "El ajuste deja el saldo fuera de rango")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"delta":1,"note":"a\u0000b"}`, w.Owner), 400, domain.MsgPackageInvalidChars)
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, `{"delta":1,"note":"a\nb"}`, w.Owner), 400, domain.MsgPackageInvalidChars)
 	for _, body := range []string{`{"delta":1.5,"note":"x"}`, `{"delta":"1","note":"x"}`, `{"delta":1,"note":3}`, `{"delta":99999999999999999999,"note":"x"}`} {
-		wantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, body, w.Owner), 400, "body inválido")
+		httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", adj, body, w.Owner), 400, "body inválido")
 	}
 	// Límites del movimientos? (solo lectura). Nada de lo anterior escribió.
 	// (La compra de «Apagado» se creó y desactivó, pero no vendió nada.)
@@ -632,7 +605,7 @@ func TestHTTP_packages_redeem_409s(t *testing.T) {
 		}
 	}
 	n := len(w.owned.Movements)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", path, `{}`, w.Recep), 409, "No quedan sesiones en este paquete")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", path, `{}`, w.Recep), 409, "No quedan sesiones en este paquete")
 	if len(w.owned.Movements) != n || w.owned.Packages[0].SessionsLeft != 0 {
 		t.Fatalf("un 409 escribió")
 	}
@@ -644,7 +617,7 @@ func TestHTTP_packages_redeem_409s(t *testing.T) {
 			w.owned.Packages[i].ExpiresAt = &past
 		}
 	}
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.clientPath(w.ClientID)+"/"+cp2+"/redeem", `{}`, w.Recep), 409, "El paquete venció")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.clientPath(w.ClientID)+"/"+cp2+"/redeem", `{}`, w.Recep), 409, "El paquete venció")
 	// La lectura lo marca vencido y los vigentes con saldo primero.
 	r := httpkit.Do(w.Env.Router, "GET", w.clientPath(w.ClientID), "", w.Recep)
 	var list struct {

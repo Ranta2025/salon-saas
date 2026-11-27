@@ -16,12 +16,13 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"time"
-
-	"github.com/gin-gonic/gin"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/loyalty"
 	"salon-saas/internal/ports"
+	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 type LoyaltyHandler struct {
@@ -93,7 +94,7 @@ func (h LoyaltyHandler) GetProgram(c *gin.Context) {
 	}
 	p, err := h.Loyalty.Program(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, loyaltyProgramJSON(p))
@@ -110,26 +111,26 @@ func (h LoyaltyHandler) PutProgram(c *gin.Context) {
 		return
 	}
 	if err := h.Loyalty.RequireManager(actor, salonID); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	var in struct {
-		Enabled        *bool      `json:"enabled"`
-		VisitsRequired *int       `json:"visits_required"`
-		RewardService  *string    `json:"reward_service_id"`
-		ValidityDays   presentInt `json:"reward_validity_days"`
+		Enabled        *bool            `json:"enabled"`
+		VisitsRequired *int             `json:"visits_required"`
+		RewardService  *string          `json:"reward_service_id"`
+		ValidityDays   httpx.PresentInt `json:"reward_validity_days"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if in.Enabled == nil || in.VisitsRequired == nil || in.RewardService == nil || !in.ValidityDays.Set {
-		respondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgLoyaltyProgramMissing))
+		httpx.RespondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgLoyaltyProgramMissing))
 		return
 	}
 	p, err := h.Loyalty.SaveProgram(actor, salonID, *in.Enabled, *in.VisitsRequired, *in.RewardService, in.ValidityDays.Value)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, loyaltyProgramJSON(p))
@@ -146,7 +147,7 @@ func (h LoyaltyHandler) GetClient(c *gin.Context) {
 	}
 	st, err := h.Loyalty.ClientStatus(actor, salonID, c.Param("cid"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	rewards := make([]gin.H, 0, len(st.Rewards))
@@ -179,19 +180,19 @@ func (h LoyaltyHandler) Grant(c *gin.Context) {
 		return
 	}
 	if err := h.Loyalty.RequireSeller(actor, salonID); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	var in struct {
 		ClientOpID string `json:"client_op_id"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil && !errors.Is(err, io.EOF) {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	r, err := h.Loyalty.Grant(actor, salonID, c.Param("cid"), in.ClientOpID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"reward": loyaltyRewardJSON(r)})
@@ -207,7 +208,7 @@ func (h LoyaltyHandler) Redeem(c *gin.Context) {
 		return
 	}
 	if err := h.Loyalty.RequireSeller(actor, salonID); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	var in struct {
@@ -216,12 +217,12 @@ func (h LoyaltyHandler) Redeem(c *gin.Context) {
 		ClientOpID     string `json:"client_op_id"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil && !errors.Is(err, io.EOF) {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	r, err := h.Loyalty.Redeem(actor, salonID, c.Param("cid"), c.Param("rid"), in.ProfessionalID, in.Note, in.ClientOpID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"reward": loyaltyRewardJSON(r)})

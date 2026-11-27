@@ -15,6 +15,7 @@ import (
 	"salon-saas/internal/domain"
 	"salon-saas/internal/finance"
 	"salon-saas/internal/loyalty"
+	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
 	"salon-saas/internal/notifications"
 	"salon-saas/internal/products"
 	httpkit "salon-saas/internal/testutil/httpkit"
@@ -269,7 +270,7 @@ func newAudWorld(t *testing.T) *audWorld {
 	}
 	programs := &httpkit.LoyaltyPrograms{Services: env.Services}
 	rewards := &httpkit.LoyaltyRewards{Programs: programs, VisitCounts: map[string]int{}}
-	env.Deps.Loyalty = httpapi.LoyaltyHandler{
+	env.Deps.Loyalty = loyaltyhttpapi.LoyaltyHandler{
 		Loyalty: loyalty.LoyaltyService{
 			Programs: programs, Rewards: rewards, Services: env.Services, Clients: env.Clients,
 			Memberships: env.Mems, Settings: env.Settings,

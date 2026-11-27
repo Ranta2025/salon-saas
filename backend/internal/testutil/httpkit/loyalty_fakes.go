@@ -5,6 +5,7 @@ import (
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/loyalty"
+	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
 	"salon-saas/internal/ports"
 	"sort"
 	"sync"
@@ -183,7 +184,7 @@ func NewLoyaltyEnv() (*Env, *LoyaltyPrograms, *LoyaltyRewards) {
 		Programs: programs, Rewards: rewards, Services: env.Services, Clients: env.Clients,
 		Memberships: env.Mems, Settings: env.Settings,
 	}
-	env.Deps.Loyalty = httpapi.LoyaltyHandler{Loyalty: svc, Memberships: env.Mems}
+	env.Deps.Loyalty = loyaltyhttpapi.LoyaltyHandler{Loyalty: svc, Memberships: env.Mems}
 	env.Deps.Public.Public = app.PublicSalonService{
 		Salons: env.Salons, Services: env.Services, Settings: env.Settings, Hours: env.Weekly,
 		Loyalty: programs,

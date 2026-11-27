@@ -137,8 +137,8 @@ func TestProfile_Get_shapeAndRoles(t *testing.T) {
 		}
 		var got map[string]any
 		httpkit.MustJSON(t, r.Body.Bytes(), &got)
-		if strings.Join(keysOf(got), ",") != "address,description,email,instagram,name,phone,slug" {
-			t.Fatalf("%s: claves %v", name, keysOf(got))
+		if strings.Join(httpkit.KeysOf(got), ",") != "address,description,email,instagram,name,phone,slug" {
+			t.Fatalf("%s: claves %v", name, httpkit.KeysOf(got))
 		}
 		if got["name"] != "Salón f16-uno" || got["slug"] != "f16-uno" || got["description"] != nil || got["address"] != nil ||
 			got["phone"] != nil || got["email"] != nil || got["instagram"] != nil {
@@ -223,10 +223,10 @@ func TestProfile_Put_requiresEverySixKeys(t *testing.T) {
 		}
 		body := `{` + strings.Join(parts, ",") + `}`
 		r := httpkit.Do(w.Env.Router, "PUT", w.profilePath(), body, w.Owner)
-		wantHTTP(t, r, http.StatusBadRequest, "Faltan datos del salón: nombre, descripción, dirección, teléfono, email e instagram")
+		httpkit.WantHTTP(t, r, http.StatusBadRequest, "Faltan datos del salón: nombre, descripción, dirección, teléfono, email e instagram")
 	}
 	r := httpkit.Do(w.Env.Router, "PUT", w.profilePath(), `{}`, w.Owner)
-	wantHTTP(t, r, http.StatusBadRequest, "Faltan datos del salón: nombre, descripción, dirección, teléfono, email e instagram")
+	httpkit.WantHTTP(t, r, http.StatusBadRequest, "Faltan datos del salón: nombre, descripción, dirección, teléfono, email e instagram")
 	if w.profiles.Saves != 0 {
 		t.Fatalf("un 400 no escribe: %d", w.profiles.Saves)
 	}
@@ -268,7 +268,7 @@ func TestProfile_Put_validationsWriteNothing(t *testing.T) {
 		if r.Code != http.StatusBadRequest {
 			t.Fatalf("%s: %d %s", c.name, r.Code, r.Body.String())
 		}
-		if got := errText(t, r); got != c.msg {
+		if got := httpkit.ErrText(t, r); got != c.msg {
 			t.Fatalf("%s: %q != %q", c.name, got, c.msg)
 		}
 	}

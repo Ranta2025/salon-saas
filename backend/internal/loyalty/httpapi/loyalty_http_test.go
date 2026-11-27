@@ -141,8 +141,8 @@ func TestLoyaltyHTTP_getProgram_shapeAndRoles(t *testing.T) {
 		}
 		var got map[string]any
 		httpkit.MustJSON(t, r.Body.Bytes(), &got)
-		if strings.Join(keysOf(got), ",") != "counting_from,enabled,reward_service_id,reward_service_name,reward_validity_days,visits_required" {
-			t.Fatalf("claves: %v", keysOf(got))
+		if strings.Join(httpkit.KeysOf(got), ",") != "counting_from,enabled,reward_service_id,reward_service_name,reward_validity_days,visits_required" {
+			t.Fatalf("claves: %v", httpkit.KeysOf(got))
 		}
 		if got["enabled"] != false || got["visits_required"] != nil || got["reward_service_id"] != nil ||
 			got["reward_service_name"] != nil || got["reward_validity_days"] != nil || got["counting_from"] != nil {
@@ -253,20 +253,20 @@ func TestLoyaltyHTTP_putProgram_validation(t *testing.T) {
 	}
 	for _, c := range cases {
 		r := httpkit.Do(w.Env.Router, "PUT", w.programPath(), c.body, w.Owner)
-		if r.Code != c.code || errText(t, r) != c.text {
+		if r.Code != c.code || httpkit.ErrText(t, r) != c.text {
 			t.Fatalf("%s: %d %q, quería %d %q", c.name, r.Code, r.Body.String(), c.code, c.text)
 		}
 	}
 	// Servicio de OTRO salón e inactivo: «Servicio inválido».
 	foreign := w.Env.SeedService(t, w.Outsider, w.otherSalon, "Ajeno", 100)
 	r := httpkit.Do(w.Env.Router, "PUT", w.programPath(), `{"enabled":true,"visits_required":5,"reward_service_id":"`+foreign+`","reward_validity_days":null}`, w.Owner)
-	wantHTTP(t, r, 400, "Servicio inválido")
+	httpkit.WantHTTP(t, r, 400, "Servicio inválido")
 	inactive := w.Env.SeedService(t, w.Owner, w.Salon, "Inactivo", 100)
 	if r := httpkit.Do(w.Env.Router, "PUT", "/api/v1/salons/"+w.Salon+"/services/"+inactive, `{"name":"Inactivo","duration_min":45,"price_cents":100,"commission_pct":20,"active":false}`, w.Owner); r.Code != 200 {
 		t.Fatalf("desactivar servicio: %d %s", r.Code, r.Body.String())
 	}
 	r = httpkit.Do(w.Env.Router, "PUT", w.programPath(), `{"enabled":true,"visits_required":5,"reward_service_id":"`+inactive+`","reward_validity_days":null}`, w.Owner)
-	wantHTTP(t, r, 400, "Servicio inválido")
+	httpkit.WantHTTP(t, r, 400, "Servicio inválido")
 	// Ningún rechazo escribió nada.
 	if w.programs.Saves != 0 {
 		t.Fatalf("un 400 escribió el programa (%d guardados)", w.programs.Saves)
@@ -299,8 +299,8 @@ func TestLoyaltyHTTP_getClient_shapeNumbersAndRoles(t *testing.T) {
 	}
 	var empty map[string]any
 	httpkit.MustJSON(t, r.Body.Bytes(), &empty)
-	if strings.Join(keysOf(empty), ",") != "enabled,next_in,rewards,rewards_available,rewards_earned,rewards_granted,visits,visits_required" {
-		t.Fatalf("claves: %v", keysOf(empty))
+	if strings.Join(httpkit.KeysOf(empty), ",") != "enabled,next_in,rewards,rewards_available,rewards_earned,rewards_granted,visits,visits_required" {
+		t.Fatalf("claves: %v", httpkit.KeysOf(empty))
 	}
 	if empty["enabled"] != false || empty["visits"] != float64(0) || empty["visits_required"] != nil || empty["next_in"] != nil ||
 		empty["rewards_available"] != float64(0) || len(empty["rewards"].([]any)) != 0 {
@@ -323,8 +323,8 @@ func TestLoyaltyHTTP_getClient_shapeNumbersAndRoles(t *testing.T) {
 		t.Fatalf("vales: %v", rewards)
 	}
 	rw := rewards[0].(map[string]any)
-	if strings.Join(keysOf(rw), ",") != "expires_at,granted_at,id,redeemed_at,reward_number,service_id,service_name,state" {
-		t.Fatalf("claves del vale: %v", keysOf(rw))
+	if strings.Join(httpkit.KeysOf(rw), ",") != "expires_at,granted_at,id,redeemed_at,reward_number,service_id,service_name,state" {
+		t.Fatalf("claves del vale: %v", httpkit.KeysOf(rw))
 	}
 	if rw["id"] != vale || rw["reward_number"] != float64(1) || rw["service_id"] != w.svcID || rw["service_name"] != "Corte" ||
 		rw["state"] != "available" || rw["expires_at"] != nil || rw["redeemed_at"] != nil {
@@ -352,9 +352,9 @@ func TestLoyaltyHTTP_unknownClient_is404(t *testing.T) {
 	w := newLoyWorld(t)
 	w.saveProgram(t, true, 2)
 	for _, cid := range []string{w.otherClientID, "no-existe", "a%00b", "a%ffb", "%00"} {
-		wantHTTP(t, httpkit.Do(w.Env.Router, "GET", w.clientPath(cid), "", w.Recep), 404, "Ficha no encontrada")
-		wantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.clientPath(cid)+"/grant", `{}`, w.Recep), 404, "Ficha no encontrada")
-		wantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.redeemPath(cid, "x"), `{}`, w.Recep), 404, "Ficha no encontrada")
+		httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "GET", w.clientPath(cid), "", w.Recep), 404, "Ficha no encontrada")
+		httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.clientPath(cid)+"/grant", `{}`, w.Recep), 404, "Ficha no encontrada")
+		httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.redeemPath(cid, "x"), `{}`, w.Recep), 404, "Ficha no encontrada")
 	}
 }
 
@@ -365,13 +365,13 @@ func TestLoyaltyHTTP_grant(t *testing.T) {
 	grantPath := w.clientPath(w.liaID) + "/grant"
 	// Nunca guardado / apagado: 409.
 	w.setVisits(w.liaID, 50)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", grantPath, `{}`, w.Recep), 409, "La fidelidad no está activada")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", grantPath, `{}`, w.Recep), 409, "La fidelidad no está activada")
 	w.saveProgram(t, false, 5)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", grantPath, "", w.Recep), 409, "La fidelidad no está activada")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", grantPath, "", w.Recep), 409, "La fidelidad no está activada")
 	// Sin visitas suficientes.
 	w.saveProgram(t, true, 5)
 	w.setVisits(w.liaID, 4)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", grantPath, `{}`, w.Recep), 409, "No hay premios disponibles")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", grantPath, `{}`, w.Recep), 409, "No hay premios disponibles")
 	if len(w.Rewards.Rewards) != 0 {
 		t.Fatal("un 409 entregó un vale")
 	}
@@ -388,7 +388,7 @@ func TestLoyaltyHTTP_grant(t *testing.T) {
 		t.Fatalf("respuesta: %v", out)
 	}
 	// El segundo pedido sin visitas nuevas: 409 y un solo vale.
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", grantPath, `{}`, w.Owner), 409, "No hay premios disponibles")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", grantPath, `{}`, w.Owner), 409, "No hay premios disponibles")
 	if len(w.Rewards.Rewards) != 1 {
 		t.Fatalf("hay %d vales", len(w.Rewards.Rewards))
 	}
@@ -405,9 +405,9 @@ func TestLoyaltyHTTP_grant_idempotentByOp(t *testing.T) {
 	}
 	w.setVisits(w.moraID, 40)
 	r := httpkit.Do(w.Env.Router, "POST", w.clientPath(w.moraID)+"/grant", `{"client_op_id":"op-1"}`, w.Recep)
-	wantHTTP(t, r, 409, "Esa operación ya se usó en otro pedido")
+	httpkit.WantHTTP(t, r, 409, "Esa operación ya se usó en otro pedido")
 	r = httpkit.Do(w.Env.Router, "POST", w.clientPath(w.liaID)+"/grant", `{"client_op_id":"a\u0000b"}`, w.Recep)
-	wantHTTP(t, r, 400, "El identificador de la operación no es válido")
+	httpkit.WantHTTP(t, r, 400, "El identificador de la operación no es válido")
 	if len(w.Rewards.Rewards) != 1 {
 		t.Fatalf("hay %d vales", len(w.Rewards.Rewards))
 	}
@@ -423,9 +423,9 @@ func TestLoyaltyHTTP_redeem(t *testing.T) {
 	_ = b
 	// 404: inexistente, ajeno y con id sucio.
 	for _, rid := range []string{"no-existe", "a%00b", "a%ffb", "%00"} {
-		wantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.redeemPath(w.liaID, rid), `{}`, w.Recep), 404, "Premio no encontrado")
+		httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.redeemPath(w.liaID, rid), `{}`, w.Recep), 404, "Premio no encontrado")
 	}
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.redeemPath(w.moraID, a), `{}`, w.Recep), 404, "Premio no encontrado")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.redeemPath(w.moraID, a), `{}`, w.Recep), 404, "Premio no encontrado")
 	// 200 con la forma del contrato, profesional y nota.
 	r := httpkit.Do(w.Env.Router, "POST", w.redeemPath(w.liaID, a), `{"professional_id":"`+w.ProfID+`","note":"  Cumple  "}`, w.Recep)
 	if r.Code != http.StatusOK {
@@ -441,11 +441,11 @@ func TestLoyaltyHTTP_redeem(t *testing.T) {
 		t.Fatalf("no se guardó la nota o la profesional: %+v", w.Rewards.Rewards[0])
 	}
 	// Ya usado: 409.
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.redeemPath(w.liaID, a), "", w.Owner), 409, "Ese premio ya se usó")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.redeemPath(w.liaID, a), "", w.Owner), 409, "Ese premio ya se usó")
 	// Vencido: 409 (se fuerza el vencimiento en el fake).
 	past := time.Now().Add(-time.Hour)
 	w.Rewards.Rewards[1].ExpiresAt = &past
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.redeemPath(w.liaID, w.Rewards.Rewards[1].ID), `{}`, w.Admin), 409, "El premio venció")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.redeemPath(w.liaID, w.Rewards.Rewards[1].ID), `{}`, w.Admin), 409, "El premio venció")
 	// Profesional de otro salón / nota con salto de línea / op id con NUL: 400, sin usar.
 	w.Rewards.Rewards[1].ExpiresAt = nil
 	for _, body := range []string{
@@ -461,7 +461,7 @@ func TestLoyaltyHTTP_redeem(t *testing.T) {
 	}
 	// Programa apagado: 409 y el vale se conserva.
 	w.saveProgram(t, false, 2)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.redeemPath(w.liaID, w.Rewards.Rewards[1].ID), `{}`, w.Recep), 409, "La fidelidad no está activada")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.redeemPath(w.liaID, w.Rewards.Rewards[1].ID), `{}`, w.Recep), 409, "La fidelidad no está activada")
 	if w.Rewards.Rewards[1].RedeemedAt != nil || len(w.Rewards.Rewards) != 2 {
 		t.Fatal("apagar el programa tocó los vales")
 	}
@@ -477,7 +477,7 @@ func TestLoyaltyHTTP_redeem_idempotentByOp(t *testing.T) {
 	if r1.Code != 200 || r2.Code != 200 || r1.Body.String() != r2.Body.String() {
 		t.Fatalf("el repetido: %d %s / %d %s", r1.Code, r1.Body.String(), r2.Code, r2.Body.String())
 	}
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.redeemPath(w.liaID, b), `{"client_op_id":"op-r"}`, w.Recep), 409, "Esa operación ya se usó en otro pedido")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.redeemPath(w.liaID, b), `{"client_op_id":"op-r"}`, w.Recep), 409, "Esa operación ya se usó en otro pedido")
 }
 
 // El permiso va ANTES del cuerpo en entregar y usar, rol por rol; quien sí puede
@@ -530,9 +530,9 @@ func TestLoyaltyHTTP_tenantIsolation(t *testing.T) {
 	rid := w.grant(t, "")
 	// El dueño del OTRO salón no entra a este (403) ni con su propio salón en la ruta.
 	other := "/api/v1/salons/" + w.otherSalon
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", other+"/clients/"+w.liaID+"/loyalty/rewards/"+rid+"/redeem", `{}`, w.Outsider), 404, "Ficha no encontrada")
-	wantHTTP(t, httpkit.Do(w.Env.Router, "GET", other+"/clients/"+w.liaID+"/loyalty", "", w.Outsider), 404, "Ficha no encontrada")
-	wantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.redeemPath(w.liaID, rid), `{}`, w.Outsider), 403, "sin acceso al salón")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", other+"/clients/"+w.liaID+"/loyalty/rewards/"+rid+"/redeem", `{}`, w.Outsider), 404, "Ficha no encontrada")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "GET", other+"/clients/"+w.liaID+"/loyalty", "", w.Outsider), 404, "Ficha no encontrada")
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "POST", w.redeemPath(w.liaID, rid), `{}`, w.Outsider), 403, "sin acceso al salón")
 	// El programa del otro salón es suyo, no de este.
 	g := httpkit.Do(w.Env.Router, "GET", other+"/loyalty-program", "", w.Outsider)
 	var got map[string]any
@@ -563,7 +563,7 @@ func (w *loyWorld) publicPayload(t *testing.T) map[string]any {
 func TestLoyaltyHTTP_publicPayload(t *testing.T) {
 	w := newLoyWorld(t)
 	keys := func(p map[string]any) string {
-		ks := keysOf(p)
+		ks := httpkit.KeysOf(p)
 		sort.Strings(ks)
 		return strings.Join(ks, ",")
 	}

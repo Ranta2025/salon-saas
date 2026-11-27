@@ -48,12 +48,12 @@ func TestPublicPayload_exactShape(t *testing.T) {
 	_ = w.Packages.Create(pkg)
 
 	got := publicGet(t, w, "f16-uno")
-	if strings.Join(keysOf(got), ",") != "gallery,hours,loyalty,packages,salon,services,team" {
-		t.Fatalf("claves de primer nivel: %v", keysOf(got))
+	if strings.Join(httpkit.KeysOf(got), ",") != "gallery,hours,loyalty,packages,salon,services,team" {
+		t.Fatalf("claves de primer nivel: %v", httpkit.KeysOf(got))
 	}
 	salon := got["salon"].(map[string]any)
-	if strings.Join(keysOf(salon), ",") != "address,description,email,id,instagram,name,phone,slug,timezone" {
-		t.Fatalf("claves de salon: %v", keysOf(salon))
+	if strings.Join(httpkit.KeysOf(salon), ",") != "address,description,email,id,instagram,name,phone,slug,timezone" {
+		t.Fatalf("claves de salon: %v", httpkit.KeysOf(salon))
 	}
 	if salon["id"] != w.Salon || salon["slug"] != "f16-uno" || salon["name"] != "Navajas de Oro" || salon["description"] != "Barbería clásica" ||
 		salon["address"] != "Calle 1 #23" || salon["phone"] != "+52 55" || salon["email"] != "hola@navajas.com" ||
@@ -65,7 +65,7 @@ func TestPublicPayload_exactShape(t *testing.T) {
 		t.Fatalf("servicios: %v", services)
 	}
 	svc := services[0].(map[string]any)
-	if strings.Join(keysOf(svc), ",") != "description,duration_min,id,name,price_cents" ||
+	if strings.Join(httpkit.KeysOf(svc), ",") != "description,duration_min,id,name,price_cents" ||
 		svc["id"] != svcID || svc["name"] != "Corte" || svc["duration_min"].(float64) != 45 || svc["price_cents"].(float64) != 15000 || svc["description"] != "Corte clásico" {
 		t.Fatalf("servicio: %v", svc)
 	}
@@ -76,13 +76,13 @@ func TestPublicPayload_exactShape(t *testing.T) {
 		t.Fatalf("equipo: %v", team)
 	}
 	for _, m := range team {
-		if strings.Join(keysOf(m.(map[string]any)), ",") != "name,trade" {
-			t.Fatalf("el equipo solo expone name y trade: %v", keysOf(m.(map[string]any)))
+		if strings.Join(httpkit.KeysOf(m.(map[string]any)), ",") != "name,trade" {
+			t.Fatalf("el equipo solo expone name y trade: %v", httpkit.KeysOf(m.(map[string]any)))
 		}
 	}
 	gallery := listOf(t, got, "gallery")
 	g := gallery[0].(map[string]any)
-	if len(gallery) != 1 || strings.Join(keysOf(g), ",") != "caption,id,url" || g["id"] != p.ID ||
+	if len(gallery) != 1 || strings.Join(httpkit.KeysOf(g), ",") != "caption,id,url" || g["id"] != p.ID ||
 		g["url"] != "/api/v1/public/salons/f16-uno/gallery/"+p.ID || g["caption"] != "El local" {
 		t.Fatalf("galería: %v", gallery)
 	}
@@ -166,7 +166,7 @@ func TestPublicPayload_filtersTeamAndPackages(t *testing.T) {
 		t.Fatalf("paquetes: %v", pk)
 	}
 	one := pk[0].(map[string]any)
-	if strings.Join(keysOf(one), ",") != "id,name,price_cents,service_name,sessions,validity_days" ||
+	if strings.Join(httpkit.KeysOf(one), ",") != "id,name,price_cents,service_name,sessions,validity_days" ||
 		one["name"] != "Pack vigente" || one["service_name"] != "Hecho" || one["sessions"].(float64) != 3 || one["price_cents"].(float64) != 100 || one["validity_days"] != nil {
 		t.Fatalf("paquete: %v", one)
 	}

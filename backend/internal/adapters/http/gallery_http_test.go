@@ -165,8 +165,8 @@ func TestGallery_upload_shape(t *testing.T) {
 	var raw map[string]map[string]any
 	httpkit.MustJSON(t, r.Body.Bytes(), &raw)
 	photo := raw["photo"]
-	if strings.Join(keysOf(photo), ",") != "caption,created_at,id,url" {
-		t.Fatalf("claves: %v", keysOf(photo))
+	if strings.Join(httpkit.KeysOf(photo), ",") != "caption,created_at,id,url" {
+		t.Fatalf("claves: %v", httpkit.KeysOf(photo))
 	}
 	id := photo["id"].(string)
 	if photo["caption"] != nil || photo["url"] != "/api/v1/public/salons/f16-uno/gallery/"+id {
@@ -218,11 +218,11 @@ func TestGallery_upload_invalid(t *testing.T) {
 	w := newF16World(t)
 	for _, ct := range []string{"image/svg+xml", "image/gif", "text/html", "application/pdf"} {
 		r := w.upload(w.galleryPath(), w.Owner, "file", ct, []byte("x"))
-		wantHTTP(t, r, http.StatusBadRequest, domain.MsgPhotoType)
+		httpkit.WantHTTP(t, r, http.StatusBadRequest, domain.MsgPhotoType)
 	}
-	wantHTTP(t, w.upload(w.galleryPath(), w.Owner, "file", "image/png", nil), http.StatusBadRequest, domain.MsgPhotoSize)
+	httpkit.WantHTTP(t, w.upload(w.galleryPath(), w.Owner, "file", "image/png", nil), http.StatusBadRequest, domain.MsgPhotoSize)
 	big := make([]byte, domain.MaxPhotoBytes+1)
-	wantHTTP(t, w.upload(w.galleryPath(), w.Owner, "file", "image/png", big), http.StatusBadRequest, domain.MsgPhotoSize)
+	httpkit.WantHTTP(t, w.upload(w.galleryPath(), w.Owner, "file", "image/png", big), http.StatusBadRequest, domain.MsgPhotoSize)
 	// Campo equivocado: 400.
 	if r := w.upload(w.galleryPath(), w.Owner, "otro", "image/png", png1x1()); r.Code != http.StatusBadRequest {
 		t.Fatalf("campo: %d", r.Code)
@@ -247,7 +247,7 @@ func TestGallery_capOf12(t *testing.T) {
 	}
 	files := len(w.Env.Storage.Files)
 	r := w.upload(w.galleryPath(), w.Owner, "file", "image/png", png1x1())
-	wantHTTP(t, r, http.StatusConflict, "La galería ya tiene 12 fotos")
+	httpkit.WantHTTP(t, r, http.StatusConflict, "La galería ya tiene 12 fotos")
 	if len(w.Env.Storage.Files) != files || len(w.Gallery.byID) != 12 {
 		t.Fatalf("la 13ª no guarda nada")
 	}
@@ -304,7 +304,7 @@ func TestGallery_caption(t *testing.T) {
 	}
 	put(`{"caption":"queda"}`)
 	// Clave ausente: 400 con texto, y NO borra la leyenda.
-	wantHTTP(t, httpkit.Do(w.Env.Router, "PUT", path, `{}`, w.Owner), http.StatusBadRequest, domain.MsgPhotoCaptionMissing)
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "PUT", path, `{}`, w.Owner), http.StatusBadRequest, domain.MsgPhotoCaptionMissing)
 	for _, bad := range []string{`"` + strings.Repeat("a", 121) + `"`, `"a\nb"`, `"a\u0000b"`, `5`} {
 		if r := httpkit.Do(w.Env.Router, "PUT", path, `{"caption":`+bad+`}`, w.Owner); r.Code != http.StatusBadRequest {
 			t.Fatalf("%q: %d", bad, r.Code)
@@ -315,7 +315,7 @@ func TestGallery_caption(t *testing.T) {
 	}
 	// Foto de otro salón: 404 uniforme.
 	foreign := w.addPhoto(t, w.other, w.Outsider)
-	wantHTTP(t, httpkit.Do(w.Env.Router, "PUT", w.galleryPath()+"/"+foreign.ID, `{"caption":"hack"}`, w.Owner), http.StatusNotFound, domain.MsgPhotoNotFound)
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "PUT", w.galleryPath()+"/"+foreign.ID, `{"caption":"hack"}`, w.Owner), http.StatusNotFound, domain.MsgPhotoNotFound)
 	if w.Gallery.byID[foreign.ID].Caption != "" {
 		t.Fatal("la foto ajena cambió")
 	}
@@ -330,7 +330,7 @@ func TestGallery_delete(t *testing.T) {
 	if _, ok := w.Env.Storage.Files[key]; !ok {
 		t.Fatal("el archivo debe existir")
 	}
-	wantHTTP(t, httpkit.Do(w.Env.Router, "DELETE", w.galleryPath()+"/"+foreign.ID, "", w.Owner), http.StatusNotFound, domain.MsgPhotoNotFound)
+	httpkit.WantHTTP(t, httpkit.Do(w.Env.Router, "DELETE", w.galleryPath()+"/"+foreign.ID, "", w.Owner), http.StatusNotFound, domain.MsgPhotoNotFound)
 	if len(w.Gallery.byID) != 2 {
 		t.Fatal("la ajena no se borra")
 	}

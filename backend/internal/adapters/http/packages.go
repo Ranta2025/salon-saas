@@ -13,17 +13,17 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	httpx "salon-saas/internal/adapters/http/httpx"
+	"salon-saas/internal/domain"
+	"salon-saas/internal/packages"
+	"salon-saas/internal/ports"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/domain"
-	"salon-saas/internal/packages"
-	"salon-saas/internal/ports"
 )
 
 type PackageHandler struct {
@@ -42,27 +42,8 @@ func (h PackageHandler) loadActor(c *gin.Context, salonID string) (domain.Member
 }
 
 // presentInt distingue una clave AUSENTE de una clave en `null` (y de un
-// número): el PUT del catálogo exige `validity_days` presente, y `null`
-// explícito significa «sin vencimiento». Un campo ausente no llama a
-// UnmarshalJSON, así que Set queda en false.
-type presentInt struct {
-	Set   bool
-	Value *int
-}
-
-func (p *presentInt) UnmarshalJSON(b []byte) error {
-	p.Set = true
-	if strings.TrimSpace(string(b)) == "null" {
-		p.Value = nil
-		return nil
-	}
-	var v int
-	if err := json.Unmarshal(b, &v); err != nil {
-		return err
-	}
-	p.Value = &v
-	return nil
-}
+// número). Vive en httpx porque lo usan varios módulos.
+type presentInt = httpx.PresentInt
 
 // servicePackageJSON es la forma única del paquete del catálogo.
 func servicePackageJSON(p domain.ServicePackage) gin.H {

@@ -10,11 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"syscall"
-	"time"
-
-	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
 	httpapi "salon-saas/internal/adapters/http"
 	"salon-saas/internal/adapters/imaging"
 	"salon-saas/internal/adapters/mail"
@@ -31,6 +26,7 @@ import (
 	"salon-saas/internal/finance"
 	financestore "salon-saas/internal/finance/postgres"
 	"salon-saas/internal/loyalty"
+	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
 	loyaltystore "salon-saas/internal/loyalty/postgres"
 	notifsvc "salon-saas/internal/notifications"
 	notifstore "salon-saas/internal/notifications/postgres"
@@ -38,6 +34,11 @@ import (
 	"salon-saas/internal/ports"
 	"salon-saas/internal/products"
 	"salon-saas/internal/staffing"
+	"syscall"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Timeouts del servidor (B-11): sin ellos un cliente lento ocupa una conexión
@@ -610,7 +611,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		// F8: paquetes y bonos prepagos (ocho rutas: catálogo y por clienta).
 		Packages: httpapi.PackageHandler{Packages: packageSvc, Memberships: mems},
 		// F9: fidelidad (cinco rutas: programa del salón; ficha, entrega y uso por clienta).
-		Loyalty: httpapi.LoyaltyHandler{Loyalty: loyaltySvc, Memberships: mems},
+		Loyalty: loyaltyhttpapi.LoyaltyHandler{Loyalty: loyaltySvc, Memberships: mems},
 		// F10: auditoría (el middleware de las rutas de D2 y GET audit-log).
 		Audit: httpapi.AuditHandler{Service: auditSvc, Memberships: mems},
 		// F16: perfil público del salón y su galería de fotos.
