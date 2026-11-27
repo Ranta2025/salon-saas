@@ -6,6 +6,7 @@ import (
 	httpapi "salon-saas/internal/adapters/http"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/exports"
+	exportshttpapi "salon-saas/internal/exports/httpapi"
 	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
@@ -36,7 +37,7 @@ func (e *exportHTTPEnv) logf(format string, args ...any) {
 // filas cambia entre pruebas).
 func (e *exportHTTPEnv) rebuild() {
 	d := e.Env.Deps
-	d.Exports = httpapi.ExportHandler{Exports: *e.svc, Memberships: e.Mems, Logf: e.logf}
+	d.Exports = exportshttpapi.ExportHandler{Exports: *e.svc, Memberships: e.Mems, Logf: e.logf}
 	r := gin.New()
 	httpapi.RegisterRoutes(r, d)
 	e.Env.Router = r

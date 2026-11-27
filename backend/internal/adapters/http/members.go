@@ -2,12 +2,13 @@ package httpapi
 
 import (
 	"net/http"
-	"time"
-
-	"github.com/gin-gonic/gin"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 // MemberHandler: pantalla de equipo del salón (GET/POST/PATCH/DELETE
@@ -26,14 +27,7 @@ func (h MemberHandler) loadActor(c *gin.Context, salonID string) (domain.Members
 // Vive una sola vez porque lo usan la pantalla de equipo y las invitaciones
 // (F2g1): sin membresía no hay acceso, y el 403 no distingue por qué.
 func loadActor(memberships ports.MembershipRepository, c *gin.Context, salonID string) (domain.Membership, bool) {
-	uid, _ := c.Get("userID")
-	userID, _ := uid.(string)
-	m, err := memberships.Find(userID, salonID)
-	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "sin acceso al salón"})
-		return domain.Membership{}, false
-	}
-	return m, true
+	return httpx.LoadActor(memberships, c, salonID)
 }
 
 // memberJSON es la forma única de serializar un miembro del equipo.

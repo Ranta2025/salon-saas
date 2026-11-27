@@ -8,10 +8,11 @@ package httpapi
 import (
 	"log"
 	"net/http"
-
-	"github.com/gin-gonic/gin"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/exports"
 	"salon-saas/internal/ports"
+
+	"github.com/gin-gonic/gin"
 )
 
 // ExportHandler agrupa las tres rutas de exportación de F4.
@@ -47,13 +48,13 @@ func writeCSV(c *gin.Context, file exports.ExportFile) {
 // Sales: GET /api/v1/salons/:id/export/sales.csv?from=&to= -> 200 CSV.
 func (h ExportHandler) Sales(c *gin.Context) {
 	salonID := c.Param("id")
-	actor, ok := loadActor(h.Memberships, c, salonID)
+	actor, ok := httpx.LoadActor(h.Memberships, c, salonID)
 	if !ok {
 		return
 	}
 	file, err := h.Exports.Sales(actor, salonID, c.Query("from"), c.Query("to"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	writeCSV(c, file)
@@ -63,13 +64,13 @@ func (h ExportHandler) Sales(c *gin.Context) {
 // CashCloses: GET /api/v1/salons/:id/export/cash-closes.csv?from=&to=.
 func (h ExportHandler) CashCloses(c *gin.Context) {
 	salonID := c.Param("id")
-	actor, ok := loadActor(h.Memberships, c, salonID)
+	actor, ok := httpx.LoadActor(h.Memberships, c, salonID)
 	if !ok {
 		return
 	}
 	file, err := h.Exports.CashCloses(actor, salonID, c.Query("from"), c.Query("to"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	writeCSV(c, file)
@@ -79,13 +80,13 @@ func (h ExportHandler) CashCloses(c *gin.Context) {
 // Clients: GET /api/v1/salons/:id/export/clients.csv (sin rango).
 func (h ExportHandler) Clients(c *gin.Context) {
 	salonID := c.Param("id")
-	actor, ok := loadActor(h.Memberships, c, salonID)
+	actor, ok := httpx.LoadActor(h.Memberships, c, salonID)
 	if !ok {
 		return
 	}
 	file, err := h.Exports.Clients(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	writeCSV(c, file)

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	audithttpapi "salon-saas/internal/audit/httpapi"
+	exportshttpapi "salon-saas/internal/exports/httpapi"
 	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
 	"salon-saas/internal/ports"
 
@@ -48,7 +49,7 @@ type Deps struct {
 	Profit ProfitHandler
 	// Exports son las tres exportaciones CSV de F4 (ventas, cierres de caja y
 	// clientes). Solo owner/admin: lo aplica el caso de uso.
-	Exports ExportHandler
+	Exports exportshttpapi.ExportHandler
 	// Products es el catálogo de productos y su inventario (F6): cinco rutas.
 	// La autorización vive en el caso de uso (leer owner/admin/recepción;
 	// escribir y ver movimientos solo owner/admin).

@@ -11,10 +11,11 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"salon-saas/internal/domain"
+	ports "salon-saas/internal/ports"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/domain"
 )
 
 // StatusOf traduce un error de dominio al status HTTP del contrato.
@@ -61,6 +62,19 @@ func RespondErrLogf(c *gin.Context, err error, logf func(string, ...any)) {
 		return
 	}
 	c.JSON(StatusOf(err), gin.H{"error": err.Error()})
+}
+
+// LoadActor resuelve la membresía del usuario del token en el salón de la ruta.
+// Sin membresía no hay acceso y el 403 no distingue por qué.
+func LoadActor(memberships ports.MembershipRepository, c *gin.Context, salonID string) (domain.Membership, bool) {
+	uid, _ := c.Get("userID")
+	userID, _ := uid.(string)
+	m, err := memberships.Find(userID, salonID)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "sin acceso al salón"})
+		return domain.Membership{}, false
+	}
+	return m, true
 }
 
 // BadBody es la respuesta única de JSON inválido o demasiado grande.
