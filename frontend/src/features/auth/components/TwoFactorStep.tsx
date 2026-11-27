@@ -1,5 +1,5 @@
 import { useEffect, useRef, type FormEvent } from 'react'
-import { MAX_VERIFICATION_CODE_LENGTH } from '../../lib/twofa'
+import { MAX_VERIFICATION_CODE_LENGTH } from '../lib/twofa'
 
 type TwoFactorStepProps = {
   code: string

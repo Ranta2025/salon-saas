@@ -12,12 +12,12 @@
  * live in React state only (no storage, no logs).
  */
 
-import { ApiError, NetworkError, request, narrowLoginResponse } from './api.ts'
-import { isBrowserOnline } from './connectivity.ts'
-import { createPackagesGate, type PackagesGate } from '../features/packages/lib/packages.ts'
+import { ApiError, NetworkError, request, narrowLoginResponse } from '../../../lib/api.ts'
+import { isBrowserOnline } from '../../../lib/connectivity.ts'
+import { createPackagesGate, type PackagesGate } from '../../packages/lib/packages.ts'
 
 export { narrowLoginResponse }
-export type { LoginResult } from './api.ts'
+export type { LoginResult } from '../../../lib/api.ts'
 
 /** Longest code the field accepts: a recovery code is `XXXXX-XXXXX` (11), spaces allowed. */
 export const MAX_VERIFICATION_CODE_LENGTH = 24

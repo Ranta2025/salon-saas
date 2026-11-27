@@ -6,8 +6,8 @@ import {
   resetPassword,
   validateNewPassword,
 } from '../lib/recovery'
-import { RecoveryCard } from './components/RecoveryCard'
-import { useFragmentToken } from './components/RecoveryToken'
+import { RecoveryCard } from '../components/RecoveryCard'
+import { useFragmentToken } from '@/app/components/RecoveryToken'
 
 /**
  * Public `/restablecer` page (F15, D3, D11). The token comes in the FRAGMENT of the

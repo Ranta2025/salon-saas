@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { RECOVERY_MESSAGES, verifyEmail } from '../lib/recovery'
-import { getToken } from '../lib/session'
-import { RecoveryCard } from './components/RecoveryCard'
-import { useFragmentToken } from './components/RecoveryToken'
+import { getToken } from '@/lib/session'
+import { RecoveryCard } from '../components/RecoveryCard'
+import { useFragmentToken } from '@/app/components/RecoveryToken'
 
 type View =
   | { kind: 'loading' }

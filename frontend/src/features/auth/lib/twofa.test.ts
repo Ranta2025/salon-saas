@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, login, NetworkError } from './api.ts'
-import { clearToken, getToken, setToken } from './session.ts'
+import { ApiError, login, NetworkError } from '../../../lib/api.ts'
+import { clearToken, getToken, setToken } from '../../../lib/session.ts'
 import {
   challengeFailure,
   completeLogin2fa,

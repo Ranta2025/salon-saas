@@ -18,10 +18,10 @@
  * Online only (D12): nothing in this module touches the offline queue.
  */
 
-import { ApiError, NetworkError, readEmailVerified, request } from './api.ts'
-import { isBrowserOnline } from './connectivity.ts'
-import { EMAIL_INVALID_MESSAGE, isValidEmail, normalizeEmail } from './email.ts'
-import { INVITATION_PASSWORD_MAX_BYTES, INVITATION_PASSWORD_MIN_BYTES } from '../features/team/lib/invitations.ts'
+import { ApiError, NetworkError, readEmailVerified, request } from '../../../lib/api.ts'
+import { isBrowserOnline } from '../../../lib/connectivity.ts'
+import { EMAIL_INVALID_MESSAGE, isValidEmail, normalizeEmail } from '../../../lib/email.ts'
+import { INVITATION_PASSWORD_MAX_BYTES, INVITATION_PASSWORD_MIN_BYTES } from '../../team/lib/invitations.ts'
 
 export { readEmailVerified }
 

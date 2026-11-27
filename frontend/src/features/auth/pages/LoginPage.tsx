@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { fetchMe, login } from '../lib/api'
-import { pickSalonId } from '../lib/me'
+import { fetchMe, login } from '@/lib/api'
+import { pickSalonId } from '@/lib/me'
 import { takeResetNotice } from '../lib/recovery'
 import { challengeFailure, completeLogin2fa, validateVerificationCode } from '../lib/twofa'
 import {
@@ -11,8 +11,8 @@ import {
   setSalonId,
   setToken,
   setUserId,
-} from '../lib/session'
-import { TwoFactorStep } from './components/TwoFactorStep'
+} from '@/lib/session'
+import { TwoFactorStep } from '../components/TwoFactorStep'
 
 type LocationState = { from?: string } | null
 

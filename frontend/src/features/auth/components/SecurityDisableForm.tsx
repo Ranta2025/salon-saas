@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { validateDisableDraft } from '../../lib/twofa'
+import { validateDisableDraft } from '../lib/twofa'
 
 type SecurityDisableFormProps = {
   pending: boolean

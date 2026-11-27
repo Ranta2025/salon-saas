@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { readFragmentToken } from '../../lib/recovery'
+import { readFragmentToken } from '@/features/auth/lib/recovery'
 
 /**
  * Token of the emailed link (F15, D11), read from the FRAGMENT.

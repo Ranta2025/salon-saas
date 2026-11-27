@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
-import { describeApiError, type ApiErrorNotice } from '../lib/api'
+import { describeApiError, type ApiErrorNotice } from '@/lib/api'
 import {
   createSecurityGate,
   disableTwoFactor,
@@ -11,12 +11,12 @@ import {
   startTwoFactorSetup,
   type SecurityView,
 } from '../lib/twofa'
-import { useOffline } from './OfflineContext'
-import { ErrorNotice, LoadingState } from './components/Feedback'
-import { PageHeader } from './components/PageHeader'
-import { SecurityDisableForm } from './components/SecurityDisableForm'
-import { SecurityRecoveryCodes } from './components/SecurityRecoveryCodes'
-import { SecuritySetupCard } from './components/SecuritySetupCard'
+import { useOffline } from '@/app/OfflineContext'
+import { ErrorNotice, LoadingState } from '@/app/components/Feedback'
+import { PageHeader } from '@/app/components/PageHeader'
+import { SecurityDisableForm } from '../components/SecurityDisableForm'
+import { SecurityRecoveryCodes } from '../components/SecurityRecoveryCodes'
+import { SecuritySetupCard } from '../components/SecuritySetupCard'
 
 const INITIAL_VIEW: SecurityView = { kind: 'loading' }
 

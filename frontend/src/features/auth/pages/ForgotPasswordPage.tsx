@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { RECOVERY_MESSAGES, requestPasswordReset, validateForgotEmail } from '../lib/recovery'
-import { RecoveryCard } from './components/RecoveryCard'
+import { RecoveryCard } from '../components/RecoveryCard'
 
 /**
  * Public `/recuperar` page (F15, D2, D11). A 202 ALWAYS shows the same sentence:

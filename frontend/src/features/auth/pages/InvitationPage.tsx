@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { describeApiError, fetchMe, login, type ApiErrorNotice } from '../lib/api'
-import { normalizeEmail } from '../lib/email'
+import { describeApiError, fetchMe, login, type ApiErrorNotice } from '@/lib/api'
+import { normalizeEmail } from '@/lib/email'
 import {
   INVITATION_MESSAGES,
   acceptInvitation,
@@ -14,7 +14,7 @@ import {
   validateSignup,
   type InvitationLookup,
 } from '@/features/team/lib/invitations'
-import { pickSalonId, type SalonRole } from '../lib/me'
+import { pickSalonId, type SalonRole } from '@/lib/me'
 import { TWO_FACTOR_MESSAGES } from '../lib/twofa'
 import {
   clearSalonId,
@@ -25,8 +25,8 @@ import {
   setSalonId,
   setToken,
   setUserId,
-} from '../lib/session'
-import { LoadingState } from './components/Feedback'
+} from '@/lib/session'
+import { LoadingState } from '@/app/components/Feedback'
 
 /**
  * Public `/invitacion` page (S-F2g1-6). The token comes in the FRAGMENT of the

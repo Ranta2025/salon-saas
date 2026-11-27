@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchMe } from '../../lib/api'
-import { resendVerification, shouldShowVerifyBanner } from '../../lib/recovery'
+import { resendVerification, shouldShowVerifyBanner } from '@/features/auth/lib/recovery'
 
 type Feedback = { tone: 'success' | 'error'; message: string; verified: boolean }
 

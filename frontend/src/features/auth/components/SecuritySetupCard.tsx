@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { validateSetupCode } from '../../lib/twofa'
+import { validateSetupCode } from '../lib/twofa'
 import { SecurityCopyButton } from './SecurityCopyButton'
 
 type SecuritySetupCardProps = {

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ApiError, fetchMe } from './api.ts'
-import { clearToken, getToken, setToken, TOKEN_KEY } from './session.ts'
+import { ApiError, fetchMe } from '../../../lib/api.ts'
+import { clearToken, getToken, setToken, TOKEN_KEY } from '../../../lib/session.ts'
 import {
   RECOVERY_MESSAGES,
   RESET_NOTICE_KEY,
