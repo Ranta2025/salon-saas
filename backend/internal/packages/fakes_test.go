@@ -1,89 +1,22 @@
-package app
+package packages
 
 import (
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil"
 )
 
 // Fakes de paquetes (F8) con la misma semántica que pgstore: scope por salón,
 // nombre activo único sin importar mayúsculas y compra/consumo/ajuste como UNA
 // "transacción" (todo o nada) bajo un mutex.
 
-type fakePackageCatalog struct {
-	all      []domain.ServicePackage
-	services *fakeServices
-}
-
-func (f *fakePackageCatalog) nameTaken(salonID, name, ignoreID string) bool {
-	for _, p := range f.all {
-		if p.SalonID == salonID && p.Active && p.ID != ignoreID && strings.EqualFold(p.Name, name) {
-			return true
-		}
-	}
-	return false
-}
-
-func (f *fakePackageCatalog) Create(p domain.ServicePackage) error {
-	if p.Active && f.nameTaken(p.SalonID, p.Name, p.ID) {
-		return domain.ErrAlreadyExists
-	}
-	f.all = append(f.all, p)
-	return nil
-}
-
-func (f *fakePackageCatalog) Save(p domain.ServicePackage) error {
-	for i := range f.all {
-		if f.all[i].ID == p.ID && f.all[i].SalonID == p.SalonID {
-			if p.Active && f.nameTaken(p.SalonID, p.Name, p.ID) {
-				return domain.ErrAlreadyExists
-			}
-			f.all[i] = p
-			return nil
-		}
-	}
-	return domain.ErrNotFound
-}
-
-func (f *fakePackageCatalog) FindByID(salonID, id string) (domain.ServicePackage, error) {
-	for _, p := range f.all {
-		if p.SalonID == salonID && p.ID == id {
-			return p, nil
-		}
-	}
-	return domain.ServicePackage{}, domain.ErrNotFound
-}
-
-func (f *fakePackageCatalog) List(salonID string) ([]domain.ServicePackage, error) {
-	out := make([]domain.ServicePackage, 0, len(f.all))
-	for _, p := range f.all {
-		if p.SalonID != salonID {
-			continue
-		}
-		if svc, err := f.services.FindByID(salonID, p.ServiceID); err == nil {
-			p.ServiceName = svc.Name
-		}
-		out = append(out, p)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		li, lj := strings.ToLower(out[i].Name), strings.ToLower(out[j].Name)
-		if li != lj {
-			return li < lj
-		}
-		return out[i].ID < out[j].ID
-	})
-	return out, nil
-}
-
-var _ ports.PackageRepository = (*fakePackageCatalog)(nil)
-
 type fakeClientPackages struct {
 	mu        sync.Mutex
-	services  *fakeServices
+	services  *testutil.FakeServices
 	sales     []domain.Sale
 	packages  []domain.ClientPackage
 	movements []domain.PackageMovement

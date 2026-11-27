@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/packages"
 	"salon-saas/internal/ports"
 )
 
@@ -295,7 +295,7 @@ func newPackagesEnv() (*posEnv, *mpkgCatalog, *mpkgOwned) {
 	env := newPOSEnv()
 	catalog := &mpkgCatalog{services: env.services}
 	owned := &mpkgOwned{services: env.services, mirror: env.sales}
-	svc := app.PackageService{
+	svc := packages.PackageService{
 		Packages: catalog, ClientPackages: owned, Services: env.services, Clients: env.clients,
 		Memberships: env.mems, Settings: env.settings, Events: env.events,
 	}

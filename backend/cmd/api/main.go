@@ -30,6 +30,7 @@ import (
 	"salon-saas/internal/finance"
 	"salon-saas/internal/loyalty"
 	loyaltystore "salon-saas/internal/loyalty/postgres"
+	"salon-saas/internal/packages"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/products"
 )
@@ -302,7 +303,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F8: paquetes y bonos prepagos. Comprar es una VENTA (el dinero entra hoy);
 	// consumir una sesión no lo es. Vender, consumir y leer: owner/admin/recepción;
 	// catálogo (crear/editar) y ajustar el saldo: solo owner/admin (D5/D7/D9/D10).
-	packageSvc := app.PackageService{
+	packageSvc := packages.PackageService{
 		Packages: packagesRepo, ClientPackages: clientPackagesRepo, Services: servicesRepo,
 		Clients: clientsRepo, Memberships: mems, Settings: salons, Events: hub,
 	}

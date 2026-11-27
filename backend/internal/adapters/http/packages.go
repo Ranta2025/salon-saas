@@ -21,13 +21,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/packages"
 	"salon-saas/internal/ports"
 )
 
 type PackageHandler struct {
-	Packages    app.PackageService
+	Packages    packages.PackageService
 	Memberships ports.MembershipRepository
 }
 

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 type publicWorld struct {
@@ -16,7 +17,7 @@ type publicWorld struct {
 	staff    *fakeStaffLister
 	profs    *fakeProfessionalServices
 	gallery  *fakeGallery
-	packages *fakePackageCatalog
+	packages *testutil.FakePackageCatalog
 	settings *fakeSettings
 }
 
@@ -53,7 +54,7 @@ func newPublicWorld() *publicWorld {
 		"s2": {SalonID: "s2", Slug: "dos", Name: "Dos", Description: "Secreto de Dos"},
 	}}
 	gallery := &fakeGallery{slugs: map[string]string{"s1": "uno", "s2": "dos"}}
-	packages := &fakePackageCatalog{services: services}
+	packages := &testutil.FakePackageCatalog{Services: services}
 	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{
 		"s1": {SalonID: "s1", Timezone: "America/Argentina/Buenos_Aires", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30},
 	}}

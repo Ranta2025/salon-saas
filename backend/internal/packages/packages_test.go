@@ -1,4 +1,4 @@
-package app
+package packages
 
 import (
 	"errors"
@@ -7,19 +7,20 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // pkgEnv arma un salón s1 (zona de Auckland, lejos de UTC) con servicio, clienta
 // y un reloj fijo.
 type pkgEnv struct {
 	svc      PackageService
-	mems     *fakeMemberships
-	services *fakeServices
-	clients  *fakeClients
-	catalog  *fakePackageCatalog
+	mems     *testutil.FakeMemberships
+	services *testutil.FakeServices
+	clients  *testutil.FakeClients
+	catalog  *testutil.FakePackageCatalog
 	owned    *fakeClientPackages
-	settings *fakeSettings
-	events   *fakeEvents
+	settings *testutil.FakeSettings
+	events   *testutil.FakeEvents
 	clock    time.Time
 
 	owner, admin, recep, prof, client, other domain.Membership
@@ -30,32 +31,32 @@ type pkgEnv struct {
 func newPkgEnv(t *testing.T) *pkgEnv {
 	t.Helper()
 	e := &pkgEnv{
-		mems:     &fakeMemberships{},
-		services: &fakeServices{},
-		clients:  &fakeClients{},
-		settings: &fakeSettings{bySalon: map[string]domain.SalonSettings{
+		mems:     &testutil.FakeMemberships{},
+		services: &testutil.FakeServices{},
+		clients:  &testutil.FakeClients{},
+		settings: &testutil.FakeSettings{BySalon: map[string]domain.SalonSettings{
 			"s1": {SalonID: "s1", Timezone: "Pacific/Auckland", OpenTime: "09:00", CloseTime: "18:00", SlotStepMin: 30},
 		}},
-		events: &fakeEvents{},
+		events: &testutil.FakeEvents{},
 		// 11 de marzo 00:30 en Auckland (NZDT +13) = 10 de marzo 11:30 UTC.
 		clock: time.Date(2026, 3, 10, 11, 30, 0, 0, time.UTC),
 	}
-	e.catalog = &fakePackageCatalog{services: e.services}
+	e.catalog = &testutil.FakePackageCatalog{Services: e.services}
 	e.owned = &fakeClientPackages{services: e.services}
 	e.svc = PackageService{
 		Packages: e.catalog, ClientPackages: e.owned, Services: e.services, Clients: e.clients,
 		Memberships: e.mems, Settings: e.settings, Events: e.events,
 		Now: func() time.Time { return e.clock },
 	}
-	e.owner = miembro(e.mems, "owner", "s1", domain.RoleOwner)
-	e.admin = miembro(e.mems, "admin", "s1", domain.RoleAdmin)
-	e.recep = miembro(e.mems, "recep", "s1", domain.RoleReception)
-	e.prof = miembro(e.mems, "prof", "s1", domain.RoleProfessional)
+	e.owner = testutil.Miembro(e.mems, "owner", "s1", domain.RoleOwner)
+	e.admin = testutil.Miembro(e.mems, "admin", "s1", domain.RoleAdmin)
+	e.recep = testutil.Miembro(e.mems, "recep", "s1", domain.RoleReception)
+	e.prof = testutil.Miembro(e.mems, "prof", "s1", domain.RoleProfessional)
 	// El profesional atiende (los profesionales siempre atienden).
 	_ = e.mems.Save(domain.Membership{UserID: "prof", SalonID: "s1", Role: domain.RoleProfessional, Attends: true})
 	e.prof, _ = e.mems.Find("prof", "s1")
-	e.client = miembro(e.mems, "client", "s1", domain.RoleClient)
-	e.other = miembro(e.mems, "owner2", "s2", domain.RoleOwner)
+	e.client = testutil.Miembro(e.mems, "client", "s1", domain.RoleClient)
+	e.other = testutil.Miembro(e.mems, "owner2", "s2", domain.RoleOwner)
 
 	svc, err := domain.NewService("s1", "Corte", 45, 15000, 10)
 	if err != nil {
@@ -103,23 +104,13 @@ func (e *pkgEnv) nothingWritten(t *testing.T, what string) {
 	}
 }
 
-func wantMsg(t *testing.T, err error, kind error, text string) {
-	t.Helper()
-	if err == nil {
-		t.Fatalf("se esperaba el error %q", text)
-	}
-	if !errors.Is(err, kind) || err.Error() != text {
-		t.Fatalf("error %q (%v), quería %q de la familia %v", err.Error(), err, text, kind)
-	}
-}
-
 // deactivated deja a la persona como miembro dado de baja.
 func (e *pkgEnv) deactivate(userID string) domain.Membership {
 	key := userID + "|s1"
-	m := e.mems.byKey[key]
+	m := e.mems.ByKey[key]
 	at := e.clock.Add(-time.Hour)
 	m.EndedAt = &at
-	e.mems.byKey[key] = m
+	e.mems.ByKey[key] = m
 	return m
 }
 
@@ -155,8 +146,8 @@ func TestPackageService_catalog_permissions(t *testing.T) {
 			t.Fatalf("%s/%s no edita: %v", actor.UserID, actor.Role, err)
 		}
 	}
-	if len(e.catalog.all) != 3 {
-		t.Fatalf("un rechazo escribió: %d", len(e.catalog.all))
+	if len(e.catalog.All) != 3 {
+		t.Fatalf("un rechazo escribió: %d", len(e.catalog.All))
 	}
 }
 
@@ -171,9 +162,9 @@ func TestPackageService_catalog_create_rules(t *testing.T) {
 	// Servicio inexistente, de otro salón o inactivo: 400 «Paquete inválido».
 	for _, sid := range []string{"no-existe", foreign.ID, inactive.ID, "a\x00b"} {
 		_, err := e.svc.CreateCatalog(e.owner, "s1", "Pack", sid, 5, 1000, nil)
-		wantMsg(t, err, domain.ErrValidation, "Paquete inválido")
+		testutil.WantMsg(t, err, domain.ErrValidation, "Paquete inválido")
 	}
-	if len(e.catalog.all) != 0 {
+	if len(e.catalog.All) != 0 {
 		t.Fatalf("un 400 escribió")
 	}
 	// Validaciones del dominio: 400 y nada escrito.
@@ -191,15 +182,15 @@ func TestPackageService_catalog_create_rules(t *testing.T) {
 		{"Pack", 5, 100, pint(0), "La vigencia debe estar entre 1 y 3650 días"},
 	} {
 		_, err := e.svc.CreateCatalog(e.owner, "s1", c.name, e.corte.ID, c.sessions, c.price, c.validity)
-		wantMsg(t, err, domain.ErrValidation, c.wantText)
+		testutil.WantMsg(t, err, domain.ErrValidation, c.wantText)
 	}
-	if len(e.catalog.all) != 0 {
+	if len(e.catalog.All) != 0 {
 		t.Fatalf("un 400 escribió")
 	}
 	// Nombre activo repetido sin importar mayúsculas: 409; el inactivo libera el nombre.
 	first := e.newCatalogPkg(t, "Pack Cinco", 5, 1000, nil)
 	_, err := e.svc.CreateCatalog(e.admin, "s1", "pack cinco", e.corte.ID, 3, 500, nil)
-	wantMsg(t, err, domain.ErrAlreadyExists, "Ya hay un paquete activo con ese nombre")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "Ya hay un paquete activo con ese nombre")
 	if _, err := e.svc.UpdateCatalog(e.owner, "s1", first.ID, "Pack Cinco", 1000, nil, false); err != nil {
 		t.Fatalf("desactivar: %v", err)
 	}
@@ -231,17 +222,17 @@ func TestPackageService_catalog_update_replaces(t *testing.T) {
 	}
 	// 404 de un paquete inexistente o de otro salón.
 	_, err = e.svc.UpdateCatalog(e.owner, "s1", "nope", "X", 1, nil, true)
-	wantMsg(t, err, domain.ErrNotFound, "Paquete no encontrado")
+	testutil.WantMsg(t, err, domain.ErrNotFound, "Paquete no encontrado")
 	foreign, _ := domain.NewServicePackage("s2", "Ajeno", "svcx", 1, 1, nil)
 	_ = e.catalog.Create(foreign)
 	_, err = e.svc.UpdateCatalog(e.owner, "s1", foreign.ID, "X", 1, nil, true)
-	wantMsg(t, err, domain.ErrNotFound, "Paquete no encontrado")
+	testutil.WantMsg(t, err, domain.ErrNotFound, "Paquete no encontrado")
 	// Nombre activo repetido: 409 y no cambia nada.
 	_, err = e.svc.UpdateCatalog(e.owner, "s1", p.ID, "OTRO", 1, nil, true)
-	wantMsg(t, err, domain.ErrAlreadyExists, "Ya hay un paquete activo con ese nombre")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "Ya hay un paquete activo con ese nombre")
 	// NUL / salto de línea: 400 y no cambia nada.
 	_, err = e.svc.UpdateCatalog(e.owner, "s1", p.ID, "A\x00B", 1, nil, true)
-	wantMsg(t, err, domain.ErrValidation, domain.MsgPackageInvalidChars)
+	testutil.WantMsg(t, err, domain.ErrValidation, domain.MsgPackageInvalidChars)
 	after, _ := e.catalog.FindByID("s1", p.ID)
 	if after.Name != "Pack nuevo" || after.PriceCents != 2000 {
 		t.Fatalf("un rechazo cambió el paquete: %+v", after)
@@ -283,7 +274,7 @@ func TestPackageService_purchase_complete(t *testing.T) {
 	if e.owned.sumDelta(cp.ID) != cp.SessionsLeft {
 		t.Fatalf("invariante roto")
 	}
-	if _, n := e.events.typed("sale.created"); n != 1 {
+	if _, n := e.events.Typed("sale.created"); n != 1 {
 		t.Fatalf("sale.created = %d", n)
 	}
 
@@ -343,12 +334,12 @@ func TestPackageService_purchase_rejections_write_nothing(t *testing.T) {
 
 	for _, pid := range []string{"no-existe", inactivePkg.ID, foreignPkg.ID, pk2.ID, "x\x00y", ""} {
 		_, err := e.svc.Purchase(e.recep, "s1", e.lia.ID, pid, "prof", domain.MethodCash, "")
-		wantMsg(t, err, domain.ErrValidation, "Paquete inválido")
+		testutil.WantMsg(t, err, domain.ErrValidation, "Paquete inválido")
 	}
 	// Clienta de otro salón o inexistente: 404 con el texto de las rutas de clientes.
 	for _, cid := range []string{foreignClient.ID, "no-existe", "", "a\x00b"} {
 		_, err := e.svc.Purchase(e.recep, "s1", cid, p.ID, "prof", domain.MethodCash, "")
-		wantMsg(t, err, domain.ErrNotFound, "Ficha no encontrada")
+		testutil.WantMsg(t, err, domain.ErrNotFound, "Ficha no encontrada")
 	}
 	// Profesional: validada igual que el POS (existe, es del salón y atiende).
 	for _, pr := range []string{"", "ghost", "owner2", "recep", "a\x00b"} {
@@ -361,7 +352,7 @@ func TestPackageService_purchase_rejections_write_nothing(t *testing.T) {
 		t.Fatalf("método: %v", err)
 	}
 	_, err = e.svc.Purchase(e.recep, "s1", e.lia.ID, p.ID, "prof", domain.MethodCash, "a\x00b")
-	wantMsg(t, err, domain.ErrValidation, "El identificador de la operación no es válido")
+	testutil.WantMsg(t, err, domain.ErrValidation, "El identificador de la operación no es válido")
 	e.nothingWritten(t, "una compra rechazada")
 }
 
@@ -399,7 +390,7 @@ func TestPackageService_purchase_replay_by_op(t *testing.T) {
 	// El mismo client_op_id para OTRA clienta: 409, no devuelve la compra ajena.
 	other := e.newClient(t, "s1", "Otra Clienta")
 	_, err = e.svc.Purchase(e.recep, "s1", other.ID, p.ID, "prof", domain.MethodCash, "op-compra")
-	wantMsg(t, err, domain.ErrAlreadyExists, "Esa operación ya se usó en otro pedido")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "Esa operación ya se usó en otro pedido")
 	if len(e.owned.sales) != 1 {
 		t.Fatalf("escribió")
 	}
@@ -442,7 +433,7 @@ func TestPackageService_purchase_failure_writes_nothing(t *testing.T) {
 		t.Fatalf("debe propagar el error: %v", err)
 	}
 	e.nothingWritten(t, "una compra con la DB caída")
-	if _, n := e.events.typed("sale.created"); n != 0 {
+	if _, n := e.events.Typed("sale.created"); n != 0 {
 		t.Fatalf("publicó una venta que no existe")
 	}
 }
@@ -476,7 +467,7 @@ func TestPackageService_redeem(t *testing.T) {
 	// Sin saldo: 409 con el texto del contrato y nada escrito.
 	n := len(e.owned.movements)
 	_, err = e.svc.Redeem(e.admin, "s1", e.lia.ID, cp.ID, "", "", "")
-	wantMsg(t, err, domain.ErrAlreadyExists, "No quedan sesiones en este paquete")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "No quedan sesiones en este paquete")
 	if len(e.owned.movements) != n {
 		t.Fatalf("un 409 escribió")
 	}
@@ -499,7 +490,7 @@ func TestPackageService_redeem_permissions_and_isolation(t *testing.T) {
 		{other.ID, cp.ID}, {e.lia.ID, "nope"}, {foreign.ID, cp.ID}, {e.lia.ID, "a\x00b"}, {"a\x00b", cp.ID},
 	} {
 		_, err := e.svc.Redeem(e.recep, "s1", c.client, c.pkg, "", "", "")
-		wantMsg(t, err, domain.ErrNotFound, "Paquete no encontrado")
+		testutil.WantMsg(t, err, domain.ErrNotFound, "Paquete no encontrado")
 	}
 	// Una persona de OTRO salón tampoco lo consume actuando en el suyo.
 	if _, err := e.svc.Redeem(e.other, "s2", e.lia.ID, cp.ID, "", "", ""); err == nil {
@@ -531,7 +522,7 @@ func TestPackageService_redeem_expired(t *testing.T) {
 	// Pasado el vencimiento: 409 «El paquete venció» y no descuenta.
 	e.clock = time.Date(2026, 3, 12, 11, 0, 0, 0, time.UTC)
 	_, err := e.svc.Redeem(e.recep, "s1", e.lia.ID, cp.ID, "", "", "")
-	wantMsg(t, err, domain.ErrAlreadyExists, "El paquete venció")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "El paquete venció")
 	if e.owned.packages[0].SessionsLeft != 2 || len(e.owned.movements) != 2 {
 		t.Fatalf("un vencido descontó: saldo %d", e.owned.packages[0].SessionsLeft)
 	}
@@ -561,7 +552,7 @@ func TestPackageService_redeem_replay_by_op(t *testing.T) {
 	}
 	// Otro op id sí choca con el saldo agotado.
 	_, err = e.svc.Redeem(e.recep, "s1", e.lia.ID, cp.ID, "", "", "op-2")
-	wantMsg(t, err, domain.ErrAlreadyExists, "No quedan sesiones en este paquete")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "No quedan sesiones en este paquete")
 }
 
 // --- D9: ajustar --------------------------------------------------------------------
@@ -588,19 +579,19 @@ func TestPackageService_adjust(t *testing.T) {
 	n := len(e.owned.movements)
 	// Límites: no pasa del total ni baja de 0 (409), sin nota 400, cero 400.
 	_, err = e.svc.Adjust(e.owner, "s1", e.lia.ID, cp.ID, 2, "x")
-	wantMsg(t, err, domain.ErrAlreadyExists, "El ajuste deja el saldo fuera de rango")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "El ajuste deja el saldo fuera de rango")
 	_, err = e.svc.Adjust(e.owner, "s1", e.lia.ID, cp.ID, -5, "x")
-	wantMsg(t, err, domain.ErrAlreadyExists, "El ajuste deja el saldo fuera de rango")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "El ajuste deja el saldo fuera de rango")
 	_, err = e.svc.Adjust(e.owner, "s1", e.lia.ID, cp.ID, 1<<40, "x")
-	wantMsg(t, err, domain.ErrAlreadyExists, "El ajuste deja el saldo fuera de rango")
+	testutil.WantMsg(t, err, domain.ErrAlreadyExists, "El ajuste deja el saldo fuera de rango")
 	_, err = e.svc.Adjust(e.owner, "s1", e.lia.ID, cp.ID, 1, "")
-	wantMsg(t, err, domain.ErrValidation, "Escribí el motivo del ajuste")
+	testutil.WantMsg(t, err, domain.ErrValidation, "Escribí el motivo del ajuste")
 	_, err = e.svc.Adjust(e.owner, "s1", e.lia.ID, cp.ID, 0, "x")
-	wantMsg(t, err, domain.ErrValidation, "El ajuste no puede ser cero")
+	testutil.WantMsg(t, err, domain.ErrValidation, "El ajuste no puede ser cero")
 	_, err = e.svc.Adjust(e.owner, "s1", e.lia.ID, cp.ID, 1, "a\nb")
-	wantMsg(t, err, domain.ErrValidation, domain.MsgPackageInvalidChars)
+	testutil.WantMsg(t, err, domain.ErrValidation, domain.MsgPackageInvalidChars)
 	_, err = e.svc.Adjust(e.owner, "s1", e.lia.ID, "nope", 1, "x")
-	wantMsg(t, err, domain.ErrNotFound, "Paquete no encontrado")
+	testutil.WantMsg(t, err, domain.ErrNotFound, "Paquete no encontrado")
 	if len(e.owned.movements) != n || e.owned.packages[0].SessionsLeft != 4 {
 		t.Fatalf("un rechazo escribió")
 	}
@@ -679,12 +670,12 @@ func TestPackageService_reads(t *testing.T) {
 	foreign := e.newClient(t, "s2", "Ajena")
 	for _, cid := range []string{foreign.ID, "nope", "a\x00b"} {
 		_, err := e.svc.ListClientPackages(e.recep, "s1", cid)
-		wantMsg(t, err, domain.ErrNotFound, "Ficha no encontrada")
+		testutil.WantMsg(t, err, domain.ErrNotFound, "Ficha no encontrada")
 	}
 	other := e.newClient(t, "s1", "Otra")
 	for _, q := range []struct{ client, pkg string }{{other.ID, c.ID}, {e.lia.ID, "nope"}, {foreign.ID, c.ID}, {e.lia.ID, "a\x00b"}} {
 		_, err := e.svc.Movements(e.recep, "s1", q.client, q.pkg)
-		wantMsg(t, err, domain.ErrNotFound, "Paquete no encontrado")
+		testutil.WantMsg(t, err, domain.ErrNotFound, "Paquete no encontrado")
 	}
 	if empty, err := e.svc.ListClientPackages(e.recep, "s1", other.ID); err != nil || len(empty) != 0 {
 		t.Fatalf("clienta sin paquetes: %v %d", err, len(empty))

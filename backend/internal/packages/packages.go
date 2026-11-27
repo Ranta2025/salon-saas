@@ -17,7 +17,7 @@
 // Toda consulta va scopeada por salon_id: el paquete o la clienta de otro salón
 // es 404 («Paquete inválido» al comprar un paquete que no existe) y no escribe
 // nada.
-package app
+package packages
 
 import (
 	"errors"
