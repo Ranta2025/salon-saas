@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,7 +24,7 @@ type PublicHandler struct {
 func (h PublicHandler) Availability(c *gin.Context) {
 	day, err := h.Avail.Day(c.Param("slug"), c.Query("date"), c.Query("service_id"), c.Query("professional_id"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	slots := make([]gin.H, 0, len(day.Slots))
@@ -52,7 +53,7 @@ func (h PublicHandler) CreateBooking(c *gin.Context) {
 		ClientOpID  string `json:"client_op_id"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if in.StartsAt == "" {
@@ -74,10 +75,10 @@ func (h PublicHandler) CreateBooking(c *gin.Context) {
 		ClientOpID:     in.ClientOpID,
 	})
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
-	body := gin.H{"booking": publicBookingJSON(b)}
+	body := gin.H{"booking": httpx.PublicBookingJSON(b)}
 	// payment (F11, D8): clave ADITIVA que solo aparece cuando la política está
 	// activa y el monto es > 0. El id del cargo viaja en el fragmento de la URL
 	// de la página del banco, nunca en un log del servidor.

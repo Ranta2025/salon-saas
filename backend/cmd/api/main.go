@@ -68,6 +68,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	bookingshttpapi "salon-saas/internal/bookings/httpapi"
+	depositshttpapi "salon-saas/internal/deposits/httpapi"
 )
 
 // Timeouts del servidor (B-11): sin ellos un cliente lento ocupa una conexión
@@ -582,7 +584,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	var simbankLookup, simbankPay, paymentsCallback gin.HandlerFunc
 	if simbankHandler != nil {
 		simbankLookup, simbankPay = simbankHandler.Lookup, simbankHandler.Pay
-		paymentsCallback = httpapi.PaymentsHandler{Deposits: depositsSvc}.Callback
+		paymentsCallback = depositshttpapi.PaymentsHandler{Deposits: depositsSvc}.Callback
 	}
 	publicBookingSvc := bookings.PublicBookingService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Staff: mems, Bookings: bookingRepo,
@@ -636,7 +638,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 		Auth:          authhttpapi.AuthHandler{Auth: authSvc, Verification: verificationSvc},
 		TwoFactor:     authhttpapi.TwoFactorHandler{Service: twoFactorSvc},
 		Tenants:       teamhttpapi.TenantsHandler{Tenants: tenSvc, Memberships: mems},
-		Bookings:      httpapi.BookingHandler{Bookings: bookSvc, Memberships: mems},
+		Bookings:      bookingshttpapi.BookingHandler{Bookings: bookSvc, Memberships: mems},
 		Services:      staffinghttpapi.ServiceHandler{Services: svcSvc, Memberships: mems},
 		Sales:         poshttpapi.SaleHandler{Sales: saleSvc, Memberships: mems},
 		CashCloses:    poshttpapi.CashCloseHandler{CashCloses: cashCloseSvc, Memberships: mems},
@@ -645,9 +647,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 		Clients:       clientshttpapi.ClientHandler{Clients: clientSvc, Memberships: mems, Photos: photoSigner, History: clientHistorySvc},
 		Me:            authhttpapi.MeHandler{Me: meSvc},
 		Staff:         teamhttpapi.StaffHandler{Staff: staffSvc, Memberships: mems},
-		Public:        httpapi.PublicHandler{Avail: availabilitySvc, Bookings: publicBookingSvc},
+		Public:        bookingshttpapi.PublicHandler{Avail: availabilitySvc, Bookings: publicBookingSvc},
 		PublicSalon:   settingshttpapi.PublicSalonHandler{Public: publicSvc},
-		BookingLinks:  httpapi.BookingLinkHandler{Links: bookingLinkSvc},
+		BookingLinks:  bookingshttpapi.BookingLinkHandler{Links: bookingLinkSvc},
 		Settings:      settingshttpapi.SettingsHandler{Settings: settingsSvc, Memberships: mems},
 		Members:       teamhttpapi.MemberHandler{Members: memberSvc, Memberships: mems},
 		Hours: scheduleshttpapi.HoursHandler{
@@ -686,8 +688,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 		// F11: la política de señas (D3) y la pantalla «Señas» (D10); el callback
 		// del banco (D7) y sus dos rutas (D6) existen SOLO con PAYMENT_SIM_SECRET
 		// (D12: sin secreto responden 404, porque no se montan).
-		DepositPolicy:    httpapi.DepositPolicyHandler{Policy: depositPolicySvc, Memberships: mems},
-		Deposits:         httpapi.DepositHandler{Deposits: depositsSvc, Memberships: mems},
+		DepositPolicy:    depositshttpapi.DepositPolicyHandler{Policy: depositPolicySvc, Memberships: mems},
+		Deposits:         depositshttpapi.DepositHandler{Deposits: depositsSvc, Memberships: mems},
 		PaymentsCallback: paymentsCallback,
 		SimbankLookup:    simbankLookup,
 		SimbankPay:       simbankPay,

@@ -63,7 +63,7 @@ func (h DepositHandler) List(c *gin.Context) {
 	status, limit, before := c.Query("status"), c.Query("limit"), c.Query("before")
 	rows, err := h.Deposits.List(actor, salonID, status, limit, before)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	deposits := make([]gin.H, 0, len(rows))
@@ -91,12 +91,12 @@ func (h DepositHandler) Lookup(c *gin.Context) {
 		ChargeID string `json:"charge_id"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	look, err := h.Deposits.Lookup(in.ChargeID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{

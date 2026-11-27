@@ -14,6 +14,7 @@ package httpapi
 
 import (
 	"net/http"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -48,7 +49,7 @@ func linkToken(c *gin.Context) (string, bool) {
 		Token *string `json:"token"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil || in.Token == nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return "", false
 	}
 	return *in.Token, true
@@ -62,7 +63,7 @@ func (h BookingLinkHandler) Lookup(c *gin.Context) {
 	}
 	view, err := h.Links.Lookup(token)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"booking": bookingLinkJSON(view)})
@@ -76,12 +77,12 @@ func (h BookingLinkHandler) Slots(c *gin.Context) {
 		Date  *string `json:"date"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil || in.Token == nil || in.Date == nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	day, err := h.Links.Slots(*in.Token, *in.Date)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	slots := make([]gin.H, 0, len(day.Slots))
@@ -102,7 +103,7 @@ func (h BookingLinkHandler) Cancel(c *gin.Context) {
 		return
 	}
 	if err := h.Links.Cancel(token); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "cancelled"})
@@ -117,17 +118,17 @@ func (h BookingLinkHandler) Reschedule(c *gin.Context) {
 		StartsAt *string `json:"starts_at"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil || in.Token == nil || in.StartsAt == nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	startsAt, err := time.Parse(time.RFC3339, *in.StartsAt)
 	if err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	view, newLinkSent, err := h.Links.Reschedule(*in.Token, startsAt)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"booking": bookingLinkJSON(view), "new_link_sent": newLinkSent})

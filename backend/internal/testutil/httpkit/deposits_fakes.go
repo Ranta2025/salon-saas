@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	depositshttpapi "salon-saas/internal/deposits/httpapi"
 )
 
 // Fakes de F11 con la MISMA semántica que el adaptador Postgres (lock simulado
@@ -559,9 +560,9 @@ func (w *DepWorld) wire(t *testing.T) {
 		AppURL: "http://localhost:8081", Settings: w.Env.Settings,
 	}
 	policySvc := deposits.DepositPolicyService{Policies: w.Policies, Memberships: w.Env.Mems, Gateway: w.Gateway}
-	w.Env.Deps.DepositPolicy = httpapi.DepositPolicyHandler{Policy: policySvc, Memberships: w.Env.Mems}
-	w.Env.Deps.Deposits = httpapi.DepositHandler{Deposits: svc, Memberships: w.Env.Mems}
-	w.Env.Deps.PaymentsCallback = httpapi.PaymentsHandler{Deposits: svc}.Callback
+	w.Env.Deps.DepositPolicy = depositshttpapi.DepositPolicyHandler{Policy: policySvc, Memberships: w.Env.Mems}
+	w.Env.Deps.Deposits = depositshttpapi.DepositHandler{Deposits: svc, Memberships: w.Env.Mems}
+	w.Env.Deps.PaymentsCallback = depositshttpapi.PaymentsHandler{Deposits: svc}.Callback
 	// El payload público (D11) lee la misma política.
 	w.Env.Deps.PublicSalon.Public = settings.PublicSalonService{
 		Salons: w.Env.Salons, Services: w.Env.Services, Settings: w.Env.Settings,

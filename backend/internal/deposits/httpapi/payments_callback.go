@@ -12,6 +12,7 @@ package httpapi
 import (
 	"io"
 	"net/http"
+	httpx "salon-saas/internal/adapters/http/httpx"
 
 	"github.com/gin-gonic/gin"
 	"salon-saas/internal/deposits"
@@ -45,7 +46,7 @@ func (h PaymentsHandler) Callback(c *gin.Context) {
 		return
 	}
 	if err := h.Deposits.ApplyCallback(c.Request.Header, body); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})

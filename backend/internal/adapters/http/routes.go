@@ -21,13 +21,15 @@ import (
 	waitlisthttpapi "salon-saas/internal/waitlist/httpapi"
 
 	"github.com/gin-gonic/gin"
+	bookingshttpapi "salon-saas/internal/bookings/httpapi"
+	depositshttpapi "salon-saas/internal/deposits/httpapi"
 )
 
 // Deps agrupa lo que HTTP necesita (todo interfaces: DIP hasta el borde).
 type Deps struct {
 	Auth          authhttpapi.AuthHandler
 	Tenants       teamhttpapi.TenantsHandler
-	Bookings      BookingHandler
+	Bookings      bookingshttpapi.BookingHandler
 	Services      staffinghttpapi.ServiceHandler
 	Sales         poshttpapi.SaleHandler
 	CashCloses    poshttpapi.CashCloseHandler
@@ -36,7 +38,7 @@ type Deps struct {
 	Clients       clientshttpapi.ClientHandler
 	Me            authhttpapi.MeHandler
 	Staff         teamhttpapi.StaffHandler
-	Public        PublicHandler
+	Public        bookingshttpapi.PublicHandler
 	// PublicSalon es la vidriera pública del salón (F16, D4): la landing no
 	// tiene login y lee lo que el dueño edita en el panel.
 	PublicSalon settingshttpapi.PublicSalonHandler
@@ -96,7 +98,7 @@ type Deps struct {
 	// BookingLinks son las cuatro rutas públicas del enlace firmado de un turno
 	// (F1): lookup, horarios, cancelar y reprogramar. Sin sesión y con el token
 	// en el cuerpo.
-	BookingLinks BookingLinkHandler
+	BookingLinks bookingshttpapi.BookingLinkHandler
 	// Waitlist es la lista de espera (F7): el alta pública, la baja por enlace y
 	// las dos rutas del personal (listar y quitar). La autorización vive en el
 	// caso de uso.
@@ -107,10 +109,10 @@ type Deps struct {
 	Recovery authhttpapi.AccountRecoveryHandler
 	// DepositPolicy es la política de señas del salón (F11, D3): GET cualquier
 	// miembro activo, PUT solo owner/admin.
-	DepositPolicy DepositPolicyHandler
+	DepositPolicy depositshttpapi.DepositPolicyHandler
 	// Deposits es la pantalla «Señas» (F11, D10) y la consulta pública del estado
 	// de un pago (D8). La autorización vive en el caso de uso.
-	Deposits DepositHandler
+	Deposits depositshttpapi.DepositHandler
 	// Reviews son las reseñas posvisita (F13): las dos rutas públicas del enlace
 	// (lookup y envío), la lista del panel, su configuración y ocultar/mostrar.
 	// La autorización, las validaciones y la paginación viven en el caso de uso.

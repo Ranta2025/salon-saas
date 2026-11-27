@@ -44,7 +44,7 @@ func (h BookingHandler) Create(c *gin.Context) {
 		ClientOpID string `json:"client_op_id"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	startsAt, err1 := time.Parse(time.RFC3339, in.StartsAt)
@@ -55,15 +55,11 @@ func (h BookingHandler) Create(c *gin.Context) {
 	}
 	b, err := h.Bookings.CreateBookingWithOp(actor, salonID, in.ProfessionalID, in.ClientName, in.ClientPhone, startsAt, endsAt, in.ClientOpID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, bookingJSON(b))
+	c.JSON(http.StatusCreated, httpx.BookingJSON(b))
 }
-
-// publicBookingJSON es la forma de la reserva pública: el frontend de la
-// landing solo necesita esto.
-func publicBookingJSON(b domain.Booking) gin.H { return httpx.PublicBookingJSON(b) }
 
 // bookingJSON es la reserva completa (calendario del salón y PATCH).
 // `service_id` (F2c) es el servicio reservado y puede ser null: el turno que se
@@ -72,12 +68,6 @@ func publicBookingJSON(b domain.Booking) gin.H { return httpx.PublicBookingJSON(
 // null si nadie lo cubre: solo viaja en el JSON del personal ("Mi agenda" lo
 // usa para avisar "lo cubre otra profesional"), nunca en el público ni en el
 // payload del websocket.
-func bookingJSON(b domain.Booking) gin.H { return httpx.BookingJSON(b) }
-
-// optionalID serializa un id opcional como texto o null (nunca ""): el
-// frontend distingue "sin servicio" de "servicio vacío".
-func optionalID(id string) any { return httpx.OptionalID(id) }
-
 // Update: PATCH /salons/:id/bookings/:bid
 // Body: {"status":"cancelled|no_show|done"} y/o {"starts_at","ends_at",
 // "professional_id"} para reprogramar. Respuesta 200 {booking}. Publica
@@ -95,7 +85,7 @@ func (h BookingHandler) Update(c *gin.Context) {
 		ProfessionalID *string `json:"professional_id"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	patch := bookings.BookingPatch{ProfessionalID: in.ProfessionalID}
@@ -120,10 +110,10 @@ func (h BookingHandler) Update(c *gin.Context) {
 	}
 	b, err := h.Bookings.Update(actor, salonID, c.Param("bid"), patch)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"booking": bookingJSON(b)})
+	c.JSON(http.StatusOK, gin.H{"booking": httpx.BookingJSON(b)})
 }
 
 // List: GET /salons/:id/bookings?from=...&to=... (por defecto, hoy UTC)
@@ -154,12 +144,12 @@ func (h BookingHandler) List(c *gin.Context) {
 	}
 	list, err := h.Bookings.List(actor, salonID, from, to)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
 	for _, b := range list {
-		out = append(out, bookingJSON(b))
+		out = append(out, httpx.BookingJSON(b))
 	}
 	c.JSON(http.StatusOK, gin.H{"bookings": out})
 }

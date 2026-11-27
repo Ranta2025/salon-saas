@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	bookingshttpapi "salon-saas/internal/bookings/httpapi"
 )
 
 // Contrato F1 (HTTP): las cuatro rutas públicas del enlace firmado, con el token
@@ -50,7 +51,7 @@ func buildLinkHTTPEnv(t *testing.T, withLimits bool) *linkHTTPEnv {
 		Events: env.Events, Notifier: d.Notifications.Notifications,
 		Mailer: env.Mailer, Emails: env.BookingEmails, AppURL: linkHTTPAppURL,
 	}
-	d.BookingLinks = httpapi.BookingLinkHandler{Links: svc}
+	d.BookingLinks = bookingshttpapi.BookingLinkHandler{Links: svc}
 	if withLimits {
 		// Como en cmd/api: mismo valor (20/min) y TRES instancias distintas.
 		d.PublicBookingLimit = httpapi.RateLimitFor(linkRateLimit, time.Minute, "POST", "/api/v1/public/salons/")

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	bookingshttpapi "salon-saas/internal/bookings/httpapi"
 )
 
 type Services struct{ All []domain.Service }
@@ -290,7 +291,7 @@ func NewPOSEnv() *Env {
 	env.Deps = httpapi.Deps{
 		Auth:          authhttpapi.AuthHandler{Auth: authSvc},
 		Tenants:       teamhttpapi.TenantsHandler{Tenants: tenSvc, Memberships: env.Mems},
-		Bookings:      httpapi.BookingHandler{Bookings: bookSvc, Memberships: env.Mems},
+		Bookings:      bookingshttpapi.BookingHandler{Bookings: bookSvc, Memberships: env.Mems},
 		Services:      staffinghttpapi.ServiceHandler{Services: svcSvc, Memberships: env.Mems},
 		Sales:         poshttpapi.SaleHandler{Sales: saleSvc, Memberships: env.Mems},
 		CashCloses:    poshttpapi.CashCloseHandler{CashCloses: cashSvc, Memberships: env.Mems},
@@ -299,7 +300,7 @@ func NewPOSEnv() *Env {
 		Clients:       clientshttpapi.ClientHandler{Clients: clientSvc, Memberships: env.Mems, Photos: env.Signer},
 		Me:            authhttpapi.MeHandler{Me: meSvc},
 		Staff:         teamhttpapi.StaffHandler{Staff: staffSvc, Memberships: env.Mems},
-		Public:        httpapi.PublicHandler{Avail: availabilitySvc, Bookings: publicBookingSvc},
+		Public:        bookingshttpapi.PublicHandler{Avail: availabilitySvc, Bookings: publicBookingSvc},
 		PublicSalon:   settingshttpapi.PublicSalonHandler{Public: publicSvc},
 		Settings:      settingshttpapi.SettingsHandler{Settings: settingsSvc, Memberships: env.Mems},
 		Members:       teamhttpapi.MemberHandler{Members: memberSvc, Memberships: env.Mems},

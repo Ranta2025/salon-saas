@@ -53,7 +53,7 @@ func (h DepositPolicyHandler) Get(c *gin.Context) {
 	}
 	p, err := h.Policy.Get(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, depositPolicyJSON(p))
@@ -72,7 +72,7 @@ func (h DepositPolicyHandler) Put(c *gin.Context) {
 	// El permiso va ANTES de mirar el cuerpo: quien no puede guardar recibe 403
 	// aunque el cuerpo esté vacío o mal formado (D3).
 	if err := h.Policy.RequireManager(actor, salonID); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	var in struct {
@@ -82,7 +82,7 @@ func (h DepositPolicyHandler) Put(c *gin.Context) {
 		RefundHours *int  `json:"refund_hours"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	p, err := h.Policy.Put(actor, salonID, deposits.DepositPolicyInput{
@@ -92,7 +92,7 @@ func (h DepositPolicyHandler) Put(c *gin.Context) {
 		RefundHours: in.RefundHours,
 	})
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, depositPolicyJSON(p))
