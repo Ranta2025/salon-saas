@@ -1,4 +1,4 @@
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -78,7 +79,7 @@ func (r Waitlist) FindActive(salonID, serviceID, professionalID, day, email stri
 		   AND day=$4::date AND lower(email)=lower($5) AND left_at IS NULL`,
 		salonID, serviceID, professionalID, day, email).Scan)
 	if err != nil {
-		return domain.WaitlistEntry{}, notFound(err)
+		return domain.WaitlistEntry{}, pgstore.NotFound(err)
 	}
 	return entry, nil
 }
@@ -90,7 +91,7 @@ func (r Waitlist) FindByTokenHash(tokenHash string) (domain.WaitlistEntry, error
 	entry, err := scanWaitlistEntry(r.Pool.QueryRow(context.Background(),
 		`SELECT `+waitlistColumns+` FROM waitlist_entries WHERE token_hash=$1`, tokenHash).Scan)
 	if err != nil {
-		return domain.WaitlistEntry{}, notFound(err)
+		return domain.WaitlistEntry{}, pgstore.NotFound(err)
 	}
 	return entry, nil
 }
@@ -101,7 +102,7 @@ func (r Waitlist) Leave(tokenHash string, now time.Time) error {
 	_, err := r.Pool.Exec(context.Background(),
 		`UPDATE waitlist_entries SET left_at=$2 WHERE token_hash=$1 AND left_at IS NULL`,
 		tokenHash, now.UTC())
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // ListUpcoming es la pantalla del personal (D8): entradas vigentes del salón con
@@ -142,7 +143,7 @@ func (r Waitlist) RemoveByID(salonID, id string, now time.Time) error {
 		`UPDATE waitlist_entries SET left_at=$3
 		 WHERE id=$1 AND salon_id=$2 AND left_at IS NULL`, id, salonID, now.UTC())
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
@@ -192,7 +193,7 @@ func (r Waitlist) MarkNotified(id string, now time.Time) error {
 	tag, err := r.Pool.Exec(context.Background(),
 		`UPDATE waitlist_entries SET notified_at=$2 WHERE id=$1`, id, now.UTC())
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
@@ -207,13 +208,13 @@ var _ ports.WaitlistRepository = Waitlist{}
 // InWaitlistTx abre la transacción del reclamo y commitea SOLO si fn termina
 // bien. Una sola conexión del pool para toda la operación.
 func (r Waitlist) InWaitlistTx(fn func(tx ports.WaitlistTx) error) error {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer rollbackTx(tx) // no-op si ya commiteó
+	defer pgstore.RollbackTx(tx) // no-op si ya commiteó
 	if err := fn(waitlistTx{tx: tx, ctx: ctx}); err != nil {
 		return err
 	}
@@ -242,7 +243,7 @@ func (t waitlistTx) FindActive(salonID, serviceID, professionalID, day, email st
 		   AND day=$4::date AND lower(email)=lower($5) AND left_at IS NULL`,
 		salonID, serviceID, professionalID, day, email).Scan)
 	if err != nil {
-		return domain.WaitlistEntry{}, notFound(err)
+		return domain.WaitlistEntry{}, pgstore.NotFound(err)
 	}
 	return entry, nil
 }
@@ -281,7 +282,7 @@ func (t waitlistTx) Create(e domain.WaitlistEntry) error {
 		 VALUES($1,$2,$3,NULLIF($4,''),$5::date,$6,$7,NULLIF($8,''),NULLIF($9,''),$10,0)`,
 		e.ID, e.SalonID, e.ServiceID, e.ProfessionalID, e.Day, e.Name, e.Email, e.Phone,
 		e.TokenHash, e.CreatedAt.UTC())
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // MarkLeft cierra una entrada por id (UPDATE condicional): la ya avisada que se
@@ -291,7 +292,7 @@ func (t waitlistTx) MarkLeft(id string, now time.Time) error {
 	tag, err := t.tx.Exec(t.ctx,
 		`UPDATE waitlist_entries SET left_at=$2 WHERE id=$1 AND left_at IS NULL`, id, now.UTC())
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
@@ -371,7 +372,7 @@ func (t waitlistTx) SetToken(id, tokenHash string) error {
 	tag, err := t.tx.Exec(t.ctx,
 		`UPDATE waitlist_entries SET token_hash=$2 WHERE id=$1`, id, tokenHash)
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound

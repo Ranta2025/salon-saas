@@ -10,6 +10,7 @@ import (
 	"salon-saas/internal/ports"
 	productshttpapi "salon-saas/internal/products/httpapi"
 	staffinghttpapi "salon-saas/internal/staffing/httpapi"
+	waitlisthttpapi "salon-saas/internal/waitlist/httpapi"
 
 	"github.com/gin-gonic/gin"
 )
@@ -88,7 +89,7 @@ type Deps struct {
 	// Waitlist es la lista de espera (F7): el alta pública, la baja por enlace y
 	// las dos rutas del personal (listar y quitar). La autorización vive en el
 	// caso de uso.
-	Waitlist WaitlistHandler
+	Waitlist waitlisthttpapi.WaitlistHandler
 	// Recovery es F15: recuperar contraseña (olvidé / canjear) y verificar el email
 	// (canjear el enlace y reenviarlo). El anti-enumeración y la seguridad del
 	// token viven en el caso de uso.

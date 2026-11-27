@@ -158,3 +158,14 @@ type AuditRecorder interface {
 	// Record deja el evento; un error del registro no tumba la operación.
 	Record(salonID, actorUserID, action, entityID string) error
 }
+
+// --- Enlaces y fechas ---------------------------------------------------------
+
+// DefaultAppURL es la base de los enlaces que van en un correo cuando APP_URL no
+// está configurada (cmd/api siempre la define; esto es el respaldo para los
+// tests y para un caso de uso usado desde otro binario).
+const DefaultAppURL = "http://localhost:8081"
+
+// DateLayout es el formato del DÍA LOCAL del salón ("YYYY-MM-DD"): sin hora y
+// sin zona, porque el día de una cita es del calendario del salón.
+const DateLayout = "2006-01-02"

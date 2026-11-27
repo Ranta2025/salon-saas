@@ -22,7 +22,7 @@
 // caminos que liberan un hueco sin tocar bookings, coverage, booking_links ni
 // availability (D1). La disponibilidad se consulta con AvailabilityService.Day,
 // tal cual está.
-package app
+package waitlist
 
 import (
 	"context"
@@ -66,6 +66,16 @@ type WaitlistJoinResult struct {
 	Created   bool
 }
 
+// Availability es la disponibilidad del día vista por la lista de espera: el
+// MISMO cálculo de la reserva pública (D1), del que esa funcionalidad solo
+// necesita saber cuántos horarios quedan libres. Vive acá (y no en el paquete de
+// la agenda) para que la lista no dependa de él.
+type Availability interface {
+	// FreeSlots cuenta los huecos libres del día para ese servicio (y esa
+	// profesional, si viene).
+	FreeSlots(slug, date, serviceID, professionalID string) (int, error)
+}
+
 // WaitlistService es el caso de uso de la lista. Las dependencias son puertos:
 // el reloj y el mailer son inyectables para los tests.
 type WaitlistService struct {
@@ -78,7 +88,7 @@ type WaitlistService struct {
 	Settings      ports.SalonSettingsRepository
 	// Availability es la MISMA disponibilidad de la reserva pública (D1): la
 	// lista no la modifica ni la reimplementa.
-	Availability AvailabilityService
+	Availability Availability
 	// Memberships resuelve los permisos de la pantalla del personal (D8).
 	Memberships ports.MembershipRepository
 	// Mailer es el canal del aviso (D7): nil = email deshabilitado y la tarea
@@ -147,11 +157,11 @@ func (s WaitlistService) Join(slug string, in WaitlistJoinInput) (WaitlistJoinRe
 
 	// Con horarios libres ese día, la lista no aplica: sirve para sondear o
 	// saturar y la persona puede reservar ahora mismo.
-	avail, err := s.Availability.Day(salon.Slug, day, service.ID, professionalID)
+	libres, err := s.Availability.FreeSlots(salon.Slug, day, service.ID, professionalID)
 	if err != nil {
 		return none, err
 	}
-	if len(avail.Slots) > 0 {
+	if libres > 0 {
 		return none, waitlistSlotsAvailable()
 	}
 
@@ -241,7 +251,7 @@ func (s WaitlistService) List(actor domain.Membership, salonID string) ([]domain
 	if err != nil {
 		return nil, err
 	}
-	list, err := s.Waitlist.ListUpcoming(salonID, s.now().In(loc).Format(dateLayout))
+	list, err := s.Waitlist.ListUpcoming(salonID, s.now().In(loc).Format(kernel.DateLayout))
 	if err != nil {
 		return nil, err
 	}
@@ -290,14 +300,13 @@ func (s WaitlistService) RunOnce(ctx context.Context, now time.Time) (notified, 
 		}
 		// Cuántos huecos ofrece HOY ese día para ese servicio y esa profesional
 		// (tope de 5, D6). Sin huecos no hay nada que avisar.
-		avail, err := s.Availability.Day(g.SalonSlug, g.Day, g.ServiceID, g.ProfessionalID)
+		libres, err := s.Availability.FreeSlots(g.SalonSlug, g.Day, g.ServiceID, g.ProfessionalID)
 		if err != nil {
 			// La disponibilidad no se pudo calcular: no se reclama nada de este
 			// grupo y se sigue con el resto.
 			log.Printf("lista de espera: disponibilidad del salón %s (%s): %v", g.SalonID, g.Day, err)
 			continue
 		}
-		libres := len(avail.Slots)
 		if libres == 0 {
 			continue
 		}

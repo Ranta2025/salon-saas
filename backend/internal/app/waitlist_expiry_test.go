@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/waitlist"
 )
 
 // Revisión nativa R4-001 (CRITICAL): los topes de D4 contaban TODA entrada sin
@@ -24,7 +25,7 @@ func TestWaitlistJoin_los_topes_no_cuentan_dias_pasados(t *testing.T) {
 		past, _ := wlDay(t, -(i + 1))
 		env.wlSeed(t, env.corte.ID, "", past, "Lía", "a@mail.com", now.Add(time.Duration(i)*time.Minute))
 	}
-	res, err := env.svc.Join(waitlistSlug, WaitlistJoinInput{ServiceID: env.corte.ID, Date: day, Name: "Lía", Email: "a@mail.com"})
+	res, err := env.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: day, Name: "Lía", Email: "a@mail.com"})
 	if err != nil || !res.Created {
 		t.Fatalf("los avisos de días pasados no cuentan para el tope por email: %+v %v", res, err)
 	}
@@ -36,7 +37,7 @@ func TestWaitlistJoin_los_topes_no_cuentan_dias_pasados(t *testing.T) {
 	for i := 0; i < domain.MaxWaitlistActivePerSalon; i++ {
 		env2.wlSeed(t, env2.corte.ID, "", past, "N", "n"+strconv.Itoa(i)+"@mail.com", now)
 	}
-	res, err = env2.svc.Join(waitlistSlug, WaitlistJoinInput{ServiceID: env2.corte.ID, Date: day, Name: "Lía", Email: "nueva@mail.com"})
+	res, err = env2.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{ServiceID: env2.corte.ID, Date: day, Name: "Lía", Email: "nueva@mail.com"})
 	if err != nil || !res.Created {
 		t.Fatalf("los avisos de días pasados no cuentan para el tope por salón: %+v %v", res, err)
 	}

@@ -1,4 +1,4 @@
-package pgstore
+package postgres
 
 import (
 	"errors"
@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	waitlistuc "salon-saas/internal/waitlist"
 )
 
 // blockDayAt ocupa el hueco de la profesional el día LOCAL a `offset` días de hoy
@@ -62,7 +62,7 @@ func TestWaitlist_IT_topes_atomicos_con_altas_simultaneas(t *testing.T) {
 		go func(day string) {
 			defer wg.Done()
 			<-start
-			res, err := env.svc.Join(env.slug, app.WaitlistJoinInput{
+			res, err := env.svc.Join(env.slug, waitlistuc.WaitlistJoinInput{
 				ServiceID: env.service.ID, Date: day, Name: "Lía", Email: "lia@mail.com",
 			})
 			mu.Lock()
@@ -115,7 +115,7 @@ func TestWaitlist_IT_tope_por_salon_atomico(t *testing.T) {
 		go func(i int, day string) {
 			defer wg.Done()
 			<-start
-			res, err := env.svc.Join(env.slug, app.WaitlistJoinInput{
+			res, err := env.svc.Join(env.slug, waitlistuc.WaitlistJoinInput{
 				ServiceID: env.service.ID, Date: day, Name: "Ana", Email: "nueva" + string(rune('a'+i)) + "@mail.com",
 			})
 			mu.Lock()
@@ -148,7 +148,7 @@ func TestWaitlist_IT_volver_a_anotarse_tras_un_aviso(t *testing.T) {
 	env := newItWaitlistEnv(t)
 	day, _ := itWaitlistDay(t)
 	env.blockFrom(t, 0)
-	in := app.WaitlistJoinInput{ServiceID: env.service.ID, ProfessionalID: env.profID, Date: day, Name: "Lía", Email: "lia@mail.com"}
+	in := waitlistuc.WaitlistJoinInput{ServiceID: env.service.ID, ProfessionalID: env.profID, Date: day, Name: "Lía", Email: "lia@mail.com"}
 	if res, err := env.svc.Join(env.slug, in); err != nil || !res.Created {
 		t.Fatalf("alta: %+v %v", res, err)
 	}

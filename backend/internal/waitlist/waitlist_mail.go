@@ -6,13 +6,14 @@
 // el enlace de baja (que va en el FRAGMENTO de la URL, así no queda en ningún
 // log) y el aviso de que se escribe solo por esta lista. Nada de ids, ni de
 // teléfonos, ni de direcciones de otras personas.
-package app
+package waitlist
 
 import (
 	"html"
 	"strings"
 	"time"
 
+	"salon-saas/internal/kernel"
 	"salon-saas/internal/ports"
 )
 
@@ -88,7 +89,7 @@ func waitlistDayLabel(day string, loc *time.Location) string {
 	if loc == nil {
 		loc = time.UTC
 	}
-	parsed, err := time.ParseInLocation(dateLayout, strings.TrimSpace(day), loc)
+	parsed, err := time.ParseInLocation(kernel.DateLayout, strings.TrimSpace(day), loc)
 	if err != nil {
 		// Un día ilegible es un bug de datos: se muestra tal cual antes que
 		// inventar una fecha.
@@ -123,7 +124,7 @@ func publicSalonURL(appURL, slug string) string {
 func publicBaseURL(appURL string) string {
 	base := strings.TrimSpace(appURL)
 	if base == "" {
-		base = DefaultAppURL
+		base = kernel.DefaultAppURL
 	}
 	return strings.TrimRight(base, "/")
 }

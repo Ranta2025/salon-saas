@@ -15,13 +15,14 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/waitlist"
 )
 
 type WaitlistHandler struct {
-	Service     app.WaitlistService
+	Service     waitlist.WaitlistService
 	Memberships ports.MembershipRepository
 }
 
@@ -50,17 +51,17 @@ func (h WaitlistHandler) Join(c *gin.Context) {
 		Phone          *string `json:"phone"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	// Los cuatro datos obligatorios se exigen EXPLÍCITAMENTE: un campo que falta
 	// no se rellena por defecto (un aviso sin email no le sirve a nadie).
 	if strings.TrimSpace(in.ServiceID) == "" || strings.TrimSpace(in.Date) == "" ||
 		strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.Email) == "" {
-		respondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgWaitlistJoinMissing))
+		httpx.RespondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgWaitlistJoinMissing))
 		return
 	}
-	input := app.WaitlistJoinInput{
+	input := waitlist.WaitlistJoinInput{
 		ServiceID: in.ServiceID,
 		Date:      in.Date,
 		Name:      in.Name,
@@ -74,7 +75,7 @@ func (h WaitlistHandler) Join(c *gin.Context) {
 	}
 	res, err := h.Service.Join(c.Param("slug"), input)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	status := http.StatusOK
@@ -92,7 +93,7 @@ func (h WaitlistHandler) Leave(c *gin.Context) {
 		Token *string `json:"token"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	token := ""
@@ -100,7 +101,7 @@ func (h WaitlistHandler) Leave(c *gin.Context) {
 		token = *in.Token
 	}
 	if err := h.Service.Leave(token); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": domain.WaitlistStatusLeft})
@@ -116,7 +117,7 @@ func (h WaitlistHandler) List(c *gin.Context) {
 	}
 	list, err := h.Service.List(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	entries := make([]gin.H, 0, len(list))
@@ -125,12 +126,12 @@ func (h WaitlistHandler) List(c *gin.Context) {
 			"id":                e.ID,
 			"service_id":        e.ServiceID,
 			"service_name":      e.ServiceName,
-			"professional_id":   optionalID(e.ProfessionalID),
-			"professional_name": optionalID(e.ProfessionalName),
+			"professional_id":   httpx.OptionalID(e.ProfessionalID),
+			"professional_name": httpx.OptionalID(e.ProfessionalName),
 			"date":              e.Day,
 			"name":              e.Name,
 			"email":             e.Email,
-			"phone":             optionalID(e.Phone),
+			"phone":             httpx.OptionalID(e.Phone),
 			"status":            e.Status(),
 			"created_at":        e.CreatedAt.Format(time.RFC3339),
 			"notified_at":       optionalTime(e.NotifiedAt),
@@ -148,7 +149,7 @@ func (h WaitlistHandler) Remove(c *gin.Context) {
 		return
 	}
 	if err := h.Service.Remove(actor, salonID, c.Param("eid")); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)

@@ -3,8 +3,8 @@
 // activas, el advisory lock `waitlist-write:<salón>` con FOR UPDATE SKIP LOCKED,
 // la retención blanda de 2 h y el tope de 3 intentos. Corre con:
 //
-//	SALON_IT=1 DATABASE_URL=<scratch> go test ./internal/adapters/postgres/ -run Waitlist -v
-package pgstore
+//	SALON_IT=1 DATABASE_URL=<scratch> go test ./internal/waitlist/postgres/ -run Waitlist -v
+package postgres
 
 import (
 	"context"
@@ -18,9 +18,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/testutil/itdb"
+	waitlistuc "salon-saas/internal/waitlist"
 )
 
 // itWaitlistMailer registra lo enviado y puede fallar a pedido.
@@ -56,9 +59,9 @@ func (m *itWaitlistMailer) setErr(err error) {
 type itWaitlistEnv struct {
 	pool     *pgxpool.Pool
 	ctx      context.Context
-	svc      app.WaitlistService
+	svc      waitlistuc.WaitlistService
 	repo     Waitlist
-	bookings Bookings
+	bookings pgstore.Bookings
 	mails    *itWaitlistMailer
 	salonID  string
 	otherID  string
@@ -77,9 +80,9 @@ func (e *itWaitlistEnv) createEntry(entry domain.WaitlistEntry) error {
 
 func newItWaitlistEnv(t *testing.T) *itWaitlistEnv {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 	ctx := context.Background()
 	for _, q := range []string{
 		`DELETE FROM salons WHERE id LIKE 's-it-wl%'`,
@@ -90,15 +93,15 @@ func newItWaitlistEnv(t *testing.T) *itWaitlistEnv {
 		}
 	}
 
-	salons := Salons{Pool: pool}
-	users := Users{Pool: pool}
-	mems := Memberships{Pool: pool}
-	services := Services{Pool: pool}
-	profs := ProfessionalServices{Pool: pool}
-	hours := WeeklyHours{Pool: pool}
-	timeOff := TimeOff{Pool: pool}
-	resources := Resources{Pool: pool}
-	bookings := Bookings{Pool: pool}
+	salons := pgstore.Salons{Pool: pool}
+	users := pgstore.Users{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
+	services := pgstore.Services{Pool: pool}
+	profs := pgstore.ProfessionalServices{Pool: pool}
+	hours := pgstore.WeeklyHours{Pool: pool}
+	timeOff := pgstore.TimeOff{Pool: pool}
+	resources := pgstore.Resources{Pool: pool}
+	bookings := pgstore.Bookings{Pool: pool}
 	waitlist := Waitlist{Pool: pool}
 	mails := &itWaitlistMailer{}
 
@@ -145,7 +148,7 @@ func newItWaitlistEnv(t *testing.T) *itWaitlistEnv {
 		Salons: salons, Services: services, Settings: salons, Staff: mems, Bookings: bookings,
 		Professionals: profs, Hours: hours, TimeOff: timeOff, Resources: resources,
 	}
-	svc := app.WaitlistService{
+	svc := waitlistuc.WaitlistService{
 		Waitlist: waitlist, Tx: waitlist,
 		Salons: salons, Services: services, Professionals: profs, Settings: salons,
 		Availability: availability, Memberships: mems,
@@ -231,21 +234,21 @@ func TestWaitlist_IT_flujo(t *testing.T) {
 	day, at := itWaitlistDay(t)
 
 	// Con horarios libres el alta es 409: la lista no sirve para reservar.
-	if _, err := env.svc.Join(env.slug, app.WaitlistJoinInput{
+	if _, err := env.svc.Join(env.slug, waitlistuc.WaitlistJoinInput{
 		ServiceID: env.service.ID, Date: day, Name: "Lía", Email: "lia@mail.com",
 	}); !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("con horarios libres: %v", err)
 	}
 	// Ocupando el día entero (una reserva larga) no hay horarios: entra.
 	env.blockFrom(t, 0)
-	res, err := env.svc.Join(env.slug, app.WaitlistJoinInput{
+	res, err := env.svc.Join(env.slug, waitlistuc.WaitlistJoinInput{
 		ServiceID: env.service.ID, ProfessionalID: env.profID, Date: day, Name: " Lía ", Email: "LIA@mail.com ",
 	})
 	if err != nil || !res.Created || res.Status != domain.WaitlistStatusWaiting {
 		t.Fatalf("alta: %+v %v", res, err)
 	}
 	// Repetido idéntico: idempotente, sin otra fila (índice único parcial).
-	again, err := env.svc.Join(env.slug, app.WaitlistJoinInput{
+	again, err := env.svc.Join(env.slug, waitlistuc.WaitlistJoinInput{
 		ServiceID: env.service.ID, ProfessionalID: env.profID, Date: day, Name: "Lía", Email: "lia@mail.com",
 	})
 	if err != nil || again.Created {
@@ -277,7 +280,7 @@ func TestWaitlist_IT_flujo(t *testing.T) {
 	}
 	// Un cuarto intento (el mismo día bloqueado, sin profesional) choca con el
 	// tope de email: el 409 es el del contrato y no escribe nada.
-	if _, err := env.svc.Join(env.slug, app.WaitlistJoinInput{
+	if _, err := env.svc.Join(env.slug, waitlistuc.WaitlistJoinInput{
 		ServiceID: env.service.ID, Date: day, Name: "Lía", Email: "lia@mail.com",
 	}); !errors.Is(err, domain.ErrAlreadyExists) || err.Error() != domain.MsgWaitlistEmailLimit {
 		t.Fatalf("tope por email: %v", err)
@@ -285,7 +288,7 @@ func TestWaitlist_IT_flujo(t *testing.T) {
 
 	// El listado del personal trae los nombres y sale por día y alta.
 	owner := domain.Membership{UserID: "u-it-wl-owner", SalonID: env.salonID, Role: domain.RoleOwner}
-	mems := Memberships{Pool: env.pool}
+	mems := pgstore.Memberships{Pool: env.pool}
 	if err := mems.Save(owner); err != nil {
 		t.Fatalf("dueña: %v", err)
 	}
@@ -437,7 +440,7 @@ func TestWaitlist_IT_reintento_tope_tres(t *testing.T) {
 func TestWaitlist_IT_migracion_sobre_datos_previos(t *testing.T) {
 	env := newItWaitlistEnv(t)
 	// Datos previos: una ficha y un turno del salón.
-	clients := Clients{Pool: env.pool}
+	clients := pgstore.Clients{Pool: env.pool}
 	c, err := domain.NewClient(env.salonID, "Clienta Previa", "555", "previa@mail.com", "")
 	if err != nil {
 		t.Fatalf("ficha: %v", err)
@@ -598,7 +601,7 @@ func TestWaitlist_IT_topes_ignoran_dias_pasados(t *testing.T) {
 		past := now.AddDate(0, 0, -i).Format("2006-01-02")
 		env.seedEntry(t, "", past, "Lía", "lia@mail.com", now.Add(time.Duration(i)*time.Minute))
 	}
-	res, err := env.svc.Join(env.slug, app.WaitlistJoinInput{
+	res, err := env.svc.Join(env.slug, waitlistuc.WaitlistJoinInput{
 		ServiceID: env.service.ID, ProfessionalID: env.profID, Date: day, Name: "Lía", Email: "lia@mail.com",
 	})
 	if err != nil || !res.Created {
@@ -609,7 +612,7 @@ func TestWaitlist_IT_topes_ignoran_dias_pasados(t *testing.T) {
 		future := now.AddDate(0, 0, i+1).Format("2006-01-02")
 		env.seedEntry(t, "", future, "Lía", "lia@mail.com", now.Add(time.Duration(10+i)*time.Minute))
 	}
-	_, err = env.svc.Join(env.slug, app.WaitlistJoinInput{
+	_, err = env.svc.Join(env.slug, waitlistuc.WaitlistJoinInput{
 		ServiceID: env.service.ID, Date: day, Name: "Lía", Email: "lia@mail.com",
 	})
 	if err == nil || err.Error() != domain.MsgWaitlistEmailLimit {

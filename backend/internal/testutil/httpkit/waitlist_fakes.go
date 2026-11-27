@@ -6,6 +6,8 @@ import (
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/waitlist"
+	waitlisthttpapi "salon-saas/internal/waitlist/httpapi"
 	"sort"
 	"strings"
 	"sync"
@@ -284,8 +286,8 @@ func NewWaitlistHTTPEnv(t *testing.T) *WaitlistHTTPEnv {
 func (e *WaitlistHTTPEnv) wire(t *testing.T, mutate func(d *httpapi.Deps)) {
 	t.Helper()
 	d := e.Deps
-	d.Waitlist = httpapi.WaitlistHandler{
-		Service: app.WaitlistService{
+	d.Waitlist = waitlisthttpapi.WaitlistHandler{
+		Service: waitlist.WaitlistService{
 			Waitlist: e.Wl, Tx: e.Wl,
 			Salons: e.Salons, Services: e.Services, Professionals: e.Professionals,
 			Settings: e.Settings, Availability: app.AvailabilityService{

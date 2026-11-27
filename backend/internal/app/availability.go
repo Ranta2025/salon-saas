@@ -62,6 +62,17 @@ func (s AvailabilityService) Day(slug, date, serviceID, professionalID string) (
 	return s.DayExcluding(slug, date, serviceID, professionalID, "")
 }
 
+// FreeSlots cuenta los huecos libres del día: es la vista MÍNIMA que necesita la
+// lista de espera (F7, D1) del mismo cálculo de la reserva pública, para que esa
+// funcionalidad no dependa de este paquete.
+func (s AvailabilityService) FreeSlots(slug, date, serviceID, professionalID string) (int, error) {
+	day, err := s.Day(slug, date, serviceID, professionalID)
+	if err != nil {
+		return 0, err
+	}
+	return len(day.Slots), nil
+}
+
 // DayExcluding es Day pero ignorando el turno `excludeBookingID` en los
 // conflictos (F1, D5): el turno que se reprograma no se pisa a sí mismo, así que
 // su propio horario vuelve a ofrecerse y la persona puede elegir cualquier hueco

@@ -41,6 +41,9 @@ import (
 	productshttpapi "salon-saas/internal/products/httpapi"
 	"salon-saas/internal/staffing"
 	staffinghttpapi "salon-saas/internal/staffing/httpapi"
+	"salon-saas/internal/waitlist"
+	waitlisthttpapi "salon-saas/internal/waitlist/httpapi"
+	waitliststore "salon-saas/internal/waitlist/postgres"
 	"syscall"
 	"time"
 
@@ -440,8 +443,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F7: lista de espera del salón (migración 030). El barrido periódico reclama
 	// avisos con el advisory lock `waitlist-write:<salón>` y manda el email fuera
 	// del lock; la pantalla del personal lista y da de baja.
-	waitlistRepo := pgstore.Waitlist{Pool: pool}
-	waitlistSvc := app.WaitlistService{
+	waitlistRepo := waitliststore.Waitlist{Pool: pool}
+	waitlistSvc := waitlist.WaitlistService{
 		Waitlist: waitlistRepo, Tx: waitlistRepo,
 		Salons: salons, Services: servicesRepo, Professionals: professionals,
 		Settings: salons, Availability: availabilitySvc, Memberships: mems,
@@ -627,7 +630,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		// F7: lista de espera (alta pública, baja por enlace y las dos rutas del
 		// personal). El barrido periódico se arranca en main con el mismo
 		// servicio (deps.Waitlist.Service).
-		Waitlist: httpapi.WaitlistHandler{Service: waitlistSvc, Memberships: mems},
+		Waitlist: waitlisthttpapi.WaitlistHandler{Service: waitlistSvc, Memberships: mems},
 		// F11: la política de señas (D3) y la pantalla «Señas» (D10); el callback
 		// del banco (D7) y sus dos rutas (D6) existen SOLO con PAYMENT_SIM_SECRET
 		// (D12: sin secreto responden 404, porque no se montan).
