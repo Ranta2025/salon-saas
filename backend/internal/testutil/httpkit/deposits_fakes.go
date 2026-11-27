@@ -10,6 +10,7 @@ import (
 	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/settings"
 	"sort"
 	"strings"
 	"sync"
@@ -562,7 +563,7 @@ func (w *DepWorld) wire(t *testing.T) {
 	w.Env.Deps.Deposits = httpapi.DepositHandler{Deposits: svc, Memberships: w.Env.Mems}
 	w.Env.Deps.PaymentsCallback = httpapi.PaymentsHandler{Deposits: svc}.Callback
 	// El payload público (D11) lee la misma política.
-	w.Env.Deps.Public.Public = app.PublicSalonService{
+	w.Env.Deps.PublicSalon.Public = settings.PublicSalonService{
 		Salons: w.Env.Salons, Services: w.Env.Services, Settings: w.Env.Settings,
 		Hours: w.Env.Weekly, Deposits: w.Policies,
 	}

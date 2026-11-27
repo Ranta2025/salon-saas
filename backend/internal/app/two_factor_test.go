@@ -38,9 +38,9 @@ func newTFEnv(t *testing.T) *tfEnv {
 	_ = mems.Save(domain.Membership{UserID: u.ID, SalonID: "s-2", Role: domain.RoleAdmin})
 	ended := clock.Now()
 	_ = mems.Save(domain.Membership{UserID: u.ID, SalonID: "s-baja", Role: domain.RoleReception})
-	m := mems.byKey[u.ID+"|s-baja"]
+	m := mems.ByKey[u.ID+"|s-baja"]
 	m.EndedAt = &ended
-	mems.byKey[u.ID+"|s-baja"] = m
+	mems.ByKey[u.ID+"|s-baja"] = m
 	box, err := domain.NewTOTPSecretBox("jwt-secret-de-prueba")
 	if err != nil {
 		t.Fatal(err)
@@ -263,7 +263,7 @@ func TestTwoFactorAuditBestEffort(t *testing.T) {
 
 func TestTwoFactorNoSalonsNoAuditEvent(t *testing.T) {
 	e := newTFEnv(t)
-	e.mems.byKey = map[string]domain.Membership{}
+	e.mems.ByKey = map[string]domain.Membership{}
 	if _, err := e.svc.Setup(e.userID); err != nil {
 		t.Fatal(err)
 	}

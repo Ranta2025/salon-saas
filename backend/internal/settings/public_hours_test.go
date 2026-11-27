@@ -1,4 +1,4 @@
-package app
+package settings
 
 import (
 	"testing"
@@ -12,13 +12,13 @@ import (
 // (lo que la landing mostraba como texto indicativo).
 func TestPublicSalon_hours(t *testing.T) {
 	salon := domain.Salon{ID: "s1", Slug: "navajas-oro", Name: "Navajas de Oro"}
-	salons := &fakeSalons{bySlug: map[string]domain.Salon{"navajas-oro": salon}}
-	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{"s1": {
+	salons := &testutil.FakeSalons{BySlug: map[string]domain.Salon{"navajas-oro": salon}}
+	settings := &testutil.FakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
 		SalonID: "s1", Timezone: "America/Mexico_City",
 		OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}}}
 	hours := &testutil.FakeWeeklyHours{}
-	svc := PublicSalonService{Salons: salons, Services: &fakeServices{}, Settings: settings, Hours: hours}
+	svc := PublicSalonService{Salons: salons, Services: &testutil.FakeServices{}, Settings: settings, Hours: hours}
 
 	p, err := svc.Public("navajas-oro")
 	if err != nil {

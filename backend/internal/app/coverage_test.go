@@ -77,8 +77,8 @@ type coverEnv struct {
 	bookings *fb
 	timeOff  *testutil.FakeTimeOff
 	hours    *testutil.FakeWeeklyHours
-	profs    *fakeProfessionalServices
-	staff    *fakeStaffLister
+	profs    *testutil.FakeProfessionalServices
+	staff    *testutil.FakeStaffLister
 	services *fakeServices
 	mems     *fakeMemberships
 	notifier *fakeNotifier
@@ -99,10 +99,10 @@ type coverEnv struct {
 
 func newCoverEnv(t *testing.T) *coverEnv {
 	t.Helper()
-	salons := &fakeSalons{bySlug: map[string]domain.Salon{
+	salons := &fakeSalons{BySlug: map[string]domain.Salon{
 		"navajas-oro": {ID: "s1", Slug: "navajas-oro", Name: "Navajas de Oro"},
 	}}
-	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{"s1": {
+	settings := &fakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
 		SalonID: "s1", Timezone: "America/Mexico_City",
 		OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}}}
@@ -118,15 +118,15 @@ func newCoverEnv(t *testing.T) *coverEnv {
 	}
 	_ = services.Save(keratina)
 
-	staff := &fakeStaffLister{bySalon: map[string][]domain.StaffMember{"s1": {
+	staff := &testutil.FakeStaffLister{BySalon: map[string][]domain.StaffMember{"s1": {
 		{ID: "ana", Name: "Ana", Role: domain.RoleProfessional, Attends: true},
 		{ID: "bea", Name: "Bea", Role: domain.RoleProfessional, Attends: true},
 		{ID: "duena", Name: "Dueña", Role: domain.RoleOwner, Attends: true},
 		{ID: "recep", Name: "Recep", Role: domain.RoleReception},
 	}}}
-	profs := &fakeProfessionalServices{
-		staff: staff,
-		byService: map[string][]string{
+	profs := &testutil.FakeProfessionalServices{
+		Staff: staff,
+		ByService: map[string][]string{
 			"s1|" + corte.ID:    {"ana", "bea", "duena"},
 			"s1|" + keratina.ID: {"ana", "bea"},
 		},

@@ -11,7 +11,7 @@ import (
 // attends=false no infla la agenda; el dueño-barbero (attends=true) sí aparece.
 func TestAvailability_solo_ofrece_quien_atiende(t *testing.T) {
 	env := newPublicEnv(t)
-	env.staff.bySalon["s1"] = []domain.StaffMember{
+	env.staff.BySalon["s1"] = []domain.StaffMember{
 		{ID: "prof1", Name: "Ana", Role: domain.RoleProfessional},
 		{ID: "duenio", Name: "Dueña", Role: domain.RoleOwner},                // no atiende
 		{ID: "barbero", Name: "Beto", Role: domain.RoleOwner, Attends: true}, // dueño-barbero
@@ -56,7 +56,7 @@ func TestAvailability_solo_ofrece_quien_atiende(t *testing.T) {
 // Un salón donde nadie atiende no tiene huecos: [] y no un error (500).
 func TestAvailability_nadie_atiende_no_hay_slots(t *testing.T) {
 	env := newPublicEnv(t)
-	env.staff.bySalon["s1"] = []domain.StaffMember{
+	env.staff.BySalon["s1"] = []domain.StaffMember{
 		{ID: "duenio", Name: "Dueña", Role: domain.RoleOwner},
 		{ID: "admin", Name: "Carla", Role: domain.RoleAdmin},
 		{ID: "recepcion", Name: "Dani", Role: domain.RoleReception, Attends: true},

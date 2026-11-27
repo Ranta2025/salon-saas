@@ -51,11 +51,11 @@ var _ ports.SalonTxRunner = (*fakeSalonTx)(nil)
 
 // fakeStaffLister: personal por salón en memoria.
 type fakeStaffLister struct {
-	bySalon map[string][]domain.StaffMember
+	BySalon map[string][]domain.StaffMember
 }
 
 func (f *fakeStaffLister) ListStaff(salonID string) ([]domain.StaffMember, error) {
-	return f.bySalon[salonID], nil
+	return f.BySalon[salonID], nil
 }
 
 var _ ports.StaffLister = (*fakeStaffLister)(nil)

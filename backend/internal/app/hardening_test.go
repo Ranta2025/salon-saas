@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/settings"
 	"salon-saas/internal/team"
 )
 
@@ -217,7 +218,7 @@ func TestMeService(t *testing.T) {
 }
 
 func TestStaffService(t *testing.T) {
-	staff := &fakeStaffLister{bySalon: map[string][]domain.StaffMember{
+	staff := &fakeStaffLister{BySalon: map[string][]domain.StaffMember{
 		"s1": {
 			{ID: "u-owner", Name: "Ana", Role: domain.RoleOwner, Attends: true},
 			{ID: "u-prof", Name: "Bruno", Role: domain.RoleProfessional},
@@ -246,7 +247,7 @@ func TestStaffService(t *testing.T) {
 func TestPublicSalonService(t *testing.T) {
 	salons := &fakeSalons{}
 	services := &fakeServices{}
-	svc := PublicSalonService{Salons: salons, Services: services}
+	svc := settings.PublicSalonService{Salons: salons, Services: services}
 	_ = salons.Save(domain.Salon{ID: "s1", Slug: "navajas", Name: "Navajas de Oro"})
 	activo, _ := domain.NewService("s1", "Corte", 45, 150000, 20)
 	_ = services.Save(activo)

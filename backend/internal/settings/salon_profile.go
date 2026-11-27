@@ -1,6 +1,6 @@
 // SalonProfileService: el perfil público del salón (F16, D1). Cualquier miembro
 // activo lo lee; solo owner/admin lo edita.
-package app
+package settings
 
 import (
 	"salon-saas/internal/domain"

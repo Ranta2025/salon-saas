@@ -47,7 +47,7 @@ func newDepEnv(t *testing.T) *depEnv {
 	}
 	e.deposits = &fakeDeposits{bookings: e.bookings}
 	e.gateway = newFakeDepositGateway(depSecret)
-	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{
+	settings := &fakeSettings{BySalon: map[string]domain.SalonSettings{
 		"s1": {SalonID: "s1", Timezone: "America/Argentina/Buenos_Aires", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30},
 	}}
 	// El correo se manda en línea: el test no espera goroutines.
@@ -74,7 +74,7 @@ func newDepEnv(t *testing.T) *depEnv {
 	e.removed = miembro(e.mems, "removed", "s1", domain.RoleAdmin)
 	at := depClock.Add(-time.Hour)
 	e.removed.EndedAt = &at
-	e.mems.byKey["removed|s1"] = e.removed
+	e.mems.ByKey["removed|s1"] = e.removed
 	return e
 }
 

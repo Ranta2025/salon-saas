@@ -23,16 +23,16 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/settings"
 )
 
 // msgTimezoneFrozen es la frase EXACTA del contrato (literal para que el test
 // no pueda pasar copiando la constante del código).
 const msgTimezoneFrozen = "No se puede cambiar la zona horaria: ya hay liquidaciones de nómina calculadas con la zona actual"
 
-func timezoneSettingsService(pool *pgxpool.Pool) app.SettingsService {
-	return app.SettingsService{Settings: Salons{Pool: pool}, Memberships: Memberships{Pool: pool}}
+func timezoneSettingsService(pool *pgxpool.Pool) settings.SettingsService {
+	return settings.SettingsService{Settings: Salons{Pool: pool}, Memberships: Memberships{Pool: pool}}
 }
 
 // setSalonTimezone es el seed del test: no hay liquidaciones todavía, así que

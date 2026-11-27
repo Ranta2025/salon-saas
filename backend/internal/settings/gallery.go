@@ -1,7 +1,7 @@
 // GalleryService: la galería pública del salón (F16, D3). Reutiliza el pipeline
 // de las fotos de clientas (tipo, tope de 8 MB, conversión a WebP, puerto de
 // storage) pero en su propia tabla: una foto de clienta nunca sale por acá.
-package app
+package settings
 
 import (
 	"errors"

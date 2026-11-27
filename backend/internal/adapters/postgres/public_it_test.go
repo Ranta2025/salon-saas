@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
+	"salon-saas/internal/settings"
 )
 
 func TestServices_descriptionRoundTrip(t *testing.T) {
@@ -170,7 +170,7 @@ func TestPublicSalon_realRepos(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE salons SET timezone='Pacific/Auckland' WHERE id='s-it-f16'`); err != nil {
 		t.Fatal(err)
 	}
-	pub := app.PublicSalonService{
+	pub := settings.PublicSalonService{
 		Salons: salons, Services: services, Settings: salons, Hours: WeeklyHours{Pool: pool},
 		Profiles: profiles, Staff: mems, Professionals: ps, Gallery: gallery, Packages: catalog,
 	}

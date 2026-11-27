@@ -1,7 +1,7 @@
 // PublicSalonService: la vidriera pública del salón (landing sin login).
 // Solo datos que el negocio quiere mostrar: nombre, slug y la carta de
 // servicios ACTIVOS. Nada de plata facturada, clientes ni personal.
-package app
+package settings
 
 import (
 	"errors"

@@ -1,4 +1,4 @@
-package app
+package settings
 
 import (
 	"bytes"
@@ -17,12 +17,12 @@ type galleryWorld struct {
 	gallery *fakeGallery
 	store   *testutil.FakeStorage
 	images  *testutil.FakeImages
-	salons  *fakeSalons
-	mems    *fakeMemberships
+	salons  *testutil.FakeSalons
+	mems    *testutil.FakeMemberships
 }
 
 func newGalleryWorld() *galleryWorld {
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	for _, m := range []domain.Membership{
 		{UserID: "owner", SalonID: "s1", Role: domain.RoleOwner},
 		{UserID: "admin", SalonID: "s1", Role: domain.RoleAdmin},
@@ -32,7 +32,7 @@ func newGalleryWorld() *galleryWorld {
 	} {
 		_ = mems.Save(m)
 	}
-	salons := &fakeSalons{}
+	salons := &testutil.FakeSalons{}
 	_ = salons.Save(domain.Salon{ID: "s1", Slug: "uno", Name: "Uno"})
 	_ = salons.Save(domain.Salon{ID: "s2", Slug: "dos", Name: "Dos"})
 	gallery := &fakeGallery{slugs: map[string]string{"s1": "uno", "s2": "dos"}}
@@ -218,30 +218,30 @@ func TestGallery_SetCaption(t *testing.T) {
 	w := newGalleryWorld()
 	p := w.add(t, "s1")
 	got, err := w.svc.SetCaption(gActor("owner", "s1"), "s1", p.ID, strp("  Mi local "))
-	if err != nil || got.Caption != "Mi local" || w.gallery.all[0].Caption != "Mi local" {
+	if err != nil || got.Caption != "Mi local" || w.gallery.All[0].Caption != "Mi local" {
 		t.Fatalf("poner: %+v %v", got, err)
 	}
 	for _, c := range []*string{nil, strp(""), strp(" ")} {
 		got, err = w.svc.SetCaption(gActor("owner", "s1"), "s1", p.ID, c)
-		if err != nil || got.Caption != "" || w.gallery.all[0].Caption != "" {
+		if err != nil || got.Caption != "" || w.gallery.All[0].Caption != "" {
 			t.Fatalf("quitar: %+v %v", got, err)
 		}
 	}
-	w.gallery.all[0].Caption = "queda"
+	w.gallery.All[0].Caption = "queda"
 	for _, bad := range []string{strings.Repeat("a", 121), "a\nb", "a\x00b"} {
 		if _, err := w.svc.SetCaption(gActor("owner", "s1"), "s1", p.ID, strp(bad)); !errors.Is(err, domain.ErrValidation) {
 			t.Fatalf("%q: %v", bad, err)
 		}
 	}
-	if w.gallery.all[0].Caption != "queda" {
-		t.Fatalf("un 400 no escribe: %q", w.gallery.all[0].Caption)
+	if w.gallery.All[0].Caption != "queda" {
+		t.Fatalf("un 400 no escribe: %q", w.gallery.All[0].Caption)
 	}
 	// Foto de OTRO salón: 404 y nada cambia.
 	other := w.add(t, "s2")
 	if _, err := w.svc.SetCaption(gActor("owner", "s1"), "s1", other.ID, strp("hack")); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("otro salón: %v", err)
 	}
-	if w.gallery.all[1].Caption != "" {
+	if w.gallery.All[1].Caption != "" {
 		t.Fatalf("la foto de s2 cambió")
 	}
 }
@@ -254,7 +254,7 @@ func TestGallery_Delete(t *testing.T) {
 	if err := w.svc.Delete(gActor("owner", "s1"), "s1", other.ID); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("otro salón: %v", err)
 	}
-	if _, ok := w.store.Files[other.StorageKey]; !ok || len(w.gallery.all) != 2 {
+	if _, ok := w.store.Files[other.StorageKey]; !ok || len(w.gallery.All) != 2 {
 		t.Fatalf("la foto de s2 debe seguir")
 	}
 	if err := w.svc.Delete(gActor("owner", "s1"), "s1", p.ID); err != nil {

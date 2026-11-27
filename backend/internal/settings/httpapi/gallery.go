@@ -7,18 +7,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	httpx "salon-saas/internal/adapters/http/httpx"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/settings"
 )
-
-// RouteGalleryUpload es la ruta de la subida de la galería (multipart de hasta
-// 8 MB): MaxJSONBody la deja pasar por RUTA, como a la de fotos de clientas.
-const RouteGalleryUpload = "/api/v1/salons/:id/gallery"
 
 // GalleryHandler: la galería pública del salón (F16, D3).
 type GalleryHandler struct {
-	Gallery     app.GalleryService
+	Gallery     settings.GalleryService
 	Memberships ports.MembershipRepository
 }
 
@@ -32,27 +28,12 @@ func (h GalleryHandler) loadActor(c *gin.Context, salonID string) (domain.Member
 	return m, true
 }
 
-// MaxJSONBodyExceptGalleryUpload es MaxJSONBody con la subida de la galería
-// exenta (tiene su propio tope de 8 MB en ReadUpload, que además rechaza lo que
-// no es imagen). Se decide por RUTA, no por Content-Type: ninguna otra ruta se
-// libra del tope de 1 MB.
-func MaxJSONBodyExceptGalleryUpload(limit int64) gin.HandlerFunc {
-	limited := MaxJSONBody(limit)
-	return func(c *gin.Context) {
-		if c.Request.Method == http.MethodPost && c.FullPath() == RouteGalleryUpload {
-			c.Next()
-			return
-		}
-		limited(c)
-	}
-}
-
 // galleryPhotoJSON: {id, url, caption, created_at}; la leyenda sin cargar es null.
-func galleryPhotoJSON(p app.GalleryPhoto) gin.H {
+func galleryPhotoJSON(p settings.GalleryPhoto) gin.H {
 	return gin.H{
 		"id":         p.ID,
 		"url":        p.URL,
-		"caption":    optionalID(p.Caption),
+		"caption":    httpx.OptionalID(p.Caption),
 		"created_at": p.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }
@@ -68,7 +49,7 @@ func (h GalleryHandler) Add(c *gin.Context) {
 		return
 	}
 	if err := h.Gallery.RequireManager(actor, salonID); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	data, contentType, err := httpx.ReadUpload(c)
@@ -78,7 +59,7 @@ func (h GalleryHandler) Add(c *gin.Context) {
 	}
 	photo, err := h.Gallery.Add(actor, salonID, data, contentType)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"photo": galleryPhotoJSON(photo)})
@@ -94,7 +75,7 @@ func (h GalleryHandler) List(c *gin.Context) {
 	}
 	list, err := h.Gallery.List(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	out := make([]gin.H, 0, len(list))
@@ -113,23 +94,23 @@ func (h GalleryHandler) SetCaption(c *gin.Context) {
 		return
 	}
 	if err := h.Gallery.RequireManager(actor, salonID); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	var in struct {
 		Caption presentText `json:"caption"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if !in.Caption.Set {
-		respondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgPhotoCaptionMissing))
+		httpx.RespondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgPhotoCaptionMissing))
 		return
 	}
 	photo, err := h.Gallery.SetCaption(actor, salonID, c.Param("pid"), in.Caption.Value)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"photo": galleryPhotoJSON(photo)})
@@ -143,7 +124,7 @@ func (h GalleryHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.Gallery.Delete(actor, salonID, c.Param("pid")); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -157,7 +138,7 @@ func (h GalleryHandler) Delete(c *gin.Context) {
 func (h GalleryHandler) PublicImage(c *gin.Context) {
 	photo, data, err := h.Gallery.PublicPhoto(c.Param("slug"), c.Param("pid"))
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.Header("Content-Type", photo.ContentType)

@@ -246,3 +246,9 @@ func PNG1x1() []byte {
 		0x44, 0xae, 0x42, 0x60, 0x82,
 	}
 }
+
+// BigJSON es un JSON de 2 MB (el doble de los topes de body) perfectamente
+// parseable: el fixture compartido de los tests del tope del body.
+func BigJSON() string {
+	return `{"email":"` + strings.Repeat("x", 2<<20) + `","password":"secreta123"}`
+}

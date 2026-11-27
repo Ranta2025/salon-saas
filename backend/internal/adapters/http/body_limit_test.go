@@ -13,9 +13,7 @@ import (
 )
 
 // bigJSON es un JSON de 2 MB: el doble del tope y perfectamente parseable.
-func bigJSON() string {
-	return `{"email":"` + strings.Repeat("x", 2<<20) + `","password":"secreta123"}`
-}
+func bigJSON() string { return httpkit.BigJSON() }
 
 // H1: el tope de 1 MB se aplica por RUTA, no por Content-Type. El Content-Type
 // lo elige el cliente, así que "multipart/form-data" o "image/png" sobre un

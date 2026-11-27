@@ -131,7 +131,7 @@ func newPayrollEnv(t *testing.T) *payrollEnv {
 	t.Helper()
 	const salon = "s-pay"
 	// Las filas se cargan directo (Save reactivaría la baja, como el upsert real).
-	mems := &fakeMemberships{byKey: map[string]domain.Membership{}}
+	mems := &fakeMemberships{ByKey: map[string]domain.Membership{}}
 	for _, m := range []domain.Membership{
 		{UserID: "u-owner", SalonID: salon, Role: domain.RoleOwner},
 		{UserID: "u-admin", SalonID: salon, Role: domain.RoleAdmin},
@@ -139,7 +139,7 @@ func newPayrollEnv(t *testing.T) *payrollEnv {
 		{UserID: "u-recep", SalonID: salon, Role: domain.RoleReception},
 		{UserID: "u-gone", SalonID: salon, Role: domain.RoleProfessional, Attends: true, EndedAt: ptrTime(time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC))},
 	} {
-		mems.byKey[m.UserID+"|"+m.SalonID] = m
+		mems.ByKey[m.UserID+"|"+m.SalonID] = m
 	}
 	pay := newFakePayModels(
 		domain.MemberPayView{MemberPay: domain.DefaultMemberPay(salon, "u-owner"), Name: "Dueña", Role: domain.RoleOwner, Active: true},
@@ -148,7 +148,7 @@ func newPayrollEnv(t *testing.T) *payrollEnv {
 		domain.MemberPayView{MemberPay: domain.DefaultMemberPay(salon, "u-recep"), Name: "Recep", Role: domain.RoleReception, Active: true},
 		domain.MemberPayView{MemberPay: domain.DefaultMemberPay(salon, "u-gone"), Name: "Beto", Role: domain.RoleProfessional, Active: false},
 	)
-	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{
+	settings := &fakeSettings{BySalon: map[string]domain.SalonSettings{
 		salon: {SalonID: salon, Timezone: "America/Mexico_City", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30},
 	}}
 	when := time.Date(2026, 3, 20, 18, 0, 0, 0, time.UTC)

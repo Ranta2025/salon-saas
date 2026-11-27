@@ -14,7 +14,7 @@ func TestCashCloseService_ventana_en_zona_del_salon(t *testing.T) {
 	sales := &fakeSales{}
 	closes := &fakeCashCloses{}
 	mems := &fakeMemberships{}
-	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{"s1": {
+	settings := &fakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
 		SalonID: "s1", Timezone: "America/Mexico_City", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}}}
 	svc := CashCloseService{CashCloses: closes, Sales: sales, Memberships: mems, Settings: settings}
@@ -61,7 +61,7 @@ func TestCashCloseService_ventana_en_zona_del_salon(t *testing.T) {
 
 	// Settings ilegibles que no son "no hay fila": el cierre no inventa una
 	// ventana, devuelve el error (no se cuenta plata con datos dudosos).
-	settings.bySalon = nil
+	settings.BySalon = nil
 	roto := CashCloseService{CashCloses: &fakeCashCloses{}, Sales: &fakeSales{}, Memberships: mems, Settings: failSettings{}}
 	if _, err := roto.CloseCash(owner, "s1", 0, ""); err == nil {
 		t.Fatal("un error de settings debe propagarse")

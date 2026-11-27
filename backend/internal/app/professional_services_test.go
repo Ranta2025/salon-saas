@@ -8,97 +8,10 @@ import (
 	"time"
 
 	"salon-saas/internal/domain"
-	"salon-saas/internal/ports"
 	"salon-saas/internal/staffing"
 	"salon-saas/internal/team"
+	"salon-saas/internal/testutil"
 )
-
-// fakeProfessionalServices: qué servicios hace cada profesional, en memoria y
-// con la misma semántica que pgstore.
-//
-// El estado inicial imita lo que deja la migración 016: un servicio sin filas
-// grabadas lo hace TODO el equipo reservable del salón (el backfill). Recién
-// cuando un test asigna (aunque sea una lista vacía) el filtro por servicio se
-// comporta como la base real.
-type fakeProfessionalServices struct {
-	staff     *fakeStaffLister
-	byService map[string][]string // "salonID|serviceID" -> userIDs
-	byMember  map[string][]string // "salonID|userID"    -> serviceIDs
-}
-
-func (f *fakeProfessionalServices) ListProfessionalsFor(salonID, serviceID string) ([]domain.StaffMember, error) {
-	key := salonID + "|" + serviceID
-	ids, recorded := f.byService[key]
-	want := map[string]bool{}
-	for _, id := range ids {
-		want[id] = true
-	}
-	var out []domain.StaffMember
-	for _, m := range f.staff.bySalon[salonID] {
-		if !m.Bookable() {
-			continue
-		}
-		if recorded && !want[m.ID] {
-			continue
-		}
-		out = append(out, m)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out, nil
-}
-
-func (f *fakeProfessionalServices) ListServiceIDs(salonID, userID string) ([]string, error) {
-	return append([]string{}, f.byMember[salonID+"|"+userID]...), nil
-}
-
-func (f *fakeProfessionalServices) SetServices(salonID, userID string, serviceIDs []string) error {
-	key := salonID + "|" + userID
-	if _, ok := f.staff.bySalon[salonID]; !ok {
-		return domain.ErrNotFound
-	}
-	uniq := map[string]bool{}
-	out := make([]string, 0, len(serviceIDs))
-	for _, id := range serviceIDs {
-		if id == "" || uniq[id] {
-			continue
-		}
-		uniq[id] = true
-		out = append(out, id)
-	}
-	sort.Strings(out)
-	if f.byMember == nil {
-		f.byMember = map[string][]string{}
-	}
-	if f.byService == nil {
-		f.byService = map[string][]string{}
-	}
-	f.byMember[key] = out
-	// Lo asignado pasa a ser el registro del servicio para quien lo ve: así el
-	// camino de disponibilidad y el de la pantalla de equipo miran lo mismo.
-	for _, id := range out {
-		filename := salonID + "|" + id
-		already := false
-		for _, who := range f.byService[filename] {
-			if who == userID {
-				already = true
-			}
-		}
-		if !already {
-			f.byService[filename] = append(f.byService[filename], userID)
-		}
-	}
-	return nil
-}
-
-// assign graba qué profesionales hacen un servicio (lista vacía = nadie lo hace).
-func (f *fakeProfessionalServices) assign(salonID, serviceID string, userIDs ...string) {
-	if f.byService == nil {
-		f.byService = map[string][]string{}
-	}
-	f.byService[salonID+"|"+serviceID] = userIDs
-}
-
-var _ ports.ProfessionalServiceRepository = (*fakeProfessionalServices)(nil)
 
 // teamFixture: pantalla de equipo con el dueño-barbero, la administración, una
 // profesional y recepción, más los repos que necesita F2c.
@@ -107,7 +20,7 @@ type teamFixture struct {
 	mems     *fakeMemberships
 	users    *fakeUsers
 	members  *fakeMembers
-	profs    *fakeProfessionalServices
+	profs    *testutil.FakeProfessionalServices
 	services *fakeServices
 	corte    domain.Service
 	keratina domain.Service
@@ -135,11 +48,11 @@ func newTeamFixture(t *testing.T) *teamFixture {
 	_ = mems.Save(domain.Membership{UserID: "u-recep", SalonID: "s1", Role: domain.RoleReception})
 	_ = mems.Save(domain.Membership{UserID: "u-otro", SalonID: "s2", Role: domain.RoleOwner, Attends: true})
 
-	staff := &fakeStaffLister{bySalon: map[string][]domain.StaffMember{"s1": {
+	staff := &testutil.FakeStaffLister{BySalon: map[string][]domain.StaffMember{"s1": {
 		{ID: "u-owner", Name: "Ana", Role: domain.RoleOwner, Attends: true},
 		{ID: "u-prof", Name: "Caro", Role: domain.RoleProfessional, Attends: true},
 	}}}
-	profs := &fakeProfessionalServices{staff: staff}
+	profs := &testutil.FakeProfessionalServices{Staff: staff}
 	services := &fakeServices{}
 	corte, err := domain.NewService("s1", "Corte", 45, 150000, 20)
 	if err != nil {
@@ -180,9 +93,9 @@ func TestAvailability_filtra_por_servicio(t *testing.T) {
 	for _, s := range []domain.Service{keratina, manicura} {
 		_ = env.services.Save(s)
 	}
-	env.profs.assign("s1", env.corte.ID, "prof1")
-	env.profs.assign("s1", keratina.ID, "prof2")
-	env.profs.assign("s1", manicura.ID) // nadie la hace
+	env.profs.Assign("s1", env.corte.ID, "prof1")
+	env.profs.Assign("s1", keratina.ID, "prof2")
+	env.profs.Assign("s1", manicura.ID) // nadie la hace
 
 	// Corte: solo quien lo hace (Ana). Bruno no aparece aunque esté libre.
 	day, err := env.avail.Day("navajas-oro", "2026-12-01", env.corte.ID, "")
@@ -241,8 +154,8 @@ func TestPublicBooking_asigna_quien_hace_el_servicio(t *testing.T) {
 		t.Fatalf("servicio: %v", err)
 	}
 	_ = env.services.Save(keratina)
-	env.profs.assign("s1", env.corte.ID, "prof1")
-	env.profs.assign("s1", keratina.ID, "prof2")
+	env.profs.Assign("s1", env.corte.ID, "prof1")
+	env.profs.Assign("s1", keratina.ID, "prof2")
 
 	start := time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC) // 09:00 en CDMX
 	corteBooking, err := env.book.Book("navajas-oro", PublicBookingInput{
@@ -277,7 +190,7 @@ func TestPublicBooking_servicio_sin_profesional_409(t *testing.T) {
 		t.Fatalf("servicio: %v", err)
 	}
 	_ = env.services.Save(manicura)
-	env.profs.assign("s1", manicura.ID) // nadie la hace
+	env.profs.Assign("s1", manicura.ID) // nadie la hace
 
 	start := time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC)
 	_, err = env.book.Book("navajas-oro", PublicBookingInput{
@@ -522,11 +435,11 @@ func TestMemberService_list_con_oficio_y_servicios(t *testing.T) {
 func TestServiceService_create_professional_ids(t *testing.T) {
 	services := &fakeServices{}
 	mems := &fakeMemberships{}
-	staff := &fakeStaffLister{bySalon: map[string][]domain.StaffMember{"s1": {
+	staff := &testutil.FakeStaffLister{BySalon: map[string][]domain.StaffMember{"s1": {
 		{ID: "u-prof", Name: "Caro", Role: domain.RoleProfessional},
 		{ID: "u-recep", Name: "Dani", Role: domain.RoleReception},
 	}}}
-	profs := &fakeProfessionalServices{staff: staff}
+	profs := &testutil.FakeProfessionalServices{Staff: staff}
 	svc := staffing.ServiceService{Services: services, Memberships: mems, Professionals: profs}
 	miembro(mems, "u-owner", "s1", domain.RoleOwner)
 	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)

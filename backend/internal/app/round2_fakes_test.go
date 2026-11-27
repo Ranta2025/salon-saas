@@ -12,7 +12,7 @@ import (
 // Misma semántica que pgstore (scope por salón, ErrNotFound, upsert).
 
 type fakeSettings struct {
-	bySalon map[string]domain.SalonSettings
+	BySalon map[string]domain.SalonSettings
 	// err simula una DB caída al leer la configuración (los recordatorios
 	// tienen que salir igual, en UTC).
 	err error
@@ -22,17 +22,17 @@ func (f *fakeSettings) Settings(salonID string) (domain.SalonSettings, error) {
 	if f.err != nil {
 		return domain.SalonSettings{}, f.err
 	}
-	if s, ok := f.bySalon[salonID]; ok {
+	if s, ok := f.BySalon[salonID]; ok {
 		return s, nil
 	}
 	return domain.SalonSettings{}, domain.ErrNotFound
 }
 
 func (f *fakeSettings) SaveSettings(s domain.SalonSettings) error {
-	if f.bySalon == nil {
-		f.bySalon = map[string]domain.SalonSettings{}
+	if f.BySalon == nil {
+		f.BySalon = map[string]domain.SalonSettings{}
 	}
-	f.bySalon[s.SalonID] = s
+	f.BySalon[s.SalonID] = s
 	return nil
 }
 
@@ -62,7 +62,7 @@ type fakeMembers struct {
 
 func (f *fakeMembers) ListMembers(salonID string) ([]domain.Member, error) {
 	out := []domain.Member{}
-	for _, m := range f.mems.byKey {
+	for _, m := range f.mems.ByKey {
 		if m.SalonID != salonID {
 			continue
 		}
@@ -82,40 +82,40 @@ func (f *fakeMembers) ListMembers(salonID string) ([]domain.Member, error) {
 
 func (f *fakeMembers) DeleteMember(userID, salonID string) error {
 	key := userID + "|" + salonID
-	if _, ok := f.mems.byKey[key]; !ok {
+	if _, ok := f.mems.ByKey[key]; !ok {
 		return domain.ErrNotFound
 	}
-	delete(f.mems.byKey, key)
+	delete(f.mems.ByKey, key)
 	return nil
 }
 
 // SetAttends: mismo scope que pgstore (una fila por salón); sin fila, ErrNotFound.
 func (f *fakeMembers) SetAttends(userID, salonID string, attends bool) error {
 	key := userID + "|" + salonID
-	m, ok := f.mems.byKey[key]
+	m, ok := f.mems.ByKey[key]
 	if !ok {
 		return domain.ErrNotFound
 	}
 	m.Attends = attends
-	f.mems.byKey[key] = m
+	f.mems.ByKey[key] = m
 	return nil
 }
 
 // SetTrade: mismo scope que pgstore (una fila por salón); sin fila, ErrNotFound.
 func (f *fakeMembers) SetTrade(userID, salonID, trade string) error {
 	key := userID + "|" + salonID
-	m, ok := f.mems.byKey[key]
+	m, ok := f.mems.ByKey[key]
 	if !ok {
 		return domain.ErrNotFound
 	}
 	m.Trade = trade
-	f.mems.byKey[key] = m
+	f.mems.ByKey[key] = m
 	return nil
 }
 
 func (f *fakeMembers) CountRole(salonID string, role domain.Role) (int, error) {
 	n := 0
-	for _, m := range f.mems.byKey {
+	for _, m := range f.mems.ByKey {
 		if m.SalonID == salonID && m.Role == role && m.Active() {
 			n++
 		}
@@ -126,7 +126,7 @@ func (f *fakeMembers) CountRole(salonID string, role domain.Role) (int, error) {
 // FindMember incluye a quien fue dado de baja (la pantalla de equipo lo
 // necesita para reactivar y para autorizar por rol).
 func (f *fakeMembers) FindMember(userID, salonID string) (domain.Membership, error) {
-	m, ok := f.mems.byKey[userID+"|"+salonID]
+	m, ok := f.mems.ByKey[userID+"|"+salonID]
 	if !ok {
 		return domain.Membership{}, domain.ErrNotFound
 	}
@@ -136,25 +136,25 @@ func (f *fakeMembers) FindMember(userID, salonID string) (domain.Membership, err
 // DeactivateMember: UPDATE condicional por ended_at, como pgstore.
 func (f *fakeMembers) DeactivateMember(userID, salonID string, endedAt time.Time) error {
 	key := userID + "|" + salonID
-	m, ok := f.mems.byKey[key]
+	m, ok := f.mems.ByKey[key]
 	if !ok || !m.Active() {
 		return domain.ErrNotFound
 	}
 	at := endedAt
 	m.EndedAt = &at
-	f.mems.byKey[key] = m
+	f.mems.ByKey[key] = m
 	return nil
 }
 
 // ReactivateMember: UPDATE condicional ended_at IS NOT NULL.
 func (f *fakeMembers) ReactivateMember(userID, salonID string) error {
 	key := userID + "|" + salonID
-	m, ok := f.mems.byKey[key]
+	m, ok := f.mems.ByKey[key]
 	if !ok || m.Active() {
 		return domain.ErrNotFound
 	}
 	m.EndedAt = nil
-	f.mems.byKey[key] = m
+	f.mems.ByKey[key] = m
 	return nil
 }
 
@@ -165,13 +165,13 @@ func (f *fakeMembers) CountFutureBookings(salonID, userID string, _ time.Time) (
 // InMemberTx: snapshot + rollback, como la transacción real.
 func (f *fakeMembers) InMemberTx(fn func(tx ports.MemberTx) error) error {
 	mems := map[string]domain.Membership{}
-	for k, v := range f.mems.byKey {
+	for k, v := range f.mems.ByKey {
 		mems[k] = v
 	}
 	invs := append([]domain.Invitation{}, f.invitations...)
 	err := fn(fakeMemberTx{f})
 	if err != nil {
-		f.mems.byKey = mems
+		f.mems.ByKey = mems
 		f.invitations = invs
 	}
 	return err
@@ -186,10 +186,10 @@ func (t fakeMemberTx) DeactivateMember(userID, salonID string, endedAt time.Time
 	// La baja paralela ya commiteó: su owner dejó de estar activo antes del
 	// conteo de adentro (así se ve la carrera sin goroutines en el test).
 	if key := t.f.concurrentBaja; key != "" {
-		other := t.f.mems.byKey[key]
+		other := t.f.mems.ByKey[key]
 		at := endedAt
 		other.EndedAt = &at
-		t.f.mems.byKey[key] = other
+		t.f.mems.ByKey[key] = other
 	}
 	return nil
 }

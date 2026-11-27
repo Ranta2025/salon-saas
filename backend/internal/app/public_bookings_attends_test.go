@@ -12,7 +12,7 @@ import (
 // mano como profesional.
 func TestPublicBooking_no_asigna_quien_no_atiende(t *testing.T) {
 	env := newPublicEnv(t)
-	env.staff.bySalon["s1"] = []domain.StaffMember{
+	env.staff.BySalon["s1"] = []domain.StaffMember{
 		{ID: "duenio", Name: "Dueña", Role: domain.RoleOwner},
 		{ID: "admin", Name: "Carla", Role: domain.RoleAdmin},
 		{ID: "recepcion", Name: "Dani", Role: domain.RoleReception, Attends: true},
@@ -40,7 +40,7 @@ func TestPublicBooking_no_asigna_quien_no_atiende(t *testing.T) {
 // acepta su id explícito.
 func TestPublicBooking_asigna_duenio_que_atiende(t *testing.T) {
 	env := newPublicEnv(t)
-	env.staff.bySalon["s1"] = []domain.StaffMember{
+	env.staff.BySalon["s1"] = []domain.StaffMember{
 		{ID: "barbero", Name: "Beto", Role: domain.RoleOwner, Attends: true},
 	}
 	in := publicInput()

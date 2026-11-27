@@ -220,7 +220,7 @@ func TestAvailability_without_timeOff_keeps_weekly_hours_and_services(t *testing
 	}
 	// Solo prof2 hace "Color" (F2c): el servicio filtra, no el horario.
 	color := servicioDe(t, env, "Color", 45)
-	env.profs.byService = map[string][]string{"s1|" + color.ID: {"prof2"}}
+	env.profs.ByService = map[string][]string{"s1|" + color.ID: {"prof2"}}
 
 	day, err := env.avail.Day("navajas-oro", "2026-12-01", env.corte.ID, "")
 	if err != nil {

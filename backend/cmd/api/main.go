@@ -43,6 +43,8 @@ import (
 	productshttpapi "salon-saas/internal/products/httpapi"
 	"salon-saas/internal/schedules"
 	scheduleshttpapi "salon-saas/internal/schedules/httpapi"
+	"salon-saas/internal/settings"
+	settingshttpapi "salon-saas/internal/settings/httpapi"
 	"salon-saas/internal/staffing"
 	staffinghttpapi "salon-saas/internal/staffing/httpapi"
 	"salon-saas/internal/team"
@@ -376,8 +378,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// de clienta.
 	salonProfileRepo := pgstore.SalonProfiles{Pool: pool}
 	salonGalleryRepo := pgstore.SalonGallery{Pool: pool}
-	salonProfileSvc := app.SalonProfileService{Profiles: salonProfileRepo, Memberships: mems}
-	gallerySvc := app.GalleryService{
+	salonProfileSvc := settings.SalonProfileService{Profiles: salonProfileRepo, Memberships: mems}
+	gallerySvc := settings.GalleryService{
 		Gallery: salonGalleryRepo, Memberships: mems, Salons: salons,
 		Photos: store, Images: imaging.WebP{MaxSide: domain.MaxPhotoSide},
 	}
@@ -390,12 +392,12 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 	// F16 (D4): la vidriera sale del panel: perfil, equipo que atiende, galería y
 	// paquetes activos, y la carta se filtra con la MISMA regla que la
 	// disponibilidad (ListProfessionalsFor).
-	publicSvc := app.PublicSalonService{
+	publicSvc := settings.PublicSalonService{
 		Salons: salons, Services: servicesRepo, Settings: salons, Hours: weeklyHours,
 		Profiles: salonProfileRepo, Staff: mems, Professionals: professionals,
 		Gallery: salonGalleryRepo, Packages: packagesRepo, Loyalty: loyaltyProgramsRepo,
 	}
-	settingsSvc := app.SettingsService{Settings: salons, Memberships: mems}
+	settingsSvc := settings.SettingsService{Settings: salons, Memberships: mems}
 	salonHoursSvc := schedules.SalonHoursService{Hours: weeklyHours, Settings: salons, Memberships: mems}
 	professionalHoursSvc := schedules.ProfessionalHoursService{Hours: weeklyHours, Memberships: mems}
 	// F2d2: las ausencias se cargan desde Equipo y las consultan la agenda (con
@@ -603,9 +605,10 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		Clients:       clientshttpapi.ClientHandler{Clients: clientSvc, Memberships: mems, Photos: photoSigner, History: clientHistorySvc},
 		Me:            httpapi.MeHandler{Me: meSvc},
 		Staff:         teamhttpapi.StaffHandler{Staff: staffSvc, Memberships: mems},
-		Public:        httpapi.PublicHandler{Public: publicSvc, Avail: availabilitySvc, Bookings: publicBookingSvc},
+		Public:        httpapi.PublicHandler{Avail: availabilitySvc, Bookings: publicBookingSvc},
+		PublicSalon:   settingshttpapi.PublicSalonHandler{Public: publicSvc},
 		BookingLinks:  httpapi.BookingLinkHandler{Links: bookingLinkSvc},
-		Settings:      httpapi.SettingsHandler{Settings: settingsSvc, Memberships: mems},
+		Settings:      settingshttpapi.SettingsHandler{Settings: settingsSvc, Memberships: mems},
 		Members:       teamhttpapi.MemberHandler{Members: memberSvc, Memberships: mems},
 		Hours: scheduleshttpapi.HoursHandler{
 			Salon: salonHoursSvc, Professional: professionalHoursSvc, Memberships: mems,
@@ -632,8 +635,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, app
 		// F10: auditoría (el middleware de las rutas de D2 y GET audit-log).
 		Audit: audithttpapi.AuditHandler{Service: auditSvc, Memberships: mems},
 		// F16: perfil público del salón y su galería de fotos.
-		Profile: httpapi.SalonProfileHandler{Profile: salonProfileSvc, Memberships: mems},
-		Gallery: httpapi.GalleryHandler{Gallery: gallerySvc, Memberships: mems},
+		Profile: settingshttpapi.SalonProfileHandler{Profile: salonProfileSvc, Memberships: mems},
+		Gallery: settingshttpapi.GalleryHandler{Gallery: gallerySvc, Memberships: mems},
 		// F7: lista de espera (alta pública, baja por enlace y las dos rutas del
 		// personal). El barrido periódico se arranca en main con el mismo
 		// servicio (deps.Waitlist.Service).

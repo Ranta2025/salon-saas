@@ -1,4 +1,4 @@
-package app
+package settings
 
 import (
 	"errors"
@@ -11,17 +11,17 @@ import (
 
 type publicWorld struct {
 	svc      PublicSalonService
-	salons   *fakeSalons
-	services *fakeServices
+	salons   *testutil.FakeSalons
+	services *testutil.FakeServices
 	profiles *fakeSalonProfiles
-	staff    *fakeStaffLister
-	profs    *fakeProfessionalServices
+	staff    *testutil.FakeStaffLister
+	profs    *testutil.FakeProfessionalServices
 	gallery  *fakeGallery
 	packages *testutil.FakePackageCatalog
-	settings *fakeSettings
+	settings *testutil.FakeSettings
 }
 
-func addService(t *testing.T, store *fakeServices, salon, name string, price int, active bool, description string) domain.Service {
+func addService(t *testing.T, store *testutil.FakeServices, salon, name string, price int, active bool, description string) domain.Service {
 	t.Helper()
 	s, err := domain.NewService(salon, name, 45, price, 10)
 	if err != nil {
@@ -37,25 +37,25 @@ func addService(t *testing.T, store *fakeServices, salon, name string, price int
 // recepción) y servicios; la asignación de servicios imita la base real (solo lo
 // que se graba).
 func newPublicWorld() *publicWorld {
-	salons := &fakeSalons{}
+	salons := &testutil.FakeSalons{}
 	_ = salons.Save(domain.Salon{ID: "s1", Slug: "uno", Name: "Uno"})
 	_ = salons.Save(domain.Salon{ID: "s2", Slug: "dos", Name: "Dos"})
-	staff := &fakeStaffLister{bySalon: map[string][]domain.StaffMember{
+	staff := &testutil.FakeStaffLister{BySalon: map[string][]domain.StaffMember{
 		"s1": {
 			{ID: "u-ana", Name: "Ana", Role: domain.RoleProfessional, Attends: true, Trade: "Estilista"},
 			{ID: "u-own", Name: "Bruno", Role: domain.RoleOwner, Attends: true, Trade: ""},
 		},
 		"s2": {{ID: "u-otra", Name: "Otra", Role: domain.RoleProfessional, Attends: true, Trade: "Barbera"}},
 	}}
-	services := &fakeServices{}
-	profs := &fakeProfessionalServices{staff: staff}
+	services := &testutil.FakeServices{}
+	profs := &testutil.FakeProfessionalServices{Staff: staff}
 	profiles := &fakeSalonProfiles{rows: map[string]domain.SalonProfile{
 		"s1": {SalonID: "s1", Slug: "uno", Name: "Uno", Description: "Somos Uno", Address: "Calle 1", Phone: "555", Email: "a@b.com", Instagram: "uno"},
 		"s2": {SalonID: "s2", Slug: "dos", Name: "Dos", Description: "Secreto de Dos"},
 	}}
 	gallery := &fakeGallery{slugs: map[string]string{"s1": "uno", "s2": "dos"}}
 	packages := &testutil.FakePackageCatalog{Services: services}
-	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{
+	settings := &testutil.FakeSettings{BySalon: map[string]domain.SalonSettings{
 		"s1": {SalonID: "s1", Timezone: "America/Argentina/Buenos_Aires", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30},
 	}}
 	return &publicWorld{
@@ -80,7 +80,7 @@ func TestPublicSalon_profileAndTimezone(t *testing.T) {
 		t.Fatalf("perfil: %+v tz=%q", p.Profile, p.Timezone)
 	}
 	// Sin settings guardados rige la zona por defecto del dominio.
-	w.salons.bySlug["dos"] = domain.Salon{ID: "s2", Slug: "dos", Name: "Dos"}
+	w.salons.BySlug["dos"] = domain.Salon{ID: "s2", Slug: "dos", Name: "Dos"}
 	p2, err := w.svc.Public("dos")
 	if err != nil || p2.Timezone != domain.DefaultSalonSettings("s2").Timezone || p2.Profile.Description != "Secreto de Dos" {
 		t.Fatalf("s2: %+v %v", p2, err)
@@ -103,10 +103,10 @@ func TestPublicSalon_servicesFilter(t *testing.T) {
 	_ = w.profs.SetServices("s1", "u-ana", []string{corte.ID, viejo.ID})
 	_ = w.profs.SetServices("s1", "u-own", []string{tinte.ID})
 	// «Nadie lo hace»: grabado con lista vacía (en la base real, sin filas).
-	w.profs.byService = map[string][]string{"s1|" + nadie.ID: {}}
+	w.profs.ByService = map[string][]string{"s1|" + nadie.ID: {}}
 	_ = otroSalon
 	// «Solo recepción»: la única asignada es recepción, que no atiende.
-	w.staff.bySalon["s1"] = append(w.staff.bySalon["s1"], domain.StaffMember{ID: "u-rec", Name: "Rita", Role: domain.RoleReception, Attends: true})
+	w.staff.BySalon["s1"] = append(w.staff.BySalon["s1"], domain.StaffMember{ID: "u-rec", Name: "Rita", Role: domain.RoleReception, Attends: true})
 	_ = w.profs.SetServices("s1", "u-rec", []string{soloRecep.ID})
 
 	p, err := w.svc.Public("uno")
@@ -134,7 +134,7 @@ func TestPublicSalon_servicesFilter_followsStaffChanges(t *testing.T) {
 	if len(p.Services) != 1 {
 		t.Fatalf("antes: %+v", p.Services)
 	}
-	w.staff.bySalon["s1"] = w.staff.bySalon["s1"][1:] // Ana ya no está
+	w.staff.BySalon["s1"] = w.staff.BySalon["s1"][1:] // Ana ya no está
 	p, _ = w.svc.Public("uno")
 	if len(p.Services) != 0 || p.Services == nil {
 		t.Fatalf("sin nadie que lo haga no se lista (y la lista no es nil): %+v", p.Services)
@@ -153,7 +153,7 @@ func TestPublicSalon_team(t *testing.T) {
 	}
 	// Quien no atiende (recepción, dueño sin marca) no aparece, aunque el lister
 	// lo entregue.
-	w.staff.bySalon["s1"] = append(w.staff.bySalon["s1"],
+	w.staff.BySalon["s1"] = append(w.staff.BySalon["s1"],
 		domain.StaffMember{ID: "u-rec", Name: "Rita", Role: domain.RoleReception, Attends: true},
 		domain.StaffMember{ID: "u-adm", Name: "Zoe", Role: domain.RoleAdmin, Attends: false})
 	p, _ = w.svc.Public("uno")
@@ -172,7 +172,7 @@ func TestPublicSalon_team(t *testing.T) {
 func TestPublicSalon_gallery(t *testing.T) {
 	w := newPublicWorld()
 	now := time.Now()
-	w.gallery.all = []domain.SalonPhoto{
+	w.gallery.All = []domain.SalonPhoto{
 		{ID: "f2", SalonID: "s1", Caption: "Segunda", CreatedAt: now.Add(time.Minute)},
 		{ID: "f1", SalonID: "s1", Caption: "", CreatedAt: now},
 		{ID: "fx", SalonID: "s2", CreatedAt: now},
@@ -225,9 +225,9 @@ func TestPublicSalon_packages(t *testing.T) {
 // Sin los repos opcionales el payload sale con las secciones vacías y la carta
 // sin filtrar (el comportamiento anterior a F16): nunca un panic.
 func TestPublicSalon_optionalDepsNil(t *testing.T) {
-	salons := &fakeSalons{}
+	salons := &testutil.FakeSalons{}
 	_ = salons.Save(domain.Salon{ID: "s1", Slug: "uno", Name: "Uno"})
-	services := &fakeServices{}
+	services := &testutil.FakeServices{}
 	addService(t, services, "s1", "Corte", 1, true, "")
 	svc := PublicSalonService{Salons: salons, Services: services}
 	p, err := svc.Public("uno")

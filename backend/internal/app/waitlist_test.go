@@ -35,11 +35,11 @@ type waitlistEnv struct {
 func newWaitlistEnv(t *testing.T) *waitlistEnv {
 	t.Helper()
 	pub := newPublicEnv(t)
-	pub.settings.bySalon["s1"] = domain.SalonSettings{
+	pub.settings.BySalon["s1"] = domain.SalonSettings{
 		SalonID: "s1", Timezone: "America/Mexico_City",
 		OpenTime: "09:00", CloseTime: "10:00", SlotStepMin: 30,
 	}
-	pub.profs.byService = map[string][]string{"s1|" + pub.corte.ID: {"prof1", "prof2"}}
+	pub.profs.ByService = map[string][]string{"s1|" + pub.corte.ID: {"prof1", "prof2"}}
 	wl := &fakeWaitlist{}
 	tx := &fakeWaitlistTx{repo: wl}
 	mems := &fakeMemberships{}

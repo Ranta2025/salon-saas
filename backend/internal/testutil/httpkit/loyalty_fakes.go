@@ -2,11 +2,11 @@ package httpkit
 
 import (
 	httpapi "salon-saas/internal/adapters/http"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/loyalty"
 	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/settings"
 	"sort"
 	"sync"
 	"time"
@@ -185,7 +185,7 @@ func NewLoyaltyEnv() (*Env, *LoyaltyPrograms, *LoyaltyRewards) {
 		Memberships: env.Mems, Settings: env.Settings,
 	}
 	env.Deps.Loyalty = loyaltyhttpapi.LoyaltyHandler{Loyalty: svc, Memberships: env.Mems}
-	env.Deps.Public.Public = app.PublicSalonService{
+	env.Deps.PublicSalon.Public = settings.PublicSalonService{
 		Salons: env.Salons, Services: env.Services, Settings: env.Settings, Hours: env.Weekly,
 		Loyalty: programs,
 	}

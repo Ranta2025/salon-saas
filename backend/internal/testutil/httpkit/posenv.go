@@ -15,6 +15,8 @@ import (
 	"salon-saas/internal/ports"
 	"salon-saas/internal/schedules"
 	scheduleshttpapi "salon-saas/internal/schedules/httpapi"
+	"salon-saas/internal/settings"
+	settingshttpapi "salon-saas/internal/settings/httpapi"
 	"salon-saas/internal/staffing"
 	staffinghttpapi "salon-saas/internal/staffing/httpapi"
 	"salon-saas/internal/team"
@@ -219,11 +221,11 @@ func NewPOSEnv() *Env {
 	clientSvc := clients.ClientService{Clients: env.Clients, Memberships: env.Mems, Photos: env.Storage, Images: Images{}}
 	meSvc := app.MeService{Users: env.Users, Salons: env.Salons, Members: env.Mems}
 	staffSvc := team.StaffService{Staff: env.Mems, Memberships: env.Mems}
-	publicSvc := app.PublicSalonService{
+	publicSvc := settings.PublicSalonService{
 		Salons: env.Salons, Services: env.Services,
 		Settings: env.Settings, Hours: env.Weekly,
 	}
-	settingsSvc := app.SettingsService{Settings: env.Settings, Memberships: env.Mems}
+	settingsSvc := settings.SettingsService{Settings: env.Settings, Memberships: env.Mems}
 	salonHoursSvc := schedules.SalonHoursService{Hours: env.Weekly, Settings: env.Settings, Memberships: env.Mems}
 	professionalHoursSvc := schedules.ProfessionalHoursService{Hours: env.Weekly, Memberships: env.Mems}
 	timeOffSvc := schedules.TimeOffService{TimeOff: env.TimeOff, Bookings: env.Bookings, Memberships: env.Mems}
@@ -280,8 +282,9 @@ func NewPOSEnv() *Env {
 		Clients:       clientshttpapi.ClientHandler{Clients: clientSvc, Memberships: env.Mems, Photos: env.Signer},
 		Me:            httpapi.MeHandler{Me: meSvc},
 		Staff:         teamhttpapi.StaffHandler{Staff: staffSvc, Memberships: env.Mems},
-		Public:        httpapi.PublicHandler{Public: publicSvc, Avail: availabilitySvc, Bookings: publicBookingSvc},
-		Settings:      httpapi.SettingsHandler{Settings: settingsSvc, Memberships: env.Mems},
+		Public:        httpapi.PublicHandler{Avail: availabilitySvc, Bookings: publicBookingSvc},
+		PublicSalon:   settingshttpapi.PublicSalonHandler{Public: publicSvc},
+		Settings:      settingshttpapi.SettingsHandler{Settings: settingsSvc, Memberships: env.Mems},
 		Members:       teamhttpapi.MemberHandler{Members: memberSvc, Memberships: env.Mems},
 		Hours: scheduleshttpapi.HoursHandler{
 			Salon: salonHoursSvc, Professional: professionalHoursSvc, Memberships: env.Mems,

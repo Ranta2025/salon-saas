@@ -43,7 +43,7 @@ func conEquipo(t *testing.T, env *publicEnv, name string, durationMin int, typeI
 	}
 	// Quién lo hace: la fixture tiene prof1 y prof2; se agregan tres más para
 	// poder mirar el tope del equipamiento y no el de personas.
-	env.staff.bySalon["s1"] = []domain.StaffMember{
+	env.staff.BySalon["s1"] = []domain.StaffMember{
 		{ID: "prof1", Name: "Ana", Role: domain.RoleProfessional},
 		{ID: "prof2", Name: "Bruno", Role: domain.RoleProfessional},
 		{ID: "prof3", Name: "Caro", Role: domain.RoleProfessional},
@@ -140,7 +140,7 @@ func TestAvailability_duraciones_distintas(t *testing.T) {
 	env := newPublicEnv(t)
 	// El salón de la fixture abre 09:00-12:00; para el turno largo se extiende
 	// el cierre a 13:00 (la ventana única de /settings).
-	env.settings.bySalon["s1"] = domain.SalonSettings{
+	env.settings.BySalon["s1"] = domain.SalonSettings{
 		SalonID: "s1", Timezone: "America/Mexico_City", OpenTime: "09:00", CloseTime: "13:00", SlotStepMin: 30,
 	}
 	rt, _ := equipa(t, env, "Puesto", 3)
@@ -236,7 +236,7 @@ func TestAvailability_desactivar_unidad_conserva_turno(t *testing.T) {
 // que antes de F2e y la reserva no ocupa unidad.
 func TestAvailability_servicio_sin_equipo_no_cambia(t *testing.T) {
 	env := newPublicEnv(t)
-	env.staff.bySalon["s1"] = []domain.StaffMember{
+	env.staff.BySalon["s1"] = []domain.StaffMember{
 		{ID: "prof1", Name: "Ana", Role: domain.RoleProfessional},
 		{ID: "prof2", Name: "Bruno", Role: domain.RoleProfessional},
 	}

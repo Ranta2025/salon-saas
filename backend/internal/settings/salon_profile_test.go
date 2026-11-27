@@ -1,4 +1,4 @@
-package app
+package settings
 
 import (
 	"errors"
@@ -8,6 +8,7 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/staffing"
+	"salon-saas/internal/testutil"
 )
 
 func strp(v string) *string { return &v }
@@ -15,11 +16,11 @@ func strp(v string) *string { return &v }
 type profileWorld struct {
 	svc      SalonProfileService
 	profiles *fakeSalonProfiles
-	mems     *fakeMemberships
+	mems     *testutil.FakeMemberships
 }
 
 func newProfileWorld() *profileWorld {
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	for _, m := range []domain.Membership{
 		{UserID: "owner", SalonID: "s1", Role: domain.RoleOwner},
 		{UserID: "admin", SalonID: "s1", Role: domain.RoleAdmin},
@@ -141,10 +142,10 @@ func TestSalonProfile_Update_invalidWritesNothing(t *testing.T) {
 
 func TestSalonProfile_endedMemberLosesAccess(t *testing.T) {
 	w := newProfileWorld()
-	m := w.mems.byKey["gone|s1"]
+	m := w.mems.ByKey["gone|s1"]
 	ended := time.Now().Add(-time.Hour)
 	m.EndedAt = &ended
-	w.mems.byKey["gone|s1"] = m
+	w.mems.ByKey["gone|s1"] = m
 	if _, err := w.svc.Get(profActor(w, "gone", "s1"), "s1"); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("get: %v", err)
 	}
@@ -155,18 +156,18 @@ func TestSalonProfile_endedMemberLosesAccess(t *testing.T) {
 
 // ---- D2: descripción de servicio ---------------------------------------
 
-func newServiceWorld() (staffing.ServiceService, *fakeServices, domain.Membership) {
-	mems := &fakeMemberships{}
+func newServiceWorld() (staffing.ServiceService, *testutil.FakeServices, domain.Membership) {
+	mems := &testutil.FakeMemberships{}
 	_ = mems.Save(domain.Membership{UserID: "owner", SalonID: "s1", Role: domain.RoleOwner})
 	_ = mems.Save(domain.Membership{UserID: "recep", SalonID: "s1", Role: domain.RoleReception})
-	services := &fakeServices{}
+	services := &testutil.FakeServices{}
 	return staffing.ServiceService{Services: services, Memberships: mems}, services, domain.Membership{UserID: "owner", SalonID: "s1"}
 }
 
 func TestServiceService_CreateDescribed(t *testing.T) {
 	svc, store, owner := newServiceWorld()
 	got, err := svc.CreateDescribed(owner, "s1", "Corte", 30, 1000, 10, nil, "", "  Corte clásico ")
-	if err != nil || got.Description != "Corte clásico" || store.all[0].Description != "Corte clásico" {
+	if err != nil || got.Description != "Corte clásico" || store.All[0].Description != "Corte clásico" {
 		t.Fatalf("alta: %+v %v", got, err)
 	}
 	// PRESERVE: el alta de siempre sigue sin descripción.
@@ -175,13 +176,13 @@ func TestServiceService_CreateDescribed(t *testing.T) {
 		t.Fatalf("Create sin descripción: %+v %v", plain, err)
 	}
 	// Inválida: 400 y no se guarda el servicio.
-	before := len(store.all)
+	before := len(store.All)
 	for _, bad := range []string{strings.Repeat("a", 301), "a\nb", "a\x00b"} {
 		if _, err := svc.CreateDescribed(owner, "s1", "Tinte", 30, 1000, 10, nil, "", bad); !errors.Is(err, domain.ErrValidation) {
 			t.Fatalf("%q: %v", bad, err)
 		}
 	}
-	if len(store.all) != before {
+	if len(store.All) != before {
 		t.Fatalf("un 400 no crea el servicio")
 	}
 	if _, err := svc.CreateDescribed(domain.Membership{UserID: "recep", SalonID: "s1"}, "s1", "X", 30, 1, 0, nil, "", "d"); !errors.Is(err, domain.ErrForbidden) {
@@ -194,7 +195,7 @@ func TestServiceService_UpdateDescribed(t *testing.T) {
 	created, _ := svc.CreateDescribed(owner, "s1", "Corte", 30, 1000, 10, nil, "", "Original")
 	// Ausente (nil) conserva la descripción: PUT de un cliente anterior a F16.
 	got, err := svc.Update(owner, "s1", created.ID, "Corte", 30, 1200, 10, true, "")
-	if err != nil || got.Description != "Original" || store.all[0].Description != "Original" || store.all[0].PriceCents != 1200 {
+	if err != nil || got.Description != "Original" || store.All[0].Description != "Original" || store.All[0].PriceCents != 1200 {
 		t.Fatalf("Update legacy conserva: %+v %v", got, err)
 	}
 	got, err = svc.UpdateDescribed(owner, "s1", created.ID, "Corte", 30, 1200, 10, true, "", nil)
@@ -202,18 +203,18 @@ func TestServiceService_UpdateDescribed(t *testing.T) {
 		t.Fatalf("nil conserva: %+v %v", got, err)
 	}
 	got, err = svc.UpdateDescribed(owner, "s1", created.ID, "Corte", 30, 1200, 10, true, "", strp("Nueva"))
-	if err != nil || got.Description != "Nueva" || store.all[0].Description != "Nueva" {
+	if err != nil || got.Description != "Nueva" || store.All[0].Description != "Nueva" {
 		t.Fatalf("reemplaza: %+v %v", got, err)
 	}
 	got, err = svc.UpdateDescribed(owner, "s1", created.ID, "Corte", 30, 1200, 10, true, "", strp(""))
-	if err != nil || got.Description != "" || store.all[0].Description != "" {
+	if err != nil || got.Description != "" || store.All[0].Description != "" {
 		t.Fatalf("vacía quita: %+v %v", got, err)
 	}
-	store.all[0].Description = "Queda"
+	store.All[0].Description = "Queda"
 	if _, err := svc.UpdateDescribed(owner, "s1", created.ID, "Otro", 30, 1, 0, true, "", strp(strings.Repeat("a", 301))); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("larga: %v", err)
 	}
-	if store.all[0].Description != "Queda" || store.all[0].Name != "Corte" {
-		t.Fatalf("un 400 no escribe nada: %+v", store.all[0])
+	if store.All[0].Description != "Queda" || store.All[0].Name != "Corte" {
+		t.Fatalf("un 400 no escribe nada: %+v", store.All[0])
 	}
 }

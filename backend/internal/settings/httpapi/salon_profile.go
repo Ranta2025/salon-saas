@@ -3,9 +3,9 @@ package httpapi
 import (
 	"net/http"
 	httpx "salon-saas/internal/adapters/http/httpx"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/settings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,7 +15,7 @@ import (
 //	GET /salons/:id/profile   cualquier miembro activo
 //	PUT /salons/:id/profile   solo owner/admin, REEMPLAZA (exige las 6 claves)
 type SalonProfileHandler struct {
-	Profile     app.SalonProfileService
+	Profile     settings.SalonProfileService
 	Memberships ports.MembershipRepository
 }
 
@@ -35,11 +35,11 @@ func salonProfileJSON(p domain.SalonProfile) gin.H {
 	return gin.H{
 		"name":        p.Name,
 		"slug":        p.Slug,
-		"description": optionalID(p.Description),
-		"address":     optionalID(p.Address),
-		"phone":       optionalID(p.Phone),
-		"email":       optionalID(p.Email),
-		"instagram":   optionalID(p.Instagram),
+		"description": httpx.OptionalID(p.Description),
+		"address":     httpx.OptionalID(p.Address),
+		"phone":       httpx.OptionalID(p.Phone),
+		"email":       httpx.OptionalID(p.Email),
+		"instagram":   httpx.OptionalID(p.Instagram),
 	}
 }
 
@@ -53,7 +53,7 @@ func (h SalonProfileHandler) Get(c *gin.Context) {
 	}
 	p, err := h.Profile.Get(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, salonProfileJSON(p))
@@ -70,7 +70,7 @@ func (h SalonProfileHandler) Update(c *gin.Context) {
 		return
 	}
 	if err := h.Profile.RequireManager(actor, salonID); err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	var in struct {
@@ -82,11 +82,11 @@ func (h SalonProfileHandler) Update(c *gin.Context) {
 		Instagram   presentText `json:"instagram"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	if !in.Name.Set || !in.Description.Set || !in.Address.Set || !in.Phone.Set || !in.Email.Set || !in.Instagram.Set {
-		respondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgSalonProfileMissing))
+		httpx.RespondErr(c, domain.NewMessage(domain.ErrValidation, domain.MsgSalonProfileMissing))
 		return
 	}
 	p, err := h.Profile.Update(actor, salonID, domain.SalonProfileInput{
@@ -98,7 +98,7 @@ func (h SalonProfileHandler) Update(c *gin.Context) {
 		Instagram:   in.Instagram.Value,
 	})
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, salonProfileJSON(p))

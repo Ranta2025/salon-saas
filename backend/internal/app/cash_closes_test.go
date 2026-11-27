@@ -15,7 +15,7 @@ func TestCashCloseService_cierra_con_ventana_del_dia(t *testing.T) {
 	// Zona explícita UTC: la ventana sin cierre previo es la medianoche local,
 	// que en UTC es la medianoche UTC. (Con la default del salón, CDMX, la
 	// ventana arranca a medianoche de CDMX; ver cash_closes_timezone_test.go.)
-	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{"s1": {
+	settings := &fakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
 		SalonID: "s1", Timezone: "UTC", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}}}
 	svc := CashCloseService{CashCloses: closes, Sales: sales, Memberships: mems, Settings: settings}

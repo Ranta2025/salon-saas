@@ -6,6 +6,7 @@ import (
 
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/settings"
 )
 
 type degradeSalons struct{ ports.SalonRepository }
@@ -28,7 +29,7 @@ func (brokenLoyalty) Find(string) (domain.LoyaltyProgram, error) {
 // example a rolling deploy before migration 033), the public page must still
 // answer with loyalty:null instead of a 500.
 func TestPublicSalon_loyaltyFailureDegradesToNull(t *testing.T) {
-	svc := PublicSalonService{Salons: degradeSalons{}, Services: degradeServices{}, Loyalty: brokenLoyalty{}}
+	svc := settings.PublicSalonService{Salons: degradeSalons{}, Services: degradeServices{}, Loyalty: brokenLoyalty{}}
 	got, err := svc.Public("aurelia")
 	if err != nil {
 		t.Fatalf("a failing loyalty query must not fail the public page: %v", err)

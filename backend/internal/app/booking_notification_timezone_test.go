@@ -19,7 +19,7 @@ func bookingTimeEnv(t *testing.T) (*BookingService, *fb, *fakeMemberships, *fake
 	bookings := &fb{}
 	mems := &fakeMemberships{}
 	notifier := &fakeNotifier{}
-	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{"s1": {
+	settings := &fakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
 		SalonID: "s1", Timezone: "America/Mexico_City", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}}}
 	events := &fakeEvents{}

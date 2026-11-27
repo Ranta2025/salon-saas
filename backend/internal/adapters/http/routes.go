@@ -11,6 +11,7 @@ import (
 	"salon-saas/internal/ports"
 	productshttpapi "salon-saas/internal/products/httpapi"
 	scheduleshttpapi "salon-saas/internal/schedules/httpapi"
+	settingshttpapi "salon-saas/internal/settings/httpapi"
 	staffinghttpapi "salon-saas/internal/staffing/httpapi"
 	teamhttpapi "salon-saas/internal/team/httpapi"
 	waitlisthttpapi "salon-saas/internal/waitlist/httpapi"
@@ -32,8 +33,11 @@ type Deps struct {
 	Me            MeHandler
 	Staff         teamhttpapi.StaffHandler
 	Public        PublicHandler
-	Settings      SettingsHandler
-	Members       teamhttpapi.MemberHandler
+	// PublicSalon es la vidriera pública del salón (F16, D4): la landing no
+	// tiene login y lee lo que el dueño edita en el panel.
+	PublicSalon settingshttpapi.PublicSalonHandler
+	Settings    settingshttpapi.SettingsHandler
+	Members     teamhttpapi.MemberHandler
 	// Hours es el horario semanal del salón y de cada profesional (F2d1).
 	Hours scheduleshttpapi.HoursHandler
 	// TimeOff son las ausencias de las profesionales (F2d2).
@@ -83,8 +87,8 @@ type Deps struct {
 	TwoFactor TwoFactorHandler
 	// Profile es el perfil público del salón (F16, D1) y Gallery su galería de
 	// fotos (F16, D3): la autorización vive en el caso de uso.
-	Profile SalonProfileHandler
-	Gallery GalleryHandler
+	Profile settingshttpapi.SalonProfileHandler
+	Gallery settingshttpapi.GalleryHandler
 	// BookingLinks son las cuatro rutas públicas del enlace firmado de un turno
 	// (F1): lookup, horarios, cancelar y reprogramar. Sin sesión y con el token
 	// en el cuerpo.
@@ -164,7 +168,7 @@ func RegisterRoutes(r *gin.Engine, d Deps) {
 	v1.POST("/auth/verify-email", d.Recovery.VerifyEmail)
 
 	// Vidriera pública del salón: la landing no tiene login.
-	v1.GET("/public/salons/:slug", d.Public.GetSalon)
+	v1.GET("/public/salons/:slug", d.PublicSalon.GetSalon)
 	v1.GET("/public/salons/:slug/availability", d.Public.Availability)
 	// F16: la imagen de la galería se sirve SIN firma (pública por diseño: es la
 	// foto que el salón eligió mostrar). Solo lee; no escribe nada sin sesión.

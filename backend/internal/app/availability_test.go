@@ -16,8 +16,8 @@ type publicEnv struct {
 	avail    AvailabilityService
 	book     PublicBookingService
 	bookings *fb
-	staff    *fakeStaffLister
-	profs    *fakeProfessionalServices
+	staff    *testutil.FakeStaffLister
+	profs    *testutil.FakeProfessionalServices
 	settings *fakeSettings
 	services *fakeServices
 	clients  *testutil.FakeClients
@@ -41,8 +41,8 @@ type publicEnv struct {
 func newPublicEnv(t *testing.T) *publicEnv {
 	t.Helper()
 	salon := domain.Salon{ID: "s1", Slug: "navajas-oro", Name: "Navajas de Oro"}
-	salons := &fakeSalons{bySlug: map[string]domain.Salon{"navajas-oro": salon}}
-	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{"s1": {
+	salons := &fakeSalons{BySlug: map[string]domain.Salon{"navajas-oro": salon}}
+	settings := &fakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
 		SalonID: "s1", Timezone: "America/Mexico_City", OpenTime: "09:00", CloseTime: "12:00", SlotStepMin: 30,
 	}}}
 	services := &fakeServices{}
@@ -57,11 +57,11 @@ func newPublicEnv(t *testing.T) *publicEnv {
 	viejo.Active = false
 	_ = services.Save(viejo)
 
-	staff := &fakeStaffLister{bySalon: map[string][]domain.StaffMember{"s1": {
+	staff := &testutil.FakeStaffLister{BySalon: map[string][]domain.StaffMember{"s1": {
 		{ID: "prof1", Name: "Ana", Role: domain.RoleProfessional},
 		{ID: "prof2", Name: "Bruno", Role: domain.RoleProfessional},
 	}}}
-	profs := &fakeProfessionalServices{staff: staff}
+	profs := &testutil.FakeProfessionalServices{Staff: staff}
 	bookings := &fb{}
 	events := &fakeEvents{}
 	notifier := &fakeNotifier{}
@@ -181,7 +181,7 @@ func TestAvailability_errores(t *testing.T) {
 	}
 	// Sin fila de settings: defaults de fábrica (09:00-19:00, paso 30).
 	// Caben 19 arranques (09:00 local a 18:00 local).
-	env.settings.bySalon = nil
+	env.settings.BySalon = nil
 	day, err := env.avail.Day("navajas-oro", "2026-12-01", env.corte.ID, "prof1")
 	if err != nil {
 		t.Fatalf("sin settings: %v", err)

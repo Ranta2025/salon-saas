@@ -4,15 +4,16 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"salon-saas/internal/app"
+	httpx "salon-saas/internal/adapters/http/httpx"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/settings"
 )
 
 // SettingsHandler: configuración operativa del salón (zona horaria, horario y
 // paso de turnos). Cualquier miembro lee; owner/admin escribe.
 type SettingsHandler struct {
-	Settings    app.SettingsService
+	Settings    settings.SettingsService
 	Memberships ports.MembershipRepository
 }
 
@@ -45,7 +46,7 @@ func (h SettingsHandler) Get(c *gin.Context) {
 	}
 	settings, err := h.Settings.Get(actor, salonID)
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, settingsJSON(settings))
@@ -65,7 +66,7 @@ func (h SettingsHandler) Update(c *gin.Context) {
 		SlotStepMin int    `json:"slot_step_min"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil {
-		badBody(c)
+		httpx.BadBody(c)
 		return
 	}
 	settings, err := h.Settings.Update(actor, salonID, domain.SalonSettings{
@@ -76,7 +77,7 @@ func (h SettingsHandler) Update(c *gin.Context) {
 		SlotStepMin: in.SlotStepMin,
 	})
 	if err != nil {
-		respondErr(c, err)
+		httpx.RespondErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, settingsJSON(settings))

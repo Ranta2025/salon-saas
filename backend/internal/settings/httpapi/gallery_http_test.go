@@ -474,7 +474,7 @@ func TestGallery_uploadBodyLimitIsPerRoute(t *testing.T) {
 		t.Fatalf("el perfil con 2 MB debe dar 413: %d", rec.Code)
 	}
 	// PRESERVE: la subida de fotos de clientas sigue exenta y el login con 2 MB sigue en 413.
-	req = httptest.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(bigJSON()))
+	req = httptest.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(httpkit.BigJSON()))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	r.ServeHTTP(rec, req)

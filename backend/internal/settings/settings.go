@@ -1,7 +1,7 @@
 // SettingsService: la configuración operativa del salón (GET/PUT
 // /salons/:id/settings). Cualquier miembro la lee (la necesita la agenda);
 // solo owner/admin la edita (precios, horarios y personal son de gestión).
-package app
+package settings
 
 import (
 	"errors"

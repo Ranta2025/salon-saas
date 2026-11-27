@@ -207,7 +207,7 @@ func newRunEnv(t *testing.T) *runEnv {
 	t.Helper()
 	base := newPayrollEnv(t)
 	// Un dueño de OTRO salón para el aislamiento por tenant.
-	base.mems.byKey["u-other-owner|s-other"] = domain.Membership{
+	base.mems.ByKey["u-other-owner|s-other"] = domain.Membership{
 		UserID: "u-other-owner", SalonID: "s-other", Role: domain.RoleOwner,
 	}
 	runs := newFakePayrollRuns(func() time.Time { return base.when })
@@ -508,7 +508,7 @@ func TestPayrollRunList_y_Get_tenant(t *testing.T) {
 	}
 
 	// Un id de la corrida, pero pedido desde OTRO salón: no existe (404).
-	if _, err := e.svc.Get(e.mems.byKey["u-other-owner|s-other"], "s-other", feb.ID); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := e.svc.Get(e.mems.ByKey["u-other-owner|s-other"], "s-other", feb.ID); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("corrida de otro salón: %v", err)
 	}
 }
@@ -544,9 +544,9 @@ func TestPayrollRun_permisos(t *testing.T) {
 		}
 		// recepción, profesional, dado de baja y dueño de otro salón: 403.
 		for _, userID := range []string{"u-recep", "u-prof", "u-gone", "u-other-owner"} {
-			actor := e.mems.byKey[userID+"|s-pay"]
+			actor := e.mems.ByKey[userID+"|s-pay"]
 			if userID == "u-other-owner" {
-				actor = e.mems.byKey["u-other-owner|s-other"]
+				actor = e.mems.ByKey["u-other-owner|s-other"]
 			}
 			if err := call(actor); !errors.Is(err, domain.ErrForbidden) {
 				t.Fatalf("%s con %s: esperaba 403, dio %v", name, userID, err)
@@ -584,7 +584,7 @@ func TestPayrollRunExport(t *testing.T) {
 		t.Fatalf("fila congelada: %q", text)
 	}
 	// Una corrida de otro salón no se exporta: 404.
-	if _, _, err := e.svc.ExportCSV(e.mems.byKey["u-other-owner|s-other"], "s-other", run.ID); !errors.Is(err, domain.ErrNotFound) {
+	if _, _, err := e.svc.ExportCSV(e.mems.ByKey["u-other-owner|s-other"], "s-other", run.ID); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("export ajeno: %v", err)
 	}
 }

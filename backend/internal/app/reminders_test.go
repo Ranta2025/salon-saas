@@ -15,7 +15,7 @@ import (
 // es la misma del resto de los tests (round2_fakes_test.go).
 func newReminderEnv(t *testing.T) (ReminderService, *fakeBookingEmails, *fakeMailer, *fakeSettings) {
 	t.Helper()
-	settings := &fakeSettings{bySalon: map[string]domain.SalonSettings{"s1": {
+	settings := &fakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
 		SalonID: "s1", Timezone: "America/Mexico_City", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}}}
 	emails := &fakeBookingEmails{}
@@ -106,7 +106,7 @@ func TestReminderService_fallo_no_frena_el_lote(t *testing.T) {
 // a la vista. Un correo con hora es mejor que un recordatorio perdido.
 func TestReminderService_settings_rota(t *testing.T) {
 	svc, emails, mailer, settings := newReminderEnv(t)
-	settings.bySalon = nil
+	settings.BySalon = nil
 	settings.err = errors.New("db caída")
 	emails.due = []ports.DueReminder{dueFor("b1", "lia@mail.com", time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC))}
 

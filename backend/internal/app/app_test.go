@@ -11,17 +11,17 @@ import (
 
 // --- Fakes: implementan ports sin Postgres ni bcrypt. Para unit test alcanzan. ---
 
-type fakeUsers struct{ byEmail map[string]domain.User }
+type fakeUsers struct{ ByEmail map[string]domain.User }
 
 func (f *fakeUsers) Save(u domain.User) error {
-	if f.byEmail == nil {
-		f.byEmail = map[string]domain.User{}
+	if f.ByEmail == nil {
+		f.ByEmail = map[string]domain.User{}
 	}
-	f.byEmail[strings.ToLower(u.Email)] = u
+	f.ByEmail[strings.ToLower(u.Email)] = u
 	return nil
 }
 func (f *fakeUsers) FindByEmail(email string) (domain.User, error) {
-	u, ok := f.byEmail[strings.ToLower(email)]
+	u, ok := f.ByEmail[strings.ToLower(email)]
 	if !ok {
 		return domain.User{}, domain.ErrNotFound
 	}
@@ -30,7 +30,7 @@ func (f *fakeUsers) FindByEmail(email string) (domain.User, error) {
 
 // FindByID: lo usa GET /me (el token trae el userID, no el email).
 func (f *fakeUsers) FindByID(id string) (domain.User, error) {
-	for _, u := range f.byEmail {
+	for _, u := range f.ByEmail {
 		if u.ID == id {
 			return u, nil
 		}
@@ -38,17 +38,17 @@ func (f *fakeUsers) FindByID(id string) (domain.User, error) {
 	return domain.User{}, domain.ErrNotFound
 }
 
-type fakeSalons struct{ bySlug map[string]domain.Salon }
+type fakeSalons struct{ BySlug map[string]domain.Salon }
 
 func (f *fakeSalons) Save(s domain.Salon) error {
-	if f.bySlug == nil {
-		f.bySlug = map[string]domain.Salon{}
+	if f.BySlug == nil {
+		f.BySlug = map[string]domain.Salon{}
 	}
-	f.bySlug[s.Slug] = s
+	f.BySlug[s.Slug] = s
 	return nil
 }
 func (f *fakeSalons) FindBySlug(slug string) (domain.Salon, error) {
-	s, ok := f.bySlug[slug]
+	s, ok := f.BySlug[slug]
 	if !ok {
 		return domain.Salon{}, domain.ErrNotFound
 	}
@@ -57,7 +57,7 @@ func (f *fakeSalons) FindBySlug(slug string) (domain.Salon, error) {
 
 // FindByID: lo usa GET /me para el nombre y el slug de cada salón del usuario.
 func (f *fakeSalons) FindByID(id string) (domain.Salon, error) {
-	for _, s := range f.bySlug {
+	for _, s := range f.BySlug {
 		if s.ID == id {
 			return s, nil
 		}
@@ -65,20 +65,20 @@ func (f *fakeSalons) FindByID(id string) (domain.Salon, error) {
 	return domain.Salon{}, domain.ErrNotFound
 }
 
-type fakeMemberships struct{ byKey map[string]domain.Membership }
+type fakeMemberships struct{ ByKey map[string]domain.Membership }
 
 func (f *fakeMemberships) Save(m domain.Membership) error {
-	if f.byKey == nil {
-		f.byKey = map[string]domain.Membership{}
+	if f.ByKey == nil {
+		f.ByKey = map[string]domain.Membership{}
 	}
 	// Misma semántica que el upsert de pgstore (saveMembership): la fila que
 	// vuelve a entrar al equipo queda ACTIVA (ended_at NULL).
 	m.EndedAt = nil
-	f.byKey[m.UserID+"|"+m.SalonID] = m
+	f.ByKey[m.UserID+"|"+m.SalonID] = m
 	return nil
 }
 func (f *fakeMemberships) Find(userID, salonID string) (domain.Membership, error) {
-	m, ok := f.byKey[userID+"|"+salonID]
+	m, ok := f.ByKey[userID+"|"+salonID]
 	if !ok || !m.Active() {
 		return domain.Membership{}, domain.ErrNotFound
 	}
@@ -88,7 +88,7 @@ func (f *fakeMemberships) Find(userID, salonID string) (domain.Membership, error
 // FindMember: la lectura que ve también la baja, como la query de pgstore. La
 // usan el alta por email y la invitación (F2g2).
 func (f *fakeMemberships) FindMember(userID, salonID string) (domain.Membership, error) {
-	m, ok := f.byKey[userID+"|"+salonID]
+	m, ok := f.ByKey[userID+"|"+salonID]
 	if !ok {
 		return domain.Membership{}, domain.ErrNotFound
 	}
@@ -98,7 +98,7 @@ func (f *fakeMemberships) FindMember(userID, salonID string) (domain.Membership,
 // ListByUser: puerto MembershipLister (rooms del websocket y marcar leídas).
 func (f *fakeMemberships) ListByUser(userID string) ([]domain.Membership, error) {
 	var out []domain.Membership
-	for _, m := range f.byKey {
+	for _, m := range f.ByKey {
 		if m.UserID == userID && m.Active() {
 			out = append(out, m)
 		}

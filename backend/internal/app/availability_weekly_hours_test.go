@@ -14,7 +14,7 @@ import (
 func wideEnv(t *testing.T) *publicEnv {
 	t.Helper()
 	env := newPublicEnv(t)
-	env.settings.bySalon["s1"] = domain.SalonSettings{
+	env.settings.BySalon["s1"] = domain.SalonSettings{
 		SalonID: "s1", Timezone: "America/Mexico_City",
 		OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}
@@ -139,8 +139,8 @@ func TestAvailability_diaCerradoDelSalon(t *testing.T) {
 func TestAvailability_tramosDeLaProfesional(t *testing.T) {
 	env := wideEnv(t)
 	alisado := servicioDe(t, env, "Alisado", 90)
-	env.profs.assign("s1", env.corte.ID, "prof1")
-	env.profs.assign("s1", alisado.ID, "prof1")
+	env.profs.Assign("s1", env.corte.ID, "prof1")
+	env.profs.Assign("s1", alisado.ID, "prof1")
 	if err := env.hours.SaveMemberHours("s1", "prof1", []domain.HoursSegment{
 		{Weekday: 2, Start: "09:00", End: "13:00"},
 		{Weekday: 2, Start: "14:00", End: "18:00"},

@@ -4,9 +4,10 @@ import (
 	"net/http"
 	httpapi "salon-saas/internal/adapters/http"
 	"salon-saas/internal/adapters/security"
-	"salon-saas/internal/app"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	"salon-saas/internal/settings"
+	settingshttpapi "salon-saas/internal/settings/httpapi"
 	httpkit "salon-saas/internal/testutil/httpkit"
 	"strings"
 	"testing"
@@ -75,17 +76,17 @@ func newF16World(t *testing.T) *f16World {
 	w.profiles = &mprofiles{Salons: env.Salons}
 	w.Gallery = &mgallery{Salons: env.Salons, byID: map[string]domain.SalonPhoto{}}
 	w.Packages = &httpkit.PkgCatalog{Services: env.Services}
-	env.Deps.Profile = httpapi.SalonProfileHandler{
-		Profile:     app.SalonProfileService{Profiles: w.profiles, Memberships: env.Mems},
+	env.Deps.Profile = settingshttpapi.SalonProfileHandler{
+		Profile:     settings.SalonProfileService{Profiles: w.profiles, Memberships: env.Mems},
 		Memberships: env.Mems,
 	}
-	env.Deps.Gallery = httpapi.GalleryHandler{
-		Gallery: app.GalleryService{
+	env.Deps.Gallery = settingshttpapi.GalleryHandler{
+		Gallery: settings.GalleryService{
 			Gallery: w.Gallery, Memberships: env.Mems, Salons: env.Salons, Photos: env.Storage, Images: httpkit.Images{},
 		},
 		Memberships: env.Mems,
 	}
-	env.Deps.Public.Public = app.PublicSalonService{
+	env.Deps.PublicSalon.Public = settings.PublicSalonService{
 		Salons: env.Salons, Services: env.Services, Settings: env.Settings, Hours: env.Weekly,
 		Profiles: w.profiles, Staff: env.Mems, Professionals: env.Professionals, Gallery: w.Gallery, Packages: w.Packages,
 	}

@@ -1,18 +1,19 @@
-package app
+package settings
 
 import (
 	"errors"
 	"testing"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil"
 )
 
 // T6: GET/PUT /salons/:id/settings. Cualquier miembro lee; owner/admin edita.
 func TestSettingsService(t *testing.T) {
-	mems := &fakeMemberships{}
-	svc := SettingsService{Settings: &fakeSettings{}, Memberships: mems}
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
-	profe := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	mems := &testutil.FakeMemberships{}
+	svc := SettingsService{Settings: &testutil.FakeSettings{}, Memberships: mems}
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	profe := testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
 
 	// Sin fila en la DB: la default de fábrica (un salón viejo no se rompe).
 	got, err := svc.Get(owner, "s1")
@@ -53,12 +54,12 @@ func TestSettingsService(t *testing.T) {
 		t.Fatalf("zona inválida: %v", err)
 	}
 	// Admin también edita.
-	admin := miembro(mems, "u-admin", "s1", domain.RoleAdmin)
+	admin := testutil.Miembro(mems, "u-admin", "s1", domain.RoleAdmin)
 	if _, err := svc.Update(admin, "s1", got); err != nil {
 		t.Fatalf("admin edita: %v", err)
 	}
 	// Ajeno al salón: 403 en lectura y escritura (no filtra configuración).
-	ajeno := miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
+	ajeno := testutil.Miembro(mems, "u-ajeno", "s2", domain.RoleOwner)
 	if _, err := svc.Get(ajeno, "s1"); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("no-miembro leyendo: %v", err)
 	}
