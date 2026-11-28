@@ -105,6 +105,8 @@ services:
       # el contexto de build de la imagen es ./backend, así que no pueden
       # hornearse sin duplicarlas dentro del repo.
       SEED_ASSETS_DIR: /assets
+      # Solo para el enlace final del reporte (la landing pública).
+      APP_URL: ${APP_URL:-http://localhost:8081}
       SEED_FORCE: ${SEED_FORCE:-}
       SEED_RNG_SEED: ${SEED_RNG_SEED:-}
       SEED_TIMEOUT: ${SEED_TIMEOUT:-10m}

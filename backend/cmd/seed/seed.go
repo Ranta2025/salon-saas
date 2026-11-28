@@ -196,7 +196,6 @@ func (s *Seed) Run(ctx context.Context) error {
 	}
 	if seeded {
 		s.log.Printf("la demo ya está sembrada: no escribo nada")
-		before.print("fila")
 		return s.printSummary(ctx, before, before)
 	}
 
@@ -448,7 +447,7 @@ func (s *Seed) printSummary(ctx context.Context, before, after tableCounts) erro
 	for _, u := range demoUsers[1:] {
 		fmt.Printf("  %-14s %-26s %s\n", roleLabel(u.Role), u.Email, demoPassword)
 	}
-	fmt.Printf("  landing        %s/salon/%s\n", s.cfg.APIURL, s.salonSlug)
+	fmt.Printf("  landing        %s/salon/%s\n", s.publicURL(), s.salonSlug)
 	return nil
 }
 
@@ -462,6 +461,15 @@ func sameCounts(a, b tableCounts) bool {
 		}
 	}
 	return true
+}
+
+// publicURL es la base del frontend para el enlace de la landing: APP_URL (la
+// misma que usa la API para las invitaciones) o, si no está, la de la API.
+func (s *Seed) publicURL() string {
+	if app := strings.TrimSpace(s.cfg.AppURL); app != "" {
+		return strings.TrimRight(app, "/")
+	}
+	return s.cfg.APIURL
 }
 
 // roleLabel traduce el rol para la tabla de logins del reporte.

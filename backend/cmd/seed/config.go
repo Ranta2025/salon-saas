@@ -35,6 +35,8 @@ type config struct {
 	Force bool
 	// AssetsDir es la carpeta con las fotos versionadas (scripts/demo-assets).
 	AssetsDir string
+	// AppURL es la base del frontend, solo para el enlace final del reporte.
+	AppURL string
 	// Seed es la semilla del RNG: el dataset es siempre el mismo.
 	Seed int64
 	// Timeout corta una corrida colgada.
@@ -63,6 +65,7 @@ func envConfig(getenv func(string) string) (config, error) {
 		Demo:      strings.EqualFold(strings.TrimSpace(getenv("SEED_DEMO")), "true"),
 		Force:     isTruthy(getenv("SEED_FORCE")),
 		AssetsDir: strings.TrimSpace(getenv("SEED_ASSETS_DIR")),
+		AppURL:    strings.TrimSpace(getenv("APP_URL")),
 		Seed:      defaultSeed,
 		Timeout:   10 * time.Minute,
 	}
