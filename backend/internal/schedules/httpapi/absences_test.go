@@ -407,9 +407,12 @@ func TestHTTP_bookings_reassign_and_cancel(t *testing.T) {
 	if last.Title != "Turno cancelado" || !strings.Contains(last.Body, "se enfermó") {
 		t.Fatalf("el motivo tiene que quedar registrado: %+v", last)
 	}
-	sent := c.Env.Mailer.WaitCount(t, 2)
-	if !strings.Contains(sent[len(sent)-1].Text, "cancelado") {
-		t.Fatalf("correo de la cancelación: %+v", sent[len(sent)-1])
+	// Reasignar y cancelar mandan un correo CADA UNO desde su goroutine: el orden
+	// de llegada no es el de los pedidos, así que el de la cancelación se busca
+	// por destinataria y asunto (con una espera corta) y no por posición.
+	cancelMail := waitCoverMail(t, c.Env.Mailer, "lia@mail.com", "Turno cancelado")
+	if !strings.Contains(cancelMail.Text, "cancelado") {
+		t.Fatalf("correo de la cancelación: %+v", cancelMail)
 	}
 
 	// Un turno ya cancelado no se vuelve a cancelar (409) ni se reasigna.
@@ -431,6 +434,29 @@ func TestHTTP_bookings_reassign_and_cancel(t *testing.T) {
 	// Permisos: la profesional no.
 	if w := httpkit.Do(c.Env.Router, "POST", url, fmt.Sprintf(`{"professional_id":%q}`, c.beaID), c.anaTok); w.Code != http.StatusForbidden {
 		t.Fatalf("profesional reasigna: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// waitCoverMail espera hasta 2 s (pasos de 10 ms) a que el Mailer tenga el
+// correo del cambio de turno para `to` con `subject` en el asunto, y lo
+// devuelve. Es la forma estable de leerlos: la cobertura manda un correo por
+// turno en segundo plano (F2d3), así que la lista no llega en orden.
+func waitCoverMail(t *testing.T, m *httpkit.Mailer, to, subject string) ports.Message {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		m.Mu.Lock()
+		sent := append([]ports.Message(nil), m.Sent...)
+		m.Mu.Unlock()
+		for _, msg := range sent {
+			if msg.To == to && strings.Contains(msg.Subject, subject) {
+				return msg
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("esperaba en 2 s un correo %q para %s; llegaron %d: %+v", subject, to, len(sent), sent)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
