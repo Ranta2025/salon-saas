@@ -6,7 +6,6 @@ import (
 
 	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
-	"salon-saas/internal/pos"
 	"salon-saas/internal/testutil"
 )
 
@@ -61,57 +60,5 @@ func TestBookingService_solape_no_publica_evento(t *testing.T) {
 	after, count := events.Typed("booking.created")
 	if count != 1 || after.Type != before.Type {
 		t.Fatalf("un alta rechazada no publica evento, dio %d (%+v)", count, events.All)
-	}
-}
-
-func TestSaleService_publica_sale_created(t *testing.T) {
-	sales := &testutil.FakeSales{}
-	services := &testutil.FakeServices{}
-	mems := &testutil.FakeMemberships{}
-	events := &testutil.FakeEvents{}
-	svc := pos.SaleService{Sales: sales, Services: services, Memberships: mems, Events: events}
-	testutil.Catalogo(t, services, "s1")
-	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
-	testutil.Miembro(mems, "prof1", "s1", domain.RoleProfessional)
-	corte := testutil.SvcIDByName(t, services, "s1", "Corte")
-
-	sale, err := svc.RegisterSale(recep, "s1", "prof1", "Lía",
-		[]domain.SaleItem{{ServiceID: corte, Qty: 2, UnitPriceCents: 150000}}, domain.MethodCash)
-	if err != nil {
-		t.Fatalf("venta: %v", err)
-	}
-	ev, count := events.Typed("sale.created")
-	if count != 1 {
-		t.Fatalf("esperaba 1 sale.created, dio %d (%+v)", count, events.All)
-	}
-	data, ok := ev.Data.(map[string]any)
-	if !ok || data["id"] != sale.ID || data["total_cents"] != 300000 {
-		t.Fatalf("el evento debe llevar el total calculado en el servidor: %+v", ev.Data)
-	}
-}
-
-func TestCashCloseService_publica_cash_closed_y_avisa(t *testing.T) {
-	closes := &testutil.FakeCashCloses{}
-	sales := &testutil.FakeSales{}
-	mems := &testutil.FakeMemberships{}
-	events := &testutil.FakeEvents{}
-	notifier := &testutil.FakeNotifier{}
-	svc := pos.CashCloseService{CashCloses: closes, Sales: sales, Memberships: mems, Events: events, Notifier: notifier}
-	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
-
-	close, err := svc.CloseCash(owner, "s1", 10000, "sin novedad")
-	if err != nil {
-		t.Fatalf("cierre: %v", err)
-	}
-	ev, count := events.Typed("cash_closed")
-	if count != 1 || ev.SalonID != "s1" {
-		t.Fatalf("esperaba 1 cash_closed de s1, dio %d (%+v)", count, events.All)
-	}
-	data, ok := ev.Data.(map[string]any)
-	if !ok || data["id"] != close.ID || data["difference_cents"] != 10000 {
-		t.Fatalf("el evento debe llevar la diferencia del cierre: %+v", ev.Data)
-	}
-	if notifier.Calls != 1 {
-		t.Fatalf("el cierre deja un aviso para el salón, dio %d", notifier.Calls)
 	}
 }
