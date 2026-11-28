@@ -20,6 +20,7 @@ import (
 	"salon-saas/internal/loyalty"
 	loyaltyhttpapi "salon-saas/internal/loyalty/httpapi"
 	"salon-saas/internal/notifications"
+	"salon-saas/internal/ports"
 	"salon-saas/internal/products"
 	productshttpapi "salon-saas/internal/products/httpapi"
 	httpkit "salon-saas/internal/testutil/httpkit"
@@ -858,7 +859,7 @@ func TestAuditRoutes_exactlyTheD2ListIsWrapped(t *testing.T) {
 		case "payroll_run.adjust", "payroll_run.pay", "payroll_run.delete":
 			wantParam = "rid"
 		default:
-			for _, p := range []string{"uid", "iid", "eid", "pid"} {
+			for _, p := range []string{"uid", "iid", "eid", "pid", "rid"} {
 				if strings.HasSuffix(strings.Split(route, " ")[1], ":"+p) || strings.Contains(strings.Split(route, " ")[1], ":"+p+"/") {
 					wantParam = p
 				}
@@ -866,6 +867,41 @@ func TestAuditRoutes_exactlyTheD2ListIsWrapped(t *testing.T) {
 		}
 		if hasOwn != (wantParam != "") || audithttpapi.AuditEntityParams[action] != wantParam {
 			t.Errorf("%s: parámetro de entidad %q, esperaba %q", action, audithttpapi.AuditEntityParams[action], wantParam)
+		}
+	}
+}
+
+// H32(b): ocultar y volver a mostrar una reseña registran SU id como entidad
+// (entity_id) en vez de NULL. Va por el router real, como el resto de la
+// auditoría, y el orden de la página no se usa: los dos eventos comparten el
+// reloj fijo y el desempate es el id.
+func TestAuditLog_reviewHideAndUnhideRecordTheReviewID(t *testing.T) {
+	w := newAudWorld(t)
+	w.Env.Reviews.SeedReview(ports.Review{
+		ID: "rev-aud-1", SalonID: w.Salon, Rating: 5, Comment: "Muy bien",
+		AuthorName: "Lía", ServiceName: "Corte", CreatedAt: audClock,
+	})
+	if r := w.do("POST", w.path("/reviews/rev-aud-1/hide"), "", w.Owner); r.Code != http.StatusOK {
+		t.Fatalf("ocultar: %d %s", r.Code, r.Body.String())
+	}
+	if r := w.do("POST", w.path("/reviews/rev-aud-1/unhide"), "", w.Owner); r.Code != http.StatusOK {
+		t.Fatalf("mostrar: %d %s", r.Code, r.Body.String())
+	}
+	p, r := w.page(t, w.Owner, "")
+	if r.Code != http.StatusOK || len(p.Events) != 2 {
+		t.Fatalf("auditoría: %d %s", r.Code, r.Body.String())
+	}
+	got := map[string]*string{}
+	for _, ev := range p.Events {
+		got[ev.Action] = ev.EntityID
+	}
+	for _, action := range []string{"review.hide", "review.unhide"} {
+		entity, ok := got[action]
+		if !ok {
+			t.Fatalf("%s no quedó registrada: %s", action, r.Body.String())
+		}
+		if entity == nil || *entity != "rev-aud-1" {
+			t.Errorf("%s: entity_id %v, esperaba el id de la reseña", action, entity)
 		}
 	}
 }

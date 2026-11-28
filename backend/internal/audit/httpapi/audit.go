@@ -45,6 +45,10 @@ var AuditEntityParams = map[string]string{
 	"expense.update":     "eid",
 	"expense.delete":     "eid",
 	"product.adjust":     "pid",
+	// H32(b): ocultar y volver a mostrar una reseña actúan sobre la reseña;
+	// sin esta entrada la auditoría quedaba con entity_id NULL.
+	"review.hide":   "rid",
+	"review.unhide": "rid",
 }
 
 type AuditHandler struct {
