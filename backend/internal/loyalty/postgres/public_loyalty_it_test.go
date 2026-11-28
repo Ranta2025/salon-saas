@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	pgstore "salon-saas/internal/adapters/postgres"
+	schedulespostgres "salon-saas/internal/schedules/postgres"
 	"salon-saas/internal/settings"
 	staffingpostgres "salon-saas/internal/staffing/postgres"
 )
@@ -17,7 +18,7 @@ func TestPublicSalon_loyaltyOnlyWhenEnabledAndServiceActive(t *testing.T) {
 	f := loyFixtures(t)
 	pub := settings.PublicSalonService{
 		Salons: pgstore.Salons{Pool: f.pool}, Services: staffingpostgres.Services{Pool: f.pool}, Settings: pgstore.Salons{Pool: f.pool},
-		Hours: pgstore.WeeklyHours{Pool: f.pool}, Loyalty: f.programs,
+		Hours: schedulespostgres.WeeklyHours{Pool: f.pool}, Loyalty: f.programs,
 	}
 	loyalty := func(slug string) *settings.PublicLoyalty {
 		t.Helper()

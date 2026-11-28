@@ -1,7 +1,7 @@
 // F2d1 contra Postgres real (SALON_IT=1): la migración 017 (horario semanal del
 // salón y de cada profesional) y las queries nuevas, siempre scopeadas por
 // salon_id.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -14,17 +14,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // S-F2d1-1: la 017 crea las dos tablas, se puede aplicar dos veces y NO hace
 // backfill: los datos que ya existen quedan como están (sin filas de horario),
 // así el comportamiento de hoy no cambia.
 func TestMigration017_weekly_hours(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	ctx := context.Background()
 
-	raw, err := os.ReadFile(filepath.Join(migrationsDir(t), "017_weekly_hours.sql"))
+	raw, err := os.ReadFile(filepath.Join(itdb.MigrationsDir(t), "017_weekly_hours.sql"))
 	if err != nil {
 		t.Fatalf("leer la migración 017: %v", err)
 	}
@@ -161,7 +162,7 @@ func fixtureMember(t *testing.T, pool *pgxpool.Pool, userID, salonID string) {
 // S-F2d1-4: el horario del salón se guarda por reemplazo (lo viejo no queda) y
 // una lista vacía vuelve al horario único. Siempre scopeado por salón.
 func TestWeeklyHours_salon(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	repo := WeeklyHours{Pool: pool}
 	fixtureMember(t, pool, "f2d1-own", "f2d1-s1")
@@ -221,7 +222,7 @@ func TestWeeklyHours_salon(t *testing.T) {
 // rechaza deja la lista anterior intacta), scope por salón y CASCADE cuando la
 // persona sale del equipo.
 func TestWeeklyHours_member(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	ctx := context.Background()
 	repo := WeeklyHours{Pool: pool}

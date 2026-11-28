@@ -1,4 +1,4 @@
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -35,7 +36,7 @@ func (r TimeOff) Save(t domain.TimeOff) error {
 	// Traducido: la EXCLUDE de solape llega como 23P01 y tiene que salir como
 	// ErrAlreadyExists, no como un error crudo de Postgres (que el HTTP
 	// convertiría en un 500 en vez del 400 del contrato).
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 // ListRange trae las ausencias del salón que PISAN [from, to), ordenadas por

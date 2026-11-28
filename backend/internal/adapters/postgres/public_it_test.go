@@ -12,6 +12,7 @@ import (
 	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	packagespostgres "salon-saas/internal/packages/postgres"
+	schedulespostgres "salon-saas/internal/schedules/postgres"
 	"salon-saas/internal/settings"
 	settingspostgres "salon-saas/internal/settings/postgres"
 	staffingpostgres "salon-saas/internal/staffing/postgres"
@@ -176,7 +177,7 @@ func TestPublicSalon_realRepos(t *testing.T) {
 		t.Fatal(err)
 	}
 	pub := settings.PublicSalonService{
-		Salons: salons, Services: services, Settings: salons, Hours: pgstore.WeeklyHours{Pool: pool},
+		Salons: salons, Services: services, Settings: salons, Hours: schedulespostgres.WeeklyHours{Pool: pool},
 		Profiles: profiles, Staff: mems, Professionals: ps, Gallery: gallery, Packages: catalog,
 	}
 	got, err := pub.Public("s-it-f16")

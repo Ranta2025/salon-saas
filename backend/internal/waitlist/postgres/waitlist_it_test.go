@@ -24,6 +24,7 @@ import (
 	bookingspostgres "salon-saas/internal/bookings/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	schedulespostgres "salon-saas/internal/schedules/postgres"
 	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/testutil/itdb"
 	waitlistuc "salon-saas/internal/waitlist"
@@ -101,8 +102,8 @@ func newItWaitlistEnv(t *testing.T) *itWaitlistEnv {
 	mems := pgstore.Memberships{Pool: pool}
 	services := staffingpostgres.Services{Pool: pool}
 	profs := staffingpostgres.ProfessionalServices{Pool: pool}
-	hours := pgstore.WeeklyHours{Pool: pool}
-	timeOff := pgstore.TimeOff{Pool: pool}
+	hours := schedulespostgres.WeeklyHours{Pool: pool}
+	timeOff := schedulespostgres.TimeOff{Pool: pool}
 	resources := staffingpostgres.Resources{Pool: pool}
 	bookings := bookingspostgres.Bookings{Pool: pool}
 	waitlist := Waitlist{Pool: pool}

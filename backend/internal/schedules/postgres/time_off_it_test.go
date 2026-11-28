@@ -1,6 +1,6 @@
 // F2d2 contra Postgres real (SALON_IT=1): la migración 018 (ausencias por
 // profesional) y las queries del adaptador, siempre scopeadas por salon_id.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -15,16 +15,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"salon-saas/internal/domain"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // S-F2d2-1: la 018 crea time_off, se puede aplicar dos veces y NO hace backfill:
 // una base migrada no tiene ausencias hasta que alguien carga una.
 func TestMigration018_time_off(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
 	ctx := context.Background()
 
-	raw, err := os.ReadFile(filepath.Join(migrationsDir(t), "018_time_off.sql"))
+	raw, err := os.ReadFile(filepath.Join(itdb.MigrationsDir(t), "018_time_off.sql"))
 	if err != nil {
 		t.Fatalf("leer la migración 018: %v", err)
 	}
@@ -161,9 +162,9 @@ func TestMigration018_time_off(t *testing.T) {
 // S-F2d2-1/5: el adaptador escribe y lee scopeado por salón. La ausencia de otro
 // tenant no se lista, no se encuentra y no se puede borrar (ErrNotFound -> 404).
 func TestTimeOff_repo_scoped_by_salon(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 	if err := seedTimeOffSalons(t, pool); err != nil {
 		t.Fatalf("fixture: %v", err)
 	}
@@ -278,9 +279,9 @@ func seedTimeOffSalons(t *testing.T, pool *pgxpool.Pool) error {
 // aunque lleguen a la vez (el chequeo del caso de uso no alcanza ante una
 // carrera). Pegadas por el borde del período semiabierto [inicio, fin) sí.
 func TestTimeOff_db_rejects_overlap_same_person(t *testing.T) {
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	defer pool.Close()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 	if err := seedTimeOffSalons(t, pool); err != nil {
 		t.Fatalf("fixture: %v", err)
 	}

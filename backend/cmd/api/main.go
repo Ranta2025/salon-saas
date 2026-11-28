@@ -60,6 +60,7 @@ import (
 	reviewsstore "salon-saas/internal/reviews/postgres"
 	"salon-saas/internal/schedules"
 	scheduleshttpapi "salon-saas/internal/schedules/httpapi"
+	schedulespostgres "salon-saas/internal/schedules/postgres"
 	"salon-saas/internal/settings"
 	settingshttpapi "salon-saas/internal/settings/httpapi"
 	settingspostgres "salon-saas/internal/settings/postgres"
@@ -292,9 +293,9 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	professionals := staffingpostgres.ProfessionalServices{Pool: pool}
 	// F2d1: horario semanal del salón y de cada profesional (sin filas =
 	// comportamiento de siempre).
-	weeklyHours := pgstore.WeeklyHours{Pool: pool}
+	weeklyHours := schedulespostgres.WeeklyHours{Pool: pool}
 	// F2d2: ausencias (vacaciones y días libres puntuales) de cada profesional.
-	timeOffRepo := pgstore.TimeOff{Pool: pool}
+	timeOffRepo := schedulespostgres.TimeOff{Pool: pool}
 	// F2e: puestos y equipamiento con capacidad (tipos, unidades y la unidad que
 	// ocupa cada turno). Sin backfill: sin tipos el comportamiento es el de antes.
 	resourceRepo := staffingpostgres.Resources{Pool: pool}
