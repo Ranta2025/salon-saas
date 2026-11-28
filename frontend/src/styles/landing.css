@@ -159,6 +159,31 @@
   background: var(--gold-tint);
 }
 
+/* The theme switch lives in the header and, with its text, inside the mobile
+   menu: one tap on a phone, no need to guess what the icon means. */
+.mobile-nav__theme {
+  padding: 0.35rem clamp(1.15rem, 4vw, 2.5rem) 0.55rem;
+}
+
+.mobile-nav .theme-toggle {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+@media (max-width: 699px) {
+  .mobile-nav .theme-toggle__text {
+    position: static;
+    width: auto;
+    height: auto;
+    padding: 0;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
 @media (max-width: 699px) {
   .brand__name {
     font-size: 1.25rem;

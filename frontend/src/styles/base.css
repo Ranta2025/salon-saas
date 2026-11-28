@@ -290,6 +290,56 @@ ol {
   transform: none;
 }
 
+/* ---------- theme toggle ---------- */
+
+/* A real button in the topbar of the panel and in the public header: 44 px hit
+   area, visible focus from base.css and the state in `aria-pressed`. */
+.theme-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1;
+  transition: background-color var(--transition), border-color var(--transition),
+    color var(--transition);
+}
+
+.theme-toggle:hover {
+  border-color: var(--wine);
+  background: var(--gold-tint);
+}
+
+.theme-toggle__icon {
+  flex: 0 0 auto;
+}
+
+/* On a phone the icon carries the meaning: the accessible name (aria-label)
+   never disappears, only the visible text does. */
+@media (max-width: 699px) {
+  .theme-toggle__text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
 /* ---------- forms ---------- */
 
 .field {

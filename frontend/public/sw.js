@@ -20,7 +20,7 @@
 
 // Bump this value on every deploy that changes the worker or the precache list:
 // `activate` deletes every cache that is not part of the current version.
-const VERSION = 'salon-v6'
+const VERSION = 'salon-v7'
 const SHELL_CACHE = `${VERSION}-shell`
 const STATIC_CACHE = `${VERSION}-static`
 const API_CACHE = `${VERSION}-api`

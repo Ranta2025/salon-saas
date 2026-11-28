@@ -20,6 +20,7 @@ import { clearSalonId, clearToken, clearUserId } from '../lib/session'
 import { EmailVerificationBanner } from './components/EmailVerificationBanner'
 import { NotificationCenter } from '@/features/notifications'
 import { OfflineBanner, SyncStatusChip } from './components/SyncStatus'
+import { ThemeToggle } from '@/features/theme'
 import { NotificationsProvider } from './NotificationsContext'
 import { OfflineProvider, offlineQueue } from './OfflineContext'
 import { RealtimeProvider } from './RealtimeContext'
@@ -331,6 +332,7 @@ function ShellChrome() {
             <p className="shell__hint">Los montos se muestran en dólares estadounidenses (USD).</p>
           </div>
           <div className="shell__topbar-actions">
+            <ThemeToggle />
             <SyncStatusChip />
             <NotificationCenter />
           </div>

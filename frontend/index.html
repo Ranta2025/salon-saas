@@ -3,7 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#3B1E33" />
+    <script>
+      // No flash of the wrong theme: the explicit choice (localStorage) or the OS
+      // preference is resolved and painted before the stylesheet of the bundle
+      // arrives. Keep the key, the valid values and both colours in sync with
+      // src/features/theme/lib/theme.ts. If storage is blocked, the page stays
+      // on the light theme instead of failing.
+      (function () {
+        try {
+          var stored = window.localStorage.getItem('salon-theme')
+          var prefersDark =
+            typeof window.matchMedia === 'function' &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches
+          var theme =
+            stored === 'light' || stored === 'dark' ? stored : prefersDark ? 'dark' : 'light'
+          var root = document.documentElement
+          root.setAttribute('data-theme', theme)
+          root.style.colorScheme = theme
+          var color = theme === 'dark' ? '#140C10' : '#3B1E33'
+          var themeColor = document.querySelector('meta[name="theme-color"]')
+          if (themeColor) {
+            themeColor.setAttribute('content', color)
+          }
+          var colorScheme = document.querySelector('meta[name="color-scheme"]')
+          if (colorScheme) {
+            colorScheme.setAttribute('content', theme)
+          }
+        } catch (error) {
+          document.documentElement.setAttribute('data-theme', 'light')
+        }
+      })()
+    </script>
     <meta
       name="description"
       content="Reserva tu cita en línea y gestiona tu salón: agenda, ventas, servicios y clientes."
