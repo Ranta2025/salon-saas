@@ -2,7 +2,7 @@
 // saltea sin SALON_IT=1. Lo que se prueba acá SOLO se prueba contra la DB: el
 // NULL de «sin dato», el slug que no se escribe, los CHECK de la migración 032 y
 // el aislamiento entre salones.
-package pgstore
+package postgres
 
 import (
 	"context"

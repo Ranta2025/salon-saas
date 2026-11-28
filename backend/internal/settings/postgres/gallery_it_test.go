@@ -2,7 +2,7 @@
 // saltea sin SALON_IT=1. Lo que se prueba acá SOLO se prueba contra la DB: el
 // tope de 12 bajo concurrencia (el lock por salón), el scope por salón y por
 // slug, la separación con client_photos y el CASCADE.
-package pgstore
+package postgres
 
 import (
 	"context"

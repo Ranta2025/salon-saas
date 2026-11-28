@@ -62,6 +62,7 @@ import (
 	scheduleshttpapi "salon-saas/internal/schedules/httpapi"
 	"salon-saas/internal/settings"
 	settingshttpapi "salon-saas/internal/settings/httpapi"
+	settingspostgres "salon-saas/internal/settings/postgres"
 	"salon-saas/internal/simbank"
 	"salon-saas/internal/staffing"
 	staffinghttpapi "salon-saas/internal/staffing/httpapi"
@@ -409,8 +410,8 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	// galería reutiliza el MISMO storage y el MISMO conversor a WebP que las fotos
 	// de clientas, pero en su propia tabla: la ruta pública nunca sirve una foto
 	// de clienta.
-	salonProfileRepo := pgstore.SalonProfiles{Pool: pool}
-	salonGalleryRepo := pgstore.SalonGallery{Pool: pool}
+	salonProfileRepo := settingspostgres.SalonProfiles{Pool: pool}
+	salonGalleryRepo := settingspostgres.SalonGallery{Pool: pool}
 	salonProfileSvc := settings.SalonProfileService{Profiles: salonProfileRepo, Memberships: mems}
 	gallerySvc := settings.GalleryService{
 		Gallery: salonGalleryRepo, Memberships: mems, Salons: salons,

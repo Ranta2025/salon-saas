@@ -1,9 +1,10 @@
-package pgstore
+package postgres
 
 import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -22,7 +23,7 @@ func (r SalonProfiles) Profile(salonID string) (domain.SalonProfile, error) {
 		 FROM salons WHERE id=$1`, salonID,
 	).Scan(&p.Slug, &p.Name, &p.Description, &p.Address, &p.Phone, &p.Email, &p.Instagram)
 	if err != nil {
-		return domain.SalonProfile{}, notFound(err)
+		return domain.SalonProfile{}, pgstore.NotFound(err)
 	}
 	return p, nil
 }
@@ -38,7 +39,7 @@ func (r SalonProfiles) SaveProfile(p domain.SalonProfile) error {
 		p.SalonID, p.Name, p.Description, p.Address, p.Phone, p.Email, p.Instagram)
 	if err != nil {
 		// Un CHECK de la migración 032 es 400 (dato fuera de rango), no un 500.
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound

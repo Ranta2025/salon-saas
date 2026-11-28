@@ -13,6 +13,7 @@ import (
 	"salon-saas/internal/domain"
 	packagespostgres "salon-saas/internal/packages/postgres"
 	"salon-saas/internal/settings"
+	settingspostgres "salon-saas/internal/settings/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
@@ -138,7 +139,7 @@ func TestPublicSalon_realRepos(t *testing.T) {
 	}
 
 	// Galería y paquetes.
-	gallery := pgstore.SalonGallery{Pool: pool}
+	gallery := settingspostgres.SalonGallery{Pool: pool}
 	photo := itdb.NewPhoto(t, "s-it-f16")
 	if err := gallery.Add(photo, 12); err != nil {
 		t.Fatal(err)
@@ -166,7 +167,7 @@ func TestPublicSalon_realRepos(t *testing.T) {
 	mkPkg("Pack de servicio inactivo", inactivo.ID, true, nil)
 
 	salons := pgstore.Salons{Pool: pool}
-	profiles := pgstore.SalonProfiles{Pool: pool}
+	profiles := settingspostgres.SalonProfiles{Pool: pool}
 	if err := profiles.SaveProfile(domain.SalonProfile{SalonID: "s-it-f16", Name: "Salón F16", Description: "Somos F16", Phone: "555", Instagram: "f16"}); err != nil {
 		t.Fatal(err)
 	}

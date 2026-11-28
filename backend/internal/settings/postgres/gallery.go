@@ -1,10 +1,11 @@
-package pgstore
+package postgres
 
 import (
 	"context"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -33,13 +34,13 @@ func scanSalonPhoto(scan func(...any) error) (domain.SalonPhoto, error) {
 // DENTRO del lock: dos subidas simultáneas con 11 fotos se serializan y la
 // segunda ve 12 (409), así el tope no depende de un chequeo previo racy.
 func (r SalonGallery) Add(p domain.SalonPhoto, max int) error {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, "salon-gallery:"+p.SalonID); err != nil {
 		return err
 	}
@@ -54,7 +55,7 @@ func (r SalonGallery) Add(p domain.SalonPhoto, max int) error {
 		`INSERT INTO salon_photos(id, salon_id, storage_key, content_type, caption, created_at)
 		 VALUES($1,$2,$3,$4,NULLIF($5,''),$6)`,
 		p.ID, p.SalonID, p.StorageKey, p.ContentType, p.Caption, p.CreatedAt); err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	return tx.Commit(ctx)
 }
@@ -89,7 +90,7 @@ func (r SalonGallery) Find(salonID, id string) (domain.SalonPhoto, error) {
 	p, err := scanSalonPhoto(r.Pool.QueryRow(context.Background(),
 		`SELECT `+galleryColumns+` FROM salon_photos WHERE salon_id=$1 AND id=$2`, salonID, id).Scan)
 	if err != nil {
-		return domain.SalonPhoto{}, notFound(err)
+		return domain.SalonPhoto{}, pgstore.NotFound(err)
 	}
 	return p, nil
 }
@@ -102,7 +103,7 @@ func (r SalonGallery) FindPublic(slug, id string) (domain.SalonPhoto, error) {
 		 FROM salon_photos p JOIN salons s ON s.id = p.salon_id
 		 WHERE s.slug=$1 AND p.id=$2`, slug, id).Scan)
 	if err != nil {
-		return domain.SalonPhoto{}, notFound(err)
+		return domain.SalonPhoto{}, pgstore.NotFound(err)
 	}
 	return p, nil
 }
@@ -111,7 +112,7 @@ func (r SalonGallery) SetCaption(salonID, id, caption string) error {
 	tag, err := r.Pool.Exec(context.Background(),
 		`UPDATE salon_photos SET caption=NULLIF($3,'') WHERE salon_id=$1 AND id=$2`, salonID, id, caption)
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
