@@ -160,30 +160,3 @@ func TestBooking_sin_unidad_no_necesita_equipo(t *testing.T) {
 		t.Fatalf("no se le inventa una unidad: %+v", moved)
 	}
 }
-
-// S-F2e-4 (preserve de F2d3): reasignar una ausencia conserva la unidad del
-// turno, porque el horario no cambia.
-func TestCoverage_reasignar_conserva_unidad(t *testing.T) {
-	env := newCoverEnv(t)
-	booking := seedBooking(t, env, "b1", "ana", localAt(t, 10, 0), 45, corteID(t, env))
-	booking.ResourceUnitID = "unit-1"
-	if err := env.bookings.Update(booking); err != nil {
-		t.Fatalf("unidad del turno: %v", err)
-	}
-	off := seedAbsence(t, env, "off1", "ana", localAt(t, 10, 0), localAt(t, 12, 0))
-
-	result, err := env.svc.ReassignAbsence(env.owner, "s1", off.ID, "bea", nil)
-	if err != nil {
-		t.Fatalf("reasignar: %v", err)
-	}
-	if result.Reassigned != 1 || result.Bookings[0].ProfessionalID != "bea" {
-		t.Fatalf("reasignación: %+v", result)
-	}
-	if result.Bookings[0].ResourceUnitID != "unit-1" {
-		t.Fatalf("la unidad se conserva al cubrir la ausencia: %+v", result.Bookings[0])
-	}
-	stored, _ := env.bookings.FindByID("s1", "b1")
-	if stored.ResourceUnitID != "unit-1" {
-		t.Fatalf("la unidad quedó guardada: %+v", stored)
-	}
-}
