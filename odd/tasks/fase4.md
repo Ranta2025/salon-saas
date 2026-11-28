@@ -12,16 +12,19 @@
 ## Contexto ya construido (no rehacer)
 
 - Backend Go/Gin/Postgres/pgx hexagonal: `internal/domain`, `internal/ports`,
-  `internal/app`, `internal/adapters/{http,postgres,security}`.
+  `internal/app`, `internal/adapters/{http,postgres,security}`. (ahora: un
+  módulo por funcionalidad en `internal/<funcionalidad>/{,postgres,httpapi}`,
+  con el núcleo en `internal/{domain,ports,kernel}` y los adaptadores
+  compartidos en `internal/adapters/`; ver `docs/ARQUITECTURA.md`.)
 - Migraciones `backend/migrations/001..006`, idempotentes y re-ejecutables en
   cada boot (`migrate()` aplica todos los archivos en orden). Regla dura: dentro
   de bloques `DO` con guardas de `pg_catalog`; nunca referenciar una columna que
   otra migración renombra sin guarda.
 - Auth JWT (24 h) + bcrypt; roles `owner|admin|professional|reception|client`.
   El dinero (ventas, cierres, dashboard) solo lo ven `owner|admin|reception`
-  (`puedeVerPlata` en `internal/app/sales.go`).
+  (`puedeVerPlata` en `internal/pos/sales.go`).
 - Reservas con anti-solape garantizado por `EXCLUDE USING gist` (migración 002).
-- Frontend React+TS+Vite: `src/landing/**` (público), `src/app/**` (interno),
+- Frontend React+TS+Vite: `src/features/landing/**` (público), `src/app/**` (interno),
   `src/lib/**` (api, money, metrics, posCart, datetime, session).
 - Docker: postgres 5432, redis 6379, mailpit 8025 (arriba); MinIO **no** se
   puede bajar en este entorno (su imagen da 401 en quay.io y en Docker Hub).
@@ -99,7 +102,8 @@ docs/design/**
 ## Reglas
 
 - SOLID + hexagonal: el dominio no importa nada externo; los repos y el storage
-  detrás de interfaces; un caso de uso por archivo en `internal/app`.
+  detrás de interfaces; un caso de uso por archivo en `internal/app` (ahora: en
+  `internal/<funcionalidad>/*.go`).
 - Todo scoped por `salon_id`. Sin excepción.
 - El servidor es la autoridad del dinero y de los totales.
 - Migraciones idempotentes y válidas sobre DB ya migrada y sobre DB vacía.

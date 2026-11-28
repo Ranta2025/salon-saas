@@ -138,7 +138,7 @@ precache del service worker incluye los cuatro binarios.
 Consume el contrato de la ronda 2 (`odd/tasks/fase5-hardening.md`). Sin
 dependencias nuevas y con la misma paleta de `src/styles/theme.css`.
 
-### 10.1 Reserva pública real (`src/landing/components/BookingCta.tsx`)
+### 10.1 Reserva pública real (`src/features/landing/components/BookingCta.tsx`)
 
 - Se elige **servicio** (catálogo público ya cargado), **fecha** (`min` = hoy en
   el calendario local del visitante, `toDateInputValue(new Date(), visitorTimeZone())`,
@@ -178,7 +178,7 @@ dependencias nuevas y con la misma paleta de `src/styles/theme.css`.
 - El panel permite **cancelar** (con confirmación en línea), **marcar que no
   asistió**, **marcar como atendida** y **reprogramar** (fecha, hora y
   profesional desde `/staff`) vía `PATCH /salons/:id/bookings/:bid`
-  (`src/lib/bookingActions.ts`). El cambio conserva la duración del turno
+  (`src/features/bookings/lib/bookingActions.ts`). El cambio conserva la duración del turno
   (`reschedulePayload`) y sólo se ofrecen acciones válidas para el estado.
 - El calendario pide `/salons/:id/settings` para dibujar con la zona del salón
   (respaldo `TIME_ZONE`) y usa los nombres del equipo en los encabezados de
@@ -332,7 +332,7 @@ una respuesta viva y vacía.
   horario, no la ventana: derivar «abre a las 9» del primer hueco sería falso en
   cuanto la mañana esté ocupada (y el endpoint exige `service_id` y fecha). Por
   eso la landing sigue mostrando horas estáticas, pero salen de **una sola
-  constante** (`PUBLIC_OPENING_HOURS` en `src/landing/content.ts`), cada bloque
+  constante** (`PUBLIC_OPENING_HOURS` en `src/features/landing/lib/content.ts`), cada bloque
   las etiqueta como «horario indicativo» y la copia invita a confirmar al
   reservar. Cuando el backend publique el horario público, basta cambiar
   `content.ts` y quitar la etiqueta.
@@ -402,7 +402,7 @@ punto decimal) y el formato de fechas, no la moneda.
 
 ### 12.2 Teléfono de contacto de la landing (T11)
 
-`CONTACT_PHONE` en `src/landing/content.ts` es la única fuente:
+`CONTACT_PHONE` en `src/features/landing/lib/content.ts` es la única fuente:
 
 | campo | valor | uso |
 | --- | --- | --- |
@@ -527,7 +527,7 @@ Contrato `odd/tasks/fase6-roadmap.md`, «Contrato F2a» (S-F2a-5 mitad
 frontend y S-F2a-6). Sin dependencias nuevas y con los tokens de
 `src/styles/theme.css`.
 
-### 13.1 Tipo y cliente de API (`src/lib/members.ts`)
+### 13.1 Tipo y cliente de API (`src/features/team/lib/members.ts`)
 
 - `SalonMember` suma `attends: boolean` (`memberships.attends`).
   `normalizeMembers` lo lee con `attends(value, role)`: un booleano se respeta y
@@ -543,7 +543,7 @@ frontend y S-F2a-6). Sin dependencias nuevas y con los tokens de
 - `POST /members` sigue mandando solo `email` y `role`: el `attends` por defecto
   lo decide el servidor (S-F2a-4), así que la UI no lo duplica.
 
-### 13.2 Reglas puras (`src/lib/attends.ts`)
+### 13.2 Reglas puras (`src/features/team/lib/attends.ts`)
 
 | helper | regla |
 | --- | --- |
@@ -618,7 +618,7 @@ muestra sale de `GET /salons/:id/bookings?from&to` (el mismo del calendario y su
 caché offline), `GET /salons/:id/staff` (la lista que F2a ya filtra a quien
 atiende), `/me` y `/settings`.
 
-### 14.1 Reglas puras (`src/lib/myAgenda.ts`)
+### 14.1 Reglas puras (`src/features/bookings/lib/myAgenda.ts`)
 
 | helper | regla |
 | --- | --- |
@@ -717,7 +717,7 @@ implementa el contrato en paralelo no se tocó: la UI consume
 
 ### 15.1 Tipo y cliente de API
 
-`SalonMember` (`src/lib/members.ts`) suma:
+`SalonMember` (`src/features/team/lib/members.ts`) suma:
 
 | campo | lectura |
 | --- | --- |
@@ -840,7 +840,7 @@ paralelo y no se tocó: la UI consume `GET/PUT /salons/:id/hours`,
 `GET /public/salons/:slug`. Semana ISO 1..7 (lunes primero) leída en la zona del
 salón, horas `HH:MM` de 24 h.
 
-### 16.1 Reglas puras (`src/lib/weeklyHours.ts`)
+### 16.1 Reglas puras (`src/features/team/lib/weeklyHours.ts`)
 
 | helper | regla |
 | --- | --- |
@@ -861,10 +861,10 @@ salón, horas `HH:MM` de 24 h.
 
 ### 16.2 Cliente de API
 
-- `fetchSalonHours` / `saveSalonHours` (`src/lib/settings.ts`) contra
+- `fetchSalonHours` / `saveSalonHours` (`src/features/settings/lib/settings.ts`) contra
   `/salons/:id/hours`; la lista vacía de `saveSalonHours` es «volver al horario
   único». Un `400` conserva la frase del servidor, que se imprime tal cual.
-- `fetchMemberHours` / `saveMemberHours` (`src/lib/members.ts`) contra
+- `fetchMemberHours` / `saveMemberHours` (`src/features/team/lib/members.ts`) contra
   `/members/:uid/hours`; `segments: []` significa «igual que el salón».
 - `normalizePublicSalon` (`src/lib/publicSalon.ts`) suma `hours: SalonDay[] | null`:
   `null` cuando el campo falta o no trae ninguna fila usable.
@@ -981,7 +981,7 @@ implementa en paralelo y no se tocó: la UI consume
 quien no puede leerlo), `POST /salons/:id/members/:uid/time-off` (201
 `{time_off, conflicts}`) y `DELETE /salons/:id/time-off/:tid` (204).
 
-### 17.1 Reglas puras (`src/lib/timeOff.ts`)
+### 17.1 Reglas puras (`src/features/bookings/lib/timeOff.ts`)
 
 | helper | regla |
 | --- | --- |
@@ -1102,7 +1102,7 @@ tocó: la UI consume `GET /salons/:id/absences?from&to`,
 `POST /salons/:id/bookings/:bid/reassign` con `{"professional_id"}` o
 `{"cancel":true}`. Las frases del servidor se muestran verbatim.
 
-### 18.1 Reglas puras (`src/lib/coverAbsence.ts`)
+### 18.1 Reglas puras (`src/features/bookings/lib/coverAbsence.ts`)
 
 | helper | regla |
 | --- | --- |
@@ -1172,7 +1172,7 @@ ausente no aparece como candidata de su ausencia aunque el payload la incluya.
 - **Dependencia de contrato (desviación consciente, pendiente del backend):**
   `GET /bookings` no publica hoy de quién se movió el turno: el backend solo deja
   el aviso interno del salón «Turno reasignado · clienta · horario · ahora la
-  atiende X» (`internal/app/coverage.go`), que no dice que el turno era mío y por
+  atiende X» (`internal/schedules/coverage.go`), que no dice que el turno era mío y por
   lo tanto no sirve para este aviso. La UI lee el campo opcional `covered_from`
   de la reserva (y sus alias `reassigned_from` / `previous_professional_id`); sin
   alguno de ellos el aviso simplemente no aparece: no se inventa ni se deduce del
@@ -1239,7 +1239,7 @@ paralelo no se tocó: la UI consume `GET/POST /salons/:id/resources`,
 `DELETE /salons/:id/resources/:tid`, y los servicios aceptan y devuelven
 `resource_type_id`. Las frases del servidor se muestran verbatim.
 
-### 19.1 Tipo y cliente de API (`src/lib/equipment.ts`)
+### 19.1 Tipo y cliente de API (`src/features/services/lib/equipment.ts`)
 
 | campo | lectura |
 | --- | --- |
@@ -1259,7 +1259,7 @@ paralelo no se tocó: la UI consume `GET/POST /salons/:id/resources`,
   omitida si el cuerpo no la trae (un servidor anterior ve el mismo cuerpo de
   siempre).
 
-### 19.2 Reglas puras (`src/lib/equipment.ts`)
+### 19.2 Reglas puras (`src/features/services/lib/equipment.ts`)
 
 | helper | regla |
 | --- | --- |
@@ -1385,7 +1385,7 @@ contrato en paralelo no se tocó: la UI consume
 ### 20.1 El token: fragmento, memoria y cuerpo
 
 El enlace es `/invitacion#<token>`: el fragmento no viaja al servidor ni a los
-logs de nginx. La página (`src/app/InvitationPage.tsx`) cumple, en este orden:
+logs de nginx. La página (`src/features/auth/pages/InvitationPage.tsx`) cumple, en este orden:
 
 1. `readInvitationHash(location.href)` lee el token **en el primer render** y
    devuelve la URL sin él; `history.replaceState` la escribe en el mismo tick,
@@ -1422,7 +1422,7 @@ El token se busca en cualquier fragmento para **borrarlo**, pero solo se **usa**
 si está en el primero (la forma del enlace del contrato): una URL rara nunca
 entrega una sesión.
 
-### 20.2 Reglas puras (`src/lib/invitations.ts`)
+### 20.2 Reglas puras (`src/features/team/lib/invitations.ts`)
 
 | helper | regla |
 | --- | --- |
@@ -1507,7 +1507,7 @@ de 3 px de `base.css`. Etiquetas `<label for>` reales en todos los campos.
 - `npx tsc --noEmit` sin errores, `npm test` (332 tests, node --test; 296 eran de
   la entrega anterior, 36 nuevas) y `npm run build` en verde.
 - TDD en `src/lib` (primero en rojo: `ERR_MODULE_NOT_FOUND` de
-  `src/lib/invitations.ts`): `invitations.test.ts` cubre el token del fragmento
+  `src/features/team/lib/invitations.ts`): `invitations.test.ts` cubre el token del fragmento
   (formas válidas, URL sin fragmento, fragmentos malformados, token fuera del
   primer lugar, longitud y alfabeto), nombre y contraseña con los límites del
   registro incluidos los bytes de una letra acentuada, el `email_hint` tal como
@@ -1566,7 +1566,7 @@ paralelo no se tocó: la UI consume `GET /salons/:id/members` (cada item con
 `POST /salons/:id/members/:uid/reactivate` (200 con el miembro). Las frases del
 servidor se muestran verbatim.
 
-### 21.1 Tipo y lectura (`src/lib/members.ts`)
+### 21.1 Tipo y lectura (`src/features/team/lib/members.ts`)
 
 | campo | lectura |
 | --- | --- |
@@ -1579,7 +1579,7 @@ Regla de consistencia: una fecha de baja siempre gana sobre un `active`
 contradictorio, así un payload a medio escribir no devuelve a nadie a la agenda.
 `GET /members` sigue devolviendo a los dados de baja: el filtro es del cliente.
 
-### 21.2 Reglas puras (`src/lib/teamStatus.ts`)
+### 21.2 Reglas puras (`src/features/team/lib/teamStatus.ts`)
 
 | helper | regla |
 | --- | --- |
@@ -1597,7 +1597,7 @@ contradictorio, así un payload a medio escribir no devuelve a nadie a la agenda
 Filtro de todos los selectores: `bookableMembers` (`src/lib/tradeServices.ts`)
 ahora exige `isActiveMember`, `professionalsForService` se apoya en él (y con eso
 el conteo por servicio y los avisos de F2c), y `nobodyAttends`
-(`src/lib/attends.ts`) ignora a quien ya salió, para que el aviso «Nadie atiende
+(`src/features/team/lib/attends.ts`) ignora a quien ya salió, para que el aviso «Nadie atiende
 todavía» no quede tapado por una baja. `ServicesPage` (selector de profesionales
 del alta de servicios), las tarjetas de oficio, ausencias y horario, y
 `TeamInvitations` (para el aviso de correo ya miembro) reciben solo activos.
@@ -1643,7 +1643,7 @@ las frases largas del servidor (`overflow-wrap`).
 - `npx tsc --noEmit` sin errores, `npm test` (**351 tests**, `node --test`; 332
   eran de la entrega anterior, 19 nuevas) y `npm run build` en verde.
 - TDD en `src/lib` (primero en rojo: `ERR_MODULE_NOT_FOUND` de
-  `src/lib/teamStatus.ts`, `members.ts` sin exportar `deactivateMember`/
+  `src/features/team/lib/teamStatus.ts`, `members.ts` sin exportar `deactivateMember`/
   `reactivateMember`, y `bookableMembers`/`nobodyAttends` sin filtrar bajas —
   5 tests en rojo): `teamStatus.test.ts` cubre quién está activo (incluida la
   fecha que contradice al flag), el corte activos/ex equipo con su orden, la
@@ -1681,7 +1681,7 @@ paralelo y no se tocó: la UI consume `GET /salons/:id/pay-models`,
 `GET /salons/:id/payroll/me?kind=&date=` con las formas del contrato, y muestra
 las frases del servidor verbatim en los errores de esos endpoints.
 
-### 22.1 Lectura defensiva (`src/lib/payroll.ts`)
+### 22.1 Lectura defensiva (`src/features/team/lib/payroll.ts`)
 
 | payload | regla |
 | --- | --- |
@@ -1690,7 +1690,7 @@ las frases del servidor verbatim en los errores de esos endpoints.
 | `POST /payroll/preview` | `period` exige `kind` válido y dos fechas locales reales (el round-trip por `Date.UTC` rechaza `2026-02-30`), `closed` es `true` solo si vino `true`; `lines` descarta filas sin `user_id` y normaliza conteos y centavos; un `total_cents` ausente es `commission + fixed` en enteros; los `totals` del servidor se usan solo si son enteros no negativos y, si no, se recalculan de las líneas para que la tabla y su pie nunca se contradigan |
 | `GET /payroll/me` | `{period, sales_count, sales_total_cents, commission_cents, estimated}`; todo campo ausente o inválido cae a `0`/`false`; la pantalla no pide ni muestra datos de otra persona |
 
-### 22.2 Reglas puras (`src/lib/payroll.ts`)
+### 22.2 Reglas puras (`src/features/team/lib/payroll.ts`)
 
 | helper | regla |
 | --- | --- |
@@ -1784,7 +1784,7 @@ secciones.
 - `npx tsc --noEmit` sin errores, `npm test` (**374 tests**, `node --test`; 351
   eran de la entrega anterior, 23 nuevas) y `npm run build` en verde.
 - TDD en `src/lib` (primero en rojo: `ERR_MODULE_NOT_FOUND` de
-  `src/lib/payroll.ts`): `payroll.test.ts` cubre la lectura de los tres payloads
+  `src/features/team/lib/payroll.ts`): `payroll.test.ts` cubre la lectura de los tres payloads
   (campos ausentes, tipos equivocados, negativos, fraccionarios, filas sin id,
   flag de comisión y período por defecto, totales recalculados), el período
   (`kind`/fechas reales, `closed`), las etiquetas en español de las tres formas y
@@ -1823,7 +1823,7 @@ UI consume las rutas de ese bloque con sus formas exactas y muestra las frases d
 servidor (400/409) verbatim. Entrega de S-F3.3-5; S-F3.3-1..4 son el backend que
 se implementa en paralelo.
 
-### 23.1 Lectura defensiva (`src/lib/payrollRuns.ts`)
+### 23.1 Lectura defensiva (`src/features/team/lib/payrollRuns.ts`)
 
 | payload | regla |
 | --- | --- |
@@ -1831,7 +1831,7 @@ se implementa en paralelo.
 | `GET /payroll/runs` | lee `{runs:[…]}` o una lista suelta, descarta filas sin `id`/`kind`/fechas y ordena por `from` desc (desempate por `created_at`) para que la más nueva quede arriba aunque el orden llegue mal; una fila sin totales confiables muestra ceros, nunca un número adivinado |
 | mutaciones | `POST /payroll/runs`, `PATCH …/lines/:uid`, `POST …/pay`: si la respuesta no se puede leer como corrida se lanza un error explícito en vez de un guardado mudo |
 
-### 23.2 Reglas puras (`src/lib/payrollRuns.ts`)
+### 23.2 Reglas puras (`src/features/team/lib/payrollRuns.ts`)
 
 | helper | regla |
 | --- | --- |
@@ -1914,7 +1914,7 @@ más en todos los controles nuevos y el anillo de foco de 3 px de `base.css`.
   eran de la entrega anterior y 22 son nuevos de `payrollRuns.test.ts`); `npm run
   build` en verde.
 - TDD en `src/lib`: primero en rojo (`ERR_MODULE_NOT_FOUND` de
-  `src/lib/payrollRuns.ts`), después en verde los 22 tests: lectura del detalle y
+  `src/features/team/lib/payrollRuns.ts`), después en verde los 22 tests: lectura del detalle y
   de la lista (campos ausentes, tipos equivocados, negativos, fraccionarios,
   `kind`/fechas inválidas, estado desconocido, totales recalculados, orden nuevo
   primero), ajuste con signo y valor del campo en enteros, total de línea y sumas,
@@ -1968,7 +1968,7 @@ simulado sobre las formas congeladas.
 
 ### 24.2 Lógica pura
 
-- `src/lib/expenses.ts`: `parseExpenseAmountToCents` convierte el texto escrito a
+- `src/features/expenses/lib/expenses.ts`: `parseExpenseAmountToCents` convierte el texto escrito a
   centavos con aritmética entera (acepta `12`, `12,5`, `12.50`, `$1250`; rechaza
   vacío, negativo, `abc`, `1,2,3`, más de dos decimales y separador de miles en
   lugar de adivinar un factor de 1000). `validateExpenseDraft` valida con las
@@ -1981,7 +1981,7 @@ simulado sobre las formas congeladas.
   orden por `spent_on` y `created_at` descendente se recalcula) y
   `checkExpenseRange` / `defaultExpenseRange` cubren el rango de 366 días y los
   últimos 30 días.
-- `src/lib/profit.ts`: `normalizeProfit` completa con ceros el día que el payload
+- `src/features/expenses/lib/profit.ts`: `normalizeProfit` completa con ceros el día que el payload
   dejó vacío, deriva el neto cuando no es entero, ordena los días ascendente,
   descarta fechas imposibles, deja solo categorías con total > 0 y, si los
   totales no son enteros, los suma desde los días. `profitNetSign`,
@@ -2081,7 +2081,7 @@ las superficies asignadas.
   borra y se IGNORA (nunca se usa), y un fragmento sin token se descarta entero
   para no dejar rastro.
 
-### 25.2 Reglas puras (`src/lib/bookingLinks.ts`)
+### 25.2 Reglas puras (`src/features/bookings/lib/bookingLinks.ts`)
 
 | helper | regla |
 | --- | --- |
@@ -2147,7 +2147,7 @@ cargar la lista. Sin desborde horizontal: `scrollWidth === clientWidth` a 390 y
   eran de la entrega anterior y 32 son nuevos de `bookingLinks.test.ts`);
   `npm run build` en verde.
 - TDD en `src/lib`: primero en rojo (`ERR_MODULE_NOT_FOUND` de
-  `src/lib/bookingLinks.ts`), después en verde los 32 tests: token del fragmento
+  `src/features/bookings/lib/bookingLinks.ts`), después en verde los 32 tests: token del fragmento
   (43 caracteres, solo el primer `#`, formas malformadas, fragmentos extra), el
   barrido de la dirección ANTES del primer pedido (orden `replace` → `fetch`
   verificado en un `history` falso), un fragmento inválido sin ningún pedido,
@@ -2217,7 +2217,7 @@ existir y todo se probó con `fetch` simulado sobre las formas congeladas.
   profesional no ven la entrada del menú ni un solo botón de descarga. El
   servidor sigue siendo la autoridad: su 403 se muestra **verbatim**.
 
-### 26.2 Lógica pura (`src/lib/exports.ts`)
+### 26.2 Lógica pura (`src/features/exports/lib/exports.ts`)
 
 - Sin código de descarga nuevo: `fetchExportCsv` hace el `fetch` con `Bearer` y
   `Accept: text/csv` (mismo patrón que `fetchPayrollRunCsv`, que no se toca),
@@ -2323,7 +2323,7 @@ probó con `fetch` simulado sobre las formas congeladas.
 
 ### 27.1 Lógica pura
 
-- `src/lib/clientRecord.ts` — la ficha (`client` de D5): `normalizeClientRecord`
+- `src/features/clients/lib/clientRecord.ts` — la ficha (`client` de D5): `normalizeClientRecord`
   (con `allergies`, `""` cuando la API no lo manda), `clientRecordBody` (las
   **cinco** claves `name, phone, email, notes, allergies` siempre, recortadas y
   con el correo en minúsculas), `validateClientRecordDraft` (nombre obligatorio,
@@ -2337,7 +2337,7 @@ probó con `fetch` simulado sobre las formas congeladas.
   doble clic en el mismo tick manda **un** `PUT`; la segunda pulsación responde
   `busy`. `saved` NO se pinta: la página vuelve a pedir la ficha (y el historial)
   al servidor, así que la pantalla nunca muestra un dato sin guardar.
-- `src/lib/clientHistory.ts` — el historial (D6/D7): `normalizeClientHistory`
+- `src/features/clients/lib/clientHistory.ts` — el historial (D6/D7): `normalizeClientHistory`
   lee la forma congelada, PINEA el orden más reciente primero, descarta filas sin
   id o con fecha ilegible y convierte un `total_cents` con decimales en «sin
   dinero» (nunca se pinta un monto inventado). `clientHistoryMoney` devuelve
@@ -2350,7 +2350,7 @@ probó con `fetch` simulado sobre las formas congeladas.
 - `src/lib/permissions.ts` (aditivo): `canEditClient` delega en `canCreateClient`
   (D5: `puedeGestionarClientes`) y `canSeeClientMoney` en `puedeVerPlata`; ningún
   helper existente cambia.
-- `src/lib/posCart.ts` (aditivo): `saleWithClient(body, picked)` — sin ficha
+- `src/features/pos/lib/posCart.ts` (aditivo): `saleWithClient(body, picked)` — sin ficha
   elegida devuelve el MISMO objeto (la clave `client_id` no existe, no es
   `undefined`) y con ficha completa el nombre si el campo está vacío y agrega
   `client_id` (D3c). El cuerpo sigue viajando igual por la cola offline.
@@ -2446,7 +2446,7 @@ el POS reusan `panel-card`, `table table--stack`, `service-form`,
 - Recepción ve el listado con precio, stock y la marca «Stock bajo», sin un solo
   control de escritura: ni alta, ni edición, ni ajuste, ni movimientos (D7).
 
-### 28.2 Lógica pura (`src/lib/products.ts`, `src/lib/productCart.ts`)
+### 28.2 Lógica pura (`src/features/products/lib/products.ts`, `src/features/products/lib/productCart.ts`)
 
 - `products.ts`: precio tipado → centavos con el MISMO parser entero de los
   gastos (`parseExpenseAmountToCents`), así que `12`, `12,5` y `12.50` dan 1200,
@@ -2566,7 +2566,7 @@ toca centavos ni un flotante.
   corta a propósito: la rejilla de tres columnas a 390 px recortaba «Lista de
   espera», el título de la página sí lo dice completo.
 
-### 29.2 Lógica pura (`src/lib/waitlist.ts`)
+### 29.2 Lógica pura (`src/features/waitlist/lib/waitlist.ts`)
 
 - Copy del contrato verbatim: «Avisame si se libera un turno», «Listo, te
   avisamos por email si se libera un turno.» y el botón «Dejar de recibir
@@ -2697,7 +2697,7 @@ con `formatCents`.
   `ManagerOnlyNotice` porque el copy compartido habla de «la nómina ni las
   comisiones del equipo».
 
-### 30.2 Lógica pura (`src/lib/packages.ts`)
+### 30.2 Lógica pura (`src/features/packages/lib/packages.ts`)
 
 - Tipos y normalizadores del catálogo (`ServicePackage`), del saldo
   (`ClientPackage`) y del libro (`PackageMovement`). Una fila sin id o nombre, con
@@ -2992,7 +2992,7 @@ vuelve a pedir después de cada acción (no hay estado optimista).
   dueño, administración y recepción; el profesional no tiene nada que hacer ahí y la
   ficha de la clienta (con datos de consumo) le da 403.
 
-### 32.2 Lógica pura (`src/lib/loyalty.ts`)
+### 32.2 Lógica pura (`src/features/loyalty/lib/loyalty.ts`)
 
 - Tipos y normalizadores del programa (`LoyaltyProgram`: «nunca guardado» es
   `enabled:false` y el resto `null`), del estado de una clienta (`ClientLoyalty`) y

@@ -68,7 +68,7 @@ Rutas nuevas del panel:
   `GET /clients/:id` en el contrato), fotos, galería y borrado con confirmación
   de dos pasos.
 - `PhotoUploader`: validación antes de cualquier request
-  (`src/lib/photos.ts`): tipo JPG/PNG/WebP y máximo 8 MB; mensajes en español
+  (`src/features/clients/lib/photos.ts`): tipo JPG/PNG/WebP y máximo 8 MB; mensajes en español
   para formato inválido, archivo vacío y exceso de peso. Preview local con
   `URL.createObjectURL` (revocado al descartar o desmontar), y error legible con
   el mensaje del servidor si rechaza la subida. El request es
@@ -238,17 +238,17 @@ frontend/
   public/icons/*.svg             iconos SVG (any + maskable + favicon)
   src/lib/realtime.ts            websocket tipado, backoff, offline/online
   src/lib/notifications.ts       normalización, no leídas, fecha local
-  src/lib/photos.ts              validación de tipo/tamaño antes de subir
+  src/features/clients/lib/photos.ts              validación de tipo/tamaño antes de subir
   src/lib/offlineQueue.ts        cola FIFO persistente con client_op_id
   src/lib/connectivity.ts        navigator.onLine + eventos online/offline
   src/lib/pwa.ts                 registro del SW y purga de caché de API
   src/lib/api.ts                 notificaciones, clientes, fotos, bookings, cola
   src/app/NotificationsContext.tsx  lista + stream en vivo
   src/app/OfflineContext.tsx     cola singleton, conectividad, flush
-  src/app/components/NotificationCenter.tsx  campana, badge y panel
+  src/features/notifications/components/NotificationCenter.tsx  campana, badge y panel
   src/app/components/SyncStatus.tsx          chip y banner offline
   src/app/components/PhotoUploader.tsx       preview + validación + upload
-  src/app/ClientsPage.tsx        lista de clientes
-  src/app/ClientDetailPage.tsx   ficha, galería, subida y borrado
-  src/app/NotificationsPage.tsx  listado completo
+  src/features/clients/pages/ClientsPage.tsx        lista de clientes
+  src/features/clients/pages/ClientDetailPage.tsx   ficha, galería, subida y borrado
+  src/features/notifications/pages/NotificationsPage.tsx  listado completo
 ```

@@ -143,12 +143,12 @@ frontend/
   src/lib/money.ts           formato/parseo de centavos, duraciones
   src/lib/datetime.ts        día del salón, minutos, solapes, agenda
   src/lib/metrics.ts         normalización del dashboard
-  src/lib/posCart.ts         carrito del POS (lógica pura)
+  src/features/pos/lib/posCart.ts         carrito del POS (lógica pura)
   src/styles/theme.css       paleta y tokens
   src/styles/base.css        reset, a11y, botones, formularios
   src/styles/landing.css     landing
   src/styles/app.css         panel
-  src/landing/               LandingPage, contenido y componentes
+  src/features/landing/               LandingPage, contenido y componentes
   src/app/                   páginas y componentes del panel
 ```
 

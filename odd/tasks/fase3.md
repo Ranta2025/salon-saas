@@ -102,7 +102,7 @@ obligatorio: usar `@font-face` con fallback de sistema si no hay red.
 - L4 (orquestador): el writer dejó abierto que cualquier miembro del salón
   (incluso `professional` y `client`) podía leer ventas, cierres de caja y el
   revenue del panel. Cerrado: la plata solo la ven `owner`, `admin` y
-  `reception` (función única `puedeVerPlata` en `internal/app/sales.go`); los
+  `reception` (función única `puedeVerPlata` en `internal/pos/sales.go`); los
   profesionales siguen viendo servicios y su agenda. Verificado con 403 real
   por HTTP. Un cambio de política es cambiar esa función.
 - L5 (orquestador): el writer avisó que no ejercitó el camino "base de datos

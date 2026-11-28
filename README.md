@@ -6,35 +6,40 @@ real y una PWA offline-first para el mostrador. El objetivo del proyecto es
 mostrar decisiones de ingeniería reales (multi-tenancy, concurrencia, offline,
 puertos/adaptadores) y no un CRUD de juguete.
 
-## Arquitectura (hexagonal / puertos y adaptadores)
+## Arquitectura (por funcionalidad, hexagonal por dentro)
 
-La regla de dependencia va de afuera hacia adentro: `domain` no conoce frameworks
-ni bases de datos; `app` orquesta casos de uso contra interfaces (`ports`);
-`adapters` implementa esas interfaces; `cmd/api/main.go` es el único composition
-root que conoce a todos los adaptadores concretos.
+El código se ordena por **funcionalidad**: cada una es un paquete Go con sus
+reglas, sus casos de uso y sus adaptadores. La regla de dependencia sigue yendo
+de afuera hacia adentro: el núcleo (`domain`, `ports`, `kernel`) no conoce HTTP
+ni SQL, y `cmd/api` es el único composition root que conoce adaptadores
+concretos. Mapa completo, regla de dependencias y paso a paso para agregar una
+funcionalidad: [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md).
 
 ```
         HTTP / WS (navegador, PWA)
                  │
                  ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│ backend/ (Go + Gin)                                                  │
-│                                                                      │
-│  adapters/http ─────► app/ (casos de uso) ─────► ports/ (interfaces) │
-│  adapters/postgres ──►        │                        ▲             │
-│  adapters/realtime ──►        │                        │             │
-│  adapters/storage  ──►        │                        │             │
-│  adapters/imaging  ──►        │                        │             │
-│  adapters/security ──►        │                        │             │
-│                               └──────► domain/  (reglas puras)        │
-│                                                                      │
-│  cmd/api/main.go = composition root (elige adaptadores)              │
-└──────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│ backend/internal/                                                          │
+│                                                                            │
+│  <funcionalidad>/  ──►  kernel/  ──►  ports/  ──►  domain/                 │
+│    postgres/  ────────┘   (permisos, ajustes,   (interfaces)  (reglas)     │
+│    httpapi/               avisos, eventos)                                 │
+│                                                                            │
+│  adapters/http (middleware + rutas)   adapters/postgres (pool, migraciones) │
+│  adapters/realtime · storage · imaging · mail    testutil (fakes)          │
+│                                                                            │
+│  cmd/api = composition root: main.go + wire_<funcionalidad>.go             │
+└────────────────────────────────────────────────────────────────────────────┘
                  │                                    │
                  ▼                                    ▼
         Postgres 16 (fuente de verdad)      media/ (fotos, detrás de
                                             ports.PhotoStorage)
 ```
+
+Frontend: `frontend/src/features/<nombre>/{pages,components,lib,index.ts}` por
+funcionalidad, con `src/lib/` para lo transversal (api, sesión, dinero, fechas,
+realtime) y `src/app/` para el shell y los contextos.
 
 Reglas transversales:
 
@@ -46,6 +51,22 @@ Reglas transversales:
   `409`, no en dos filas.
 - **Fotos fuera de la DB**: hoy un volumen local detrás de `ports.PhotoStorage`
   (misma interfaz que usaría S3/MinIO; ver `docs/ops/minio.md`).
+
+## Agregar una funcionalidad (resumen)
+
+1. Migración SQL idempotente en `backend/migrations/`.
+2. Interfaces en `internal/ports/ports_<funcionalidad>.go`.
+3. Caso de uso en `internal/<funcionalidad>/` con sus tests.
+4. Adaptador de persistencia en `internal/<funcionalidad>/postgres/`.
+5. Handler en `internal/<funcionalidad>/httpapi/`.
+6. Rutas en `internal/adapters/http/routes_<funcionalidad>.go` (+ una línea en
+   `routes.go` y el handler en `Deps`).
+7. Cableado en `backend/cmd/api/wire_<funcionalidad>.go` (+ su lugar en
+   `buildRouter`).
+8. Tests de integración (`*_it_test.go`) y, si hay UI, la carpeta en
+   `frontend/src/features/<funcionalidad>/`.
+9. Docs: [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md), este README y
+   `docs/DECISIONES.md`.
 
 ## Stack
 
@@ -150,15 +171,20 @@ Compose arma `DATABASE_URL` solo con las piezas `POSTGRES_*`; las variables de
 # Backend: unitarios + detector de carreras (no necesitan DB)
 make test                       # cd backend && go test -race -count=1 ./...
 
-# Backend: integración real contra Postgres (anti-solape, POS, clientes)
-# La base tiene que existir con las migraciones aplicadas (01..09).
+# Backend: integración real contra Postgres (anti-solape, POS, clientes, señas)
+# La base tiene que existir con las migraciones aplicadas.
 docker compose up -d postgres
 export DATABASE_URL='postgres://salon:salon@localhost:5432/salon?sslmode=disable'
-make test-it                    # SALON_IT=1 go test -count=1 ./internal/adapters/postgres/
+make test-it                    # SALON_IT=1 contra el postgres/ de cada funcionalidad
 
 # Frontend: typecheck, tests y build
 cd frontend && npm ci && npx tsc --noEmit && npm test && npm run build
 ```
+
+Los tests unitarios viven al lado del paquete que prueban
+(`internal/<funcionalidad>/*_test.go`, fakes compartidos en `internal/testutil`)
+y los de integración en el `postgres/` de cada funcionalidad (`*_it_test.go`,
+solo con `SALON_IT=1`).
 
 Los tests del adaptador de imágenes necesitan `cwebp` instalado (paquete `webp`
 en Debian/Ubuntu). El CI instala las dependencias y aplica las migraciones

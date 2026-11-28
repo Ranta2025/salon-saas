@@ -127,6 +127,6 @@ env AWS_ACCESS_KEY_ID=salon AWS_SECRET_ACCESS_KEY=salon-secret-123 aws --endpoin
 2. Variables nuevas para endpoint, credenciales y bucket (por ejemplo
    `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`), documentadas
    en `docs/ops/environment.md` y pasadas por `docker-compose.yml`.
-3. Cambiar una línea en `backend/cmd/api/main.go`: `storage.Local` →
+3. Cambiar una línea en `backend/cmd/api/wire_media.go` (`photoStorage`): `storage.Local` →
    `storage.S3` (el composition root es el único que elige adaptador).
 4. Tests del adaptador con MinIO levantado por el perfil `files`.

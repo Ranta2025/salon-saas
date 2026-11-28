@@ -3298,7 +3298,7 @@ tramo aparte y está en el apartado siguiente («F10: verificación en dos pasos
 ### Cómo se registra (D2)
 
 Un **middleware** `Audit("<acción>")` cuelga de las rutas de la tabla de abajo en
-`routes.go`. Corre la ruta (`c.Next()`) y **después**, solo si respondió **2xx**, escribe
+`routes.go` (ahora: `internal/adapters/http/routes*.go`). Corre la ruta (`c.Next()`) y **después**, solo si respondió **2xx**, escribe
 el evento. No toca ningún servicio ni handler existente y **no cambia nada de la
 respuesta**: ni el status, ni el cuerpo, ni las cabeceras (solo observa el status que
 la ruta ya escribió). Un `4xx`/`5xx` no deja ningún evento.
