@@ -381,7 +381,8 @@ func (s *Seed) pastStart(day time.Time, pro staffRef, minutes int) time.Time {
 }
 
 // stepSales crea la venta de cada turno atendido (con productos a veces), sus
-// líneas, el movimiento de stock y los cierres de caja de los últimos días.
+// líneas, el movimiento de stock, las ventas de mostrador de hoy y los cierres
+// de caja de los últimos días.
 func (s *Seed) stepSales(ctx context.Context) error {
 	productNames := make([]string, 0, len(demoProducts))
 	for _, p := range demoProducts {
@@ -393,66 +394,148 @@ func (s *Seed) stepSales(ctx context.Context) error {
 			continue
 		}
 		seq++
-		saleID := seedID("sl", seq)
-		method := s.saleMethod()
 		item := s.services[b.ServiceName]
-		total := b.PriceCents
-		var productName string
-		var productQty, productCents int
+		in := saleInsert{
+			version:    seq,
+			id:         seedID("sl", seq),
+			clientID:   b.ClientID,
+			client:     b.ClientName,
+			proUserID:  b.ProUserID,
+			serviceID:  b.ServiceID,
+			price:      b.PriceCents,
+			commission: item.CommissionPct,
+			method:     s.saleMethod(),
+			at:         b.StartsAt.Add(time.Duration(item.Minutes) * time.Minute).Add(time.Duration(s.r.Between(2, 9)) * time.Minute),
+		}
 		if s.r.Chance(28) {
-			productName = pick(s.r, productNames)
-			productQty = 1
+			name := pick(s.r, productNames)
 			for _, p := range demoProducts {
-				if p.Name == productName {
-					productCents = p.PriceCents
+				if p.Name == name {
+					in.productID = s.products[name]
+					in.productQty = 1
+					in.productUnit = p.PriceCents
 				}
 			}
-			total += productCents * productQty
 		}
-		at := b.StartsAt.Add(time.Duration(item.Minutes) * time.Minute).Add(time.Duration(s.r.Between(2, 9)) * time.Minute)
-		if _, err := s.db.exec(ctx,
-			`INSERT INTO sales(id,salon_id,professional_id,client_name,total_cents,method,client_op_id,
-			   created_at,client_id,products_cents)
-			 VALUES($1,$2,$3,$4,$5,$6,'',$7,$8,$9) ON CONFLICT (id) DO NOTHING`,
-			saleID, s.salonID, b.ProUserID, b.ClientName, total, method, at, b.ClientID, productCents*productQty,
-		); err != nil {
-			return err
-		}
-		version := seq
-		if _, err := s.db.exec(ctx,
-			`INSERT INTO sale_items(id,sale_id,service_id,qty,unit_price_cents,commission_pct)
-			 VALUES($1,$2,$3,1,$4,$5) ON CONFLICT (id) DO NOTHING`,
-			seedID("si", version), saleID, b.ServiceID, b.PriceCents, item.CommissionPct,
-		); err != nil {
-			return err
-		}
-		if productName == "" {
-			continue
-		}
-		productID := s.products[productName]
-		if productID == "" {
-			continue
-		}
-		if _, err := s.db.exec(ctx,
-			`INSERT INTO sale_products(id,sale_id,product_id,qty,unit_price_cents)
-			 VALUES($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING`,
-			seedID("sp", version), saleID, productID, productQty, productCents,
-		); err != nil {
-			return err
-		}
-		if _, err := s.db.exec(ctx,
-			`INSERT INTO stock_movements(id,salon_id,product_id,delta,reason,note,sale_id,created_by,created_at)
-			 VALUES($1,$2,$3,$4,'sale','',$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
-			seedID("sm", version), s.salonID, productID, -productQty, saleID, b.ProUserID, at,
-		); err != nil {
-			return err
-		}
-		if _, err := s.db.exec(ctx,
-			`UPDATE products SET stock = stock - $2 WHERE id=$1 AND stock >= $2`, productID, productQty); err != nil {
+		if err := s.insertSale(ctx, in); err != nil {
 			return err
 		}
 	}
+	if err := s.stepCounterSales(ctx); err != nil {
+		return err
+	}
 	return s.stepCashCloses(ctx)
+}
+
+// saleInsert es una venta con su línea de servicio y, si viene, la del producto
+// (con su movimiento de stock). La comparten el historial y el mostrador: misma
+// forma de columnas e ids deterministas.
+type saleInsert struct {
+	version    int
+	id         string
+	clientID   string
+	client     string
+	proUserID  string
+	serviceID  string
+	price      int
+	commission int
+	method     string
+	at         time.Time
+	productID  string
+	productQty int
+	// productUnit es el precio unitario del producto (centavos).
+	productUnit int
+}
+
+// insertSale escribe la venta, su línea de servicio y, si hay producto, la
+// línea de producto con el movimiento de stock y el descuento.
+func (s *Seed) insertSale(ctx context.Context, in saleInsert) error {
+	productsCents := in.productUnit * in.productQty
+	if _, err := s.db.exec(ctx,
+		`INSERT INTO sales(id,salon_id,professional_id,client_name,total_cents,method,client_op_id,
+		   created_at,client_id,products_cents)
+		 VALUES($1,$2,$3,$4,$5,$6,'',$7,$8,$9) ON CONFLICT (id) DO NOTHING`,
+		in.id, s.salonID, in.proUserID, in.client, in.price+productsCents, in.method, in.at, in.clientID, productsCents,
+	); err != nil {
+		return err
+	}
+	if _, err := s.db.exec(ctx,
+		`INSERT INTO sale_items(id,sale_id,service_id,qty,unit_price_cents,commission_pct)
+		 VALUES($1,$2,$3,1,$4,$5) ON CONFLICT (id) DO NOTHING`,
+		seedID("si", in.version), in.id, in.serviceID, in.price, in.commission,
+	); err != nil {
+		return err
+	}
+	if in.productID == "" || in.productQty <= 0 {
+		return nil
+	}
+	if _, err := s.db.exec(ctx,
+		`INSERT INTO sale_products(id,sale_id,product_id,qty,unit_price_cents)
+		 VALUES($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING`,
+		seedID("sp", in.version), in.id, in.productID, in.productQty, in.productUnit,
+	); err != nil {
+		return err
+	}
+	if _, err := s.db.exec(ctx,
+		`INSERT INTO stock_movements(id,salon_id,product_id,delta,reason,note,sale_id,created_by,created_at)
+		 VALUES($1,$2,$3,$4,'sale','',$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
+		seedID("sm", in.version), s.salonID, in.productID, -in.productQty, in.id, in.proUserID, in.at,
+	); err != nil {
+		return err
+	}
+	_, err := s.db.exec(ctx,
+		`UPDATE products SET stock = stock - $2 WHERE id=$1 AND stock >= $2`, in.productID, in.productQty)
+	return err
+}
+
+// stepCounterSales crea las ventas de mostrador de hoy (sin turno, con su línea
+// de servicio): el panel de inicio arma con ellas el ranking de servicios del
+// día y los ingresos, que si no quedan en cero cuando el historial terminó
+// antes de la medianoche UTC (el panel cuenta el día UTC).
+func (s *Seed) stepCounterSales(ctx context.Context) error {
+	// La ventana es el día UTC en curso y nunca el futuro: si el seed corre
+	// recién pasada la medianoche UTC no hay margen y quedan a primera hora.
+	now := s.clk.now.UTC()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	products := make([]demoProduct, 0, len(demoProducts))
+	products = append(products, demoProducts...)
+	for n := 0; n < 3; n++ {
+		pro := s.staff[n%len(s.staff)]
+		svc := s.serviceOf(pro, pick(s.r, pro.Services))
+		if svc.Minutes == 0 {
+			continue
+		}
+		client := s.pickClient()
+		at := now.Add(-time.Duration(20+30*n) * time.Minute)
+		if floor := start.Add(time.Duration(2+3*n) * time.Minute); at.Before(floor) {
+			at = floor
+		}
+		if at.After(now) {
+			at = now.Add(-time.Duration(n) * time.Second)
+		}
+		in := saleInsert{
+			version:    1000 + n,
+			id:         seedID("slc", n),
+			clientID:   client.ID,
+			client:     client.Name,
+			proUserID:  pro.UserID,
+			serviceID:  svc.ID,
+			price:      svc.PriceCents,
+			commission: svc.CommissionPct,
+			method:     s.saleMethod(),
+			at:         at,
+		}
+		if n == 1 {
+			p := pick(s.r, products)
+			in.productID = s.products[p.Name]
+			in.productQty = 1
+			in.productUnit = p.PriceCents
+		}
+		if err := s.insertSale(ctx, in); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // saleMethod reparte los medios de pago de forma realista.

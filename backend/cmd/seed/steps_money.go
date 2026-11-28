@@ -60,6 +60,17 @@ func (s *Seed) stepPayroll(ctx context.Context) error {
 		"/salons/"+s.salonID+"/payroll/runs/"+closed.ID+"/pay", map[string]any{}, nil); err != nil {
 		return err
 	}
+	// La API estampa paid_at=now al pagar. Para la demo la movemos al día 3 del
+	// mes en curso (se paga el mes vencido): el panel de ganancias cuenta la
+	// nómina en su día de pago, y así no cae toda junta en el día de la corrida.
+	paidAt := time.Date(s.clk.now.Year(), s.clk.now.Month(), 3, 11, 0, 0, 0, s.clk.loc)
+	if !paidAt.Before(s.clk.now) {
+		paidAt = s.clk.now.AddDate(0, -1, 0)
+	}
+	if _, err := s.db.exec(ctx,
+		`UPDATE payroll_runs SET paid_at=$2 WHERE id=$1 AND status='paid'`, closed.ID, paidAt); err != nil {
+		return err
+	}
 	// 2) Período abierto del mes en curso: la liquidación existe (status open)
 	// con las líneas del cálculo REAL de la API (la vista previa) y un ajuste.
 	// Crear una liquidación por API para un período sin terminar es 400, así que
@@ -111,7 +122,9 @@ func (s *Seed) createOpenPayrollRun(ctx context.Context) error {
 	adjusted := false
 	for i, line := range preview.Lines {
 		adjustment, note := 0, ""
-		if !adjusted && line.TotalCents > 0 {
+		// El ajuste va en la primera línea CON ventas: el adelanto lo pide una
+		// profesional, no quien cobra un fijo sin atender.
+		if !adjusted && line.SalesCount > 0 {
 			adjustment, note = 800000, "Adelanto pedido por la profesional"
 			adjusted = true
 		}

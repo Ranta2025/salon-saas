@@ -129,6 +129,10 @@ La landing pública queda en `http://localhost:8081/salon/aurelia` y el panel en
 y el seed nunca corre en producción (exige `SEED_DEMO=true` y una base local).
 Para volver a empezar de cero: `docker compose down -v` y `make demo` otra vez.
 
+Si el puerto `8080` ya está tomado por otro proyecto, cambiá `API_PORT` (y
+`VITE_API_URL` con el mismo puerto) en `.env` antes de `make demo`: el servicio
+`seed` habla con la API por la red del compose y no se entera del cambio.
+
 MinIO es **opcional** y no lo usa la app todavía (las fotos van al volumen
 local). Se levanta con:
 
@@ -185,6 +189,7 @@ Compose arma `DATABASE_URL` solo con las piezas `POSTGRES_*`; las variables de
 | `MINIO_PORT`, `MINIO_CONSOLE_PORT` | `9000`, `9001` | Compose (`files`) | API S3 y consola web |
 | `SALON_IT` | sin definir | tests | `1` habilita los tests de integración |
 | `SEED_DEMO`, `SEED_API_URL`, `SEED_ASSETS_DIR`, `SEED_FORCE`, `SEED_RNG_SEED`, `SEED_TIMEOUT` | `true` en Compose | seed de demo | habilitar el seed, a dónde hablarle, dónde están las fotos, pisar el control de host, semilla del dataset y corte de la corrida (ver `docs/ops/demo-seed.md`) |
+| `APP_URL` | `http://localhost:8081` (Compose) | api, seed | base del frontend: el enlace de la invitación de equipo y el de la landing que imprime el resumen del seed |
 
 ## Tests
 

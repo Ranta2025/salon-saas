@@ -73,11 +73,11 @@ servicios, tres paquetes, fidelidad, seña online y reseñas.
 | servicios / paquetes / productos | 12 / 3 / 12 |
 | puestos y equipamiento | 3 tipos, 6 unidades |
 | clientas / con foto | 40 / 2 |
-| turnos | ~173 (≈148 de los últimos 60 días + 25 de hoy y los próximos 14) |
-| ventas (con productos a veces) | ~132 |
+| turnos | ~170 (≈145 de los últimos 60 días + 25 de hoy y los próximos 14) |
+| ventas (con productos a veces) | ~135 (incluye 3 ventas de mostrador de hoy, sin turno) |
 | cierres de caja | 12 (los últimos 14 días hábiles; hoy queda abierto) |
 | gastos (60 días) | 25 |
-| liquidaciones | 2 (una pagada del mes pasado y un período abierto con ajuste) |
+| liquidaciones | 2 (una pagada del mes pasado —con fecha de pago el día 3— y un período abierto con ajuste) |
 | paquetes vendidos / movimientos | 3 / 4 |
 | vales de fidelidad | 3 |
 | lista de espera | 5 |
@@ -89,6 +89,12 @@ Las fechas son **relativas a hoy** en `America/Argentina/Buenos_Aires`: el
 historial siempre queda en los últimos 60 días y la agenda en los próximos 14.
 El dataset es determinista (`SEED_RNG_SEED`, por defecto `20260101`): la misma
 semilla da los mismos turnos, ventas y comentarios.
+
+Los importes están calibrados con ese volumen: los sueldos fijos, el alquiler y
+los insumos dejan una ganancia chica pero positiva en el mes (y siempre positiva
+en el día y en la semana), así el panel de ganancias no muestra una pérdida que
+no se explica. La liquidación pagada se fecha el día 3 del mes en curso para que
+el panel la cuente en su mes y no entera en el día de la corrida.
 
 ## Cómo funciona
 

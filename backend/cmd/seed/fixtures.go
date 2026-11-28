@@ -19,6 +19,10 @@ type demoUser struct {
 	PayModel payModel
 }
 
+// payModel es cómo cobra un miembro: un fijo por período y, si corresponde,
+// comisión por sus ventas. Los fijos están calibrados con el volumen del seed
+// (≈70 turnos por mes): la nómina queda cerca de la mitad de los ingresos y el
+// período da una ganancia positiva y creíble.
 type payModel struct {
 	FixedCents   int
 	FixedPeriod  string
@@ -36,17 +40,17 @@ var demoUsers = []demoUser{
 	},
 	{
 		Email: "admin@salon.local", Name: "Malena Ortiz", Role: "admin", Attends: false,
-		PayModel: payModel{FixedCents: 85000000, FixedPeriod: "month", CommissionOn: false},
+		PayModel: payModel{FixedCents: 18000000, FixedPeriod: "month", CommissionOn: false},
 	},
 	{
 		Email: "recepcion@salon.local", Name: "Bruno Salas", Role: "reception", Attends: false,
-		PayModel: payModel{FixedCents: 62000000, FixedPeriod: "month", CommissionOn: false},
+		PayModel: payModel{FixedCents: 12000000, FixedPeriod: "month", CommissionOn: false},
 	},
 	{
 		Email: "camila@salon.local", Name: "Camila Ferreyra", Role: "professional", Attends: true,
 		Trade:    "Colorista",
 		Services: []string{"Color completo", "Retoque de raíz", "Brushing", "Peinado de fiesta"},
-		PayModel: payModel{FixedCents: 18000000, FixedPeriod: "month", CommissionOn: true},
+		PayModel: payModel{FixedCents: 3000000, FixedPeriod: "month", CommissionOn: true},
 	},
 	{
 		Email: "lucia@salon.local", Name: "Lucía Benítez", Role: "professional", Attends: true,
@@ -58,7 +62,7 @@ var demoUsers = []demoUser{
 		Email: "marcos@salon.local", Name: "Marcos Duarte", Role: "professional", Attends: true,
 		Trade:    "Barbero",
 		Services: []string{"Corte de pelo", "Corte y barba", "Perfilado de barba"},
-		PayModel: payModel{FixedCents: 12000000, FixedPeriod: "month", CommissionOn: true},
+		PayModel: payModel{FixedCents: 2000000, FixedPeriod: "month", CommissionOn: true},
 	},
 	{
 		Email: "sofia@salon.local", Name: "Sofía Aguirre", Role: "professional", Attends: true,
@@ -222,16 +226,16 @@ type demoExpense struct {
 
 // demoExpenses son los gastos del período: alquiler, insumos, servicios y varios.
 var demoExpenses = []demoExpense{
-	{Category: "rent", AmountCents: 48000000, Description: "Alquiler del local", DaysAgo: 52},
-	{Category: "rent", AmountCents: 48000000, Description: "Alquiler del local", DaysAgo: 22},
+	{Category: "rent", AmountCents: 34000000, Description: "Alquiler del local", DaysAgo: 52},
+	{Category: "rent", AmountCents: 34000000, Description: "Alquiler del local", DaysAgo: 22},
 	{Category: "supplies", AmountCents: 7800000, Description: "Coloración y oxidantes", DaysAgo: 57},
 	{Category: "supplies", AmountCents: 4200000, Description: "Shampoo y acondicionador de salón (bidón)", DaysAgo: 49},
 	{Category: "supplies", AmountCents: 3150000, Description: "Esmaltes semipermanentes", DaysAgo: 44},
 	{Category: "supplies", AmountCents: 2600000, Description: "Guantes, algodón y descartables", DaysAgo: 38},
-	{Category: "utilities", AmountCents: 5400000, Description: "Luz", DaysAgo: 41},
-	{Category: "utilities", AmountCents: 2100000, Description: "Agua", DaysAgo: 41},
-	{Category: "utilities", AmountCents: 3800000, Description: "Internet y teléfono", DaysAgo: 33},
-	{Category: "utilities", AmountCents: 5600000, Description: "Luz", DaysAgo: 11},
+	{Category: "utilities", AmountCents: 4200000, Description: "Luz", DaysAgo: 41},
+	{Category: "utilities", AmountCents: 1800000, Description: "Agua", DaysAgo: 41},
+	{Category: "utilities", AmountCents: 3200000, Description: "Internet y teléfono", DaysAgo: 33},
+	{Category: "utilities", AmountCents: 4400000, Description: "Luz", DaysAgo: 11},
 	{Category: "supplies", AmountCents: 6700000, Description: "Reposición de color", DaysAgo: 30},
 	{Category: "supplies", AmountCents: 2900000, Description: "Toallas nuevas", DaysAgo: 25},
 	{Category: "other", AmountCents: 1900000, Description: "Publicidad en redes", DaysAgo: 47},
@@ -239,12 +243,12 @@ var demoExpenses = []demoExpense{
 	{Category: "supplies", AmountCents: 5100000, Description: "Productos de estética", DaysAgo: 19},
 	{Category: "other", AmountCents: 1500000, Description: "Cartelería y folletos", DaysAgo: 17},
 	{Category: "supplies", AmountCents: 3300000, Description: "Limas, buffers y repsuestos de torno", DaysAgo: 14},
-	{Category: "utilities", AmountCents: 2450000, Description: "Agua", DaysAgo: 11},
+	{Category: "utilities", AmountCents: 2100000, Description: "Agua", DaysAgo: 11},
 	{Category: "other", AmountCents: 2100000, Description: "Café y agua para clientas", DaysAgo: 9},
 	{Category: "supplies", AmountCents: 4600000, Description: "Tinturas y decolorante", DaysAgo: 7},
 	{Category: "other", AmountCents: 1200000, Description: "Regalos de fin de año para el equipo", DaysAgo: 5},
 	{Category: "supplies", AmountCents: 2700000, Description: "Productos de barbería", DaysAgo: 4},
-	{Category: "utilities", AmountCents: 3900000, Description: "Internet y teléfono", DaysAgo: 3},
+	{Category: "utilities", AmountCents: 3300000, Description: "Internet y teléfono", DaysAgo: 3},
 	{Category: "supplies", AmountCents: 1850000, Description: "Cera y bandas de depilación", DaysAgo: 2},
 	{Category: "other", AmountCents: 2500000, Description: "Mantenimiento del aire acondicionado", DaysAgo: 1},
 }
