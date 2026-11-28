@@ -1852,6 +1852,21 @@
   background: var(--surface);
 }
 
+/* Native file pickers keep the OS drawing: in dark it is a grey box that does
+   not belong to the palette. Only the dark theme is restyled, so the light one
+   keeps the exact pixels it had before the theme existed. */
+[data-theme='dark'] input[type='file']::file-selector-button {
+  margin-inline-end: 0.6rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--gold-tint);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .uploader__preview {
   display: flex;
   flex-wrap: wrap;
