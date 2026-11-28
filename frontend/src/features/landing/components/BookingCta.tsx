@@ -100,7 +100,7 @@ function PaymentStep({ payment }: { payment: BookingPayment }) {
       </p>
       {target === null ? (
         <p className="booking__note">
-          El salón no nos dio un enlace de pago válido. Escríbenos y lo resolvemos.
+          El salón no nos dio un enlace de pago válido. Escribinos y lo resolvemos.
         </p>
       ) : target.kind === 'path' ? (
         <button type="button" className="btn btn--gold" onClick={() => navigate(target.path)}>
@@ -212,7 +212,7 @@ export function BookingCta({ slug, services, preselected, model }: BookingCtaPro
           setSlotsError(
             err instanceof Error && err.message !== ''
               ? err.message
-              : 'No pudimos consultar los horarios. Revisa tu conexión e intenta de nuevo.',
+              : 'No pudimos consultar los horarios. Revisá tu conexión e intentá de nuevo.',
           )
         }
       })
@@ -264,17 +264,17 @@ export function BookingCta({ slug, services, preselected, model }: BookingCtaPro
     setPhoneError(null)
     setEmailError(null)
     if (service === null) {
-      setFailure({ kind: 'validation', message: 'Elige el servicio que quieres reservar.' })
+      setFailure({ kind: 'validation', message: 'Elegí el servicio que querés reservar.' })
       return
     }
     if (selectedGroup === null) {
-      setFailure({ kind: 'validation', message: 'Elige uno de los horarios disponibles.' })
+      setFailure({ kind: 'validation', message: 'Elegí uno de los horarios disponibles.' })
       return
     }
     if (name.trim().length < 2) {
       setFailure({
         kind: 'validation',
-        message: 'Escribe tu nombre para que podamos ubicarte en la agenda.',
+        message: 'Escribí tu nombre para que podamos ubicarte en la agenda.',
       })
       return
     }
@@ -368,7 +368,7 @@ export function BookingCta({ slug, services, preselected, model }: BookingCtaPro
           <p className="eyebrow">Reserva</p>
           <h2 id="booking-title">Aparta tu cita en línea</h2>
           <p className="lede">
-            Elige servicio, día y horario. La confirmación es inmediata y la especialista queda
+            Elegí servicio, día y horario. La confirmación es inmediata y la especialista queda
             asignada según la disponibilidad del salón.
           </p>
           <ul className="booking__contact">
@@ -469,20 +469,20 @@ export function BookingCta({ slug, services, preselected, model }: BookingCtaPro
               {confirmation.email !== '' ? (
                 <p className="booking__note">
                   Te enviamos la confirmación a <strong>{confirmation.email}</strong>. También te
-                  escribimos un recordatorio el día antes; si no llega, revisa el correo no
+                  escribimos un recordatorio el día antes; si no llega, revisá el correo no
                   deseado.
                 </p>
               ) : (
                 <p className="booking__note">
                   Reservaste sin correo, así que no podemos enviarte recordatorios. La próxima vez
-                  agrega tu correo y te avisamos antes de la cita.
+                  agregá tu correo y te avisamos antes de la cita.
                 </p>
               )}
               <p className="booking__note">
                 {model.address !== null ? `Te esperamos en ${model.address}. ` : ''}
                 {whatsappHref !== null
-                  ? 'Si necesitas mover la cita, escríbenos por WhatsApp con el folio de tu reserva.'
-                  : 'Guarda el folio de tu reserva por si necesitas mover la cita.'}
+                  ? 'Si necesitás mover la cita, escribinos por WhatsApp con el folio de tu reserva.'
+                  : 'Guardá el folio de tu reserva por si necesitás mover la cita.'}
               </p>
               <div className="booking__actions">
                 {whatsappHref !== null ? (
@@ -554,7 +554,7 @@ export function BookingCta({ slug, services, preselected, model }: BookingCtaPro
                   aria-busy={slotsLoading}
                 >
                   {date === '' ? (
-                    <p className="booking__slots-empty">Elige una fecha para ver los horarios libres.</p>
+                    <p className="booking__slots-empty">Elegí una fecha para ver los horarios libres.</p>
                   ) : null}
                   {date !== '' ? (
                     <p className="booking__slots-zone">
@@ -579,8 +579,8 @@ export function BookingCta({ slug, services, preselected, model }: BookingCtaPro
                   {!slotsLoading && !slotsError && date !== '' && groups.length === 0 ? (
                     <>
                       <p className="booking__slots-empty">
-                        No quedan horarios libres ese día. Prueba con otra fecha
-                        {whatsappBase !== null ? ' o escríbenos por WhatsApp' : ''}.
+                        No quedan horarios libres ese día. Probá con otra fecha
+                        {whatsappBase !== null ? ' o escribinos por WhatsApp' : ''}.
                       </p>
                       {/*
                        * F7 (D9a): only when the day has no slots at all. The form
@@ -714,7 +714,7 @@ export function BookingCta({ slug, services, preselected, model }: BookingCtaPro
               {whatsappHref !== null ? (
                 <p className="booking__fineprint">
                   <a href={whatsappHref} target="_blank" rel="noreferrer">
-                    ¿Prefieres WhatsApp? También puedes confirmar por mensaje
+                    ¿Preferís WhatsApp? También podés confirmar por mensaje
                   </a>
                 </p>
               ) : null}

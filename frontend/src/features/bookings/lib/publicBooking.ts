@@ -70,12 +70,12 @@ export type BookingFailureKind = 'slot_taken' | 'rate_limited' | 'validation' | 
 export type BookingFailure = { kind: BookingFailureKind; message: string }
 
 export const SLOT_TAKEN_MESSAGE =
-  'Ese horario se acaba de ocupar. Actualizamos los horarios disponibles: elige otro y confirmamos de nuevo.'
+  'Ese horario se acaba de ocupar. Actualizamos los horarios disponibles: elegí otro y confirmamos de nuevo.'
 
 export const RATE_LIMIT_MESSAGE =
-  'Recibimos demasiadas solicitudes seguidas. Espera un momento y vuelve a intentar.'
+  'Recibimos demasiadas solicitudes seguidas. Esperá un momento y volvé a intentar.'
 
-const GENERIC_FAILURE_MESSAGE = 'No pudimos completar la reserva. Intenta de nuevo.'
+const GENERIC_FAILURE_MESSAGE = 'No pudimos completar la reserva. Intentá de nuevo.'
 
 /** Zones named in Spanish; any other IANA id is shown as it comes. */
 const TIME_ZONE_LABELS: Record<string, string> = {

@@ -35,9 +35,9 @@ export function ServicesSection({ services, whatsapp, onSelect }: ServicesSectio
 
         {whatsapp !== null ? (
           <p className="services__note">
-            ¿Buscas un servicio que no aparece?{' '}
+            ¿Buscás un servicio que no aparece?{' '}
             <a href={whatsapp} target="_blank" rel="noreferrer">
-              Escríbenos por WhatsApp
+              Escribinos por WhatsApp
             </a>{' '}
             y te decimos si lo podemos hacer.
           </p>
