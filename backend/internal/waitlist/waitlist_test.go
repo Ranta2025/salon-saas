@@ -1,4 +1,4 @@
-package app
+package waitlist_test
 
 import (
 	"context"
