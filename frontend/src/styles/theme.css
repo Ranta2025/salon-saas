@@ -89,6 +89,7 @@
   --ok: #2b6847;
   --ok-text: #1f5138;
   --ok-bg: rgba(43, 104, 71, 0.12);
+  --ok-bg-mid: rgba(43, 104, 71, 0.1);
   --ok-bg-strong: rgba(43, 104, 71, 0.16);
   --ok-bg-soft: rgba(43, 104, 71, 0.08);
   --ok-border: rgba(43, 104, 71, 0.35);
@@ -252,6 +253,7 @@
   --ok: #4f9d70;
   --ok-text: #a7e3c0;
   --ok-bg: #1e3328;
+  --ok-bg-mid: #1b2d23;
   --ok-bg-strong: #24402f;
   --ok-bg-soft: #1c2e24;
   --ok-border: rgba(79, 157, 112, 0.55);

@@ -6,8 +6,8 @@ import {
 } from '../lib/profit'
 import { formatCents } from '@/lib/money'
 
-/** Same red as `.field__error` / `.notice--error`: no stylesheet change here. */
-const NEGATIVE_COLOR = '#8c1d33'
+/** Same token as `.field__error` / `.notice--error`: readable in both themes. */
+const NEGATIVE_COLOR = 'var(--error-text)'
 
 /** One bar per local day, drawn with plain CSS; no chart dependency (contract F3b). */
 export function ProfitDayBars({ bars }: { bars: readonly ProfitDayBar[] }) {

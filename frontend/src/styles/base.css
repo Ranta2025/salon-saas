@@ -25,7 +25,7 @@ html {
 
 body {
   min-height: 100vh;
-  background: var(--cream);
+  background: var(--page-bg);
   color: var(--ink);
   font-family: var(--font-sans);
   font-size: var(--step-0);
@@ -110,8 +110,8 @@ ol {
 }
 
 ::selection {
-  background: var(--champagne);
-  color: var(--ink);
+  background: var(--selection-bg);
+  color: var(--selection-text);
 }
 
 /* ---------- layout helpers ---------- */
@@ -154,7 +154,7 @@ ol {
   top: var(--space-4);
   z-index: 100;
   padding: 0.65rem 1rem;
-  background: var(--ink);
+  background: var(--toast-bg);
   color: var(--cream);
   border-radius: var(--radius-sm);
   transform: translateY(-200%);
@@ -241,21 +241,21 @@ ol {
 
 .btn--gold {
   background: var(--gold);
-  color: var(--ink);
+  color: var(--on-gold);
   box-shadow: 0 6px 18px rgba(201, 162, 39, 0.24);
 }
 
 .btn--gold:hover {
-  background: #d8b338;
+  background: var(--gold-hover);
 }
 
 .btn--wine {
-  background: var(--wine);
+  background: var(--accent-solid);
   color: var(--cream);
 }
 
 .btn--wine:hover {
-  background: var(--plum);
+  background: var(--accent-solid-hover);
 }
 
 .btn--ghost {
@@ -266,7 +266,7 @@ ol {
 /* The ghost button is used on light panels (security, reviews, activity): its
    hover needs a tint that is visible there. The dark hero overrides it below. */
 .btn--ghost:hover {
-  background: rgba(30, 20, 24, 0.07);
+  background: var(--ghost-hover);
 }
 
 .btn--quiet {
@@ -336,7 +336,7 @@ ol {
 
 .field__error {
   font-size: var(--step--1);
-  color: #8c1d33;
+  color: var(--error-text);
   font-weight: 600;
 }
 
@@ -396,15 +396,15 @@ input[type='number'] {
 }
 
 .notice--error {
-  border-color: rgba(140, 29, 51, 0.4);
-  background: rgba(140, 29, 51, 0.08);
-  color: #6d1526;
+  border-color: var(--bad-border);
+  background: var(--bad-bg-soft);
+  color: var(--bad-text);
 }
 
 .notice--success {
-  border-color: rgba(43, 104, 71, 0.35);
-  background: rgba(43, 104, 71, 0.08);
-  color: #1f5138;
+  border-color: var(--ok-border);
+  background: var(--ok-bg-soft);
+  color: var(--ok-text);
 }
 
 .notice--info {

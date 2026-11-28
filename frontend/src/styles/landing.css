@@ -8,7 +8,7 @@
   position: sticky;
   top: 0;
   z-index: 40;
-  background: rgba(250, 245, 239, 0.92);
+  background: var(--header-bg);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
 }
@@ -133,7 +133,7 @@
 
 .mobile-nav {
   border-top: 1px solid var(--line);
-  background: var(--cream);
+  background: var(--page-bg);
   padding-block: var(--space-3);
   /* A phone in landscape (500 px high) scrolls the open menu instead of cutting
      the last entries («Acceso del equipo»). */
@@ -342,7 +342,7 @@
 /* ---------- services ---------- */
 
 .services {
-  background: var(--cream);
+  background: var(--page-bg);
 }
 
 .services .section-head {
@@ -380,7 +380,7 @@
 }
 
 .service-card:hover {
-  background: #fff;
+  background: var(--surface-hover);
 }
 
 .service-card:hover::before {
@@ -515,7 +515,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  border: 1px solid rgba(232, 217, 181, 0.18);
+  border: 1px solid var(--line-dark-soft);
   border-radius: inherit;
   pointer-events: none;
 }
@@ -530,7 +530,7 @@
   display: grid;
   gap: 0.1rem;
   padding: 2.6rem 0.85rem 0.75rem;
-  background: linear-gradient(180deg, transparent, rgba(30, 20, 24, 0.88));
+  background: linear-gradient(180deg, transparent, var(--scrim-strong));
   color: var(--cream);
   opacity: 0;
   transform: translateY(6px);
@@ -598,7 +598,7 @@
 /* ---------- why us ---------- */
 
 .why {
-  background: var(--cream);
+  background: var(--page-bg);
 }
 
 .why__grid {
@@ -698,7 +698,7 @@
 /* ---------- testimonials ---------- */
 
 .testimonials {
-  background: linear-gradient(180deg, var(--cream) 0%, rgba(232, 217, 181, 0.5) 100%);
+  background: linear-gradient(180deg, var(--testimonial-from) 0%, var(--testimonial-to) 100%);
 }
 
 .testimonials .section-head {
@@ -766,7 +766,7 @@
 
 .booking {
   position: relative;
-  background: radial-gradient(circle at 15% 20%, var(--wine) 0%, var(--plum) 55%, var(--plum-deep) 100%);
+  background: radial-gradient(circle at 15% 20%, var(--brand-wine) 0%, var(--plum) 55%, var(--plum-deep) 100%);
 }
 
 .booking__grid {
@@ -816,7 +816,7 @@
   display: grid;
   gap: var(--space-4);
   padding: clamp(1.35rem, 3.5vw, 2.25rem);
-  background: var(--cream);
+  background: var(--surface-form);
   color: var(--ink);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
@@ -867,7 +867,7 @@
 /* ---------- footer ---------- */
 
 .site-footer {
-  background: var(--ink);
+  background: var(--footer-bg);
   color: var(--cream-soft);
   padding-block: clamp(2.5rem, 5vw, 4rem) var(--space-5);
 }
@@ -953,7 +953,7 @@
 
 .attribution a {
   color: var(--cream-soft);
-  border-bottom: 1px dotted rgba(232, 217, 181, 0.4);
+  border-bottom: 1px dotted var(--line-dark-strong);
   word-break: break-word;
 }
 
@@ -964,7 +964,7 @@
   gap: 0.5rem 1.5rem;
   margin-top: clamp(2rem, 4vw, 3rem);
   padding-top: var(--space-4);
-  border-top: 1px solid rgba(232, 217, 181, 0.2);
+  border-top: 1px solid var(--line-dark-faint);
   font-size: 0.72rem;
   color: var(--cream-muted);
 }
@@ -1094,7 +1094,7 @@
 
 .slot-btn[aria-pressed='true'] {
   border-color: var(--wine);
-  background: var(--wine);
+  background: var(--accent-solid);
   color: var(--cream);
   font-weight: 700;
 }
@@ -1248,7 +1248,7 @@
   gap: 0.3rem;
   align-content: start;
   padding: clamp(1.1rem, 2.2vw, 1.5rem);
-  background: var(--cream);
+  background: var(--surface-alt);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
 }
@@ -1269,7 +1269,7 @@
 }
 
 .packages {
-  background: var(--cream);
+  background: var(--page-bg);
 }
 
 .package-card {
@@ -1326,7 +1326,7 @@
   z-index: 60;
   margin: 0;
   padding: 0.6rem clamp(1.15rem, 4vw, 2.5rem);
-  background: var(--ink);
+  background: var(--toast-bg);
   color: var(--cream);
   font-size: 0.875rem;
   font-weight: 600;
@@ -1376,7 +1376,7 @@
 .loyalty__sentence {
   max-width: 36rem;
   padding: clamp(1.1rem, 2.2vw, 1.5rem);
-  background: var(--cream);
+  background: var(--surface-alt);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   font-family: var(--font-display);
@@ -1389,7 +1389,7 @@
 /* ---------- F11: seña del salón (only when the payload has `deposit`) ---------- */
 
 .deposit {
-  background: var(--cream);
+  background: var(--page-bg);
 }
 
 .deposit .section-head {
@@ -1433,7 +1433,7 @@
   padding: 0.25rem 0.65rem;
   border-radius: var(--radius-pill);
   background: var(--gold-tint);
-  color: #4d3a00;
+  color: var(--warning-ink);
   font-size: 0.6875rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -1463,7 +1463,7 @@
   gap: 0.6rem;
   padding: 0.9rem 1rem;
   background: var(--gold-tint);
-  border: 1px solid rgba(201, 162, 39, 0.6);
+  border: 1px solid var(--warning-border-mid);
   border-radius: var(--radius-sm);
 }
 
@@ -1475,8 +1475,8 @@
   justify-self: start;
   padding: 0.15rem 0.55rem;
   border-radius: var(--radius-pill);
-  background: #4d3a00;
-  color: #ffe9a8;
+  background: var(--banner-bg);
+  color: var(--banner-text);
   font-size: 0.6875rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -1491,7 +1491,7 @@
 /* ---------- F13 (D7): reseñas reales en la página pública ---------- */
 
 .reviews {
-  background: var(--cream);
+  background: var(--page-bg);
 }
 
 .reviews__head {
@@ -1594,5 +1594,5 @@
 
 /* The hero sits on the plum photo: the ghost button keeps its light hover there. */
 .hero .btn--ghost:hover {
-  background: rgba(250, 245, 239, 0.16);
+  background: var(--ghost-hover-dark);
 }

@@ -27,8 +27,8 @@ import { PageHeader } from '@/app/components/PageHeader'
 import { ProfitCategoryBreakdown } from '../components/ProfitCategoryBreakdown'
 import { ProfitDayBars } from '../components/ProfitDayBars'
 
-/** Same red as `.field__error`: a loss is never painted as a win (contract F3b). */
-const NEGATIVE_COLOR = '#8c1d33'
+/** Same token as `.field__error`: a loss is never painted as a win (contract F3b). */
+const NEGATIVE_COLOR = 'var(--error-text)'
 
 /**
  * `/panel/ganancias` (contract F3b): revenue, expenses, paid payroll and net profit
