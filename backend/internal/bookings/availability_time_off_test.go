@@ -1,4 +1,4 @@
-package app
+package bookings_test
 
 // F2d2: la ausencia manda en la agenda pública (S-F2d2-3). Una profesional
 // ausente no se ofrece ni se asigna; el resto del equipo sigue igual. La reserva

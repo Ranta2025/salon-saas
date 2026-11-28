@@ -1,4 +1,4 @@
-package app
+package bookings_test
 
 // E-04 del hallazgo de la auditoría: los avisos de turnos del equipo mostraban
 // la hora en UTC sin decirlo ("26/11 17:00" para un turno de las 11:00 en CDMX).

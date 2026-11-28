@@ -1,4 +1,4 @@
-package app
+package bookings_test
 
 // E-03 del hallazgo de la auditoría: la reserva pública (sin login) no dejaba
 // ficha del cliente, así que la pantalla de Clientes del equipo seguía vacía

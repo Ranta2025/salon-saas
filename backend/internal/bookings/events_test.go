@@ -1,4 +1,4 @@
-package app
+package bookings_test
 
 import (
 	"testing"
