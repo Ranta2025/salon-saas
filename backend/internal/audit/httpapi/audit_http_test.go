@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"regexp"
 	httpapi "salon-saas/internal/adapters/http"
 	auditsvc "salon-saas/internal/audit"
@@ -774,14 +775,30 @@ func TestAuditRoutes_writerDownKeepsResponse(t *testing.T) {
 // --- Cableado: la lista cerrada de D2 ------------------------------------------------
 
 // La forma de la tabla de rutas no se puede mirar en gin (solo el último
-// handler), así que se lee routes.go: EXACTAMENTE estas 22 rutas llevan
+// handler), así que se leen TODOS los `routes*.go` del paquete HTTP (el esqueleto
+// `routes.go` y un `routes_<funcionalidad>.go` por funcionalidad) y se
+// concatenan: EXACTAMENTE estas 22 rutas llevan
 // audit("<acción>") y ninguna otra. (D2 también nombra `export.Expenses`, pero
 // no existe una exportación CSV de gastos: no hay ruta que envolver.) Es la guarda de que ninguna ruta de D2 se
 // quede sin envolver ni una ruta fuera de D2 quede envuelta.
 func TestAuditRoutes_exactlyTheD2ListIsWrapped(t *testing.T) {
-	src, err := os.ReadFile("../../adapters/http/routes.go")
+	// El registro está partido por funcionalidad: se leen todos los archivos con
+	// rutas y se concatenan. La aserción de abajo es la misma de siempre.
+	paths, err := filepath.Glob("../../adapters/http/routes*.go")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("no se encontró ningún routes*.go en ../../adapters/http")
+	}
+	var src []byte
+	for _, path := range paths {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// El salto separa el final de un archivo del principio del siguiente.
+		src = append(append(src, b...), '\n')
 	}
 	re := regexp.MustCompile(`authed\.(GET|POST|PUT|PATCH|DELETE)\("([^"]+)", audit\("([^"]+)"\), d\.`)
 	got := map[string]string{}
