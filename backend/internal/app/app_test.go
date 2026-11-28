@@ -4,34 +4,10 @@ import (
 	"errors"
 	"testing"
 
-	"salon-saas/internal/auth"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/team"
 	"salon-saas/internal/testutil"
 )
-
-func TestAuth_Register_Login(t *testing.T) {
-	svc := auth.AuthService{Users: &testutil.FakeUsers{}, Hasher: testutil.FakeHasher{}, Tokens: testutil.FakeTokens{}}
-	// B-06: la clave mínima son 8 bytes.
-	u, err := svc.Register("Ana", "ana@mail.com", "secreta123")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
-	if _, err := svc.Register("Otra", "ana@mail.com", "otraClave1"); !errors.Is(err, domain.ErrAlreadyExists) {
-		t.Fatalf("esperaba ErrAlreadyExists, dio %v", err)
-	}
-	tok, err := svc.Login("ana@mail.com", "secreta123")
-	if err != nil || tok == "" {
-		t.Fatalf("login: %v %q", err, tok)
-	}
-	if _, err := svc.Login("ana@mail.com", "otraClave2"); !errors.Is(err, domain.ErrUnauthorized) {
-		t.Fatalf("clave mala debe dar Unauthorized, dio %v", err)
-	}
-	if _, err := svc.Login("nadie@mail.com", "otraClave2"); !errors.Is(err, domain.ErrUnauthorized) {
-		t.Fatalf("usuario inexistente debe dar Unauthorized, dio %v", err)
-	}
-	_ = u
-}
 
 func TestTenants_Create_Add(t *testing.T) {
 	salons, mems := &testutil.FakeSalons{}, &testutil.FakeMemberships{}

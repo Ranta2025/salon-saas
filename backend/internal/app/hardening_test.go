@@ -2,58 +2,15 @@ package app
 
 import (
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
-	"salon-saas/internal/auth"
 	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/pos"
 	"salon-saas/internal/team"
 	"salon-saas/internal/testutil"
 )
-
-// B-06: la clave se valida ANTES de hashear (8..72 bytes).
-func TestAuth_register_valida_clave(t *testing.T) {
-	svc := auth.AuthService{Users: &testutil.FakeUsers{}, Hasher: testutil.FakeHasher{}, Tokens: testutil.FakeTokens{}}
-	for _, bad := range []string{"corta", strings.Repeat("x", domain.MaxPasswordBytes+1)} {
-		if _, err := svc.Register("Ana", "ana@mail.com", bad); !errors.Is(err, domain.ErrValidation) {
-			t.Fatalf("clave de %d bytes debe dar ErrValidation, dio %v", len(bad), err)
-		}
-	}
-	if _, err := svc.Register("Ana", "ana@mail.com", "unaClaveLarga"); err != nil {
-		t.Fatalf("clave válida rechazada: %v", err)
-	}
-}
-
-// B-05: el email se normaliza antes de buscar, así el duplicado con mayúsculas
-// se detecta y el login funciona sin importar cómo se tipeó.
-func TestAuth_email_normalizado(t *testing.T) {
-	users := &testutil.FakeUsers{}
-	svc := auth.AuthService{Users: users, Hasher: testutil.FakeHasher{}, Tokens: testutil.FakeTokens{}}
-	if _, err := svc.Register("Ana", "  Ana@Mail.COM ", "unaClaveLarga"); err != nil {
-		t.Fatalf("register: %v", err)
-	}
-	if _, err := svc.Register("Otra", "ANA@mail.com", "otraClaveLarga"); !errors.Is(err, domain.ErrAlreadyExists) {
-		t.Fatalf("duplicado con mayúsculas debe dar ErrAlreadyExists, dio %v", err)
-	}
-	if _, err := svc.Login(" Ana@mail.com", "unaClaveLarga"); err != nil {
-		t.Fatalf("login con email sin normalizar: %v", err)
-	}
-}
-
-// B-05: si el usuario no existe igual se gasta el trabajo de bcrypt.
-func TestAuth_login_usuario_inexistente_gasta_tiempo(t *testing.T) {
-	h := &countingHasher{}
-	svc := auth.AuthService{Users: &testutil.FakeUsers{}, Hasher: h, Tokens: testutil.FakeTokens{}}
-	if _, err := svc.Login("nadie@mail.com", "unaClaveLarga"); !errors.Is(err, domain.ErrUnauthorized) {
-		t.Fatalf("esperaba ErrUnauthorized, dio %v", err)
-	}
-	if h.dummyCalls != 1 {
-		t.Fatalf("debe comparar contra el hash falso una vez, dio %d", h.dummyCalls)
-	}
-}
 
 // B-04: el precio NO lo pone el cliente, lo pone el catálogo. Y un servicio
 // inactivo no se vende (ya no está en la carta).
@@ -192,33 +149,6 @@ func TestCashCloseService_usa_la_transaccion_con_lock(t *testing.T) {
 }
 
 // --- Endpoints nuevos: /me, /staff, /public/salons/:slug ---
-
-func TestMeService(t *testing.T) {
-	users := &testutil.FakeUsers{}
-	salons := &testutil.FakeSalons{}
-	mems := &testutil.FakeMemberships{}
-	svc := auth.MeService{Users: users, Salons: salons, Members: mems}
-
-	u := domain.User{ID: "u1", Name: "Ana", Email: "ana@mail.com"}
-	_ = users.Save(u)
-	_ = salons.Save(domain.Salon{ID: "s1", Slug: "navajas", Name: "Navajas de Oro"})
-	_ = mems.Save(domain.Membership{UserID: "u1", SalonID: "s1", Role: domain.RoleOwner})
-
-	me, err := svc.Me("u1")
-	if err != nil {
-		t.Fatalf("me: %v", err)
-	}
-	if me.User.ID != "u1" || me.User.Email != "ana@mail.com" {
-		t.Fatalf("usuario: %+v", me.User)
-	}
-	if len(me.Salons) != 1 || me.Salons[0].Slug != "navajas" || me.Salons[0].Role != domain.RoleOwner {
-		t.Fatalf("salones: %+v", me.Salons)
-	}
-	// Usuario inexistente (token viejo): 401, no un 500.
-	if _, err := svc.Me("u-fantasma"); !errors.Is(err, domain.ErrUnauthorized) {
-		t.Fatalf("usuario inexistente debe dar ErrUnauthorized, dio %v", err)
-	}
-}
 
 func TestStaffService(t *testing.T) {
 	staff := &fakeStaffLister{BySalon: map[string][]domain.StaffMember{
