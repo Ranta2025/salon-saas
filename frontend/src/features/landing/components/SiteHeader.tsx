@@ -45,7 +45,6 @@ export function SiteHeader({ model }: SiteHeaderProps) {
         </nav>
 
         <div className="site-header__actions">
-          <ThemeToggle />
           {model.phone !== null && model.phone.tel !== null ? (
             <a className="header-phone" href={model.phone.tel}>
               {model.phone.display}
@@ -56,6 +55,9 @@ export function SiteHeader({ model }: SiteHeaderProps) {
               Reservar
             </a>
           ) : null}
+          {/* The switch sits in the corner of the bar, icon only: the middle of
+              the header belongs to navigation and contact. */}
+          <ThemeToggle variant="icon" />
           <button
             type="button"
             className="menu-toggle"
@@ -87,9 +89,6 @@ export function SiteHeader({ model }: SiteHeaderProps) {
               </a>
             </li>
           ) : null}
-          <li className="mobile-nav__theme">
-            <ThemeToggle />
-          </li>
           <li>
             <Link to="/login" onClick={() => setOpen(false)}>
               Acceso del equipo

@@ -48,6 +48,15 @@ function SunIcon() {
   )
 }
 
+type ThemeToggleProps = {
+  /**
+   * `full` (default) is the labelled button of the panel topbar. `icon` drops the
+   * visible text for compact corners (the public header): the same 44 px target
+   * and the accessible name keep living in `aria-label`/`title`.
+   */
+  variant?: 'full' | 'icon'
+}
+
 /**
  * Light/dark switch of the whole app. It is a real `<button>` with a 44 px hit
  * area, a visible focus ring, the state in `aria-pressed` and an action label in
@@ -59,7 +68,7 @@ function SunIcon() {
  * explicit click is persisted; while nobody chose a theme, the page follows the
  * OS preference and reacts live to its changes.
  */
-export function ThemeToggle() {
+export function ThemeToggle({ variant = 'full' }: ThemeToggleProps = {}) {
   const theme = useSyncExternalStore(subscribeTheme, currentTheme, currentTheme)
 
   useEffect(() => {
@@ -80,18 +89,21 @@ export function ThemeToggle() {
 
   const isDark = theme === 'dark'
   const label = isDark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'
+  const iconOnly = variant === 'icon'
 
   return (
     <button
       type="button"
-      className="theme-toggle"
+      className={iconOnly ? 'theme-toggle theme-toggle--icon' : 'theme-toggle'}
       onClick={() => setTheme(nextTheme(theme))}
       aria-label={label}
       aria-pressed={isDark}
       title={label}
     >
       {isDark ? <SunIcon /> : <MoonIcon />}
-      <span className="theme-toggle__text">{isDark ? 'Tema claro' : 'Tema oscuro'}</span>
+      {iconOnly ? null : (
+        <span className="theme-toggle__text">{isDark ? 'Tema claro' : 'Tema oscuro'}</span>
+      )}
     </button>
   )
 }

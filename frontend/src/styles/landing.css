@@ -159,29 +159,23 @@
   background: var(--gold-tint);
 }
 
-/* The theme switch lives in the header and, with its text, inside the mobile
-   menu: one tap on a phone, no need to guess what the icon means. */
-.mobile-nav__theme {
-  padding: 0.35rem clamp(1.15rem, 4vw, 2.5rem) 0.55rem;
+/* The theme switch lives in the corner of the header as an icon only: the
+   middle of the bar belongs to navigation and contact, and the button looks the
+   same over the hero and after scrolling (the solid header). The accessible name
+   never disappears: it is the `aria-label`/`title` of ThemeToggle. */
+.site-header .theme-toggle--icon {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-soft);
 }
 
-.mobile-nav .theme-toggle {
-  width: 100%;
-  justify-content: flex-start;
-}
-
-@media (max-width: 699px) {
-  .mobile-nav .theme-toggle__text {
-    position: static;
-    width: auto;
-    height: auto;
-    padding: 0;
-    margin: 0;
-    overflow: visible;
-    clip: auto;
-    white-space: nowrap;
-    border: 0;
-  }
+.site-header .theme-toggle--icon:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+  background: var(--gold-tint);
 }
 
 @media (max-width: 699px) {
