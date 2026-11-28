@@ -55,6 +55,7 @@ import (
 	pospostgres "salon-saas/internal/pos/postgres"
 	"salon-saas/internal/products"
 	productshttpapi "salon-saas/internal/products/httpapi"
+	productspostgres "salon-saas/internal/products/postgres"
 	"salon-saas/internal/reviews"
 	reviewshttpapi "salon-saas/internal/reviews/httpapi"
 	reviewsstore "salon-saas/internal/reviews/postgres"
@@ -273,7 +274,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	// F6: catálogo de productos (con su libro de stock) y la venta CON productos
 	// en una sola transacción con tope de tiempo. Una venta sin productos sigue
 	// por salesRepo.Save, intacto.
-	productsRepo := pgstore.Products{Pool: pool}
+	productsRepo := productspostgres.Products{Pool: pool}
 	saleProductsRepo := pospostgres.SaleProducts{Pool: pool}
 	// F8: catálogo de paquetes y paquetes comprados por cada clienta (con su libro
 	// de saldo). Comprar escribe la venta, el paquete y el movimiento en UNA

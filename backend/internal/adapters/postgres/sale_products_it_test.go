@@ -15,15 +15,16 @@ import (
 	payrollpostgres "salon-saas/internal/payroll/postgres"
 	"salon-saas/internal/pos"
 	pospostgres "salon-saas/internal/pos/postgres"
+	productspostgres "salon-saas/internal/products/postgres"
 	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
 // saleProductFixture siembra catálogo de servicios y productos en s-it-prod.
-func saleProductFixture(t *testing.T) (*pgxpool.Pool, context.Context, staffingpostgres.Services, pgstore.Products, pospostgres.SaleProducts) {
+func saleProductFixture(t *testing.T) (*pgxpool.Pool, context.Context, staffingpostgres.Services, productspostgres.Products, pospostgres.SaleProducts) {
 	t.Helper()
 	pool, ctx := productFixtures(t)
-	return pool, ctx, staffingpostgres.Services{Pool: pool}, pgstore.Products{Pool: pool}, pospostgres.SaleProducts{Pool: pool}
+	return pool, ctx, staffingpostgres.Services{Pool: pool}, productspostgres.Products{Pool: pool}, pospostgres.SaleProducts{Pool: pool}
 }
 
 type productSpec struct {
@@ -33,7 +34,7 @@ type productSpec struct {
 	low   int
 }
 
-func seedProducts(t *testing.T, repo pgstore.Products, salonID string, specs ...productSpec) []domain.Product {
+func seedProducts(t *testing.T, repo productspostgres.Products, salonID string, specs ...productSpec) []domain.Product {
 	t.Helper()
 	out := make([]domain.Product, 0, len(specs))
 	for _, s := range specs {

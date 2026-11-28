@@ -4,7 +4,7 @@
 // (ErrNotFound). El stock es un contador y CADA cambio escribe su movimiento en
 // la MISMA transacción; el UPDATE de stock lleva la condición `stock + $delta >=
 // 0`, así la DB es la última barrera contra un stock negativo.
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -42,25 +43,25 @@ func ScanProduct(scan func(dest ...any) error) (domain.Product, error) {
 // Create inserta el producto y, si initial != nil, su movimiento inicial en la
 // MISMA transacción. El índice único de nombres activos traduce 23505.
 func (r Products) Create(p domain.Product, initial *domain.StockMovement) error {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO products(id,salon_id,name,price_cents,stock,low_stock_threshold,active,created_at)
 		 VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
 		p.ID, p.SalonID, p.Name, p.PriceCents, p.Stock, p.LowStockThreshold, p.Active, p.CreatedAt); err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if initial != nil {
 		if err := InsertStockMovement(ctx, tx, *initial); err != nil {
 			return err
 		}
 	}
-	return pgError(tx.Commit(ctx))
+	return pgstore.PGError(tx.Commit(ctx))
 }
 
 // Save actualiza nombre, precio, umbral y estado. El WHERE con salon_id es la
@@ -71,7 +72,7 @@ func (r Products) Save(p domain.Product) error {
 		 WHERE salon_id=$1 AND id=$2`,
 		p.SalonID, p.ID, p.Name, p.PriceCents, p.LowStockThreshold, p.Active)
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
@@ -84,7 +85,7 @@ func (r Products) FindByID(salonID, id string) (domain.Product, error) {
 		`SELECT `+ProductColumns+` FROM products WHERE salon_id=$1 AND id=$2`, salonID, id)
 	p, err := ScanProduct(row.Scan)
 	if err != nil {
-		return domain.Product{}, notFound(err)
+		return domain.Product{}, pgstore.NotFound(err)
 	}
 	return p, nil
 }
@@ -112,13 +113,13 @@ func (r Products) List(salonID string) ([]domain.Product, error) {
 // movimiento en la misma transacción (D2). Un delta que dejaría el stock
 // negativo es 409 con el texto del contrato y no escribe nada.
 func (r Products) Adjust(salonID, productID string, delta int, reason domain.StockReason, note, createdBy string) (domain.Product, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return domain.Product{}, err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 
 	row := tx.QueryRow(ctx,
 		`UPDATE products SET stock = stock + $3
@@ -130,7 +131,7 @@ func (r Products) Adjust(salonID, productID string, delta int, reason domain.Sto
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Product{}, r.explainFailedAdjust(ctx, tx, salonID, productID, delta)
 		}
-		return domain.Product{}, pgError(err)
+		return domain.Product{}, pgstore.PGError(err)
 	}
 	if err := InsertStockMovement(ctx, tx, domain.StockMovement{
 		ID:        domain.NewID(),
@@ -144,7 +145,7 @@ func (r Products) Adjust(salonID, productID string, delta int, reason domain.Sto
 		return domain.Product{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return domain.Product{}, pgError(err)
+		return domain.Product{}, pgstore.PGError(err)
 	}
 	return updated, nil
 }
@@ -152,7 +153,7 @@ func (r Products) Adjust(salonID, productID string, delta int, reason domain.Sto
 // explainFailedAdjust distingue POR QUÉ el UPDATE condicional no afectó filas:
 // producto inexistente/de otro salón (404), stock que quedaría negativo (409) o
 // stock por encima del tope (400). Así el cliente nunca ve un 500.
-func (r Products) explainFailedAdjust(ctx context.Context, q querier, salonID, productID string, delta int) error {
+func (r Products) explainFailedAdjust(ctx context.Context, q pgstore.Querier, salonID, productID string, delta int) error {
 	var stock int
 	err := q.QueryRow(ctx,
 		`SELECT stock FROM products WHERE salon_id=$1 AND id=$2`, salonID, productID).Scan(&stock)
@@ -160,7 +161,7 @@ func (r Products) explainFailedAdjust(ctx context.Context, q querier, salonID, p
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.ErrNotFound
 		}
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if stock+delta < 0 {
 		return domain.NewMessage(domain.ErrAlreadyExists, domain.MsgProductNegativeStock)
@@ -203,12 +204,12 @@ func (r Products) ListMovements(salonID, productID string, limit int) ([]domain.
 // created_by van como NULL cuando no hay valor ("" en Go).
 // InsertStockMovement escribe un movimiento de stock dentro de la transacción
 // del llamador; la venta de productos de `internal/pos/postgres` lo reusa.
-func InsertStockMovement(ctx context.Context, q querier, m domain.StockMovement) error {
+func InsertStockMovement(ctx context.Context, q pgstore.Querier, m domain.StockMovement) error {
 	_, err := q.Exec(ctx,
 		`INSERT INTO stock_movements(id,salon_id,product_id,delta,reason,note,sale_id,created_by)
 		 VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),NULLIF($8,''))`,
 		m.ID, m.SalonID, m.ProductID, m.Delta, string(m.Reason), m.Note, m.SaleID, m.CreatedBy)
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 var _ ports.ProductRepository = Products{}

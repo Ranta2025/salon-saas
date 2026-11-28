@@ -29,6 +29,7 @@ import (
 	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	productspostgres "salon-saas/internal/products/postgres"
 )
 
 // SaleProducts implementa ports.SaleProductsRepository.
@@ -78,16 +79,16 @@ func (r SaleProducts) SaveWithProducts(s domain.SaleWithProducts) ([]domain.Prod
 		row := tx.QueryRow(ctx,
 			`UPDATE products SET stock = stock - $3
 			 WHERE id=$1 AND salon_id=$2 AND active AND stock >= $3
-			 RETURNING `+pgstore.ProductColumns,
+			 RETURNING `+productspostgres.ProductColumns,
 			l.ProductID, s.SalonID, l.Qty)
-		after, err := pgstore.ScanProduct(row.Scan)
+		after, err := productspostgres.ScanProduct(row.Scan)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, failedProductSale(ctx, tx, s.SalonID, l.ProductID, l.Qty)
 			}
 			return nil, saleWriteError(err)
 		}
-		if err := pgstore.InsertStockMovement(ctx, tx, domain.StockMovement{
+		if err := productspostgres.InsertStockMovement(ctx, tx, domain.StockMovement{
 			ID:        domain.NewID(),
 			SalonID:   s.SalonID,
 			ProductID: l.ProductID,

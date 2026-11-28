@@ -15,6 +15,7 @@ import (
 	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	pospostgres "salon-saas/internal/pos/postgres"
+	productspostgres "salon-saas/internal/products/postgres"
 	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
@@ -78,7 +79,7 @@ func stockOf(t *testing.T, pool *pgxpool.Pool, productID string) int {
 
 func TestProducts_IT(t *testing.T) {
 	pool, _ := productFixtures(t)
-	repo := pgstore.Products{Pool: pool}
+	repo := productspostgres.Products{Pool: pool}
 
 	shampoo := mustProduct(t, "s-it-prod", "Shampoo IT", 50000, 5, 2)
 	initial := domain.StockMovement{
@@ -234,7 +235,7 @@ func TestMigration029_overData_IT(t *testing.T) {
 	if err := (pospostgres.Sales{Pool: pool}).Save(sale); err != nil {
 		t.Fatalf("guardar venta: %v", err)
 	}
-	if err := (pgstore.Products{Pool: pool}).Create(mustProduct(t, "s-it-prod", "Previo 029", 100, 1, 0), nil); err != nil {
+	if err := (productspostgres.Products{Pool: pool}).Create(mustProduct(t, "s-it-prod", "Previo 029", 100, 1, 0), nil); err != nil {
 		t.Fatalf("producto previo: %v", err)
 	}
 
@@ -273,7 +274,7 @@ func TestMigration029_overData_IT(t *testing.T) {
 // por salón y por nombre activo: los tres casos quedan en la DB.
 func TestProducts_constraints_IT(t *testing.T) {
 	pool, _ := productFixtures(t)
-	repo := pgstore.Products{Pool: pool}
+	repo := productspostgres.Products{Pool: pool}
 	long := make([]rune, 0, 121)
 	for i := 0; i < 121; i++ {
 		long = append(long, 'ñ')
