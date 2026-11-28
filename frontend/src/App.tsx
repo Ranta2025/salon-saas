@@ -78,7 +78,7 @@ function NotFound() {
     <main className="not-found">
       <p className="eyebrow">404</p>
       <h1>No encontramos esta página</h1>
-      <p className="lede">Puede que el enlace haya cambiado. Vuelve al inicio o entra al panel.</p>
+      <p className="lede">Puede que el enlace haya cambiado. Volvé al inicio o entrá al panel.</p>
       <p className="not-found__actions">
         <a className="btn btn--wine" href="/">
           Ir al sitio

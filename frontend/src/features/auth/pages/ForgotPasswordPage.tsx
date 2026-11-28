@@ -55,7 +55,7 @@ export function ForgotPasswordPage() {
       ) : (
         <form className="recovery__form" onSubmit={handleSubmit} noValidate>
           <p>
-            Escribe el correo de tu cuenta y te enviamos un enlace para elegir una contraseña
+            Escribí el correo de tu cuenta y te enviamos un enlace para elegir una contraseña
             nueva. El enlace vence en una hora.
           </p>
           <div className="field">

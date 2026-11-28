@@ -238,7 +238,7 @@ export function InvitationPage() {
           <>
             <p>
               Pedile a la administración del salón que te envíe una invitación nueva. El enlace
-              sirve una sola vez, vence a los 7 días y no se puede recuperar: si ya lo usaste, abre
+              sirve una sola vez, vence a los 7 días y no se puede recuperar: si ya lo usaste, abrí
               el panel con tu cuenta.
             </p>
             <p className="invite__actions">
@@ -282,7 +282,7 @@ export function InvitationPage() {
           <>
             <p>
               Pedile a la administración del salón que te envíe una invitación nueva. El enlace
-              sirve una sola vez, vence a los 7 días y no se puede recuperar: si ya lo usaste, abre
+              sirve una sola vez, vence a los 7 días y no se puede recuperar: si ya lo usaste, abrí
               el panel con tu cuenta.
             </p>
             <p className="invite__actions">

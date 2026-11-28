@@ -41,7 +41,7 @@ export function ManagerOnlyNotice({
         <h2>No pudimos comprobar tu rol</h2>
         <p>
           La sesión no nos dijo qué rol tenés en este salón, así que no podemos abrir esta
-          sección. Vuelve a intentarlo; si sigue igual, cierra sesión y entra de nuevo.
+          sección. Volvé a intentarlo; si sigue igual, cerrá sesión y entrá de nuevo.
         </p>
         {onRetry ? (
           <button type="button" className="btn btn--quiet" onClick={onRetry}>

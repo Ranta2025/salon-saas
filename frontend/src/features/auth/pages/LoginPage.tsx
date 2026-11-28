@@ -67,7 +67,7 @@ export function LoginPage() {
         setError(
           meError instanceof Error
             ? meError.message
-            : 'No pudimos leer tu cuenta. Intenta de nuevo.',
+            : 'No pudimos leer tu cuenta. Intentá de nuevo.',
         )
         return
       }
@@ -144,7 +144,7 @@ export function LoginPage() {
           <br /> en una sola pantalla
         </h1>
         <p className="login__tagline">
-          Agenda, punto de venta y catálogo de servicios de tu salón. Ingresa con la cuenta que te
+          Agenda, punto de venta y catálogo de servicios de tu salón. Ingresá con la cuenta que te
           dio la administración del salón.
         </p>
         <ul className="login__list">
@@ -167,7 +167,7 @@ export function LoginPage() {
         ) : (
           <form className="login__form" onSubmit={handleSubmit} noValidate>
             <p className="eyebrow">Acceso</p>
-            <h2 id="login-title">Inicia sesión</h2>
+            <h2 id="login-title">Iniciá sesión</h2>
             <div className="field">
               <label htmlFor="login-email">Correo electrónico</label>
               <input

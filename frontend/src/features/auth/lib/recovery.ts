@@ -31,9 +31,9 @@ export { readEmailVerified }
  */
 export const RECOVERY_MESSAGES = {
   /** contract D11: the ONLY answer to a 202 of `/auth/forgot`, registered email or not. */
-  forgotAccepted: 'Si el correo esta registrado, te enviamos un enlace. Revisa tu bandeja.',
+  forgotAccepted: 'Si el correo esta registrado, te enviamos un enlace. Revisá tu bandeja.',
   /** contract D11: the notice of the login after a reset. */
-  resetDone: 'Contraseña actualizada. Inicia sesión.',
+  resetDone: 'Contraseña actualizada. Iniciá sesión.',
   /** contract D12: answer to a 202 of the resend. */
   resendSent: 'Te enviamos un nuevo correo.',
   emailRequired: 'Escribí tu correo',

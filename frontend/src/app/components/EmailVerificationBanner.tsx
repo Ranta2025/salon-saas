@@ -5,7 +5,7 @@ import { resendVerification, shouldShowVerifyBanner } from '@/features/auth/lib/
 type Feedback = { tone: 'success' | 'error'; message: string; verified: boolean }
 
 /**
- * «Verifica tu email» (F15, D12). Shown in the shell only while `/me` says
+ * «Verificá tu email» (F15, D12). Shown in the shell only while `/me` says
  * `email_verified === false` (a missing field counts as verified, so an older API
  * never shows it). «Reenviar correo» posts to `/me/verify-email/resend`: 202 says
  * «Te enviamos un nuevo correo.», 409 and 429 show the server sentence verbatim.
@@ -59,9 +59,9 @@ export function EmailVerificationBanner() {
   return (
     <section className="verify-banner" aria-label="Verificación de email">
       <div className="verify-banner__text">
-        <strong>Verifica tu email</strong>
+        <strong>Verificá tu email</strong>
         <span>
-          Te enviamos un correo con un enlace de confirmación. Puedes seguir usando el panel con
+          Te enviamos un correo con un enlace de confirmación. Podés seguir usando el panel con
           normalidad.
         </span>
       </div>

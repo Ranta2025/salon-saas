@@ -88,7 +88,7 @@ test('validatePhone explains the length in Spanish and accepts a valid number', 
     validatePhone({ countryId: 'PA', digits: '612345' }),
     'El teléfono de Panamá debe tener entre 7 y 8 dígitos (escribiste 6).',
   )
-  assert.equal(validatePhone({ countryId: 'CU', digits: '' }), 'Escribe el número de teléfono.')
+  assert.equal(validatePhone({ countryId: 'CU', digits: '' }), 'Escribí el número de teléfono.')
 })
 
 test('displayPhone reads an existing value back into code plus number', () => {

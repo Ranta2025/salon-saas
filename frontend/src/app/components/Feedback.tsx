@@ -38,7 +38,7 @@ export function SalonRequired() {
       <h2>Tu cuenta no tiene un salón activo</h2>
       <p>
         Al iniciar sesión cargamos los salones de tu cuenta y elegimos el primero. Si el problema
-        sigue, cierra sesión y vuelve a entrar, o pídele a la administración que revise tu acceso.
+        sigue, cerrá sesión y volvé a entrar, o pedile a la administración que revise tu acceso.
       </p>
     </div>
   )

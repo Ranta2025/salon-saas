@@ -70,7 +70,7 @@ export function ResetPasswordPage() {
   }
 
   return (
-    <RecoveryCard eyebrow="Acceso" title="Elige una contraseña nueva">
+    <RecoveryCard eyebrow="Acceso" title="Elegí una contraseña nueva">
       <form className="recovery__form" onSubmit={handleSubmit} noValidate>
         <div className="field">
           <label htmlFor="reset-password">Contraseña nueva</label>

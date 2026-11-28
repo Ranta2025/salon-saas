@@ -277,7 +277,7 @@ export function validatePhone(parts: PhoneParts): string | null {
   const country = phoneCountry(parts.countryId)
   const digits = digitsOnly(parts.digits)
   if (digits === '') {
-    return 'Escribe el número de teléfono.'
+    return 'Escribí el número de teléfono.'
   }
   if (digits.length < country.minDigits || digits.length > country.maxDigits) {
     return `El teléfono de ${country.name} ${

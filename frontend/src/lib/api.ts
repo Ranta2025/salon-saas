@@ -98,7 +98,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function errorDetail(
   response: Response,
 ): Promise<{ message: string; offline: boolean }> {
-  const fallback = `El servidor respondió ${response.status}. Intenta nuevamente.`
+  const fallback = `El servidor respondió ${response.status}. Intentá nuevamente.`
   try {
     const text = await response.text()
     if (text.trim() === '') {
@@ -147,7 +147,7 @@ export function describeApiError(error: unknown, fallback: string): ApiErrorNoti
     if (error.status === 403) {
       return {
         message:
-          'Tu rol no permite esta acción. Pídele a la administración del salón que revise tu acceso.',
+          'Tu rol no permite esta acción. Pedile a la administración del salón que revise tu acceso.',
         retryable: false,
       }
     }
@@ -222,14 +222,14 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     }
     if (timedOut) {
       throw new NetworkError(
-        'El servidor tardó demasiado en responder. Revisa tu conexión o intenta de nuevo.',
+        'El servidor tardó demasiado en responder. Revisá tu conexión o intentá de nuevo.',
       )
     }
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw error
     }
     throw new NetworkError(
-      'No pudimos conectar con el servidor. Revisa tu conexión o la URL de la API.',
+      'No pudimos conectar con el servidor. Revisá tu conexión o la URL de la API.',
     )
   }
   cleanup()
@@ -347,7 +347,7 @@ export type SessionMe = Me & {
 /**
  * Reads `email_verified` defensively (F15, D12): only an explicit `false` means
  * "not verified". An older API without the field, a `null` or any other type is
- * treated as verified so the «Verifica tu email» banner never shows by mistake.
+ * treated as verified so the «Verificá tu email» banner never shows by mistake.
  */
 export function readEmailVerified(raw: unknown): boolean {
   return !(isRecord(raw) && raw['email_verified'] === false)
@@ -634,7 +634,7 @@ export async function uploadClientPhoto(
     )
   } catch {
     throw new NetworkError(
-      'No pudimos conectar con el servidor. Revisa tu conexión o la URL de la API.',
+      'No pudimos conectar con el servidor. Revisá tu conexión o la URL de la API.',
     )
   }
 
@@ -693,7 +693,7 @@ export async function requestMultipart<T>(path: string, form: FormData): Promise
     response = await fetch(`${API_BASE}${path}`, { method: 'POST', headers, body: form })
   } catch {
     throw new NetworkError(
-      'No pudimos conectar con el servidor. Revisa tu conexión o la URL de la API.',
+      'No pudimos conectar con el servidor. Revisá tu conexión o la URL de la API.',
     )
   }
   if (response.status === 401) {

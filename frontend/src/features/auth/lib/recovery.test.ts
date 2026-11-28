@@ -68,9 +68,9 @@ function memoryStorage(): NoticeStorage & { data: Map<string, string> } {
 test('the sentences of the contract are exact', () => {
   assert.equal(
     RECOVERY_MESSAGES.forgotAccepted,
-    'Si el correo esta registrado, te enviamos un enlace. Revisa tu bandeja.',
+    'Si el correo esta registrado, te enviamos un enlace. Revisá tu bandeja.',
   )
-  assert.equal(RECOVERY_MESSAGES.resetDone, 'Contraseña actualizada. Inicia sesión.')
+  assert.equal(RECOVERY_MESSAGES.resetDone, 'Contraseña actualizada. Iniciá sesión.')
   assert.equal(RECOVERY_MESSAGES.resendSent, 'Te enviamos un nuevo correo.')
 })
 
@@ -422,7 +422,7 @@ test('the reset notice is shown once: reading it clears it', () => {
   assert.equal(takeResetNotice(storage), null)
   rememberResetNotice(storage)
   assert.equal(storage.data.has(RESET_NOTICE_KEY), true)
-  assert.equal(takeResetNotice(storage), 'Contraseña actualizada. Inicia sesión.')
+  assert.equal(takeResetNotice(storage), 'Contraseña actualizada. Iniciá sesión.')
   assert.equal(storage.data.has(RESET_NOTICE_KEY), false)
   assert.equal(takeResetNotice(storage), null)
 })
