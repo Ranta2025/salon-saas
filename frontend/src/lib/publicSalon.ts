@@ -606,6 +606,11 @@ export function buildLanding(data: PublicSalon): LandingModel {
   if (sections.gallery) {
     nav.push({ href: '#galeria', label: 'Galería' })
   }
+  // F13 reviews (H33-b): the section is on the page, so the nav offers it too, after the
+  // gallery and only when the payload carries visible reviews.
+  if (reviews !== null) {
+    nav.push({ href: '#resenas', label: 'Reseñas' })
+  }
   const instagram = instagramUrl(salon.instagram)
   return {
     name: salon.name,
@@ -651,8 +656,7 @@ export function buildLanding(data: PublicSalon): LandingModel {
             refundLabel: refundLabel(policy.refundHours),
           },
     // F13 (D7): driven only by the payload `reviews`; null renders no section. It is
-    // deliberately NOT part of `sections`/`nav`: the public page gained no new menu
-    // entry, so the landing keeps the navigation it already had.
+    // deliberately NOT part of `sections`: only the nav gains its entry (H33-b).
     reviews:
       reviews === null
         ? null

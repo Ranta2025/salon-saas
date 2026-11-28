@@ -670,7 +670,7 @@ test('the reviews of the landing normalize to one decimal and a Spanish count', 
   assert.equal(reviewsCountLabel(12), '12 reseñas')
 })
 
-test('buildLanding shows the reviews section ONLY from the payload `reviews` (no new nav link)', () => {
+test('buildLanding shows the reviews section ONLY from the payload `reviews`, with its nav link', () => {
   const model = buildLanding(parsed({ ...full, reviews: REVIEWS_PAYLOAD }))
   assert.deepEqual(model.reviews, {
     average: 4.6,
@@ -682,7 +682,8 @@ test('buildLanding shows the reviews section ONLY from the payload `reviews` (no
       { rating: 4, comment: '', author: 'Ana P.', date: '2026-11-02' },
     ],
   })
-  // The section is additive: `sections` and `nav` are exactly the ones of F16/F9/F11.
+  // The section is additive: `sections` is still the one of F16/F9/F11 and the nav gains
+  // exactly one entry, after «Galería» (the order the page renders).
   assert.deepEqual(model.sections, {
     services: true,
     team: true,
@@ -693,8 +694,9 @@ test('buildLanding shows the reviews section ONLY from the payload `reviews` (no
   })
   assert.deepEqual(
     model.nav.map((link) => link.label),
-    ['Servicios', 'Equipo', 'Paquetes', 'Galería'],
+    ['Servicios', 'Equipo', 'Paquetes', 'Galería', 'Reseñas'],
   )
+  assert.deepEqual(model.nav.at(-1), { href: '#resenas', label: 'Reseñas' })
 })
 
 test('buildLanding without `reviews` renders no reviews section and invents nothing', () => {
@@ -702,6 +704,12 @@ test('buildLanding without `reviews` renders no reviews section and invents noth
     const model = buildLanding(parsed(raw))
     assert.equal(model.reviews, null)
     assert.equal(JSON.stringify(model).includes('reseña'), false)
+    // No reviews, no «Reseñas» entry: the nav is the one of F16/F9/F11.
+    assert.equal(model.nav.some((link) => link.href === '#resenas'), false)
+    assert.deepEqual(
+      model.nav.map((link) => link.label),
+      ['Servicios', 'Equipo', 'Paquetes', 'Galería'],
+    )
   }
 })
 
