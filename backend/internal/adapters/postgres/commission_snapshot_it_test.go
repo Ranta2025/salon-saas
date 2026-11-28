@@ -23,6 +23,7 @@ import (
 	"salon-saas/internal/domain"
 	"salon-saas/internal/pos"
 	pospostgres "salon-saas/internal/pos/postgres"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
@@ -92,14 +93,14 @@ func foto(t *testing.T, ctx context.Context, pool *pgxpool.Pool, saleID string) 
 func saleService(pool *pgxpool.Pool) pos.SaleService {
 	return pos.SaleService{
 		Sales:       pospostgres.Sales{Pool: pool},
-		Services:    pgstore.Services{Pool: pool},
+		Services:    staffingpostgres.Services{Pool: pool},
 		Memberships: pgstore.Memberships{Pool: pool},
 	}
 }
 
 func TestSaleCommissionSnapshot_IT(t *testing.T) {
 	pool, ctx := commissionFixtures(t)
-	services := pgstore.Services{Pool: pool}
+	services := staffingpostgres.Services{Pool: pool}
 	svc := saleService(pool)
 
 	corte, _ := domain.NewService("s-it-foto", "Corte Foto", 45, 150000, 30)
@@ -204,7 +205,7 @@ func TestSaleCommissionSnapshot_IT(t *testing.T) {
 // y acá lo que importa es la transacción de la DB.
 func TestSaleCommissionSnapshot_item_fallido_no_deja_nada_IT(t *testing.T) {
 	pool, ctx := commissionFixtures(t)
-	services := pgstore.Services{Pool: pool}
+	services := staffingpostgres.Services{Pool: pool}
 	repo := pospostgres.Sales{Pool: pool}
 
 	ok, _ := domain.NewService("s-it-foto", "Corte Rollback", 45, 150000, 40)
@@ -239,7 +240,7 @@ func TestSaleCommissionSnapshot_item_fallido_no_deja_nada_IT(t *testing.T) {
 // dos posibles. La foto se copia con el UPDATE del catálogo concurrente.
 func TestSaleCommissionSnapshot_concurrente_con_cambio_de_tarifa_IT(t *testing.T) {
 	pool, ctx := commissionFixtures(t)
-	services := pgstore.Services{Pool: pool}
+	services := staffingpostgres.Services{Pool: pool}
 	svc := saleService(pool)
 
 	const viejo, nuevo = 25, 75
@@ -299,7 +300,7 @@ func TestSaleCommissionSnapshot_concurrente_con_cambio_de_tarifa_IT(t *testing.T
 // distinguir "sin foto" de "comisión 0".
 func TestSaleCommissionSnapshot_legacy_null_se_lee_sin_foto_IT(t *testing.T) {
 	pool, ctx := commissionFixtures(t)
-	services := pgstore.Services{Pool: pool}
+	services := staffingpostgres.Services{Pool: pool}
 	repo := pospostgres.Sales{Pool: pool}
 
 	viejo, _ := domain.NewService("s-it-foto", "Corte Viejo", 45, 150000, 20)

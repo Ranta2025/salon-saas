@@ -26,6 +26,7 @@ import (
 	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/settings"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
@@ -171,7 +172,7 @@ func TestTimezoneFreezeIT_camino_inverso_no_pierde_ventas(t *testing.T) {
 		t.Fatalf("dueña del salón 2: %v", err)
 	}
 	otro, _ := domain.NewService("s-it-pay2", "Corte TZ IT", 45, 150000, 10)
-	if err := (pgstore.Services{Pool: pool}).Save(otro); err != nil {
+	if err := (staffingpostgres.Services{Pool: pool}).Save(otro); err != nil {
 		t.Fatalf("catálogo del salón 2: %v", err)
 	}
 	owner2 := payrollRunActor(t, pool, "u-it-pay-c", "s-it-pay2")

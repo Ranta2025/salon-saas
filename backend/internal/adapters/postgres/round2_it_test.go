@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	pgstore "salon-saas/internal/adapters/postgres"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"sync"
 	"testing"
 	"time"
@@ -210,7 +211,7 @@ func TestMemberships_IT_admin(t *testing.T) {
 func TestPublicBooking_IT_carrera_un_solo_gana(t *testing.T) {
 	pool, _ := itdb.Round2Fixtures(t)
 	salons := pgstore.Salons{Pool: pool}
-	services := pgstore.Services{Pool: pool}
+	services := staffingpostgres.Services{Pool: pool}
 	mems := pgstore.Memberships{Pool: pool}
 	bookings := bookingspostgres.Bookings{Pool: pool}
 
@@ -229,7 +230,7 @@ func TestPublicBooking_IT_carrera_un_solo_gana(t *testing.T) {
 		t.Fatalf("guardar servicio: %v", err)
 	}
 	// F2c: la reserva pública solo asigna a quien HACE el servicio.
-	professionals := pgstore.ProfessionalServices{Pool: pool}
+	professionals := staffingpostgres.ProfessionalServices{Pool: pool}
 	if err := professionals.SetServices("s-it-r2", "u-it-r2-prof", []string{svc.ID}); err != nil {
 		t.Fatalf("servicios de la profesional: %v", err)
 	}

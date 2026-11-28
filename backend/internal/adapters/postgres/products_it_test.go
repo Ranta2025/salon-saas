@@ -15,6 +15,7 @@ import (
 	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	pospostgres "salon-saas/internal/pos/postgres"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
@@ -218,7 +219,7 @@ func TestProducts_IT(t *testing.T) {
 func TestMigration029_overData_IT(t *testing.T) {
 	pool, _ := productFixtures(t)
 	ctx := context.Background()
-	servicesRepo := pgstore.Services{Pool: pool}
+	servicesRepo := staffingpostgres.Services{Pool: pool}
 	corte, _ := domain.NewService("s-it-prod", "Corte 029", 45, 150000, 30)
 	if err := servicesRepo.Save(corte); err != nil {
 		t.Fatalf("servicio: %v", err)

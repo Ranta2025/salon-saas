@@ -24,6 +24,7 @@ import (
 	"salon-saas/internal/domain"
 	"salon-saas/internal/payroll"
 	"salon-saas/internal/ports"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 )
 
 // payrollRunNow es el «hoy» de estos tests: 20/3/2026 en CDMX (12:00 local).
@@ -460,7 +461,7 @@ func TestPayrollRunsIT_tenant_listado_y_export(t *testing.T) {
 		t.Fatalf("owner del salón 2: %v", err)
 	}
 	svc2, _ := domain.NewService("s-it-pay2", "Corte Ajeno PR", 45, 150000, 10)
-	if err := (pgstore.Services{Pool: pool}).Save(svc2); err != nil {
+	if err := (staffingpostgres.Services{Pool: pool}).Save(svc2); err != nil {
 		t.Fatalf("catálogo del salón 2: %v", err)
 	}
 	insertPaySale(t, ctx, pool, "sale-pr-otro", "s-it-pay2", "u-it-pay-c",

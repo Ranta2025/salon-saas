@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
@@ -81,7 +82,7 @@ func intPtr(v int) *int { return itdb.IntPtr(v) }
 // payrollCatalog crea el catálogo de los dos salones y devuelve los servicios.
 func payrollCatalog(t *testing.T, pool *pgxpool.Pool) (corte, color, gratis domain.Service) {
 	t.Helper()
-	services := pgstore.Services{Pool: pool}
+	services := staffingpostgres.Services{Pool: pool}
 	corte, _ = domain.NewService("s-it-pay", "Corte IT", 45, 150000, 10)
 	color, _ = domain.NewService("s-it-pay", "Color IT", 90, 300000, 25)
 	gratis, _ = domain.NewService("s-it-pay", "Cortesía IT", 30, 0, 0)
@@ -120,7 +121,7 @@ func TestPayrollIT_agregados_por_profesional(t *testing.T) {
 	pool, ctx := payrollFixtures(t)
 	corte, color, gratis := payrollCatalog(t, pool)
 	svc2, _ := domain.NewService("s-it-pay2", "Corte Ajeno B", 45, 999999, 90)
-	if err := (pgstore.Services{Pool: pool}).Save(svc2); err != nil {
+	if err := (staffingpostgres.Services{Pool: pool}).Save(svc2); err != nil {
 		t.Fatalf("catálogo del otro salón: %v", err)
 	}
 
@@ -254,7 +255,7 @@ func TestPayrollIT_foto_vs_estimado(t *testing.T) {
 
 	// El dueño sube la tarifa del corte al 60%: la línea con foto no se mueve.
 	up, _ := corte.WithDetails(corte.Name, corte.DurationMin, corte.PriceCents, 60, true)
-	if err := (pgstore.Services{Pool: pool}).Save(up); err != nil {
+	if err := (staffingpostgres.Services{Pool: pool}).Save(up); err != nil {
 		t.Fatalf("editar catálogo: %v", err)
 	}
 	after, err := repo.CommissionTotals("s-it-pay", from, to)

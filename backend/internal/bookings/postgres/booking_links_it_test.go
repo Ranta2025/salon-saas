@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	pgstore "salon-saas/internal/adapters/postgres"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/testutil/itdb"
 	"strings"
 	"sync"
@@ -75,11 +76,11 @@ func newItLinkEnv(t *testing.T) *itLinkEnv {
 	salons := pgstore.Salons{Pool: pool}
 	users := pgstore.Users{Pool: pool}
 	mems := pgstore.Memberships{Pool: pool}
-	services := pgstore.Services{Pool: pool}
-	profs := pgstore.ProfessionalServices{Pool: pool}
+	services := staffingpostgres.Services{Pool: pool}
+	profs := staffingpostgres.ProfessionalServices{Pool: pool}
 	hours := pgstore.WeeklyHours{Pool: pool}
 	timeOff := pgstore.TimeOff{Pool: pool}
-	resources := pgstore.Resources{Pool: pool}
+	resources := staffingpostgres.Resources{Pool: pool}
 	emails := BookingEmails{Pool: pool}
 	bookings := Bookings{Pool: pool}
 	links := BookingLinks{Pool: pool}

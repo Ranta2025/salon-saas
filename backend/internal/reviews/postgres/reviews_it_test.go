@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 	"salon-saas/internal/reviews"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
@@ -69,7 +69,7 @@ func rvFixtures(t *testing.T) *rvFix {
 			t.Errorf("borrar el salón con sus reseñas: %v", err)
 		}
 	})
-	services := pgstore.Services{Pool: pool}
+	services := staffingpostgres.Services{Pool: pool}
 	svc, err := domain.NewService(rvSalon, "Corte", 45, 15000, 10)
 	if err != nil {
 		t.Fatalf("servicio: %v", err)

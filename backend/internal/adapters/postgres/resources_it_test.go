@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	pgstore "salon-saas/internal/adapters/postgres"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/testutil/itdb"
 	"sync"
 	"testing"
@@ -22,7 +23,7 @@ import (
 )
 
 // itResourcesEnv deja un salón limpio y devuelve los repos de equipo y catálogo.
-func itResourcesEnv(t *testing.T, pool *pgxpool.Pool, salonID string) (pgstore.Resources, pgstore.Services) {
+func itResourcesEnv(t *testing.T, pool *pgxpool.Pool, salonID string) (staffingpostgres.Resources, staffingpostgres.Services) {
 	t.Helper()
 	ctx := context.Background()
 	_, _ = pool.Exec(ctx, `INSERT INTO salons(id,slug,name) VALUES($1,$1,'Salón '||$1)
@@ -31,7 +32,7 @@ func itResourcesEnv(t *testing.T, pool *pgxpool.Pool, salonID string) (pgstore.R
 	_, _ = pool.Exec(ctx, `DELETE FROM services WHERE salon_id=$1`, salonID)
 	_, _ = pool.Exec(ctx, `DELETE FROM resource_units WHERE salon_id=$1`, salonID)
 	_, _ = pool.Exec(ctx, `DELETE FROM resource_types WHERE salon_id=$1`, salonID)
-	return pgstore.Resources{Pool: pool}, pgstore.Services{Pool: pool}
+	return staffingpostgres.Resources{Pool: pool}, staffingpostgres.Services{Pool: pool}
 }
 
 // itUser deja un usuario miembro del salón.
@@ -46,7 +47,7 @@ func itUser(t *testing.T, pool *pgxpool.Pool, userID, salonID string, role domai
 }
 
 // itType crea un tipo con `count` unidades en la DB.
-func itType(t *testing.T, repo pgstore.Resources, salonID, name string, count int) (domain.ResourceType, []domain.ResourceUnit) {
+func itType(t *testing.T, repo staffingpostgres.Resources, salonID, name string, count int) (domain.ResourceType, []domain.ResourceUnit) {
 	t.Helper()
 	rt, err := domain.NewResourceType(salonID, name)
 	if err != nil {
@@ -367,9 +368,9 @@ func newITBookingEnv(t *testing.T, pool *pgxpool.Pool, salonID string, professio
 		slug:      salonID,
 		serviceID: svc.ID,
 		book: bookingsapi.PublicBookingService{
-			Salons: pgstore.Salons{Pool: pool}, Services: pgstore.Services{Pool: pool}, Settings: pgstore.Salons{Pool: pool},
+			Salons: pgstore.Salons{Pool: pool}, Services: staffingpostgres.Services{Pool: pool}, Settings: pgstore.Salons{Pool: pool},
 			Staff: pgstore.Memberships{Pool: pool}, Bookings: bookingspostgres.Bookings{Pool: pool},
-			Professionals: pgstore.ProfessionalServices{Pool: pool}, Resources: repo,
+			Professionals: staffingpostgres.ProfessionalServices{Pool: pool}, Resources: repo,
 		},
 	}
 }

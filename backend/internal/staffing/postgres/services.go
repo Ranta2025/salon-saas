@@ -1,9 +1,10 @@
-package pgstore
+package postgres
 
 import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 )
 
@@ -37,7 +38,7 @@ func (r Services) Save(s domain.Service) error {
 		   description=EXCLUDED.description`,
 		s.ID, s.SalonID, s.Name, s.DurationMin, s.PriceCents, s.CommissionPct, s.Active, s.ResourceTypeID, s.Description)
 	// Nombre activo duplicado -> índice único -> ErrAlreadyExists (409).
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 func (r Services) FindByID(salonID, id string) (domain.Service, error) {
@@ -45,7 +46,7 @@ func (r Services) FindByID(salonID, id string) (domain.Service, error) {
 		`SELECT `+serviceColumns+` FROM services WHERE salon_id=$1 AND id=$2`, salonID, id)
 	s, err := scanService(row.Scan)
 	if err != nil {
-		return domain.Service{}, notFound(err)
+		return domain.Service{}, pgstore.NotFound(err)
 	}
 	return s, nil
 }

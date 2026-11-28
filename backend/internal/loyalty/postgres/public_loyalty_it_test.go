@@ -7,6 +7,7 @@ import (
 
 	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/settings"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 )
 
 // D8: `loyalty` sale SOLO si el programa está activado Y su servicio sigue
@@ -15,7 +16,7 @@ import (
 func TestPublicSalon_loyaltyOnlyWhenEnabledAndServiceActive(t *testing.T) {
 	f := loyFixtures(t)
 	pub := settings.PublicSalonService{
-		Salons: pgstore.Salons{Pool: f.pool}, Services: pgstore.Services{Pool: f.pool}, Settings: pgstore.Salons{Pool: f.pool},
+		Salons: pgstore.Salons{Pool: f.pool}, Services: staffingpostgres.Services{Pool: f.pool}, Settings: pgstore.Salons{Pool: f.pool},
 		Hours: pgstore.WeeklyHours{Pool: f.pool}, Loyalty: f.programs,
 	}
 	loyalty := func(slug string) *settings.PublicLoyalty {

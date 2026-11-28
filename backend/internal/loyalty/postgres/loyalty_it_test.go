@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
@@ -75,7 +75,7 @@ func loyFixtures(t *testing.T) *loyFix {
 	}
 	f := &loyFix{pool: pool, ctx: ctx, programs: LoyaltyPrograms{Pool: pool}, rewards: LoyaltyRewards{Pool: pool}, auckland: loc,
 		t0: time.Now().UTC().Add(-48 * time.Hour).Truncate(time.Microsecond)}
-	services := pgstore.Services{Pool: pool}
+	services := staffingpostgres.Services{Pool: pool}
 	mk := func(salon, name string) domain.Service {
 		s, err := domain.NewService(salon, name, 45, 15000, 10)
 		if err != nil {

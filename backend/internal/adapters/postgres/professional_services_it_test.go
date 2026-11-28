@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	pgstore "salon-saas/internal/adapters/postgres"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/testutil/itdb"
 	"testing"
 	"time"
@@ -267,7 +268,7 @@ func f2cFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 // scopeada por salon_id.
 func TestProfessionalServices_IT(t *testing.T) {
 	pool, ctx := f2cFixtures(t)
-	repo := pgstore.ProfessionalServices{Pool: pool}
+	repo := staffingpostgres.ProfessionalServices{Pool: pool}
 
 	// Lista inicial vacía (nadie hace nada hasta que se asigna).
 	if ids, err := repo.ListServiceIDs("s-it-f2c", "u-it-f2c-pro"); err != nil || len(ids) != 0 {

@@ -66,6 +66,7 @@ import (
 	"salon-saas/internal/simbank"
 	"salon-saas/internal/staffing"
 	staffinghttpapi "salon-saas/internal/staffing/httpapi"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/team"
 	teamhttpapi "salon-saas/internal/team/httpapi"
 	teamstore "salon-saas/internal/team/postgres"
@@ -285,10 +286,10 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	// `Audit(action)` de las rutas sensibles; es append-only y de mejor esfuerzo.
 	auditRepo := auditpostgres.Audit{Pool: pool}
 	closesRepo := pospostgres.CashCloses{Pool: pool}
-	servicesRepo := pgstore.Services{Pool: pool}
+	servicesRepo := staffingpostgres.Services{Pool: pool}
 	// F2c: qué servicios hace cada quien (disponibilidad, reserva pública y
 	// pantalla de equipo).
-	professionals := pgstore.ProfessionalServices{Pool: pool}
+	professionals := staffingpostgres.ProfessionalServices{Pool: pool}
 	// F2d1: horario semanal del salón y de cada profesional (sin filas =
 	// comportamiento de siempre).
 	weeklyHours := pgstore.WeeklyHours{Pool: pool}
@@ -296,7 +297,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	timeOffRepo := pgstore.TimeOff{Pool: pool}
 	// F2e: puestos y equipamiento con capacidad (tipos, unidades y la unidad que
 	// ocupa cada turno). Sin backfill: sin tipos el comportamiento es el de antes.
-	resourceRepo := pgstore.Resources{Pool: pool}
+	resourceRepo := staffingpostgres.Resources{Pool: pool}
 	// F2g1: invitaciones de equipo. El adaptador es lectura + transacción (el
 	// canje es atómico); el token se guarda solo como SHA-256.
 	invitationRepo := teamstore.Invitations{Pool: pool}

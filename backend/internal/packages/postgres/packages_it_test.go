@@ -17,6 +17,7 @@ import (
 	clientspostgres "salon-saas/internal/clients/postgres"
 	"salon-saas/internal/domain"
 	pospostgres "salon-saas/internal/pos/postgres"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
@@ -67,7 +68,7 @@ func pkgFixtures(t *testing.T) *pkgFix {
 		}
 	}
 	f := &pkgFix{pool: pool, ctx: ctx, catalog: Packages{Pool: pool}, owned: ClientPackages{Pool: pool}}
-	services := pgstore.Services{Pool: pool}
+	services := staffingpostgres.Services{Pool: pool}
 	mk := func(salon, name string) domain.Service {
 		s, err := domain.NewService(salon, name, 45, 15000, 10)
 		if err != nil {

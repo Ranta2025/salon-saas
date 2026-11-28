@@ -1,4 +1,4 @@
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -45,20 +46,20 @@ func (r Resources) CreateType(t domain.ResourceType, units []domain.ResourceUnit
 	if err != nil {
 		return err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO resource_types(id,salon_id,name,created_at) VALUES($1,$2,$3,$4)`,
 		t.ID, t.SalonID, t.Name, t.CreatedAt); err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	for _, u := range units {
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO resource_units(id,salon_id,type_id,name,active) VALUES($1,$2,$3,$4,$5)`,
 			u.ID, u.SalonID, u.TypeID, u.Name, u.Active); err != nil {
-			return pgError(err)
+			return pgstore.PGError(err)
 		}
 	}
-	return pgError(tx.Commit(ctx))
+	return pgstore.PGError(tx.Commit(ctx))
 }
 
 // SaveType actualiza el nombre del tipo. El WHERE con salon_id es la
@@ -68,7 +69,7 @@ func (r Resources) SaveType(t domain.ResourceType) error {
 		`UPDATE resource_types SET name=$3 WHERE salon_id=$1 AND id=$2`,
 		t.SalonID, t.ID, t.Name)
 	if err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
@@ -86,7 +87,7 @@ func (r Resources) DeleteType(salonID, id string) error {
 	if err != nil {
 		return err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 	// Las unidades con turnos frenan el borrado (RESTRICT en bookings).
 	if _, err := tx.Exec(ctx,
 		`DELETE FROM resource_units WHERE salon_id=$1 AND type_id=$2`, salonID, id); err != nil {
@@ -100,7 +101,7 @@ func (r Resources) DeleteType(salonID, id string) error {
 	if tag.RowsAffected() == 0 {
 		return domain.ErrNotFound
 	}
-	return pgError(tx.Commit(ctx))
+	return pgstore.PGError(tx.Commit(ctx))
 }
 
 func (r Resources) FindType(salonID, id string) (domain.ResourceType, error) {
@@ -108,7 +109,7 @@ func (r Resources) FindType(salonID, id string) (domain.ResourceType, error) {
 		`SELECT `+resourceTypeColumns+` FROM resource_types WHERE salon_id=$1 AND id=$2`, salonID, id)
 	t, err := scanResourceType(row.Scan)
 	if err != nil {
-		return domain.ResourceType{}, notFound(err)
+		return domain.ResourceType{}, pgstore.NotFound(err)
 	}
 	return t, nil
 }
@@ -139,7 +140,7 @@ func (r Resources) SaveUnit(u domain.ResourceUnit) error {
 		 ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, active=EXCLUDED.active
 		 WHERE resource_units.salon_id = EXCLUDED.salon_id`,
 		u.ID, u.SalonID, u.TypeID, u.Name, u.Active)
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 func (r Resources) FindUnit(salonID, id string) (domain.ResourceUnit, error) {
@@ -147,7 +148,7 @@ func (r Resources) FindUnit(salonID, id string) (domain.ResourceUnit, error) {
 		`SELECT `+resourceUnitColumns+` FROM resource_units WHERE salon_id=$1 AND id=$2`, salonID, id)
 	u, err := scanResourceUnit(row.Scan)
 	if err != nil {
-		return domain.ResourceUnit{}, notFound(err)
+		return domain.ResourceUnit{}, pgstore.NotFound(err)
 	}
 	return u, nil
 }
@@ -240,7 +241,7 @@ func foreignInUse(err error) error {
 	if err != nil && errors.As(err, &pg) && (pg.Code == "23001" || pg.Code == "23503") {
 		return domain.ErrAlreadyExists
 	}
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 var _ ports.ResourceRepository = Resources{}

@@ -14,12 +14,13 @@ import (
 	packagespostgres "salon-saas/internal/packages/postgres"
 	"salon-saas/internal/settings"
 	settingspostgres "salon-saas/internal/settings/postgres"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
 func TestServices_descriptionRoundTrip(t *testing.T) {
 	pool := itdb.F16Fixtures(t)
-	repo := pgstore.Services{Pool: pool}
+	repo := staffingpostgres.Services{Pool: pool}
 	svc, err := domain.NewService("s-it-f16", "Corte F16", 30, 1000, 10)
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +95,7 @@ func TestPublicSalon_realRepos(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	services := pgstore.Services{Pool: pool}
+	services := staffingpostgres.Services{Pool: pool}
 	mk := func(salon, name string, active bool, description string) domain.Service {
 		s, _ := domain.NewService(salon, name, 45, 15000, 10)
 		s, _ = s.WithDescription(description)
@@ -112,7 +113,7 @@ func TestPublicSalon_realRepos(t *testing.T) {
 	inactivo := mk("s-it-f16", "Inactivo", false, "")
 	ajeno := mk("s-it-f162", "Del otro salón", true, "")
 
-	ps := pgstore.ProfessionalServices{Pool: pool}
+	ps := staffingpostgres.ProfessionalServices{Pool: pool}
 	for user, ids := range map[string][]string{
 		"u-it-f16-ana": {zeta.ID, inactivo.ID},
 		"u-it-f16-bea": {alfa.ID},

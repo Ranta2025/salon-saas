@@ -10,6 +10,7 @@ import (
 	"errors"
 	pgstore "salon-saas/internal/adapters/postgres"
 	pospostgres "salon-saas/internal/pos/postgres"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"testing"
 	"time"
 
@@ -56,7 +57,7 @@ func posFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 
 func TestServices_IT(t *testing.T) {
 	pool, _ := posFixtures(t)
-	repo := pgstore.Services{Pool: pool}
+	repo := staffingpostgres.Services{Pool: pool}
 
 	corte, err := domain.NewService("s-it-pos", "Corte IT", 45, 150000, 30)
 	if err != nil {
@@ -128,7 +129,7 @@ func TestServices_IT(t *testing.T) {
 
 func TestSales_IT(t *testing.T) {
 	pool, _ := posFixtures(t)
-	services := pgstore.Services{Pool: pool}
+	services := staffingpostgres.Services{Pool: pool}
 	repo := pospostgres.Sales{Pool: pool}
 
 	corte, _ := domain.NewService("s-it-pos", "Corte IT", 45, 150000, 30)

@@ -15,14 +15,15 @@ import (
 	payrollpostgres "salon-saas/internal/payroll/postgres"
 	"salon-saas/internal/pos"
 	pospostgres "salon-saas/internal/pos/postgres"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
 // saleProductFixture siembra catálogo de servicios y productos en s-it-prod.
-func saleProductFixture(t *testing.T) (*pgxpool.Pool, context.Context, pgstore.Services, pgstore.Products, pospostgres.SaleProducts) {
+func saleProductFixture(t *testing.T) (*pgxpool.Pool, context.Context, staffingpostgres.Services, pgstore.Products, pospostgres.SaleProducts) {
 	t.Helper()
 	pool, ctx := productFixtures(t)
-	return pool, ctx, pgstore.Services{Pool: pool}, pgstore.Products{Pool: pool}, pospostgres.SaleProducts{Pool: pool}
+	return pool, ctx, staffingpostgres.Services{Pool: pool}, pgstore.Products{Pool: pool}, pospostgres.SaleProducts{Pool: pool}
 }
 
 type productSpec struct {
@@ -371,7 +372,7 @@ func TestSaleWithProducts_concurrency_IT(t *testing.T) {
 	owner, _ := mems.Find("u-it-prod-owner", "s-it-prod")
 	idem := seedProducts(t, products, "s-it-prod", productSpec{"Idempotente App", 1000, 5, 0})[0]
 	svc := pos.SaleService{
-		Sales: pospostgres.Sales{Pool: pool}, Services: pgstore.Services{Pool: pool}, Memberships: mems,
+		Sales: pospostgres.Sales{Pool: pool}, Services: staffingpostgres.Services{Pool: pool}, Memberships: mems,
 		Products: products, ProductSales: sales,
 	}
 	var wg5 sync.WaitGroup

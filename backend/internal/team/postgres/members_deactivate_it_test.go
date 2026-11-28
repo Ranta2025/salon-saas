@@ -19,6 +19,7 @@ import (
 	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
@@ -202,7 +203,7 @@ func TestMembers_IT_deactivate_keeps_history(t *testing.T) {
 // persona conserva el acceso al OTRO salón.
 func TestMembers_IT_deactivate_active_only_reads(t *testing.T) {
 	pool, repo := f2g2Fixture(t)
-	pros := pgstore.ProfessionalServices{Pool: pool}
+	pros := staffingpostgres.ProfessionalServices{Pool: pool}
 
 	// Antes de la baja: todo lo ve.
 	if _, err := repo.Find(f2g2Pro, f2g2SalonA); err != nil {
@@ -634,7 +635,7 @@ func TestMembers_IT_deactivate_reactivate_race(t *testing.T) {
 // comportamiento con miembros ACTIVOS es exactamente el de antes.
 func TestMembers_IT_active_reads_preserved(t *testing.T) {
 	pool, repo := f2g2Fixture(t)
-	pros := pgstore.ProfessionalServices{Pool: pool}
+	pros := staffingpostgres.ProfessionalServices{Pool: pool}
 
 	t.Run("Find", func(t *testing.T) {
 		m, err := repo.Find(f2g2Pro, f2g2SalonA)

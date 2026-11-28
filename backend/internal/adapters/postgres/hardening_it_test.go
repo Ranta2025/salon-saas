@@ -7,6 +7,7 @@ import (
 	"errors"
 	pgstore "salon-saas/internal/adapters/postgres"
 	pospostgres "salon-saas/internal/pos/postgres"
+	staffingpostgres "salon-saas/internal/staffing/postgres"
 	"sync"
 	"testing"
 	"time"
@@ -22,7 +23,7 @@ import (
 func TestSales_IT_sumas_grandes_no_rompen(t *testing.T) {
 	pool, _ := posFixtures(t)
 	repo := pospostgres.Sales{Pool: pool}
-	services := pgstore.Services{Pool: pool}
+	services := staffingpostgres.Services{Pool: pool}
 	corte, err := domain.NewService("s-it-pos", "Corte grande", 45, domain.MaxSaleUnitPriceCents, 0)
 	if err != nil {
 		t.Fatalf("dominio servicio: %v", err)
@@ -93,7 +94,7 @@ func TestSales_IT_sumas_grandes_no_rompen(t *testing.T) {
 func TestCashCloses_IT_concurrentes_cuentan_una_vez(t *testing.T) {
 	pool, ctx := posFixtures(t)
 	repo := pospostgres.Sales{Pool: pool}
-	services := pgstore.Services{Pool: pool}
+	services := staffingpostgres.Services{Pool: pool}
 	cashRepo := pospostgres.CashCloses{Pool: pool}
 	mems := pgstore.Memberships{Pool: pool}
 
