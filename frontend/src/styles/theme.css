@@ -16,6 +16,8 @@
 }
 
 :root {
+  color-scheme: light;
+
   /* brand palette (spec) */
   --ink: #1e1418;
   --plum: #3b1e33;
@@ -39,6 +41,86 @@
   --line-dark: rgba(232, 217, 181, 0.26);
   --gold-tint: rgba(201, 162, 39, 0.14);
   --rose-tint: rgba(231, 201, 210, 0.4);
+
+  /* Semantic tokens. The light values are the palette above verbatim, so the
+     dark theme (bottom of this file) can override the same names without any
+     rule in base.css, app.css or landing.css knowing which theme is active. */
+  --page-bg: var(--cream);
+  --surface-raised: #ffffff;
+  --surface-alt: var(--cream);
+  --surface-form: var(--cream);
+  --surface-hover: #ffffff;
+  --surface-translucent: rgba(255, 253, 250, 0.7);
+  --surface-head: rgba(232, 217, 181, 0.28);
+  --footer-bg: var(--ink);
+  --toast-bg: var(--ink);
+  --header-bg: rgba(250, 245, 239, 0.92);
+
+  --overlay: rgba(30, 20, 24, 0.45);
+  --overlay-strong: rgba(42, 20, 36, 0.78);
+  --scrim-strong: rgba(30, 20, 24, 0.88);
+  --control-track: rgba(30, 20, 24, 0.16);
+  --table-stripe: rgba(232, 217, 181, 0.22);
+  --nav-hover: rgba(232, 217, 181, 0.12);
+  --ghost-hover: rgba(30, 20, 24, 0.07);
+  --ghost-hover-dark: rgba(250, 245, 239, 0.16);
+  --scroll-shadow: rgba(30, 20, 24, 0.18);
+  --scroll-shadow-strong: rgba(0, 0, 0, 0.45);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.35);
+  --line-dark-soft: rgba(232, 217, 181, 0.18);
+  --line-dark-faint: rgba(232, 217, 181, 0.2);
+  --line-dark-strong: rgba(232, 217, 181, 0.4);
+  --shadow-up: 0 -8px 24px rgba(30, 20, 24, 0.14);
+  --shadow-sheet: 0 -14px 40px rgba(59, 30, 51, 0.28);
+  --testimonial-from: var(--cream);
+  --testimonial-to: rgba(232, 217, 181, 0.5);
+
+  /* Solids that always carry cream/gold text, and the text accents. */
+  --accent-solid: var(--wine);
+  --accent-solid-hover: var(--plum);
+  --brand-wine: var(--wine);
+  --plum-accent: var(--plum);
+  --on-gold: var(--ink);
+  --gold-hover: #d8b338;
+  --selection-bg: var(--champagne);
+  --selection-text: var(--ink);
+
+  /* Status tints. The same names hold readable surfaces in the dark theme. */
+  --ok: #2b6847;
+  --ok-text: #1f5138;
+  --ok-bg: rgba(43, 104, 71, 0.12);
+  --ok-bg-strong: rgba(43, 104, 71, 0.16);
+  --ok-bg-soft: rgba(43, 104, 71, 0.08);
+  --ok-border: rgba(43, 104, 71, 0.35);
+  --ok-wash: rgba(31, 81, 56, 0.1);
+  --ok-wash-strong: rgba(31, 81, 56, 0.14);
+  --ok-outline: rgba(31, 81, 56, 0.4);
+  --bad: #8c1d33;
+  --bad-soft: #a13a5c;
+  --bad-text: #6d1526;
+  --error-text: #8c1d33;
+  --bad-bg: rgba(140, 29, 51, 0.1);
+  --bad-bg-strong: rgba(140, 29, 51, 0.14);
+  --bad-bg-soft: rgba(140, 29, 51, 0.08);
+  --bad-band: rgba(140, 29, 51, 0.09);
+  --bad-border: rgba(140, 29, 51, 0.4);
+  --bad-border-soft: rgba(140, 29, 51, 0.3);
+  --bad-border-band: rgba(140, 29, 51, 0.25);
+  --bad-outline: rgba(109, 21, 38, 0.35);
+  --bad-wash: rgba(109, 21, 38, 0.08);
+  --warning-bg: rgba(201, 162, 39, 0.16);
+  --warning-bg-soft: rgba(201, 162, 39, 0.12);
+  --warning-ink: #4d3a00;
+  --warning-border: rgba(201, 162, 39, 0.65);
+  --warning-border-soft: rgba(201, 162, 39, 0.5);
+  --warning-border-mid: rgba(201, 162, 39, 0.6);
+  --banner-bg: #4d3a00;
+  --banner-text: #ffe9a8;
+  --neutral-bg: rgba(30, 20, 24, 0.08);
+  --neutral-bg-soft: rgba(30, 20, 24, 0.04);
+  --neutral-bg-mid: rgba(30, 20, 24, 0.05);
+  --neutral-bg-strong: rgba(30, 20, 24, 0.1);
+  --badge-off-bg: rgba(0, 0, 0, 0.07);
 
   /* typography */
   --font-display: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
@@ -85,4 +167,125 @@
 
   --header-height: 72px;
   --transition: 180ms ease;
+}
+
+/* ==========================================================================
+   Dark theme: the SAME token names, never an inversion.
+
+   Warm plum-black surfaces, off-white text and champagne/wine accents keep the
+   identity of the salon. Every token used as text is checked by
+   src/lib/contrast.test.ts against each surface it is painted on (AA 4.5:1 for
+   body text, 3:1 for UI borders and focus rings). `color-scheme: dark` makes the
+   native controls (date/time pickers, scrollbars, selects) follow the theme.
+   ========================================================================== */
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* brand palette: the solids of the identity do not change */
+  --plum: #3b1e33;
+  --wine: #e39ab4;
+  --gold: #c9a227;
+  --champagne: #e8d9b5;
+  --cream: #faf5ef;
+  --rose: #e7c9d2;
+  --plum-deep: #2a1424;
+
+  /* surfaces and text */
+  --surface: #22131b;
+  --surface-raised: #2b1924;
+  --surface-alt: #1b1016;
+  --surface-form: #2b1924;
+  --surface-hover: #301c29;
+  --surface-translucent: rgba(34, 19, 27, 0.7);
+  --surface-head: #2e1b26;
+  --page-bg: #140c10;
+  --shell-bg: #160d12;
+  --footer-bg: #120a0e;
+  --toast-bg: #120a0e;
+  --header-bg: rgba(20, 12, 16, 0.92);
+
+  --ink: #f3e9e3;
+  --ink-soft: #cdbdb7;
+  --ink-muted: #b3a09b;
+  --cream-soft: rgba(250, 245, 239, 0.8);
+  --cream-muted: rgba(250, 245, 239, 0.62);
+
+  --line: rgba(243, 233, 227, 0.14);
+  /* 0.4 over --surface is >3:1: the border of an input is a real boundary */
+  --line-strong: rgba(243, 233, 227, 0.4);
+  --line-dark: rgba(232, 217, 181, 0.26);
+  --gold-tint: #3a2b16;
+  --rose-tint: #3a2028;
+
+  /* solids that carry cream/gold text, and accents used as text */
+  --accent-solid: #8f3d66;
+  --accent-solid-hover: #a94a78;
+  --brand-wine: #6b2d4f;
+  --plum-accent: #a06b8a;
+  --on-gold: #1e1418;
+  --gold-hover: #d8b338;
+  --selection-bg: #6b2d4f;
+  --selection-text: #faf5ef;
+
+  /* shadows and overlays */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --shadow-up: 0 -8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-sheet: 0 -14px 40px rgba(0, 0, 0, 0.6);
+  --overlay: rgba(0, 0, 0, 0.6);
+  --overlay-strong: rgba(20, 8, 14, 0.8);
+  --scrim-strong: rgba(20, 8, 14, 0.9);
+  --control-track: rgba(243, 233, 227, 0.22);
+  --table-stripe: rgba(232, 217, 181, 0.08);
+  --nav-hover: rgba(232, 217, 181, 0.12);
+  --ghost-hover: rgba(250, 245, 239, 0.08);
+  --ghost-hover-dark: rgba(250, 245, 239, 0.16);
+  --scroll-shadow: rgba(0, 0, 0, 0.5);
+  --scroll-shadow-strong: rgba(0, 0, 0, 0.7);
+  --scrollbar-thumb: rgba(243, 233, 227, 0.35);
+  --testimonial-from: var(--page-bg);
+  --testimonial-to: #2a1c10;
+
+  /* status: dark tints with light text, readable over every dark surface */
+  --ok: #4f9d70;
+  --ok-text: #a7e3c0;
+  --ok-bg: #1e3328;
+  --ok-bg-strong: #24402f;
+  --ok-bg-soft: #1c2e24;
+  --ok-border: rgba(79, 157, 112, 0.55);
+  --ok-wash: #1c2e24;
+  --ok-wash-strong: #24402f;
+  --ok-outline: rgba(79, 157, 112, 0.6);
+  --bad: #c2475f;
+  --bad-soft: #e0708c;
+  --bad-text: #ffa9ba;
+  --error-text: #ffa9ba;
+  --bad-bg: #3a1a22;
+  --bad-bg-strong: #45202a;
+  --bad-bg-soft: #331820;
+  --bad-band: #361922;
+  --bad-border: rgba(194, 71, 95, 0.55);
+  --bad-border-soft: rgba(194, 71, 95, 0.4);
+  --bad-border-band: rgba(194, 71, 95, 0.45);
+  --bad-outline: rgba(194, 71, 95, 0.6);
+  --bad-wash: #331820;
+  --warning-bg: #33280f;
+  --warning-bg-soft: #2c220e;
+  --warning-ink: #f2d492;
+  --warning-border: rgba(201, 162, 39, 0.65);
+  --warning-border-soft: rgba(201, 162, 39, 0.5);
+  --warning-border-mid: rgba(201, 162, 39, 0.6);
+  --banner-bg: #4d3a00;
+  --banner-text: #ffe9a8;
+  --neutral-bg: #2a2024;
+  --neutral-bg-soft: #221a1e;
+  --neutral-bg-mid: #251c20;
+  --neutral-bg-strong: #2e2228;
+  --badge-off-bg: #241c20;
+
+  /* light text on brand panels: cream/champagne keep working on plum */
+  --focus-light: var(--wine);
+  --focus-dark: var(--champagne);
 }
