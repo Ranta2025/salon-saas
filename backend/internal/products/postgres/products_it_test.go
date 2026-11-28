@@ -1,8 +1,8 @@
 // Integración con Postgres real de productos e inventario (F6, D1/D2).
 // Se saltea sin SALON_IT=1. Corre con:
 //
-//	SALON_IT=1 go test ./internal/adapters/postgres/ -run 'Products|SaleProducts' -v
-package pgstore_test
+//	SALON_IT=1 go test ./internal/products/postgres/ -run 'Products|SaleProducts' -v
+package postgres_test
 
 import (
 	"context"
@@ -248,7 +248,12 @@ func TestMigration029_overData_IT(t *testing.T) {
 		return sum
 	}
 	salesMD5 := md5Of(`SELECT md5(COALESCE(string_agg(t::text,'|' ORDER BY t.id),'')) FROM sales t WHERE salon_id LIKE 's-it-prod%'`)
-	itemsMD5 := md5Of(`SELECT md5(COALESCE(string_agg(t::text,'|' ORDER BY t.id),'')) FROM sale_items t`)
+	// sale_items no tiene salon_id: se acota a las ventas de ESTE test. La foto de
+	// la tabla entera cambiaba sola porque los otros paquetes de integración
+	// venden a la vez (go test -p 4): la aserción es la misma (029 no toca los
+	// renglones previos), sin depender de lo que escriban los demás.
+	itemsMD5 := md5Of(`SELECT md5(COALESCE(string_agg(t::text,'|' ORDER BY t.id),'')) FROM sale_items t
+		WHERE sale_id IN (SELECT id FROM sales WHERE salon_id LIKE 's-it-prod%')`)
 	servicesMD5 := md5Of(`SELECT md5(COALESCE(string_agg(t::text,'|' ORDER BY t.id),'')) FROM services t WHERE salon_id LIKE 's-it-prod%'`)
 	var zero int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM sales WHERE salon_id LIKE 's-it-prod%' AND products_cents <> 0`).Scan(&zero); err != nil || zero != 0 {
@@ -259,7 +264,8 @@ func TestMigration029_overData_IT(t *testing.T) {
 	if got := md5Of(`SELECT md5(COALESCE(string_agg(t::text,'|' ORDER BY t.id),'')) FROM sales t WHERE salon_id LIKE 's-it-prod%'`); got != salesMD5 {
 		t.Fatalf("md5 de sales cambió: %s != %s", got, salesMD5)
 	}
-	if got := md5Of(`SELECT md5(COALESCE(string_agg(t::text,'|' ORDER BY t.id),'')) FROM sale_items t`); got != itemsMD5 {
+	if got := md5Of(`SELECT md5(COALESCE(string_agg(t::text,'|' ORDER BY t.id),'')) FROM sale_items t
+		WHERE sale_id IN (SELECT id FROM sales WHERE salon_id LIKE 's-it-prod%')`); got != itemsMD5 {
 		t.Fatalf("md5 de sale_items cambió")
 	}
 	if got := md5Of(`SELECT md5(COALESCE(string_agg(t::text,'|' ORDER BY t.id),'')) FROM services t WHERE salon_id LIKE 's-it-prod%'`); got != servicesMD5 {

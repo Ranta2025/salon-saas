@@ -2,8 +2,8 @@
 // migrada). Prueba las garantías DURAS de la migración 020: unicidad de nombres
 // sin importar mayúsculas, la EXCLUDE por unidad (dos reservas simultáneas nunca
 // se llevan la última), la FK RESTRICT al borrar y el scope por salón.
-// Corre con: SALON_IT=1 DATABASE_URL=... go test ./internal/adapters/postgres/
-package pgstore_test
+// Corre con: SALON_IT=1 DATABASE_URL=... go test ./internal/staffing/postgres/
+package postgres_test
 
 import (
 	"context"

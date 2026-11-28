@@ -15,7 +15,42 @@ import (
 	bookingspostgres "salon-saas/internal/bookings/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/pos"
+	"salon-saas/internal/testutil/itdb"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// posFixtures deja el escenario limpio de POS y devuelve el pool. Los tests de
+// integración de POS se mudaron a internal/pos/postgres (H34(b)) y este paquete
+// —que cruza funcionalidades— se quedó con su copia: los _test.go de un paquete
+// no se pueden importar desde otro.
+func posFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
+	t.Helper()
+	pool := itdb.Pool(t)
+	t.Cleanup(pool.Close)
+	ctx := context.Background()
+	itdb.ApplyMigrations(t, pool)
+
+	// Limpieza acotada a las fixtures de este archivo (el salón cascadea todo).
+	for _, q := range []string{
+		`DELETE FROM salons WHERE id LIKE 's-it-pos%'`,
+		`DELETE FROM users WHERE id LIKE 'u-it-pos%'`,
+	} {
+		if _, err := pool.Exec(ctx, q); err != nil {
+			t.Fatalf("limpieza: %v", err)
+		}
+	}
+	for _, q := range []string{
+		`INSERT INTO users(id,name,email,pass_hash) VALUES('u-it-pos','Pos IT','posit@test.com','x')`,
+		`INSERT INTO salons(id,slug,name) VALUES('s-it-pos','s-it-pos','Salón POS IT')`,
+		`INSERT INTO salons(id,slug,name) VALUES('s-it-pos2','s-it-pos2','Salón POS IT 2')`,
+	} {
+		if _, err := pool.Exec(ctx, q); err != nil {
+			t.Fatalf("fixture: %v", err)
+		}
+	}
+	return pool, ctx
+}
 
 // B-03: una venta de 2.000.000.000 centavos NO puede entrar (el dominio la
 // rechaza), y la suma de muchas ventas grandes se calcula con SUM::bigint: con

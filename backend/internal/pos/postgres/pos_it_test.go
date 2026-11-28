@@ -2,8 +2,8 @@
 // Aplica las migraciones del repo dos veces (idempotencia) y luego prueba los
 // repositorios: scoping por salón, índice único de nombres activos, transacción
 // de venta + ítems, suma de efectivo para el cierre y ranking del dashboard.
-// Corre con: SALON_IT=1 go test ./internal/adapters/postgres/ -run IT -v
-package pgstore_test
+// Corre con: SALON_IT=1 go test ./internal/pos/postgres/ -run IT -v
+package postgres_test
 
 import (
 	"context"

@@ -1,6 +1,6 @@
 // Integración con Postgres real de la venta CON productos (F6, D1/D3/D4/D6/D8).
 // Se saltea sin SALON_IT=1.
-package pgstore_test
+package postgres_test
 
 import (
 	"context"

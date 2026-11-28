@@ -1,7 +1,7 @@
 // F2c contra Postgres real (SALON_IT=1): la migración 016 (oficio, servicios
 // por profesional y el servicio del turno) y las queries nuevas, siempre
 // scopeadas por salon_id.
-package pgstore_test
+package postgres_test
 
 import (
 	"context"
