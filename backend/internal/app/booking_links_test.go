@@ -2,6 +2,8 @@ package app
 
 import (
 	"errors"
+	"salon-saas/internal/testutil"
+	"salon-saas/internal/testutil/agendakit"
 	"strings"
 	"testing"
 	"time"
@@ -16,10 +18,8 @@ import (
 // token, dos reprogramaciones al mismo hueco) viven en los IT de Postgres: acá
 // se fija el contrato del caso de uso con fakes.
 
-const linkAppURL = "http://localhost:8081"
-
 type linkEnv struct {
-	*publicEnv
+	*agendakit.PublicEnv
 	links *fakeBookingLinks
 	svc   bkg.BookingLinkService
 }
@@ -29,19 +29,19 @@ type linkEnv struct {
 // profesionales prof1 y prof2).
 func newLinkEnv(t *testing.T) *linkEnv {
 	t.Helper()
-	pub := newPublicEnv(t)
-	links := &fakeBookingLinks{bookings: pub.bookings}
+	pub := agendakit.NewPublicEnv(t)
+	links := &fakeBookingLinks{bookings: pub.Bookings}
 	svc := bkg.BookingLinkService{
-		Links: links, Tx: links, Bookings: pub.bookings, Salons: pub.avail.Salons,
-		Services: pub.services, Settings: pub.settings, Staff: pub.staff,
-		Professionals: pub.profs, Hours: pub.hours, TimeOff: pub.timeOff,
-		Resources: pub.resources, Availability: pub.avail,
-		Events: pub.events, Notifier: pub.notifier,
-		Mailer: pub.mailer, Emails: pub.emails, AppURL: linkAppURL,
+		Links: links, Tx: links, Bookings: pub.Bookings, Salons: pub.Avail.Salons,
+		Services: pub.Services, Settings: pub.Settings, Staff: pub.Staff,
+		Professionals: pub.Profs, Hours: pub.Hours, TimeOff: pub.TimeOff,
+		Resources: pub.Resources, Availability: pub.Avail,
+		Events: pub.Events, Notifier: pub.Notifier,
+		Mailer: pub.Mailer, Emails: pub.Emails, AppURL: testutil.LinkAppURL,
 	}
-	pub.book.Links = links
-	pub.book.AppURL = linkAppURL
-	return &linkEnv{publicEnv: pub, links: links, svc: svc}
+	pub.Book.Links = links
+	pub.Book.AppURL = testutil.LinkAppURL
+	return &linkEnv{PublicEnv: pub, links: links, svc: svc}
 }
 
 // linkDay devuelve un día LOCAL del salón con huecos garantizados en el futuro
@@ -61,21 +61,21 @@ func linkDay() (string, func(minutes int) time.Time) {
 
 // withMailer deja el sender y la cola de emails listos y limpia lo que publicó
 // la reserva, así el test cuenta solo lo del enlace.
-func (e *linkEnv) withMailer() *fakeMailer {
-	mailer := &fakeMailer{}
-	emails := &fakeBookingEmails{}
-	e.mailer = mailer
-	e.emails = emails
-	e.book.Mailer = mailer
-	e.book.Emails = emails
-	e.book.Links = e.links
-	e.book.AppURL = linkAppURL
+func (e *linkEnv) withMailer() *testutil.FakeMailer {
+	mailer := &testutil.FakeMailer{}
+	emails := &testutil.FakeBookingEmails{}
+	e.Mailer = mailer
+	e.Emails = emails
+	e.Book.Mailer = mailer
+	e.Book.Emails = emails
+	e.Book.Links = e.links
+	e.Book.AppURL = testutil.LinkAppURL
 	e.svc.Mailer = mailer
 	e.svc.Emails = emails
 	e.svc.Links = e.links
-	e.events.All = nil
-	e.notifier.calls = 0
-	e.notifier.bodies = nil
+	e.Events.All = nil
+	e.Notifier.Calls = 0
+	e.Notifier.Bodies = nil
 	return mailer
 }
 
@@ -83,16 +83,16 @@ func (e *linkEnv) withMailer() *fakeMailer {
 // token del enlace que salió en la confirmación.
 func (e *linkEnv) bookWithEmail(t *testing.T, starts time.Time, professional string) (domain.Booking, string) {
 	t.Helper()
-	in := publicInput()
-	in.ServiceID = e.corte.ID
+	in := agendakit.PublicInput()
+	in.ServiceID = e.Corte.ID
 	in.ClientEmail = "Lia@Mail.com"
 	in.StartsAt = starts
 	in.ProfessionalID = professional
-	b, err := e.book.Book("navajas-oro", in)
+	b, err := e.Book.Book("navajas-oro", in)
 	if err != nil {
 		t.Fatalf("reservar: %v", err)
 	}
-	msg := e.mailer.waitCount(t, 1)[0]
+	msg := e.Mailer.WaitCount(t, 1)[0]
 	return b, tokenFromMail(t, msg)
 }
 
@@ -124,9 +124,9 @@ func (e *linkEnv) linkFixture(t *testing.T, starts time.Time, professional strin
 	b := domain.Booking{
 		ID: domain.NewID(), SalonID: "s1", ProfessionalID: professional, ClientName: "Lía",
 		ClientPhone: "555", StartsAt: starts.UTC(), EndsAt: starts.Add(45 * time.Minute).UTC(),
-		Status: domain.BookingBooked, ServiceID: e.corte.ID, CreatedAt: time.Now().UTC(),
+		Status: domain.BookingBooked, ServiceID: e.Corte.ID, CreatedAt: time.Now().UTC(),
 	}
-	if err := e.bookings.Save(b); err != nil {
+	if err := e.Bookings.Save(b); err != nil {
 		t.Fatalf("guardar turno: %v", err)
 	}
 	token, err := domain.NewBookingLinkToken()
@@ -166,10 +166,10 @@ func TestBookingLink_solo_el_hash_y_solo_con_email(t *testing.T) {
 	}
 
 	// Un turno SIN email no emite token (D1) y la confirmación no sale.
-	in := publicInput()
-	in.ServiceID = env.corte.ID
+	in := agendakit.PublicInput()
+	in.ServiceID = env.Corte.ID
 	in.StartsAt = at(60)
-	if _, err := env.book.Book("navajas-oro", in); err != nil {
+	if _, err := env.Book.Book("navajas-oro", in); err != nil {
 		t.Fatalf("reservar sin email: %v", err)
 	}
 	if n := len(env.links.rows()); n != 1 {
@@ -215,7 +215,7 @@ func TestBookingLink_lookup_token_que_no_sirve(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cerrar turno: %v", err)
 	}
-	if err := env.bookings.Update(done); err != nil {
+	if err := env.Bookings.Update(done); err != nil {
 		t.Fatalf("guardar turno cerrado: %v", err)
 	}
 
@@ -279,7 +279,7 @@ func TestBookingLink_dentro_de_dos_horas(t *testing.T) {
 	}
 	// Nada cambió: el turno sigue agendado y el token sigue vivo (el 409 no lo
 	// consume, D2).
-	if b2, err := env.bookings.FindByID("s1", b.ID); err != nil || b2.Status != domain.BookingBooked {
+	if b2, err := env.Bookings.FindByID("s1", b.ID); err != nil || b2.Status != domain.BookingBooked {
 		t.Fatalf("el turno no se toca: %+v %v", b2, err)
 	}
 	if rows := env.links.rows(); rows[0].Used() {
@@ -327,7 +327,7 @@ func TestBookingLink_slots(t *testing.T) {
 	}
 	// Sin la exclusión el propio turno se come tres huecos: es la diferencia con
 	// la disponibilidad pública de siempre.
-	plain, err := env.avail.Day("navajas-oro", date, env.corte.ID, "prof1")
+	plain, err := env.Avail.Day("navajas-oro", date, env.Corte.ID, "prof1")
 	if err != nil {
 		t.Fatalf("disponibilidad pública: %v", err)
 	}
@@ -357,24 +357,24 @@ func TestBookingLink_confirmacion_y_recordatorio_llevan_enlace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("turno del recordatorio: %v", err)
 	}
-	b.ServiceID = env.corte.ID
-	if err := env.bookings.Save(b); err != nil {
+	b.ServiceID = env.Corte.ID
+	if err := env.Bookings.Save(b); err != nil {
 		t.Fatalf("guardar turno: %v", err)
 	}
-	emails := &fakeBookingEmails{due: []ports.DueReminder{{
+	emails := &testutil.FakeBookingEmails{Due: []ports.DueReminder{{
 		BookingID: b.ID, SalonID: "s1", SalonName: "Navajas de Oro", ClientName: "Lía",
 		Email: "lia@mail.com", StartsAt: b.StartsAt,
 	}}}
-	mailer := &fakeMailer{}
+	mailer := &testutil.FakeMailer{}
 	reminders := bkg.ReminderService{
-		Emails: emails, Mailer: mailer, Settings: env.settings,
-		Links: env.links, AppURL: linkAppURL,
+		Emails: emails, Mailer: mailer, Settings: env.Settings,
+		Links: env.links, AppURL: testutil.LinkAppURL,
 	}
 	sent, failed := reminders.RunOnce(t.Context(), time.Now().UTC())
 	if sent != 1 || failed != 0 {
 		t.Fatalf("RunOnce: enviados=%d fallidos=%d", sent, failed)
 	}
-	msg := mailer.waitCount(t, 1)[0]
+	msg := mailer.WaitCount(t, 1)[0]
 	tokenReminder := tokenFromMail(t, msg)
 	if tokenReminder == token {
 		t.Fatal("el recordatorio emite un token NUEVO (D1), no reusa el de la confirmación")
@@ -395,18 +395,18 @@ func TestBookingLink_cancel(t *testing.T) {
 	mailer := env.withMailer()
 	_, at := linkDay()
 	b, token := env.bookWithEmail(t, at(30), "prof1")
-	env.events.All = nil
+	env.Events.All = nil
 	notices := &fakeLinkNotifier{}
 	env.svc.Notifier = notices
 
 	if err := env.svc.Cancel(token); err != nil {
 		t.Fatalf("cancelar: %v", err)
 	}
-	stored, err := env.bookings.FindByID("s1", b.ID)
+	stored, err := env.Bookings.FindByID("s1", b.ID)
 	if err != nil || stored.Status != domain.BookingCancelled {
 		t.Fatalf("el turno tiene que quedar cancelado: %+v %v", stored, err)
 	}
-	ev, n := env.events.typed("booking.updated")
+	ev, n := env.Events.Typed("booking.updated")
 	if n != 1 {
 		t.Fatalf("esperaba un booking.updated, hubo %d", n)
 	}
@@ -438,7 +438,7 @@ func TestBookingLink_cancel(t *testing.T) {
 		t.Fatalf("segundo cancelar: %v", err)
 	}
 	// El correo de cancelación salió (sin enlace: el turno ya no existe).
-	msgs := mailer.waitCount(t, 2)
+	msgs := mailer.WaitCount(t, 2)
 	last := msgs[len(msgs)-1]
 	if last.To != "lia@mail.com" || !strings.Contains(last.Subject, "cancelado") {
 		t.Fatalf("correo de cancelación: %+v", last)
@@ -453,7 +453,7 @@ func TestBookingLink_smtp_caido_no_cambia_la_respuesta(t *testing.T) {
 	b, token := env.bookWithEmail(t, at(0), "prof1")
 	// El SMTP se cae recién ahora: la confirmación ya salió y lo que importa es
 	// que el correo del cambio falle sin tocar la respuesta.
-	mailer.err = errors.New("smtp caído")
+	mailer.Err = errors.New("smtp caído")
 
 	view, sent, err := env.svc.Reschedule(token, at(90))
 	if err != nil {
@@ -467,7 +467,7 @@ func TestBookingLink_smtp_caido_no_cambia_la_respuesta(t *testing.T) {
 	if !sent {
 		t.Fatal("new_link_sent es true si el email quedó encolado")
 	}
-	if stored, _ := env.bookings.FindByID("s1", b.ID); !stored.StartsAt.Equal(at(90)) {
+	if stored, _ := env.Bookings.FindByID("s1", b.ID); !stored.StartsAt.Equal(at(90)) {
 		t.Fatalf("el turno se movió igual: %+v", stored)
 	}
 }
@@ -479,7 +479,7 @@ func TestBookingLink_reschedule(t *testing.T) {
 	mailer := env.withMailer()
 	date, at := linkDay()
 	b, token := env.bookWithEmail(t, at(0), "prof1")
-	env.events.All = nil
+	env.Events.All = nil
 	notices := &fakeLinkNotifier{}
 	env.svc.Notifier = notices
 
@@ -493,18 +493,18 @@ func TestBookingLink_reschedule(t *testing.T) {
 	if !view.StartsAt.Equal(at(90)) {
 		t.Fatalf("respuesta del lookup: %+v", view)
 	}
-	stored, err := env.bookings.FindByID("s1", b.ID)
+	stored, err := env.Bookings.FindByID("s1", b.ID)
 	if err != nil {
 		t.Fatalf("turno: %v", err)
 	}
 	if !stored.StartsAt.Equal(at(90)) || !stored.EndsAt.Equal(at(90).Add(45*time.Minute)) {
 		t.Fatalf("el turno se movió con la duración del servicio: %+v", stored)
 	}
-	if stored.ProfessionalID != "prof1" || stored.ServiceID != env.corte.ID {
+	if stored.ProfessionalID != "prof1" || stored.ServiceID != env.Corte.ID {
 		t.Fatalf("mismo profesional y servicio: %+v", stored)
 	}
 	// Mismo evento y aviso que bkg.BookingService.Update.
-	if _, n := env.events.typed("booking.updated"); n != 1 {
+	if _, n := env.Events.Typed("booking.updated"); n != 1 {
 		t.Fatalf("esperaba un booking.updated, hubo %d", n)
 	}
 	if len(notices.titles) != 1 || notices.titles[0] != "Turno reprogramado" {
@@ -512,7 +512,7 @@ func TestBookingLink_reschedule(t *testing.T) {
 	}
 	// Dos enlaces emitidos (confirmación + reprogramación) y el correo nuevo
 	// trae el token nuevo, que sirve; el viejo ya no.
-	msgs := mailer.waitCount(t, 2)
+	msgs := mailer.WaitCount(t, 2)
 	newest := tokenFromMail(t, msgs[len(msgs)-1])
 	if newest == token {
 		t.Fatal("el token nuevo no puede ser el viejo")
@@ -544,8 +544,8 @@ func TestBookingLink_reschedule_a_horario_ocupado(t *testing.T) {
 	if err != nil {
 		t.Fatalf("turno ocupado: %v", err)
 	}
-	ocupado.ServiceID = env.corte.ID
-	if err := env.bookings.Save(ocupado); err != nil {
+	ocupado.ServiceID = env.Corte.ID
+	if err := env.Bookings.Save(ocupado); err != nil {
 		t.Fatalf("guardar turno ocupado: %v", err)
 	}
 
@@ -613,7 +613,7 @@ func TestBookingLink_otro_salon_nunca_se_toca(t *testing.T) {
 	if err != nil {
 		t.Fatalf("turno ajeno: %v", err)
 	}
-	if err := env.bookings.Save(ajeno); err != nil {
+	if err := env.Bookings.Save(ajeno); err != nil {
 		t.Fatalf("guardar turno ajeno: %v", err)
 	}
 	token, _ := domain.NewBookingLinkToken()
@@ -627,7 +627,7 @@ func TestBookingLink_otro_salon_nunca_se_toca(t *testing.T) {
 	if err := env.svc.Cancel(token); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("un turno de otro salón no existe para el enlace: %v", err)
 	}
-	if stored, _ := env.bookings.FindByID("s2", ajeno.ID); stored.Status != domain.BookingBooked {
+	if stored, _ := env.Bookings.FindByID("s2", ajeno.ID); stored.Status != domain.BookingBooked {
 		t.Fatalf("el turno ajeno no se toca: %+v", stored)
 	}
 }
@@ -656,18 +656,18 @@ func TestBookingLink_cancelar_libera_el_hueco(t *testing.T) {
 	_, at := linkDay()
 	_, token := env.bookWithEmail(t, at(0), "prof1")
 
-	in := publicInput()
-	in.ServiceID = env.corte.ID
+	in := agendakit.PublicInput()
+	in.ServiceID = env.Corte.ID
 	in.StartsAt = at(0)
 	in.ProfessionalID = "prof1"
-	if _, err := env.book.Book("navajas-oro", in); !errors.Is(err, domain.ErrAlreadyExists) {
+	if _, err := env.Book.Book("navajas-oro", in); !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("con el turno vivo el hueco está tomado: %v", err)
 	}
 	if err := env.svc.Cancel(token); err != nil {
 		t.Fatalf("cancelar: %v", err)
 	}
 	in.ClientName = "Nueva"
-	if _, err := env.book.Book("navajas-oro", in); err != nil {
+	if _, err := env.Book.Book("navajas-oro", in); err != nil {
 		t.Fatalf("el hueco liberado tiene que aceptar la reserva nueva: %v", err)
 	}
 }
@@ -681,16 +681,16 @@ func TestAvailability_Day_y_DayExcluding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("turno: %v", err)
 	}
-	own.ServiceID = env.corte.ID
-	if err := env.bookings.Save(own); err != nil {
+	own.ServiceID = env.Corte.ID
+	if err := env.Bookings.Save(own); err != nil {
 		t.Fatalf("guardar turno: %v", err)
 	}
 
-	day, err := env.avail.Day("navajas-oro", date, env.corte.ID, "")
+	day, err := env.Avail.Day("navajas-oro", date, env.Corte.ID, "")
 	if err != nil {
 		t.Fatalf("Day: %v", err)
 	}
-	same, err := env.avail.DayExcluding("navajas-oro", date, env.corte.ID, "", "")
+	same, err := env.Avail.DayExcluding("navajas-oro", date, env.Corte.ID, "", "")
 	if err != nil {
 		t.Fatalf("DayExcluding vacío: %v", err)
 	}
@@ -703,7 +703,7 @@ func TestAvailability_Day_y_DayExcluding(t *testing.T) {
 		}
 	}
 
-	withOwn, err := env.avail.DayExcluding("navajas-oro", date, env.corte.ID, "", own.ID)
+	withOwn, err := env.Avail.DayExcluding("navajas-oro", date, env.Corte.ID, "", own.ID)
 	if err != nil {
 		t.Fatalf("DayExcluding con el turno: %v", err)
 	}
@@ -719,13 +719,13 @@ func TestBookingLink_reschedule_cambia_de_unidad(t *testing.T) {
 	env := newLinkEnv(t)
 	env.withMailer()
 	_, at := linkDay()
-	rt, units := equipa(t, env.publicEnv, "Puesto", 2)
+	rt, units := equipa(t, env.PublicEnv, "Puesto", 2)
 	svc, err := domain.NewService("s1", "Con equipo", 45, 100000, 20)
 	if err != nil {
 		t.Fatalf("servicio: %v", err)
 	}
 	svc.ResourceTypeID = rt.ID
-	if err := env.services.Save(svc); err != nil {
+	if err := env.Services.Save(svc); err != nil {
 		t.Fatalf("guardar servicio: %v", err)
 	}
 	// Turno propio a las 09:00 en la unidad 1, con su enlace.
@@ -735,7 +735,7 @@ func TestBookingLink_reschedule_cambia_de_unidad(t *testing.T) {
 		Status: domain.BookingBooked, ServiceID: svc.ID, ResourceUnitID: units[0].ID,
 		CreatedAt: time.Now().UTC(),
 	}
-	if err := env.bookings.Save(own); err != nil {
+	if err := env.Bookings.Save(own); err != nil {
 		t.Fatalf("turno: %v", err)
 	}
 	token, _ := domain.NewBookingLinkToken()
@@ -753,14 +753,14 @@ func TestBookingLink_reschedule_cambia_de_unidad(t *testing.T) {
 		Status: domain.BookingBooked, ServiceID: svc.ID, ResourceUnitID: units[0].ID,
 		CreatedAt: time.Now().UTC(),
 	}
-	if err := env.bookings.Save(other); err != nil {
+	if err := env.Bookings.Save(other); err != nil {
 		t.Fatalf("turno de la otra unidad: %v", err)
 	}
 
 	if _, _, err := env.svc.Reschedule(token, at(60)); err != nil {
 		t.Fatalf("reprogramar cambiando de unidad: %v", err)
 	}
-	stored, err := env.bookings.FindByID("s1", own.ID)
+	stored, err := env.Bookings.FindByID("s1", own.ID)
 	if err != nil {
 		t.Fatalf("turno: %v", err)
 	}
@@ -788,7 +788,7 @@ func TestBookingLink_reschedule_rechaza_el_pasado(t *testing.T) {
 		}
 	}
 	// Nada cambió y el token sigue vivo.
-	stored, err := env.bookings.FindByID("s1", b.ID)
+	stored, err := env.Bookings.FindByID("s1", b.ID)
 	if err != nil || !stored.StartsAt.Equal(b.StartsAt) {
 		t.Fatalf("el turno no se movió: %+v %v", stored, err)
 	}
@@ -808,13 +808,13 @@ func TestBookingLink_reschedule_no_conserva_una_unidad_desactivada(t *testing.T)
 	env := newLinkEnv(t)
 	env.withMailer()
 	_, at := linkDay()
-	rt, units := equipa(t, env.publicEnv, "Puesto", 1)
+	rt, units := equipa(t, env.PublicEnv, "Puesto", 1)
 	svc, err := domain.NewService("s1", "Con equipo", 45, 100000, 20)
 	if err != nil {
 		t.Fatalf("servicio: %v", err)
 	}
 	svc.ResourceTypeID = rt.ID
-	if err := env.services.Save(svc); err != nil {
+	if err := env.Services.Save(svc); err != nil {
 		t.Fatalf("guardar servicio: %v", err)
 	}
 	own := domain.Booking{
@@ -823,7 +823,7 @@ func TestBookingLink_reschedule_no_conserva_una_unidad_desactivada(t *testing.T)
 		Status: domain.BookingBooked, ServiceID: svc.ID, ResourceUnitID: units[0].ID,
 		CreatedAt: time.Now().UTC(),
 	}
-	if err := env.bookings.Save(own); err != nil {
+	if err := env.Bookings.Save(own); err != nil {
 		t.Fatalf("turno: %v", err)
 	}
 	token, _ := domain.NewBookingLinkToken()
@@ -836,7 +836,7 @@ func TestBookingLink_reschedule_no_conserva_una_unidad_desactivada(t *testing.T)
 	}
 	off := units[0]
 	off.Active = false
-	if err := env.resources.SaveUnit(off); err != nil {
+	if err := env.Resources.SaveUnit(off); err != nil {
 		t.Fatalf("desactivar la unidad: %v", err)
 	}
 
@@ -844,7 +844,7 @@ func TestBookingLink_reschedule_no_conserva_una_unidad_desactivada(t *testing.T)
 	if !errors.Is(err, domain.ErrAlreadyExists) || err.Error() != domain.MsgBookingLinkSlotTaken {
 		t.Fatalf("esperaba el 409 del contrato, dio %v", err)
 	}
-	stored, err := env.bookings.FindByID("s1", own.ID)
+	stored, err := env.Bookings.FindByID("s1", own.ID)
 	if err != nil || !stored.StartsAt.Equal(own.StartsAt) || stored.ResourceUnitID != units[0].ID {
 		t.Fatalf("el turno no se movió: %+v %v", stored, err)
 	}
@@ -861,16 +861,16 @@ func TestBookingLink_reschedule_usa_la_duracion_actual_del_servicio(t *testing.T
 	env.withMailer()
 	_, at := linkDay()
 	b, token := env.bookWithEmail(t, at(0), "prof1")
-	svc := env.corte
+	svc := env.Corte
 	svc.DurationMin = 90 // el salón lo alargó después de la reserva
-	if err := env.services.Save(svc); err != nil {
+	if err := env.Services.Save(svc); err != nil {
 		t.Fatalf("alargar el servicio: %v", err)
 	}
 
 	if _, _, err := env.svc.Reschedule(token, at(30)); err != nil {
 		t.Fatalf("reprogramar: %v", err)
 	}
-	stored, err := env.bookings.FindByID("s1", b.ID)
+	stored, err := env.Bookings.FindByID("s1", b.ID)
 	if err != nil {
 		t.Fatalf("turno: %v", err)
 	}

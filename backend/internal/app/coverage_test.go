@@ -6,6 +6,7 @@ package app
 // aviso interno y el correo a la clienta, y que cancelar registre el motivo.
 import (
 	"errors"
+	"salon-saas/internal/testutil/agendakit"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +25,7 @@ import (
 // (rollback = volver a la foto) y el UPDATE respeta la EXCLUDE (dos turnos
 // reservados del mismo profesional no se solapan).
 type fakeBookingTx struct {
-	bookings  *fb
+	bookings  *testutil.FakeBookings
 	txs       int
 	lastSalon string
 }
@@ -75,17 +76,17 @@ var _ ports.BookingTxRunner = (*fakeBookingTx)(nil)
 
 type coverEnv struct {
 	svc      schedules.CoverageService
-	bookings *fb
+	bookings *testutil.FakeBookings
 	timeOff  *testutil.FakeTimeOff
 	hours    *testutil.FakeWeeklyHours
 	profs    *testutil.FakeProfessionalServices
 	staff    *testutil.FakeStaffLister
 	services *testutil.FakeServices
-	mems     *fakeMemberships
-	notifier *fakeNotifier
-	events   *fakeEvents
-	mailer   *fakeMailer
-	emails   *fakeBookingEmails
+	mems     *testutil.FakeMemberships
+	notifier *testutil.FakeNotifier
+	events   *testutil.FakeEvents
+	mailer   *testutil.FakeMailer
+	emails   *testutil.FakeBookingEmails
 	tx       *fakeBookingTx
 
 	owner     domain.Membership
@@ -100,10 +101,10 @@ type coverEnv struct {
 
 func newCoverEnv(t *testing.T) *coverEnv {
 	t.Helper()
-	salons := &fakeSalons{BySlug: map[string]domain.Salon{
+	salons := &testutil.FakeSalons{BySlug: map[string]domain.Salon{
 		"navajas-oro": {ID: "s1", Slug: "navajas-oro", Name: "Navajas de Oro"},
 	}}
-	settings := &fakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
+	settings := &testutil.FakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
 		SalonID: "s1", Timezone: "America/Mexico_City",
 		OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}}}
@@ -132,19 +133,19 @@ func newCoverEnv(t *testing.T) *coverEnv {
 			"s1|" + keratina.ID: {"ana", "bea"},
 		},
 	}
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	env := &coverEnv{
-		bookings:  &fb{},
+		bookings:  &testutil.FakeBookings{},
 		timeOff:   &testutil.FakeTimeOff{},
 		hours:     &testutil.FakeWeeklyHours{MemberSeg: map[string][]domain.HoursSegment{}},
 		profs:     profs,
 		staff:     staff,
 		services:  services,
 		mems:      mems,
-		notifier:  &fakeNotifier{},
-		events:    &fakeEvents{},
-		mailer:    &fakeMailer{},
-		emails:    &fakeBookingEmails{},
+		notifier:  &testutil.FakeNotifier{},
+		events:    &testutil.FakeEvents{},
+		mailer:    &testutil.FakeMailer{},
+		emails:    &testutil.FakeBookingEmails{},
 		owner:     domain.Membership{UserID: "u-own", SalonID: "s1", Role: domain.RoleOwner, Attends: true},
 		admin:     domain.Membership{UserID: "u-adm", SalonID: "s1", Role: domain.RoleAdmin},
 		reception: domain.Membership{UserID: "recep", SalonID: "s1", Role: domain.RoleReception},
@@ -340,9 +341,9 @@ func TestCoverage_reassign_absence_moves_all(t *testing.T) {
 	seedAbsence(t, env, "off-1", "ana", localAt(t, 10, 0), localAt(t, 13, 0))
 	seedBooking(t, env, "b-10", "ana", localAt(t, 10, 0), 45, corte)
 	seedBooking(t, env, "b-11", "ana", localAt(t, 11, 0), 45, corte)
-	env.emails.saved = append(env.emails.saved,
-		savedBookingEmail{SalonID: "s1", BookingID: "b-10", Email: "lia@mail.com"},
-		savedBookingEmail{SalonID: "s1", BookingID: "b-11", Email: "lia@mail.com"})
+	env.emails.Saved = append(env.emails.Saved,
+		testutil.SavedBookingEmail{SalonID: "s1", BookingID: "b-10", Email: "lia@mail.com"},
+		testutil.SavedBookingEmail{SalonID: "s1", BookingID: "b-11", Email: "lia@mail.com"})
 
 	res, err := env.svc.ReassignAbsence(env.owner, "s1", "off-1", "bea", nil)
 	if err != nil {
@@ -361,14 +362,14 @@ func TestCoverage_reassign_absence_moves_all(t *testing.T) {
 		t.Fatalf("el turno se movió de hora: %+v", res.Bookings[0])
 	}
 	// Aviso interno: dos, uno por turno, con quién lo atiende ahora.
-	if env.notifier.calls != 2 {
-		t.Fatalf("avisos: %d", env.notifier.calls)
+	if env.notifier.Calls != 2 {
+		t.Fatalf("avisos: %d", env.notifier.Calls)
 	}
-	if texto := env.notifier.bodies[0]; !strings.Contains(texto, "Bea") {
+	if texto := env.notifier.Bodies[0]; !strings.Contains(texto, "Bea") {
 		t.Fatalf("el aviso interno tiene que decir quién atiende: %q", texto)
 	}
 	// Correo a la clienta (T12): dos, diciendo que el turno se mantiene.
-	sent := env.mailer.waitCount(t, 2)
+	sent := env.mailer.WaitCount(t, 2)
 	if !strings.Contains(sent[0].Text, "Bea") || !strings.Contains(sent[0].Text, "mantiene") {
 		t.Fatalf("correo de la reasignación: %+v", sent[0])
 	}
@@ -376,7 +377,7 @@ func TestCoverage_reassign_absence_moves_all(t *testing.T) {
 		t.Fatalf("destinatario: %q", sent[0].To)
 	}
 	// Los calendarios abiertos se refrescan.
-	if _, n := env.events.typed("booking.updated"); n != 2 {
+	if _, n := env.events.Typed("booking.updated"); n != 2 {
 		t.Fatalf("esperaba dos booking.updated, hubo %d", n)
 	}
 }
@@ -410,10 +411,10 @@ func TestCoverage_reassign_absence_is_all_or_nothing(t *testing.T) {
 			t.Fatalf("%s se movió igual: %+v", id, b)
 		}
 	}
-	if env.notifier.calls != 0 || env.mailer.count() != 0 {
-		t.Fatalf("un fallo no puede avisar nada: %d avisos, %d correos", env.notifier.calls, env.mailer.count())
+	if env.notifier.Calls != 0 || env.mailer.Count() != 0 {
+		t.Fatalf("un fallo no puede avisar nada: %d avisos, %d correos", env.notifier.Calls, env.mailer.Count())
 	}
-	if _, n := env.events.typed("booking.updated"); n != 0 {
+	if _, n := env.events.Typed("booking.updated"); n != 0 {
 		t.Fatalf("un fallo no publica eventos: %d", n)
 	}
 }
@@ -482,7 +483,7 @@ func TestCoverage_reassign_absence_candidate_rules(t *testing.T) {
 					t.Fatalf("turno movido por un pedido inválido: %+v", b)
 				}
 			}
-			if env.notifier.calls != 0 || env.mailer.count() != 0 {
+			if env.notifier.Calls != 0 || env.mailer.Count() != 0 {
 				t.Fatalf("un rechazo no avisa nada")
 			}
 		})
@@ -549,8 +550,8 @@ func TestCoverage_reassign_single_booking(t *testing.T) {
 	// Sin service_id: la agenda lo cargó a mano. La dueña no hace cortes, pero
 	// el turno no pide oficio.
 	seedBooking(t, env, "b-libre", "ana", localAt(t, 10, 0), 30, "")
-	env.emails.saved = append(env.emails.saved,
-		savedBookingEmail{SalonID: "s1", BookingID: "b-libre", Email: "lia@mail.com"})
+	env.emails.Saved = append(env.emails.Saved,
+		testutil.SavedBookingEmail{SalonID: "s1", BookingID: "b-libre", Email: "lia@mail.com"})
 
 	res, err := env.svc.ReassignBooking(env.owner, "s1", "b-libre", "duena")
 	if err != nil {
@@ -559,10 +560,10 @@ func TestCoverage_reassign_single_booking(t *testing.T) {
 	if res.Reassigned != 1 || res.Bookings[0].ProfessionalID != "duena" {
 		t.Fatalf("resultado: %+v", res)
 	}
-	if env.notifier.calls != 1 {
-		t.Fatalf("aviso interno: %d", env.notifier.calls)
+	if env.notifier.Calls != 1 {
+		t.Fatalf("aviso interno: %d", env.notifier.Calls)
 	}
-	sent := env.mailer.waitCount(t, 1)
+	sent := env.mailer.WaitCount(t, 1)
 	if !strings.Contains(sent[0].Text, "Dueña") {
 		t.Fatalf("el correo tiene que decir quién atiende: %+v", sent[0])
 	}
@@ -589,8 +590,8 @@ func TestCoverage_reassign_single_booking(t *testing.T) {
 func TestCoverage_cancel_booking_records_reason(t *testing.T) {
 	env := newCoverEnv(t)
 	seedBooking(t, env, "b-10", "ana", localAt(t, 10, 0), 45, "")
-	env.emails.saved = append(env.emails.saved,
-		savedBookingEmail{SalonID: "s1", BookingID: "b-10", Email: "lia@mail.com"})
+	env.emails.Saved = append(env.emails.Saved,
+		testutil.SavedBookingEmail{SalonID: "s1", BookingID: "b-10", Email: "lia@mail.com"})
 
 	cancelled, err := env.svc.CancelBooking(env.owner, "s1", "b-10", "  se enfermó ")
 	if err != nil {
@@ -599,14 +600,14 @@ func TestCoverage_cancel_booking_records_reason(t *testing.T) {
 	if cancelled.Status != domain.BookingCancelled {
 		t.Fatalf("estado: %q", cancelled.Status)
 	}
-	if env.notifier.calls != 1 || !strings.Contains(env.notifier.bodies[0], "se enfermó") {
-		t.Fatalf("el motivo tiene que quedar en el aviso interno: %+v", env.notifier.bodies)
+	if env.notifier.Calls != 1 || !strings.Contains(env.notifier.Bodies[0], "se enfermó") {
+		t.Fatalf("el motivo tiene que quedar en el aviso interno: %+v", env.notifier.Bodies)
 	}
-	sent := env.mailer.waitCount(t, 1)
+	sent := env.mailer.WaitCount(t, 1)
 	if !strings.Contains(sent[0].Text, "cancelado") || !strings.Contains(sent[0].Text, "se va a comunicar") {
 		t.Fatalf("correo de la cancelación: %+v", sent[0])
 	}
-	if _, n := env.events.typed("booking.updated"); n != 1 {
+	if _, n := env.events.Typed("booking.updated"); n != 1 {
 		t.Fatalf("el calendario se tiene que enterar: %d", n)
 	}
 	// Cancelar es de dueño/administración: la profesional no.
@@ -636,8 +637,8 @@ func TestCoverage_preserve_booking_patch_status_and_reschedule(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PATCH estado: %v", err)
 	}
-	if got.Status != domain.BookingCancelled || env.notifier.calls != 1 {
-		t.Fatalf("PATCH estado: %+v (%d avisos)", got, env.notifier.calls)
+	if got.Status != domain.BookingCancelled || env.notifier.Calls != 1 {
+		t.Fatalf("PATCH estado: %+v (%d avisos)", got, env.notifier.Calls)
 	}
 
 	// Reprogramación: mover horario del turno reservado.
@@ -655,15 +656,15 @@ func TestCoverage_preserve_booking_patch_status_and_reschedule(t *testing.T) {
 
 // PRESERVE: la disponibilidad pública no cambia por F2d3 (mismos huecos).
 func TestCoverage_preserve_availability_slots(t *testing.T) {
-	env := wideEnv(t) // 09:00-19:00, corte de 45, paso 30, dos profesionales
-	day, err := env.avail.Day("navajas-oro", "2026-12-01", env.corte.ID, "")
+	env := agendakit.WideEnv(t) // 09:00-19:00, corte de 45, paso 30, dos profesionales
+	day, err := env.Avail.Day("navajas-oro", "2026-12-01", env.Corte.ID, "")
 	if err != nil {
 		t.Fatalf("disponibilidad: %v", err)
 	}
-	if n := len(slotsOf(t, day.Slots, "prof2")); n != 19 {
+	if n := len(agendakit.SlotsOf(t, day.Slots, "prof2")); n != 19 {
 		t.Fatalf("prof2 conserva sus 19 arranques, tiene %d", n)
 	}
-	if n := len(slotsOf(t, day.Slots, "prof1")); n != 19 {
+	if n := len(agendakit.SlotsOf(t, day.Slots, "prof1")); n != 19 {
 		t.Fatalf("prof1 conserva sus 19 arranques, tiene %d", n)
 	}
 }
@@ -671,22 +672,22 @@ func TestCoverage_preserve_availability_slots(t *testing.T) {
 // PRESERVE: la reserva pública sigue dejando el aviso interno y el correo de
 // confirmación igual que antes (la plantilla de F2d3 es otra).
 func TestCoverage_preserve_public_booking_notice_and_email(t *testing.T) {
-	env := newPublicEnv(t)
-	env.book.Mailer = &fakeMailer{}
-	env.book.Emails = &fakeBookingEmails{}
-	in := publicInput()
-	in.ServiceID = env.corte.ID
+	env := agendakit.NewPublicEnv(t)
+	env.Book.Mailer = &testutil.FakeMailer{}
+	env.Book.Emails = &testutil.FakeBookingEmails{}
+	in := agendakit.PublicInput()
+	in.ServiceID = env.Corte.ID
 	in.ClientEmail = "lia@mail.com"
 
-	b, err := env.book.Book("navajas-oro", in)
+	b, err := env.Book.Book("navajas-oro", in)
 	if err != nil {
 		t.Fatalf("reservar: %v", err)
 	}
-	if env.notifier.calls != 1 {
-		t.Fatalf("aviso interno: %d", env.notifier.calls)
+	if env.Notifier.Calls != 1 {
+		t.Fatalf("aviso interno: %d", env.Notifier.Calls)
 	}
-	mailer := env.book.Mailer.(*fakeMailer)
-	sent := mailer.waitCount(t, 1)
+	mailer := env.Book.Mailer.(*testutil.FakeMailer)
+	sent := mailer.WaitCount(t, 1)
 	if !strings.Contains(sent[0].Subject, "Turno confirmado") || !strings.Contains(sent[0].Text, b.ClientName) {
 		t.Fatalf("confirmación: %+v", sent[0])
 	}
@@ -757,11 +758,11 @@ func TestCoverage_reassign_tracks_who_covered(t *testing.T) {
 // PRESERVE S-F2d3-6: reprogramar y cambiar estado desde el PATCH clásico no
 // tocan covered_from (solo la reasignación lo escribe).
 func TestBooking_patch_leaves_covered_from(t *testing.T) {
-	bookings := &fb{}
-	mems := &fakeMemberships{}
+	bookings := &testutil.FakeBookings{}
+	mems := &testutil.FakeMemberships{}
 	svc := bkg.BookingService{Bookings: bookings, Memberships: mems}
-	rec := recepcionista(mems)
-	miembro(mems, "prof1", "s1", domain.RoleProfessional)
+	rec := testutil.Recepcionista(mems)
+	testutil.Miembro(mems, "prof1", "s1", domain.RoleProfessional)
 
 	start := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Minute)
 	b, err := domain.NewBooking("s1", "prof1", "Lía", "555", start, start.Add(45*time.Minute))

@@ -2,6 +2,8 @@ package app
 
 import (
 	"errors"
+	"salon-saas/internal/testutil"
+	"salon-saas/internal/testutil/agendakit"
 	"testing"
 	"time"
 
@@ -15,7 +17,7 @@ import (
 // entre el chequeo amable y el guardado). Es el caso que el caso de uso tiene
 // que reintentar en otro par, nunca devolver 500.
 type flakyBookings struct {
-	*fb
+	*testutil.FakeBookings
 	failSaves int
 	attempts  []domain.Booking
 }
@@ -26,7 +28,7 @@ func (f *flakyBookings) Save(b domain.Booking) error {
 		f.failSaves--
 		return domain.ErrAlreadyExists
 	}
-	return f.fb.Save(b)
+	return f.FakeBookings.Save(b)
 }
 
 var _ ports.BookingRepository = (*flakyBookings)(nil)
@@ -34,14 +36,14 @@ var _ ports.BookingRepository = (*flakyBookings)(nil)
 // S-F2e-4: si la DB rechaza el par (profesional o unidad) por la carrera, el
 // caso de uso reintenta con otro par. El turno entra con una unidad distinta.
 func TestPublicBooking_reintenta_con_otra_unidad(t *testing.T) {
-	env := newPublicEnv(t)
+	env := agendakit.NewPublicEnv(t)
 	rt, units := equipa(t, env, "Puesto", 2)
 	svc := conEquipo(t, env, "Corte con equipo", 45, rt.ID)
 
-	flaky := &flakyBookings{fb: env.bookings, failSaves: 1}
-	env.book.Bookings = flaky
+	flaky := &flakyBookings{FakeBookings: env.Bookings, failSaves: 1}
+	env.Book.Bookings = flaky
 
-	b, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
+	b, err := env.Book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: svc.ID, ClientName: "Clienta",
 		StartsAt: time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC),
 	})
@@ -63,14 +65,14 @@ func TestPublicBooking_reintenta_con_otra_unidad(t *testing.T) {
 // es 409, nunca 500 ni un turno duplicado. Se prueba cada par antes de rendirse
 // (más de los 3 del primer diseño) y el barrido está acotado.
 func TestPublicBooking_agota_todos_los_pares_409(t *testing.T) {
-	env := newPublicEnv(t)
+	env := agendakit.NewPublicEnv(t)
 	rt, _ := equipa(t, env, "Puesto", 3)
 	svc := conEquipo(t, env, "Corte con equipo", 45, rt.ID)
 
-	flaky := &flakyBookings{fb: env.bookings, failSaves: 1000}
-	env.book.Bookings = flaky
+	flaky := &flakyBookings{FakeBookings: env.Bookings, failSaves: 1000}
+	env.Book.Bookings = flaky
 
-	_, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
+	_, err := env.Book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: svc.ID, ClientName: "Clienta",
 		StartsAt: time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC),
 	})
@@ -91,8 +93,8 @@ func TestPublicBooking_agota_todos_los_pares_409(t *testing.T) {
 		}
 		seen[key] = true
 	}
-	if len(env.bookings.All) != 0 {
-		t.Fatalf("no puede quedar ningún turno guardado: %+v", env.bookings.All)
+	if len(env.Bookings.All) != 0 {
+		t.Fatalf("no puede quedar ningún turno guardado: %+v", env.Bookings.All)
 	}
 }
 
@@ -100,14 +102,14 @@ func TestPublicBooking_agota_todos_los_pares_409(t *testing.T) {
 // quedan pares libres: la reserva entra con el siguiente. Un "sin lugar" falso
 // hace que la clienta se vaya aunque haya un puesto libre.
 func TestPublicBooking_tres_rechazos_no_alcanzan_si_quedan_pares(t *testing.T) {
-	env := newPublicEnv(t)
+	env := agendakit.NewPublicEnv(t)
 	rt, _ := equipa(t, env, "Puesto", 3)
 	svc := conEquipo(t, env, "Corte con equipo", 45, rt.ID)
 
-	flaky := &flakyBookings{fb: env.bookings, failSaves: 3}
-	env.book.Bookings = flaky
+	flaky := &flakyBookings{FakeBookings: env.Bookings, failSaves: 3}
+	env.Book.Bookings = flaky
 
-	b, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
+	b, err := env.Book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: svc.ID, ClientName: "Clienta",
 		StartsAt: time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC),
 	})
@@ -117,22 +119,22 @@ func TestPublicBooking_tres_rechazos_no_alcanzan_si_quedan_pares(t *testing.T) {
 	if len(flaky.attempts) != 4 {
 		t.Fatalf("3 rechazos y el cuarto intento entra, dio %d intentos", len(flaky.attempts))
 	}
-	if b.ResourceUnitID == "" || len(env.bookings.All) != 1 {
-		t.Fatalf("un turno con unidad: %+v (guardados %d)", b, len(env.bookings.All))
+	if b.ResourceUnitID == "" || len(env.Bookings.All) != 1 {
+		t.Fatalf("un turno con unidad: %+v (guardados %d)", b, len(env.Bookings.All))
 	}
 }
 
 // S-F2e-4: elegir profesional a mano sigue funcionando, y el turno ocupa una
 // unidad libre; cuando las 3 unidades están tomadas, la cuarta es 409.
 func TestPublicBooking_profesional_elegido_ocupa_unidad_libre(t *testing.T) {
-	env := newPublicEnv(t)
+	env := agendakit.NewPublicEnv(t)
 	rt, _ := equipa(t, env, "Puesto", 3)
 	svc := conEquipo(t, env, "Corte con equipo", 45, rt.ID)
 	start := time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC)
 
 	seen := map[string]bool{}
 	for i, prof := range []string{"prof1", "prof2", "prof3"} {
-		b, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
+		b, err := env.Book.Book("navajas-oro", bkg.PublicBookingInput{
 			ServiceID: svc.ID, ProfessionalID: prof, ClientName: "Clienta", StartsAt: start,
 		})
 		if err != nil {
@@ -146,7 +148,7 @@ func TestPublicBooking_profesional_elegido_ocupa_unidad_libre(t *testing.T) {
 	if len(seen) != 3 {
 		t.Fatalf("3 turnos ocupan 3 unidades distintas: %v", seen)
 	}
-	if _, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
+	if _, err := env.Book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: svc.ID, ProfessionalID: "prof4", ClientName: "Cuarta", StartsAt: start,
 	}); !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("sin unidad libre la reserva es 409: %v", err)

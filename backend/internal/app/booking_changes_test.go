@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"salon-saas/internal/testutil"
 	"testing"
 	"time"
 
@@ -13,17 +14,17 @@ import (
 // reprogramar, con permisos: recepción y superiores sobre cualquiera, el
 // profesional solo los suyos.
 
-func bookingFixture(t *testing.T) (*bkg.BookingService, *fb, *fakeMemberships, *fakeEvents, *fakeNotifier, domain.Booking) {
+func bookingFixture(t *testing.T) (*bkg.BookingService, *testutil.FakeBookings, *testutil.FakeMemberships, *testutil.FakeEvents, *testutil.FakeNotifier, domain.Booking) {
 	t.Helper()
-	bookings := &fb{}
-	mems := &fakeMemberships{}
-	events := &fakeEvents{}
-	notifier := &fakeNotifier{}
+	bookings := &testutil.FakeBookings{}
+	mems := &testutil.FakeMemberships{}
+	events := &testutil.FakeEvents{}
+	notifier := &testutil.FakeNotifier{}
 	svc := bkg.BookingService{Bookings: bookings, Memberships: mems, Events: events, Notifier: notifier}
-	miembro(mems, "recep", "s1", domain.RoleReception)
-	miembro(mems, "owner", "s1", domain.RoleOwner)
-	miembro(mems, "prof1", "s1", domain.RoleProfessional)
-	miembro(mems, "prof2", "s1", domain.RoleProfessional)
+	testutil.Miembro(mems, "recep", "s1", domain.RoleReception)
+	testutil.Miembro(mems, "owner", "s1", domain.RoleOwner)
+	testutil.Miembro(mems, "prof1", "s1", domain.RoleProfessional)
+	testutil.Miembro(mems, "prof2", "s1", domain.RoleProfessional)
 	day := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
 	rec, _ := mems.Find("recep", "s1")
 	b, err := svc.CreateBooking(rec, "s1", "prof1", "Lía", "555", day.Add(10*time.Hour), day.Add(11*time.Hour))
@@ -31,7 +32,7 @@ func bookingFixture(t *testing.T) (*bkg.BookingService, *fb, *fakeMemberships, *
 		t.Fatalf("reserva base: %v", err)
 	}
 	events.All = nil // el alta ya publicó; acá empieza a contarse el PATCH
-	notifier.calls = 0
+	notifier.Calls = 0
 	return &svc, bookings, mems, events, notifier, b
 }
 
@@ -48,15 +49,15 @@ func TestBookingUpdate_cancelar(t *testing.T) {
 		t.Fatalf("reserva cancelada: %+v", got)
 	}
 	// El evento de la agenda sale con el estado nuevo.
-	ev, n := events.typed("booking.updated")
+	ev, n := events.Typed("booking.updated")
 	if n != 1 {
 		t.Fatalf("esperaba un booking.updated, hubo %d", n)
 	}
 	if data, ok := ev.Data.(map[string]any); !ok || data["id"] != b.ID || data["status"] != "cancelled" {
 		t.Fatalf("payload de booking.updated: %+v", ev.Data)
 	}
-	if notifier.calls != 1 {
-		t.Fatalf("cancelar deja un aviso, hubo %d", notifier.calls)
+	if notifier.Calls != 1 {
+		t.Fatalf("cancelar deja un aviso, hubo %d", notifier.Calls)
 	}
 	// El hueco queda libre: la DB también lo ve (status cancelled).
 	var stored domain.Booking
@@ -84,13 +85,13 @@ func TestBookingUpdate_permisos(t *testing.T) {
 		t.Fatalf("profesional dueño del turno: %v", err)
 	}
 	// Admin: manda sobre cualquier turno.
-	admin := miembro(mems, "admin", "s1", domain.RoleAdmin)
+	admin := testutil.Miembro(mems, "admin", "s1", domain.RoleAdmin)
 	noShow := domain.BookingNoShow
 	if _, err := svc.Update(admin, "s1", b.ID, bkg.BookingPatch{Status: &noShow}); err != nil {
 		t.Fatalf("admin: %v", err)
 	}
 	// Profesional de otro salón / miembro ajeno: 403.
-	otro := miembro(mems, "ajeno", "s2", domain.RoleOwner)
+	otro := testutil.Miembro(mems, "ajeno", "s2", domain.RoleOwner)
 	if _, err := svc.Update(otro, "s1", b.ID, bkg.BookingPatch{Status: &status}); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("otro salón: %v", err)
 	}
@@ -125,7 +126,7 @@ func TestBookingUpdate_reprogramar(t *testing.T) {
 	if !got.StartsAt.Equal(start) || !got.EndsAt.Equal(end) || got.Status != domain.BookingBooked {
 		t.Fatalf("reprogramado: %+v", got)
 	}
-	if _, n := events.typed("booking.updated"); n != 1 {
+	if _, n := events.Typed("booking.updated"); n != 1 {
 		t.Fatalf("esperaba booking.updated, hubo %d", n)
 	}
 
@@ -178,7 +179,7 @@ func TestBookingUpdate_estado_y_horario_juntos(t *testing.T) {
 	if got.Status != domain.BookingDone || !got.StartsAt.Equal(start) {
 		t.Fatalf("patch combinado: %+v", got)
 	}
-	if ev, n := events.typed("booking.updated"); n != 1 || ev.Data.(map[string]any)["status"] != "done" {
+	if ev, n := events.Typed("booking.updated"); n != 1 || ev.Data.(map[string]any)["status"] != "done" {
 		t.Fatalf("evento: %+v", events.All)
 	}
 }

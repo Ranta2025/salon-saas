@@ -2,6 +2,8 @@ package app
 
 import (
 	"errors"
+	"salon-saas/internal/testutil"
+	"salon-saas/internal/testutil/agendakit"
 	"testing"
 	"time"
 
@@ -57,19 +59,19 @@ var _ bkg.DepositCreator = (*fakeDepositCreator)(nil)
 
 // depPublicEnv deja la reserva pública lista para cobrar seña: el creator
 // cableado, APP_URL y un mailer que cuenta.
-func depPublicEnv(t *testing.T, creator bkg.DepositCreator) (*publicEnv, *fakeMailer) {
+func depPublicEnv(t *testing.T, creator bkg.DepositCreator) (*agendakit.PublicEnv, *testutil.FakeMailer) {
 	t.Helper()
-	env := newPublicEnv(t)
-	mailer := &fakeMailer{}
-	env.book.Mailer = mailer
-	env.book.AppURL = "http://localhost:8081"
-	env.book.Deposits = creator
+	env := agendakit.NewPublicEnv(t)
+	mailer := &testutil.FakeMailer{}
+	env.Book.Mailer = mailer
+	env.Book.AppURL = "http://localhost:8081"
+	env.Book.Deposits = creator
 	return env, mailer
 }
 
-func depInput(env *publicEnv, opID string) bkg.PublicBookingInput {
-	in := publicInput()
-	in.ServiceID = env.corte.ID
+func depInput(env *agendakit.PublicEnv, opID string) bkg.PublicBookingInput {
+	in := agendakit.PublicInput()
+	in.ServiceID = env.Corte.ID
 	in.ClientEmail = "lia@mail.com"
 	in.ClientOpID = opID
 	return in
@@ -81,7 +83,7 @@ func TestBookWithDeposit_creaLaSenaYSinCorreo(t *testing.T) {
 	creator := newFakeDepositCreator(30)
 	env, mailer := depPublicEnv(t, creator)
 
-	b, payment, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-sena-1"))
+	b, payment, err := env.Book.BookWithDeposit("navajas-oro", depInput(env, "op-sena-1"))
 	if err != nil {
 		t.Fatalf("reservar con seña: %v", err)
 	}
@@ -91,7 +93,7 @@ func TestBookWithDeposit_creaLaSenaYSinCorreo(t *testing.T) {
 	if payment == nil {
 		t.Fatal("la respuesta tiene que traer payment")
 	}
-	if payment.AmountCents != domain.DepositAmountCents(env.corte.PriceCents, 30) || !payment.Simulated {
+	if payment.AmountCents != domain.DepositAmountCents(env.Corte.PriceCents, 30) || !payment.Simulated {
 		t.Fatalf("payment: %+v", payment)
 	}
 	if payment.DepositID == "" || payment.ExpiresAt.IsZero() {
@@ -103,10 +105,10 @@ func TestBookWithDeposit_creaLaSenaYSinCorreo(t *testing.T) {
 	if creator.charges != 1 {
 		t.Fatalf("cargos creados: %d", creator.charges)
 	}
-	if creator.lastPric != env.corte.PriceCents {
+	if creator.lastPric != env.Corte.PriceCents {
 		t.Fatalf("el precio de la reserva: %d", creator.lastPric)
 	}
-	if n := mailer.count(); n != 0 {
+	if n := mailer.Count(); n != 0 {
 		t.Fatalf("con seña no puede salir la confirmación todavía: %d", n)
 	}
 }
@@ -117,11 +119,11 @@ func TestBookWithDeposit_reintentoMismoPayment(t *testing.T) {
 	env, _ := depPublicEnv(t, creator)
 	in := depInput(env, "op-sena-repetida")
 
-	_, first, err := env.book.BookWithDeposit("navajas-oro", in)
+	_, first, err := env.Book.BookWithDeposit("navajas-oro", in)
 	if err != nil || first == nil {
 		t.Fatalf("primera reserva: %v (%+v)", err, first)
 	}
-	second, again, err := env.book.BookWithDeposit("navajas-oro", in)
+	second, again, err := env.Book.BookWithDeposit("navajas-oro", in)
 	if err != nil {
 		t.Fatalf("reintento: %v", err)
 	}
@@ -134,7 +136,7 @@ func TestBookWithDeposit_reintentoMismoPayment(t *testing.T) {
 	if creator.charges != 1 {
 		t.Fatalf("un solo cargo: %d", creator.charges)
 	}
-	if got := len(env.bookings.All); got != 1 {
+	if got := len(env.Bookings.All); got != 1 {
 		t.Fatalf("un solo turno: %d", got)
 	}
 }
@@ -151,16 +153,16 @@ func TestBookWithDeposit_sinSenaEsLaDeHoy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("servicio: %v", err)
 	}
-	if err := env.services.Save(zero); err != nil {
+	if err := env.Services.Save(zero); err != nil {
 		t.Fatalf("guardar servicio: %v", err)
 	}
-	if err := env.profs.SetServices("s1", "prof1", []string{zero.ID}); err != nil {
+	if err := env.Profs.SetServices("s1", "prof1", []string{zero.ID}); err != nil {
 		t.Fatalf("asignar servicio: %v", err)
 	}
 	in.ServiceID = zero.ID
 	in.ProfessionalID = "prof1"
 
-	b, payment, err := env.book.BookWithDeposit("navajas-oro", in)
+	b, payment, err := env.Book.BookWithDeposit("navajas-oro", in)
 	if err != nil {
 		t.Fatalf("reservar sin seña: %v", err)
 	}
@@ -170,7 +172,7 @@ func TestBookWithDeposit_sinSenaEsLaDeHoy(t *testing.T) {
 	if b.ID == "" {
 		t.Fatalf("reserva: %+v", b)
 	}
-	mailer.waitCount(t, 1)
+	mailer.WaitCount(t, 1)
 }
 
 // D8: si el cargo no se puede crear, la reserva se cancela por el camino
@@ -180,16 +182,16 @@ func TestBookWithDeposit_fallaElCargoCancelaLaReserva(t *testing.T) {
 	creator.fail = errors.New("banco caído")
 	env, mailer := depPublicEnv(t, creator)
 
-	if _, payment, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-caida")); err == nil {
+	if _, payment, err := env.Book.BookWithDeposit("navajas-oro", depInput(env, "op-caida")); err == nil {
 		t.Fatalf("el error del cargo tiene que volver (payment %+v)", payment)
 	}
-	if len(env.bookings.All) != 1 {
-		t.Fatalf("el turno: %+v", env.bookings.All)
+	if len(env.Bookings.All) != 1 {
+		t.Fatalf("el turno: %+v", env.Bookings.All)
 	}
-	if status := env.bookings.All[0].Status; status != domain.BookingCancelled {
+	if status := env.Bookings.All[0].Status; status != domain.BookingCancelled {
 		t.Fatalf("el turno sin cargo se cancela por el camino existente: %q", status)
 	}
-	if n := mailer.count(); n != 0 {
+	if n := mailer.Count(); n != 0 {
 		t.Fatalf("sin pago no hay confirmación: %d", n)
 	}
 }
@@ -197,16 +199,16 @@ func TestBookWithDeposit_fallaElCargoCancelaLaReserva(t *testing.T) {
 // atomicCancelBookings adds the OPTIONAL adapter capability the service uses to
 // cancel a booking AND free its idempotency key in ONE step when the deposit
 // charge could not be created (F11 native review R4-RETRY-CANCELLED and
-// R4-COMPENSATION). It wraps the shared fake `fb`.
-type atomicCancelBookings struct{ *fb }
+// R4-COMPENSATION). It wraps the shared fake `testutil.FakeBookings`.
+type atomicCancelBookings struct{ *testutil.FakeBookings }
 
 func (r *atomicCancelBookings) CancelBookingReleasingClientOp(salonID, bookingID string) error {
-	for i := range r.fb.All {
-		b := r.fb.All[i]
+	for i := range r.FakeBookings.All {
+		b := r.FakeBookings.All[i]
 		if b.SalonID == salonID && b.ID == bookingID && b.Status == domain.BookingBooked {
 			b.Status = domain.BookingCancelled
 			b.ClientOpID = ""
-			r.fb.All[i] = b
+			r.FakeBookings.All[i] = b
 		}
 	}
 	return nil
@@ -219,18 +221,18 @@ func TestBookWithDeposit_reintentoTrasFallaDelCargoEsUnaReservaNueva(t *testing.
 	creator := newFakeDepositCreator(30)
 	creator.fail = errors.New("banco caído")
 	env, mailer := depPublicEnv(t, creator)
-	env.book.Bookings = &atomicCancelBookings{fb: env.bookings}
+	env.Book.Bookings = &atomicCancelBookings{FakeBookings: env.Bookings}
 
-	if _, _, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-retry")); err == nil {
+	if _, _, err := env.Book.BookWithDeposit("navajas-oro", depInput(env, "op-retry")); err == nil {
 		t.Fatal("el primer intento debía fallar por el cargo")
 	}
-	first := env.bookings.All[0]
+	first := env.Bookings.All[0]
 	if first.Status != domain.BookingCancelled || first.ClientOpID != "" {
 		t.Fatalf("el turno sin cargo se cancela y suelta su clave: %+v", first)
 	}
 
 	creator.fail = nil
-	b, payment, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-retry"))
+	b, payment, err := env.Book.BookWithDeposit("navajas-oro", depInput(env, "op-retry"))
 	if err != nil {
 		t.Fatalf("el reintento debe poder reservar de nuevo: %v", err)
 	}
@@ -240,11 +242,11 @@ func TestBookWithDeposit_reintentoTrasFallaDelCargoEsUnaReservaNueva(t *testing.
 	if payment == nil || payment.AmountCents <= 0 {
 		t.Fatalf("el reintento devuelve su seña: %+v", payment)
 	}
-	if n := mailer.count(); n != 0 {
+	if n := mailer.Count(); n != 0 {
 		t.Fatalf("la confirmación sigue esperando al pago: %d", n)
 	}
 	// Un reintento más de la MISMA clave ya devuelve el turno nuevo y la misma seña.
-	again, payment2, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-retry"))
+	again, payment2, err := env.Book.BookWithDeposit("navajas-oro", depInput(env, "op-retry"))
 	if err != nil || again.ID != b.ID || payment2 == nil || payment2.DepositID != payment.DepositID {
 		t.Fatalf("el segundo reintento repite el mismo turno y la misma seña: %+v %+v %v", again, payment2, err)
 	}
@@ -252,7 +254,7 @@ func TestBookWithDeposit_reintentoTrasFallaDelCargoEsUnaReservaNueva(t *testing.
 
 // failingUpdateBookings makes the compensation fail (the database is down for the
 // cancel): the booking stays `booked` with no deposit.
-type failingUpdateBookings struct{ *fb }
+type failingUpdateBookings struct{ *testutil.FakeBookings }
 
 func (r *failingUpdateBookings) Update(domain.Booking) error {
 	return errors.New("la base no responde")
@@ -265,18 +267,18 @@ func TestBookWithDeposit_reintentoSanaUnaReservaSinSena(t *testing.T) {
 	creator := newFakeDepositCreator(30)
 	creator.fail = errors.New("banco caído")
 	env, mailer := depPublicEnv(t, creator)
-	env.book.Bookings = &failingUpdateBookings{fb: env.bookings}
+	env.Book.Bookings = &failingUpdateBookings{FakeBookings: env.Bookings}
 
-	if _, _, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-sana")); err == nil {
+	if _, _, err := env.Book.BookWithDeposit("navajas-oro", depInput(env, "op-sana")); err == nil {
 		t.Fatal("el primer intento debía fallar por el cargo")
 	}
-	first := env.bookings.All[0]
+	first := env.Bookings.All[0]
 	if first.Status != domain.BookingBooked {
 		t.Fatalf("precondición: la compensación falló y el turno sigue agendado: %q", first.Status)
 	}
 
 	creator.fail = nil
-	b, payment, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-sana"))
+	b, payment, err := env.Book.BookWithDeposit("navajas-oro", depInput(env, "op-sana"))
 	if err != nil {
 		t.Fatalf("el reintento: %v", err)
 	}
@@ -286,7 +288,7 @@ func TestBookWithDeposit_reintentoSanaUnaReservaSinSena(t *testing.T) {
 	if payment == nil || payment.AmountCents <= 0 {
 		t.Fatalf("una reserva agendada sin seña no se devuelve gratis: %+v", payment)
 	}
-	if n := mailer.count(); n != 0 {
+	if n := mailer.Count(); n != 0 {
 		t.Fatalf("la confirmación espera al pago: %d", n)
 	}
 }
@@ -297,16 +299,16 @@ func TestBookWithDeposit_reintentoDeUnTurnoCanceladoNoDevuelveSena(t *testing.T)
 	creator := newFakeDepositCreator(30)
 	env, _ := depPublicEnv(t, creator)
 
-	first, payment, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-cancelado"))
+	first, payment, err := env.Book.BookWithDeposit("navajas-oro", depInput(env, "op-cancelado"))
 	if err != nil || payment == nil {
 		t.Fatalf("precondición: reserva con seña: %v %v", payment, err)
 	}
-	for i := range env.bookings.All {
-		if env.bookings.All[i].ID == first.ID {
-			env.bookings.All[i].Status = domain.BookingCancelled
+	for i := range env.Bookings.All {
+		if env.Bookings.All[i].ID == first.ID {
+			env.Bookings.All[i].Status = domain.BookingCancelled
 		}
 	}
-	again, payment2, err := env.book.BookWithDeposit("navajas-oro", depInput(env, "op-cancelado"))
+	again, payment2, err := env.Book.BookWithDeposit("navajas-oro", depInput(env, "op-cancelado"))
 	if err != nil {
 		t.Fatalf("replay: %v", err)
 	}

@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"salon-saas/internal/testutil"
 	"testing"
 	"time"
 
@@ -14,10 +15,10 @@ import (
 // misma regla que la disponibilidad. Antes, dueño y administración pasaban
 // siempre (Role.IsStaff) aunque no atendieran.
 func TestBooking_staff_solo_agenda_para_quien_atiende(t *testing.T) {
-	bookings := &fb{}
-	mems := &fakeMemberships{}
+	bookings := &testutil.FakeBookings{}
+	mems := &testutil.FakeMemberships{}
 	svc := bkg.BookingService{Bookings: bookings, Memberships: mems}
-	rec := recepcionista(mems)
+	rec := testutil.Recepcionista(mems)
 	day := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
 	start, end := day.Add(10*time.Hour), day.Add(11*time.Hour)
 
@@ -51,7 +52,7 @@ func TestBooking_staff_solo_agenda_para_quien_atiende(t *testing.T) {
 // S-F2a-4: el owner nace atendiendo (salón de una persona) y el resto del
 // equipo nace sin atender salvo el profesional, que atiende por rol.
 func TestTenants_CreateSalon_ownerAttends(t *testing.T) {
-	salons, mems := &fakeSalons{}, &fakeMemberships{}
+	salons, mems := &testutil.FakeSalons{}, &testutil.FakeMemberships{}
 	svc := team.TenantService{Salons: salons, Memberships: mems}
 	s, err := svc.CreateSalon("u-owner", "Navajas de Oro", "navajas-oro")
 	if err != nil {

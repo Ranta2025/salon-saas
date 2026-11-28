@@ -14,10 +14,10 @@ import (
 // reprogramación y la reasignación.
 type agendaEnv struct {
 	svc      bkg.BookingService
-	bookings *fb
-	res      *fakeResources
+	bookings *testutil.FakeBookings
+	res      *testutil.FakeResources
 	services *testutil.FakeServices
-	mems     *fakeMemberships
+	mems     *testutil.FakeMemberships
 	owner    domain.Membership
 	ana      domain.Membership
 	bea      domain.Membership
@@ -28,10 +28,10 @@ type agendaEnv struct {
 
 func newAgendaEnv(t *testing.T) *agendaEnv {
 	t.Helper()
-	mems := &fakeMemberships{}
-	bookings := &fb{}
+	mems := &testutil.FakeMemberships{}
+	bookings := &testutil.FakeBookings{}
 	services := &testutil.FakeServices{}
-	res := &fakeResources{bookings: bookings}
+	res := &testutil.FakeResources{Bookings: bookings}
 
 	corte, err := domain.NewService("s1", "Corte con puesto", 60, 100000, 20)
 	if err != nil {
@@ -57,9 +57,9 @@ func newAgendaEnv(t *testing.T) *agendaEnv {
 			Bookings: bookings, Memberships: mems, Services: services, Resources: res,
 		},
 		bookings: bookings, res: res, services: services, mems: mems,
-		owner:   miembro(mems, "u-owner", "s1", domain.RoleOwner),
-		ana:     miembro(mems, "ana", "s1", domain.RoleProfessional),
-		bea:     miembro(mems, "bea", "s1", domain.RoleProfessional),
+		owner:   testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner),
+		ana:     testutil.Miembro(mems, "ana", "s1", domain.RoleProfessional),
+		bea:     testutil.Miembro(mems, "bea", "s1", domain.RoleProfessional),
 		corteID: corte.ID, unitA: units[0].ID, unitB: units[1].ID,
 	}
 }

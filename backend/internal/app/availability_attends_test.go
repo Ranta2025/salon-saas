@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"salon-saas/internal/testutil/agendakit"
 	"testing"
 
 	"salon-saas/internal/domain"
@@ -10,8 +11,8 @@ import (
 // S-F2a-2: la disponibilidad pública solo ofrece a quien atiende. El dueño con
 // attends=false no infla la agenda; el dueño-barbero (attends=true) sí aparece.
 func TestAvailability_solo_ofrece_quien_atiende(t *testing.T) {
-	env := newPublicEnv(t)
-	env.staff.BySalon["s1"] = []domain.StaffMember{
+	env := agendakit.NewPublicEnv(t)
+	env.Staff.BySalon["s1"] = []domain.StaffMember{
 		{ID: "prof1", Name: "Ana", Role: domain.RoleProfessional},
 		{ID: "duenio", Name: "Dueña", Role: domain.RoleOwner},                // no atiende
 		{ID: "barbero", Name: "Beto", Role: domain.RoleOwner, Attends: true}, // dueño-barbero
@@ -19,7 +20,7 @@ func TestAvailability_solo_ofrece_quien_atiende(t *testing.T) {
 		{ID: "recepcion", Name: "Dani", Role: domain.RoleReception, Attends: true},
 	}
 
-	day, err := env.avail.Day("navajas-oro", "2026-12-01", env.corte.ID, "")
+	day, err := env.Avail.Day("navajas-oro", "2026-12-01", env.Corte.ID, "")
 	if err != nil {
 		t.Fatalf("disponibilidad: %v", err)
 	}
@@ -35,11 +36,11 @@ func TestAvailability_solo_ofrece_quien_atiende(t *testing.T) {
 	}
 
 	// El dueño apagado no existe como profesional del salón: 404.
-	if _, err := env.avail.Day("navajas-oro", "2026-12-01", env.corte.ID, "duenio"); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := env.Avail.Day("navajas-oro", "2026-12-01", env.Corte.ID, "duenio"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("dueño sin attends: %v", err)
 	}
 	// El dueño-barbero sí, y con sus huecos.
-	day, err = env.avail.Day("navajas-oro", "2026-12-01", env.corte.ID, "barbero")
+	day, err = env.Avail.Day("navajas-oro", "2026-12-01", env.Corte.ID, "barbero")
 	if err != nil {
 		t.Fatalf("dueño-barbero: %v", err)
 	}
@@ -55,13 +56,13 @@ func TestAvailability_solo_ofrece_quien_atiende(t *testing.T) {
 
 // Un salón donde nadie atiende no tiene huecos: [] y no un error (500).
 func TestAvailability_nadie_atiende_no_hay_slots(t *testing.T) {
-	env := newPublicEnv(t)
-	env.staff.BySalon["s1"] = []domain.StaffMember{
+	env := agendakit.NewPublicEnv(t)
+	env.Staff.BySalon["s1"] = []domain.StaffMember{
 		{ID: "duenio", Name: "Dueña", Role: domain.RoleOwner},
 		{ID: "admin", Name: "Carla", Role: domain.RoleAdmin},
 		{ID: "recepcion", Name: "Dani", Role: domain.RoleReception, Attends: true},
 	}
-	day, err := env.avail.Day("navajas-oro", "2026-12-01", env.corte.ID, "")
+	day, err := env.Avail.Day("navajas-oro", "2026-12-01", env.Corte.ID, "")
 	if err != nil {
 		t.Fatalf("sin gente que atienda la respuesta es vacía, no un error: %v", err)
 	}

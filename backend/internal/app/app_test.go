@@ -2,7 +2,6 @@ package app
 
 import (
 	"errors"
-	"strings"
 	"testing"
 
 	"salon-saas/internal/auth"
@@ -11,121 +10,8 @@ import (
 	"salon-saas/internal/testutil"
 )
 
-// --- Fakes: implementan ports sin Postgres ni bcrypt. Para unit test alcanzan. ---
-
-type fakeUsers struct{ ByEmail map[string]domain.User }
-
-func (f *fakeUsers) Save(u domain.User) error {
-	if f.ByEmail == nil {
-		f.ByEmail = map[string]domain.User{}
-	}
-	f.ByEmail[strings.ToLower(u.Email)] = u
-	return nil
-}
-func (f *fakeUsers) FindByEmail(email string) (domain.User, error) {
-	u, ok := f.ByEmail[strings.ToLower(email)]
-	if !ok {
-		return domain.User{}, domain.ErrNotFound
-	}
-	return u, nil
-}
-
-// FindByID: lo usa GET /me (el token trae el userID, no el email).
-func (f *fakeUsers) FindByID(id string) (domain.User, error) {
-	for _, u := range f.ByEmail {
-		if u.ID == id {
-			return u, nil
-		}
-	}
-	return domain.User{}, domain.ErrNotFound
-}
-
-type fakeSalons struct{ BySlug map[string]domain.Salon }
-
-func (f *fakeSalons) Save(s domain.Salon) error {
-	if f.BySlug == nil {
-		f.BySlug = map[string]domain.Salon{}
-	}
-	f.BySlug[s.Slug] = s
-	return nil
-}
-func (f *fakeSalons) FindBySlug(slug string) (domain.Salon, error) {
-	s, ok := f.BySlug[slug]
-	if !ok {
-		return domain.Salon{}, domain.ErrNotFound
-	}
-	return s, nil
-}
-
-// FindByID: lo usa GET /me para el nombre y el slug de cada salón del usuario.
-func (f *fakeSalons) FindByID(id string) (domain.Salon, error) {
-	for _, s := range f.BySlug {
-		if s.ID == id {
-			return s, nil
-		}
-	}
-	return domain.Salon{}, domain.ErrNotFound
-}
-
-type fakeMemberships struct{ ByKey map[string]domain.Membership }
-
-func (f *fakeMemberships) Save(m domain.Membership) error {
-	if f.ByKey == nil {
-		f.ByKey = map[string]domain.Membership{}
-	}
-	// Misma semántica que el upsert de pgstore (saveMembership): la fila que
-	// vuelve a entrar al equipo queda ACTIVA (ended_at NULL).
-	m.EndedAt = nil
-	f.ByKey[m.UserID+"|"+m.SalonID] = m
-	return nil
-}
-func (f *fakeMemberships) Find(userID, salonID string) (domain.Membership, error) {
-	m, ok := f.ByKey[userID+"|"+salonID]
-	if !ok || !m.Active() {
-		return domain.Membership{}, domain.ErrNotFound
-	}
-	return m, nil
-}
-
-// FindMember: la lectura que ve también la baja, como la query de pgstore. La
-// usan el alta por email y la invitación (F2g2).
-func (f *fakeMemberships) FindMember(userID, salonID string) (domain.Membership, error) {
-	m, ok := f.ByKey[userID+"|"+salonID]
-	if !ok {
-		return domain.Membership{}, domain.ErrNotFound
-	}
-	return m, nil
-}
-
-// ListByUser: puerto MembershipLister (rooms del websocket y marcar leídas).
-func (f *fakeMemberships) ListByUser(userID string) ([]domain.Membership, error) {
-	var out []domain.Membership
-	for _, m := range f.ByKey {
-		if m.UserID == userID && m.Active() {
-			out = append(out, m)
-		}
-	}
-	return out, nil
-}
-
-type fakeHasher struct{}
-
-func (fakeHasher) Hash(plain string) (string, error) { return "h:" + plain, nil }
-func (fakeHasher) Compare(hash, plain string) bool   { return hash == "h:"+plain }
-func (fakeHasher) DummyCompare(string) bool          { return false }
-
-type fakeTokens struct{}
-
-func (fakeTokens) Issue(userID string) (string, error) { return "tok:" + userID, nil }
-func (fakeTokens) Parse(t string) (string, error) {
-	if !strings.HasPrefix(t, "tok:") {
-		return "", domain.ErrUnauthorized
-	}
-	return strings.TrimPrefix(t, "tok:"), nil
-}
-
 func TestAuth_Register_Login(t *testing.T) {
-	svc := auth.AuthService{Users: &fakeUsers{}, Hasher: fakeHasher{}, Tokens: fakeTokens{}}
+	svc := auth.AuthService{Users: &testutil.FakeUsers{}, Hasher: testutil.FakeHasher{}, Tokens: testutil.FakeTokens{}}
 	// B-06: la clave mínima son 8 bytes.
 	u, err := svc.Register("Ana", "ana@mail.com", "secreta123")
 	if err != nil {
@@ -148,7 +34,7 @@ func TestAuth_Register_Login(t *testing.T) {
 }
 
 func TestTenants_Create_Add(t *testing.T) {
-	salons, mems := &fakeSalons{}, &fakeMemberships{}
+	salons, mems := &testutil.FakeSalons{}, &testutil.FakeMemberships{}
 	svc := team.TenantService{Salons: salons, Memberships: mems}
 	s, err := svc.CreateSalon("u-owner", "Navajas de Oro", "navajas-oro")
 	if err != nil {
@@ -168,47 +54,4 @@ func TestTenants_Create_Add(t *testing.T) {
 	if err := svc.AddMember(barb, "u-x", s.ID, domain.RoleClient); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("profesional no debe agregar, dio %v", err)
 	}
-}
-
-// miembro siembra y devuelve la membership del actor (lo que el handler ya cargó).
-func miembro(m *fakeMemberships, userID, salonID string, role domain.Role) domain.Membership {
-	_ = m.Save(domain.Membership{UserID: userID, SalonID: salonID, Role: role})
-	got, err := m.Find(userID, salonID)
-	if err != nil {
-		panic(err)
-	}
-	return got
-}
-
-// catalogo deja el catálogo mínimo del salón (Corte y Brushing) para los casos
-// de uso que validan ítems contra él.
-func catalogo(t *testing.T, services *testutil.FakeServices, salonID string) {
-	t.Helper()
-	for _, s := range []struct {
-		name  string
-		price int
-	}{{"Corte", 150000}, {"Brushing", 80000}} {
-		svc, err := domain.NewService(salonID, s.name, 45, s.price, 20)
-		if err != nil {
-			t.Fatalf("catálogo: %v", err)
-		}
-		if err := services.Save(svc); err != nil {
-			t.Fatalf("catálogo save: %v", err)
-		}
-	}
-}
-
-func svcIDByName(t *testing.T, services *testutil.FakeServices, salonID, name string) string {
-	t.Helper()
-	list, err := services.List(salonID, true)
-	if err != nil {
-		t.Fatalf("listar catálogo: %v", err)
-	}
-	for _, s := range list {
-		if s.Name == name {
-			return s.ID
-		}
-	}
-	t.Fatalf("no hay servicio %q en %s", name, salonID)
-	return ""
 }

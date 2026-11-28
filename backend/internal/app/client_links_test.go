@@ -4,6 +4,7 @@ package app
 
 import (
 	"errors"
+	"salon-saas/internal/testutil/agendakit"
 	"strings"
 	"testing"
 	"time"
@@ -60,12 +61,12 @@ func (f *fakeClientLinks) SaleClientID(salonID, saleID string) (string, error) {
 // D3-b: el turno del personal se vincula por teléfono como best-effort. Un
 // fallo del UPDATE no tumba el turno y el replay no toca el vínculo.
 func TestBooking_link_best_effort_y_replay(t *testing.T) {
-	bookings := &fb{}
-	mems := &fakeMemberships{}
+	bookings := &testutil.FakeBookings{}
+	mems := &testutil.FakeMemberships{}
 	links := &fakeClientLinks{}
 	svc := bkg.BookingService{Bookings: bookings, Memberships: mems, ClientLinks: links}
-	rec := recepcionista(mems)
-	miembro(mems, "prof1", "s1", domain.RoleProfessional)
+	rec := testutil.Recepcionista(mems)
+	testutil.Miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	day := time.Date(2026, 12, 1, 10, 0, 0, 0, time.UTC)
 
 	b, err := svc.CreateBooking(rec, "s1", "prof1", "Lía", "11 5555-1234", day, day.Add(time.Hour))
@@ -106,8 +107,8 @@ func TestSale_client_id_y_best_effort(t *testing.T) {
 	services := &testutil.FakeServices{}
 	service, _ := domain.NewService("s1", "Corte", 45, 1000, 10)
 	_ = services.Save(service)
-	mems := &fakeMemberships{}
-	miembro(mems, "prof1", "s1", domain.RoleProfessional)
+	mems := &testutil.FakeMemberships{}
+	testutil.Miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	owner := actorOf(mems, "owner", "s1", domain.RoleOwner)
 	clients := &testutil.FakeClients{}
 	c := clientFixture(t, clients, "s1", "Lía Fernández", "555")
@@ -169,23 +170,23 @@ func TestSale_client_id_y_best_effort(t *testing.T) {
 
 // D3-a: la reserva pública vincula el turno a la ficha que ya crea o reusa.
 func TestPublicBooking_vincula_la_ficha(t *testing.T) {
-	env := newPublicEnv(t)
+	env := agendakit.NewPublicEnv(t)
 	links := &fakeClientLinks{}
-	book := env.book
+	book := env.Book
 	book.ClientLinks = links
 
-	in := publicInput()
-	in.ServiceID = env.corte.ID
+	in := agendakit.PublicInput()
+	in.ServiceID = env.Corte.ID
 	in.ProfessionalID = "prof1"
 	b, err := book.Book("navajas-oro", in)
 	if err != nil {
 		t.Fatalf("reserva: %v", err)
 	}
-	if len(env.clients.Clients) != 1 {
-		t.Fatalf("la reserva debe dejar la ficha: %+v", env.clients.Clients)
+	if len(env.Clients.Clients) != 1 {
+		t.Fatalf("la reserva debe dejar la ficha: %+v", env.Clients.Clients)
 	}
 	if len(links.bookingByID) != 1 || links.bookingByID[0].BookingID != b.ID ||
-		links.bookingByID[0].ClientID != env.clients.Clients[0].ID || links.bookingByID[0].SalonID != "s1" {
+		links.bookingByID[0].ClientID != env.Clients.Clients[0].ID || links.bookingByID[0].SalonID != "s1" {
 		t.Fatalf("vínculo de la reserva pública: %+v", links.bookingByID)
 	}
 
@@ -200,7 +201,7 @@ func TestPublicBooking_vincula_la_ficha(t *testing.T) {
 var _ = strings.TrimSpace
 
 // actorOf guarda la membresía y devuelve la que ve el caso de uso.
-func actorOf(m *fakeMemberships, userID, salonID string, role domain.Role) domain.Membership {
+func actorOf(m *testutil.FakeMemberships, userID, salonID string, role domain.Role) domain.Membership {
 	_ = m.Save(domain.Membership{UserID: userID, SalonID: salonID, Role: role})
 	got, _ := m.Find(userID, salonID)
 	return got

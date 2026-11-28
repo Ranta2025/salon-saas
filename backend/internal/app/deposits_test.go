@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"salon-saas/internal/testutil"
 	"strings"
 	"sync"
 	"testing"
@@ -26,13 +27,13 @@ var depClock = time.Date(2026, 4, 20, 15, 0, 0, 0, time.UTC)
 type depEnv struct {
 	svc      *dep.DepositService
 	policy   *dep.DepositPolicyService
-	mems     *fakeMemberships
+	mems     *testutil.FakeMemberships
 	policies *fakeDepositPolicies
 	deposits *fakeDeposits
 	gateway  *fakeDepositGateway
 	bookings *fakeDepositBookings
 	notices  *fakeDepositNotices
-	mailer   *fakeMailer
+	mailer   *testutil.FakeMailer
 
 	owner, admin, recep, prof, client, removed, other domain.Membership
 }
@@ -40,15 +41,15 @@ type depEnv struct {
 func newDepEnv(t *testing.T) *depEnv {
 	t.Helper()
 	e := &depEnv{
-		mems:     &fakeMemberships{},
+		mems:     &testutil.FakeMemberships{},
 		policies: &fakeDepositPolicies{},
 		bookings: newFakeDepositBookings(),
 		notices:  &fakeDepositNotices{},
-		mailer:   &fakeMailer{},
+		mailer:   &testutil.FakeMailer{},
 	}
 	e.deposits = &fakeDeposits{bookings: e.bookings}
 	e.gateway = newFakeDepositGateway(depSecret)
-	settings := &fakeSettings{BySalon: map[string]domain.SalonSettings{
+	settings := &testutil.FakeSettings{BySalon: map[string]domain.SalonSettings{
 		"s1": {SalonID: "s1", Timezone: "America/Argentina/Buenos_Aires", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30},
 	}}
 	// El correo se manda en línea: el test no espera goroutines.
@@ -65,14 +66,14 @@ func newDepEnv(t *testing.T) *depEnv {
 		Policies: e.policies, Memberships: e.mems, Gateway: e.gateway,
 		Now: func() time.Time { return depClock },
 	}
-	e.owner = miembro(e.mems, "owner", "s1", domain.RoleOwner)
-	e.admin = miembro(e.mems, "admin", "s1", domain.RoleAdmin)
-	e.recep = miembro(e.mems, "recep", "s1", domain.RoleReception)
+	e.owner = testutil.Miembro(e.mems, "owner", "s1", domain.RoleOwner)
+	e.admin = testutil.Miembro(e.mems, "admin", "s1", domain.RoleAdmin)
+	e.recep = testutil.Miembro(e.mems, "recep", "s1", domain.RoleReception)
 	_ = e.mems.Save(domain.Membership{UserID: "prof", SalonID: "s1", Role: domain.RoleProfessional, Attends: true})
 	e.prof, _ = e.mems.Find("prof", "s1")
-	e.client = miembro(e.mems, "client", "s1", domain.RoleClient)
-	e.other = miembro(e.mems, "owner2", "s2", domain.RoleOwner)
-	e.removed = miembro(e.mems, "removed", "s1", domain.RoleAdmin)
+	e.client = testutil.Miembro(e.mems, "client", "s1", domain.RoleClient)
+	e.other = testutil.Miembro(e.mems, "owner2", "s2", domain.RoleOwner)
+	e.removed = testutil.Miembro(e.mems, "removed", "s1", domain.RoleAdmin)
 	at := depClock.Add(-time.Hour)
 	e.removed.EndedAt = &at
 	e.mems.ByKey["removed|s1"] = e.removed
@@ -337,7 +338,7 @@ func TestDepositService_ApplyCallback_aprobado_paga_y_manda_un_correo(t *testing
 	if paidEvent.BankEventID != "ev-1" {
 		t.Fatalf("el evento paid no guardó el id del banco: %+v", paidEvent)
 	}
-	msgs := e.mailer.messages()
+	msgs := e.mailer.Messages()
 	if len(msgs) != 1 {
 		t.Fatalf("correos = %d, quiero 1", len(msgs))
 	}
@@ -352,7 +353,7 @@ func TestDepositService_ApplyCallback_aprobado_paga_y_manda_un_correo(t *testing
 	if n := e.deposits.countEvents(domain.DepositEventPaid); n != 1 {
 		t.Fatalf("eventos paid = %d, quiero 1", n)
 	}
-	if n := len(e.mailer.messages()); n != 1 {
+	if n := len(e.mailer.Messages()); n != 1 {
 		t.Fatalf("correos = %d, quiero 1", n)
 	}
 }
@@ -381,7 +382,7 @@ func TestDepositService_ApplyCallback_30_simultaneos_un_pago_y_un_correo(t *test
 	if n := e.deposits.countEvents(domain.DepositEventPaid); n != 1 {
 		t.Fatalf("eventos paid = %d, quiero 1", n)
 	}
-	if n := len(e.mailer.messages()); n != 1 {
+	if n := len(e.mailer.Messages()); n != 1 {
 		t.Fatalf("correos = %d, quiero 1", n)
 	}
 }
@@ -403,7 +404,7 @@ func TestDepositService_ApplyCallback_dos_eventos_una_transicion(t *testing.T) {
 	if n := e.deposits.countEvents(domain.DepositEventPaid); n != 1 {
 		t.Fatalf("eventos paid = %d, quiero 1", n)
 	}
-	if n := len(e.mailer.messages()); n != 1 {
+	if n := len(e.mailer.Messages()); n != 1 {
 		t.Fatalf("correos = %d, quiero 1", n)
 	}
 }
@@ -427,7 +428,7 @@ func TestDepositService_ApplyCallback_rechazos_no_mueven_la_sena(t *testing.T) {
 			if n := e.deposits.countEvents(domain.DepositEventAttemptDeclined); n != 1 {
 				t.Fatalf("eventos attempt_declined = %d, quiero 1", n)
 			}
-			if n := len(e.mailer.messages()); n != 0 {
+			if n := len(e.mailer.Messages()); n != 0 {
 				t.Fatalf("correos = %d, quiero 0", n)
 			}
 			// El reenvío del mismo intento no duplica el evento.
@@ -460,7 +461,7 @@ func TestDepositService_ApplyCallback_monto_distinto_400_sin_efecto(t *testing.T
 	if n := e.deposits.countEvents(domain.DepositEventPaid); n != 0 {
 		t.Fatalf("eventos paid = %d, quiero 0", n)
 	}
-	if n := len(e.mailer.messages()); n != 0 {
+	if n := len(e.mailer.Messages()); n != 0 {
 		t.Fatalf("correos = %d, quiero 0", n)
 	}
 }
@@ -484,7 +485,7 @@ func TestDepositService_ApplyCallback_firma_invalida_400_sin_efecto(t *testing.T
 	if got.Status != domain.DepositPending {
 		t.Fatalf("una firma inválida no puede mover la sena: %+v", got)
 	}
-	if n := len(e.mailer.messages()); n != 0 {
+	if n := len(e.mailer.Messages()); n != 0 {
 		t.Fatalf("correos = %d, quiero 0", n)
 	}
 }
@@ -545,7 +546,7 @@ func TestDepositService_ApplyCallback_pago_tardio_reembolsa_una_vez(t *testing.T
 			if n := e.deposits.countEvents(domain.DepositEventPaid); n != 0 {
 				t.Fatalf("un pago tardío NO es un pago: eventos paid = %d", n)
 			}
-			if n := len(e.mailer.messages()); n != 0 {
+			if n := len(e.mailer.Messages()); n != 0 {
 				t.Fatalf("correos = %d, quiero 0 (no se confirma un turno que se canceló)", n)
 			}
 			// La reserva sigue cancelada: el pago tardío no la reactiva.
@@ -920,7 +921,7 @@ func TestDepositService_Sweep_carrera_con_el_callback(t *testing.T) {
 				if n := e.deposits.countEvents(domain.DepositEventPaid); n != 1 {
 					t.Fatalf("borde %s iteración %d: eventos paid = %d", at, i, n)
 				}
-				if n := len(e.mailer.messages()); n != 1 {
+				if n := len(e.mailer.Messages()); n != 1 {
 					t.Fatalf("borde %s iteración %d: correos = %d, quiero 1", at, i, n)
 				}
 			case domain.DepositRefunded:
@@ -933,7 +934,7 @@ func TestDepositService_Sweep_carrera_con_el_callback(t *testing.T) {
 				if n := e.deposits.countEvents(domain.DepositEventLatePaymentRefunded); n != 1 {
 					t.Fatalf("borde %s iteración %d: eventos tardíos = %d", at, i, n)
 				}
-				if n := len(e.mailer.messages()); n != 0 {
+				if n := len(e.mailer.Messages()); n != 0 {
 					t.Fatalf("borde %s iteración %d: correos = %d, quiero 0", at, i, n)
 				}
 			default:

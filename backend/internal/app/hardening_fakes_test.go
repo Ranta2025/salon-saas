@@ -11,7 +11,7 @@ import (
 // countingHasher cuenta los compares reales y los falsos (B-05: sin usuario en
 // la DB, igual se gasta el trabajo de bcrypt).
 type countingHasher struct {
-	fakeHasher
+	testutil.FakeHasher
 	dummyCalls int
 }
 

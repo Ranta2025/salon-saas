@@ -1,6 +1,7 @@
 package app
 
 import (
+	"salon-saas/internal/testutil"
 	"sync"
 	"time"
 
@@ -21,7 +22,7 @@ import (
 type fakeBookingLinks struct {
 	mu sync.Mutex
 	// bookings es la agenda donde vive el turno del enlace.
-	bookings *fb
+	bookings *testutil.FakeBookings
 	links    []domain.BookingLink
 	// saveErr/findErr simulan la DB.
 	saveErr error

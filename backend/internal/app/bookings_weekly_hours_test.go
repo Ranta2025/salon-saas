@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"salon-saas/internal/testutil"
 	"testing"
 	"time"
 
@@ -13,9 +14,9 @@ import (
 // por el horario semanal. Agenda a mano un turno fuera de todo horario (sábado a
 // las 21:00) y solo el choque lo frena, como antes de F2d1.
 func TestStaffBooking_noSeRestringePorHorarioSemanal(t *testing.T) {
-	bookings := &fb{}
-	mems := &fakeMemberships{}
-	actor := recepcionista(mems)
+	bookings := &testutil.FakeBookings{}
+	mems := &testutil.FakeMemberships{}
+	actor := testutil.Recepcionista(mems)
 	_ = mems.Save(domain.Membership{UserID: "prof1", SalonID: "s1", Role: domain.RoleProfessional, Attends: true})
 	svc := bkg.BookingService{Bookings: bookings, Memberships: mems}
 

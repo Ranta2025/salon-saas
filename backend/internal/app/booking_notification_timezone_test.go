@@ -6,6 +6,7 @@ package app
 // no cambia: `starts_at` sigue siendo UTC RFC3339.
 
 import (
+	"salon-saas/internal/testutil"
 	"strings"
 	"testing"
 	"time"
@@ -15,18 +16,18 @@ import (
 )
 
 // bookingTimeEnv: agenda del salón s1 en CDMX (UTC-6, sin DST).
-func bookingTimeEnv(t *testing.T) (*bkg.BookingService, *fb, *fakeMemberships, *fakeEvents, *fakeNotifier, domain.Membership) {
+func bookingTimeEnv(t *testing.T) (*bkg.BookingService, *testutil.FakeBookings, *testutil.FakeMemberships, *testutil.FakeEvents, *testutil.FakeNotifier, domain.Membership) {
 	t.Helper()
-	bookings := &fb{}
-	mems := &fakeMemberships{}
-	notifier := &fakeNotifier{}
-	settings := &fakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
+	bookings := &testutil.FakeBookings{}
+	mems := &testutil.FakeMemberships{}
+	notifier := &testutil.FakeNotifier{}
+	settings := &testutil.FakeSettings{BySalon: map[string]domain.SalonSettings{"s1": {
 		SalonID: "s1", Timezone: "America/Mexico_City", OpenTime: "09:00", CloseTime: "19:00", SlotStepMin: 30,
 	}}}
-	events := &fakeEvents{}
+	events := &testutil.FakeEvents{}
 	svc := &bkg.BookingService{Bookings: bookings, Memberships: mems, Settings: settings, Events: events, Notifier: notifier}
-	miembro(mems, "prof1", "s1", domain.RoleProfessional)
-	rec := recepcionista(mems)
+	testutil.Miembro(mems, "prof1", "s1", domain.RoleProfessional)
+	rec := testutil.Recepcionista(mems)
 	return svc, bookings, mems, events, notifier, rec
 }
 
@@ -38,7 +39,7 @@ func TestBookingService_aviso_de_alta_en_hora_del_salon(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reservar: %v", err)
 	}
-	body := notifier.lastBody()
+	body := notifier.LastBody()
 	if !strings.Contains(body, "26/11 11:00 (America/Mexico_City)") {
 		t.Fatalf("el aviso tiene que decir la hora local y la zona: %q", body)
 	}
@@ -46,7 +47,7 @@ func TestBookingService_aviso_de_alta_en_hora_del_salon(t *testing.T) {
 		t.Fatalf("el aviso no puede mostrar la hora UTC: %q", body)
 	}
 	// El evento no cambia: UTC RFC3339.
-	ev, n := events.typed("booking.created")
+	ev, n := events.Typed("booking.created")
 	if n != 1 {
 		t.Fatalf("esperaba un booking.created, hubo %d", n)
 	}
@@ -73,7 +74,7 @@ func TestBookingService_avisos_de_patch_en_hora_del_salon(t *testing.T) {
 	if _, err := svc.Update(rec, "s1", b.ID, bkg.BookingPatch{Status: &cancelled}); err != nil {
 		t.Fatalf("cancelar: %v", err)
 	}
-	if body := notifier.lastBody(); !strings.Contains(body, "26/11 11:00 (America/Mexico_City)") {
+	if body := notifier.LastBody(); !strings.Contains(body, "26/11 11:00 (America/Mexico_City)") {
 		t.Fatalf("el aviso de cancelación: %q", body)
 	}
 }
@@ -90,7 +91,7 @@ func TestBookingService_aviso_reprogramado_en_hora_del_salon(t *testing.T) {
 	if _, err := svc.Update(rec, "s1", b.ID, bkg.BookingPatch{StartsAt: &moved, EndsAt: &movedEnd}); err != nil {
 		t.Fatalf("reprogramar: %v", err)
 	}
-	body := notifier.lastBody()
+	body := notifier.LastBody()
 	if !strings.Contains(body, "27/11 12:30 (America/Mexico_City)") {
 		t.Fatalf("el aviso de reprogramación: %q", body)
 	}

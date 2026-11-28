@@ -23,9 +23,9 @@ func TestWaitlistJoin_los_topes_no_cuentan_dias_pasados(t *testing.T) {
 	// Tres entradas sin baja del mismo email, TODAS de días ya pasados.
 	for i := 0; i < domain.MaxWaitlistActivePerEmail; i++ {
 		past, _ := wlDay(t, -(i + 1))
-		env.wlSeed(t, env.corte.ID, "", past, "Lía", "a@mail.com", now.Add(time.Duration(i)*time.Minute))
+		env.wlSeed(t, env.Corte.ID, "", past, "Lía", "a@mail.com", now.Add(time.Duration(i)*time.Minute))
 	}
-	res, err := env.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: day, Name: "Lía", Email: "a@mail.com"})
+	res, err := env.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, Date: day, Name: "Lía", Email: "a@mail.com"})
 	if err != nil || !res.Created {
 		t.Fatalf("los avisos de días pasados no cuentan para el tope por email: %+v %v", res, err)
 	}
@@ -35,9 +35,9 @@ func TestWaitlistJoin_los_topes_no_cuentan_dias_pasados(t *testing.T) {
 	env2.blockDay(t, day)
 	past, _ := wlDay(t, -1)
 	for i := 0; i < domain.MaxWaitlistActivePerSalon; i++ {
-		env2.wlSeed(t, env2.corte.ID, "", past, "N", "n"+strconv.Itoa(i)+"@mail.com", now)
+		env2.wlSeed(t, env2.Corte.ID, "", past, "N", "n"+strconv.Itoa(i)+"@mail.com", now)
 	}
-	res, err = env2.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{ServiceID: env2.corte.ID, Date: day, Name: "Lía", Email: "nueva@mail.com"})
+	res, err = env2.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{ServiceID: env2.Corte.ID, Date: day, Name: "Lía", Email: "nueva@mail.com"})
 	if err != nil || !res.Created {
 		t.Fatalf("los avisos de días pasados no cuentan para el tope por salón: %+v %v", res, err)
 	}

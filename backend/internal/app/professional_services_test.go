@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"salon-saas/internal/testutil/agendakit"
 	"sort"
 	"strings"
 	"testing"
@@ -18,9 +19,9 @@ import (
 // profesional y recepción, más los repos que necesita F2c.
 type teamFixture struct {
 	svc      team.MemberService
-	mems     *fakeMemberships
-	users    *fakeUsers
-	members  *fakeMembers
+	mems     *testutil.FakeMemberships
+	users    *testutil.FakeUsers
+	members  *testutil.FakeMembers
 	profs    *testutil.FakeProfessionalServices
 	services *testutil.FakeServices
 	corte    domain.Service
@@ -29,7 +30,7 @@ type teamFixture struct {
 
 func newTeamFixture(t *testing.T) *teamFixture {
 	t.Helper()
-	users := &fakeUsers{}
+	users := &testutil.FakeUsers{}
 	for _, u := range []domain.User{
 		{ID: "u-owner", Name: "Ana", Email: "ana@mail.com"},
 		{ID: "u-admin", Name: "Beto", Email: "beto@mail.com"},
@@ -41,7 +42,7 @@ func newTeamFixture(t *testing.T) *teamFixture {
 			t.Fatalf("usuario: %v", err)
 		}
 	}
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	// El dueño de un salón real nace atendiendo (S-F2a-4): acá se replica.
 	_ = mems.Save(domain.Membership{UserID: "u-owner", SalonID: "s1", Role: domain.RoleOwner, Attends: true})
 	_ = mems.Save(domain.Membership{UserID: "u-admin", SalonID: "s1", Role: domain.RoleAdmin})
@@ -74,10 +75,10 @@ func newTeamFixture(t *testing.T) *teamFixture {
 	}
 	return &teamFixture{
 		svc: team.MemberService{
-			Members: &fakeMembers{mems: mems, users: users}, Memberships: mems, Users: users,
+			Members: &testutil.FakeMembers{Mems: mems, Users: users}, Memberships: mems, Users: users,
 			Professionals: profs, Services: services,
 		},
-		mems: mems, users: users, members: &fakeMembers{mems: mems, users: users},
+		mems: mems, users: users, members: &testutil.FakeMembers{Mems: mems, Users: users},
 		profs: profs, services: services, corte: corte, keratina: keratina,
 	}
 }
@@ -85,21 +86,21 @@ func newTeamFixture(t *testing.T) *teamFixture {
 // S-F2c-4: la disponibilidad de un servicio la dan SOLO quienes lo hacen; un
 // servicio que nadie hace responde {"slots":[]} y no un error.
 func TestAvailability_filtra_por_servicio(t *testing.T) {
-	env := newPublicEnv(t)
+	env := agendakit.NewPublicEnv(t)
 	keratina, err := domain.NewService("s1", "Keratina", 60, 300000, 15)
 	if err != nil {
 		t.Fatalf("servicio: %v", err)
 	}
 	manicura, _ := domain.NewService("s1", "Manicura", 30, 100000, 10)
 	for _, s := range []domain.Service{keratina, manicura} {
-		_ = env.services.Save(s)
+		_ = env.Services.Save(s)
 	}
-	env.profs.Assign("s1", env.corte.ID, "prof1")
-	env.profs.Assign("s1", keratina.ID, "prof2")
-	env.profs.Assign("s1", manicura.ID) // nadie la hace
+	env.Profs.Assign("s1", env.Corte.ID, "prof1")
+	env.Profs.Assign("s1", keratina.ID, "prof2")
+	env.Profs.Assign("s1", manicura.ID) // nadie la hace
 
 	// Corte: solo quien lo hace (Ana). Bruno no aparece aunque esté libre.
-	day, err := env.avail.Day("navajas-oro", "2026-12-01", env.corte.ID, "")
+	day, err := env.Avail.Day("navajas-oro", "2026-12-01", env.Corte.ID, "")
 	if err != nil {
 		t.Fatalf("disponibilidad de corte: %v", err)
 	}
@@ -113,7 +114,7 @@ func TestAvailability_filtra_por_servicio(t *testing.T) {
 	}
 
 	// Keratina: la otra profesional, con los huecos de una duración de 60 min.
-	day, err = env.avail.Day("navajas-oro", "2026-12-01", keratina.ID, "")
+	day, err = env.Avail.Day("navajas-oro", "2026-12-01", keratina.ID, "")
 	if err != nil {
 		t.Fatalf("disponibilidad de keratina: %v", err)
 	}
@@ -127,7 +128,7 @@ func TestAvailability_filtra_por_servicio(t *testing.T) {
 	}
 
 	// Nadie hace manicura: 200 con la lista vacía (nunca un error).
-	day, err = env.avail.Day("navajas-oro", "2026-12-01", manicura.ID, "")
+	day, err = env.Avail.Day("navajas-oro", "2026-12-01", manicura.ID, "")
 	if err != nil {
 		t.Fatalf("un servicio que nadie hace no puede romper la disponibilidad: %v", err)
 	}
@@ -137,11 +138,11 @@ func TestAvailability_filtra_por_servicio(t *testing.T) {
 
 	// Pedir por un profesional que no hace ese servicio: no existe para esta
 	// búsqueda (404), igual que quien no atiende.
-	if _, err := env.avail.Day("navajas-oro", "2026-12-01", keratina.ID, "prof1"); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := env.Avail.Day("navajas-oro", "2026-12-01", keratina.ID, "prof1"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("profesional que no hace el servicio: %v", err)
 	}
 	// El que sí lo hace sigue respondiendo.
-	if _, err := env.avail.Day("navajas-oro", "2026-12-01", keratina.ID, "prof2"); err != nil {
+	if _, err := env.Avail.Day("navajas-oro", "2026-12-01", keratina.ID, "prof2"); err != nil {
 		t.Fatalf("profesional que sí lo hace: %v", err)
 	}
 }
@@ -149,23 +150,23 @@ func TestAvailability_filtra_por_servicio(t *testing.T) {
 // S-F2c-4: dos profesionales que hacen servicios distintos reservan la misma
 // hora sin pisarse, y cada turno guarda el servicio reservado.
 func TestPublicBooking_asigna_quien_hace_el_servicio(t *testing.T) {
-	env := newPublicEnv(t)
+	env := agendakit.NewPublicEnv(t)
 	keratina, err := domain.NewService("s1", "Keratina", 60, 300000, 15)
 	if err != nil {
 		t.Fatalf("servicio: %v", err)
 	}
-	_ = env.services.Save(keratina)
-	env.profs.Assign("s1", env.corte.ID, "prof1")
-	env.profs.Assign("s1", keratina.ID, "prof2")
+	_ = env.Services.Save(keratina)
+	env.Profs.Assign("s1", env.Corte.ID, "prof1")
+	env.Profs.Assign("s1", keratina.ID, "prof2")
 
 	start := time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC) // 09:00 en CDMX
-	corteBooking, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
-		ServiceID: env.corte.ID, ClientName: "Lía", ClientPhone: "555", StartsAt: start,
+	corteBooking, err := env.Book.Book("navajas-oro", bkg.PublicBookingInput{
+		ServiceID: env.Corte.ID, ClientName: "Lía", ClientPhone: "555", StartsAt: start,
 	})
 	if err != nil {
 		t.Fatalf("reserva de corte: %v", err)
 	}
-	keratinaBooking, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
+	keratinaBooking, err := env.Book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: keratina.ID, ClientName: "Ana", ClientPhone: "556", StartsAt: start,
 	})
 	if err != nil {
@@ -174,58 +175,58 @@ func TestPublicBooking_asigna_quien_hace_el_servicio(t *testing.T) {
 	if corteBooking.ProfessionalID != "prof1" || keratinaBooking.ProfessionalID != "prof2" {
 		t.Fatalf("asignación por servicio: %q %q", corteBooking.ProfessionalID, keratinaBooking.ProfessionalID)
 	}
-	if corteBooking.ServiceID != env.corte.ID || keratinaBooking.ServiceID != keratina.ID {
+	if corteBooking.ServiceID != env.Corte.ID || keratinaBooking.ServiceID != keratina.ID {
 		t.Fatalf("el turno guarda el servicio reservado: %q %q", corteBooking.ServiceID, keratinaBooking.ServiceID)
 	}
-	if len(env.bookings.All) != 2 {
-		t.Fatalf("dos turnos guardados, hay %d", len(env.bookings.All))
+	if len(env.Bookings.All) != 2 {
+		t.Fatalf("dos turnos guardados, hay %d", len(env.Bookings.All))
 	}
 }
 
 // S-F2c-4: si nadie hace el servicio, la reserva pública es 409 (no 500) y no
 // se guarda nada.
 func TestPublicBooking_servicio_sin_profesional_409(t *testing.T) {
-	env := newPublicEnv(t)
+	env := agendakit.NewPublicEnv(t)
 	manicura, err := domain.NewService("s1", "Manicura", 30, 100000, 10)
 	if err != nil {
 		t.Fatalf("servicio: %v", err)
 	}
-	_ = env.services.Save(manicura)
-	env.profs.Assign("s1", manicura.ID) // nadie la hace
+	_ = env.Services.Save(manicura)
+	env.Profs.Assign("s1", manicura.ID) // nadie la hace
 
 	start := time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC)
-	_, err = env.book.Book("navajas-oro", bkg.PublicBookingInput{
+	_, err = env.Book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: manicura.ID, ClientName: "Lía", ClientPhone: "555", StartsAt: start,
 	})
 	if !errors.Is(err, domain.ErrAlreadyExists) {
 		t.Fatalf("sin gente que haga el servicio esperaba 409, dio %v", err)
 	}
-	if len(env.bookings.All) != 0 {
-		t.Fatalf("el 409 no puede dejar un turno guardado: %+v", env.bookings.All)
+	if len(env.Bookings.All) != 0 {
+		t.Fatalf("el 409 no puede dejar un turno guardado: %+v", env.Bookings.All)
 	}
 
 	// Con profesional explícito que no hace ese servicio: 400 con el motivo,
 	// tampoco se guarda nada. (Antes se aceptaba porque solo se miraba que
 	// atendiera.)
-	_, err = env.book.Book("navajas-oro", bkg.PublicBookingInput{
+	_, err = env.Book.Book("navajas-oro", bkg.PublicBookingInput{
 		ServiceID: manicura.ID, ProfessionalID: "prof1", ClientName: "Lía", ClientPhone: "555", StartsAt: start,
 	})
 	if !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("profesional que no hace el servicio: %v", err)
 	}
-	if len(env.bookings.All) != 0 {
-		t.Fatalf("tampoco acá se guarda un turno: %+v", env.bookings.All)
+	if len(env.Bookings.All) != 0 {
+		t.Fatalf("tampoco acá se guarda un turno: %+v", env.Bookings.All)
 	}
 }
 
 // PRESERVE (S-F2c-4): la agenda de staff no exige servicio. Antes del cambio
 // tampoco lo exigía y no puede empezar a hacerlo por la espalda.
 func TestBookingService_staff_sin_servicio(t *testing.T) {
-	bookings := &fb{}
-	mems := &fakeMemberships{}
+	bookings := &testutil.FakeBookings{}
+	mems := &testutil.FakeMemberships{}
 	svc := bkg.BookingService{Bookings: bookings, Memberships: mems}
-	rec := recepcionista(mems)
-	miembro(mems, "prof1", "s1", domain.RoleProfessional)
+	rec := testutil.Recepcionista(mems)
+	testutil.Miembro(mems, "prof1", "s1", domain.RoleProfessional)
 	day := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
 
 	b, err := svc.CreateBooking(rec, "s1", "prof1", "Lía", "555", day.Add(10*time.Hour), day.Add(11*time.Hour))
@@ -435,18 +436,18 @@ func TestMemberService_list_con_oficio_y_servicios(t *testing.T) {
 // asigna solo a quien atiende en el salón.
 func TestServiceService_create_professional_ids(t *testing.T) {
 	services := &testutil.FakeServices{}
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	staff := &testutil.FakeStaffLister{BySalon: map[string][]domain.StaffMember{"s1": {
 		{ID: "u-prof", Name: "Caro", Role: domain.RoleProfessional},
 		{ID: "u-recep", Name: "Dani", Role: domain.RoleReception},
 	}}}
 	profs := &testutil.FakeProfessionalServices{Staff: staff}
 	svc := staffing.ServiceService{Services: services, Memberships: mems, Professionals: profs}
-	miembro(mems, "u-owner", "s1", domain.RoleOwner)
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
-	miembro(mems, "u-prof", "s1", domain.RoleProfessional)
-	miembro(mems, "u-recep", "s1", domain.RoleReception)
-	miembro(mems, "u-otro", "s2", domain.RoleProfessional)
+	testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
+	testutil.Miembro(mems, "u-otro", "s2", domain.RoleProfessional)
 
 	// Sin professional_ids: el servicio no lo hace nadie (la excepción
 	// consciente de S-F2c-5; el aviso de la pantalla lo dice).
@@ -500,8 +501,8 @@ func TestServiceService_create_professional_ids(t *testing.T) {
 // grabadas (base con datos previos) lo ofrece todo el equipo reservable, y la
 // reserva pública asigna a la primera persona libre de ese equipo.
 func TestAvailability_backfill_todos_hacen_todo(t *testing.T) {
-	env := newPublicEnv(t)
-	day, err := env.avail.Day("navajas-oro", "2026-12-01", env.corte.ID, "")
+	env := agendakit.NewPublicEnv(t)
+	day, err := env.Avail.Day("navajas-oro", "2026-12-01", env.Corte.ID, "")
 	if err != nil {
 		t.Fatalf("disponibilidad: %v", err)
 	}
@@ -514,14 +515,14 @@ func TestAvailability_backfill_todos_hacen_todo(t *testing.T) {
 	}
 
 	start := time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC)
-	first, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
-		ServiceID: env.corte.ID, ClientName: "Lía", ClientPhone: "555", StartsAt: start,
+	first, err := env.Book.Book("navajas-oro", bkg.PublicBookingInput{
+		ServiceID: env.Corte.ID, ClientName: "Lía", ClientPhone: "555", StartsAt: start,
 	})
 	if err != nil {
 		t.Fatalf("primera reserva: %v", err)
 	}
-	second, err := env.book.Book("navajas-oro", bkg.PublicBookingInput{
-		ServiceID: env.corte.ID, ClientName: "Ana", ClientPhone: "556", StartsAt: start,
+	second, err := env.Book.Book("navajas-oro", bkg.PublicBookingInput{
+		ServiceID: env.Corte.ID, ClientName: "Ana", ClientPhone: "556", StartsAt: start,
 	})
 	if err != nil {
 		t.Fatalf("segunda reserva (otra profesional libre): %v", err)

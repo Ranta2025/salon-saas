@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"salon-saas/internal/testutil"
+	"salon-saas/internal/testutil/agendakit"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,10 +23,10 @@ import (
 const waitlistSlug = "navajas-oro"
 
 type waitlistEnv struct {
-	*publicEnv
+	*agendakit.PublicEnv
 	wl   *fakeWaitlist
 	tx   *fakeWaitlistTx
-	mems *fakeMemberships
+	mems *testutil.FakeMemberships
 	svc  waitlist.WaitlistService
 }
 
@@ -34,31 +36,31 @@ type waitlistEnv struct {
 // probar la retención con dos entradas.
 func newWaitlistEnv(t *testing.T) *waitlistEnv {
 	t.Helper()
-	pub := newPublicEnv(t)
-	pub.settings.BySalon["s1"] = domain.SalonSettings{
+	pub := agendakit.NewPublicEnv(t)
+	pub.Settings.BySalon["s1"] = domain.SalonSettings{
 		SalonID: "s1", Timezone: "America/Mexico_City",
 		OpenTime: "09:00", CloseTime: "10:00", SlotStepMin: 30,
 	}
-	pub.profs.ByService = map[string][]string{"s1|" + pub.corte.ID: {"prof1", "prof2"}}
+	pub.Profs.ByService = map[string][]string{"s1|" + pub.Corte.ID: {"prof1", "prof2"}}
 	wl := &fakeWaitlist{}
 	tx := &fakeWaitlistTx{repo: wl}
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	// El canal del aviso: un sender que registra lo enviado (nunca nil, salvo el
 	// test que prueba justamente que sin email no se reclama nada).
-	pub.mailer = &fakeMailer{}
+	pub.Mailer = &testutil.FakeMailer{}
 	svc := waitlist.WaitlistService{
 		Waitlist: wl, Tx: tx,
-		Salons: pub.avail.Salons, Services: pub.services, Settings: pub.settings,
-		Professionals: pub.profs, Availability: pub.avail, Memberships: mems,
-		Mailer: pub.mailer, AppURL: linkAppURL,
+		Salons: pub.Avail.Salons, Services: pub.Services, Settings: pub.Settings,
+		Professionals: pub.Profs, Availability: pub.Avail, Memberships: mems,
+		Mailer: pub.Mailer, AppURL: testutil.LinkAppURL,
 	}
-	return &waitlistEnv{publicEnv: pub, wl: wl, tx: tx, mems: mems, svc: svc}
+	return &waitlistEnv{PublicEnv: pub, wl: wl, tx: tx, mems: mems, svc: svc}
 }
 
 // wlDay devuelve el día LOCAL del salón a `offset` días de hoy y su inicio.
 func wlDay(t *testing.T, offset int) (string, time.Time) {
 	t.Helper()
-	loc := mxLocation(t)
+	loc := testutil.MxLocation(t)
 	d := time.Now().In(loc).AddDate(0, 0, offset)
 	start := time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, loc)
 	return start.Format("2006-01-02"), start
@@ -68,7 +70,7 @@ func wlDay(t *testing.T, offset int) (string, time.Time) {
 // profesionales: la disponibilidad del día queda en [] (sin horarios).
 func (e *waitlistEnv) blockDay(t *testing.T, day string) {
 	t.Helper()
-	loc := mxLocation(t)
+	loc := testutil.MxLocation(t)
 	d, err := time.ParseInLocation("2006-01-02", day, loc)
 	if err != nil {
 		t.Fatalf("día: %v", err)
@@ -80,7 +82,7 @@ func (e *waitlistEnv) blockDay(t *testing.T, day string) {
 		if err != nil {
 			t.Fatalf("reserva: %v", err)
 		}
-		if err := e.bookings.Save(b); err != nil {
+		if err := e.Bookings.Save(b); err != nil {
 			t.Fatalf("guardar reserva: %v", err)
 		}
 	}
@@ -157,13 +159,13 @@ func TestWaitlistJoin_crea_y_normaliza(t *testing.T) {
 	env.blockDay(t, day)
 
 	res, err := env.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{
-		ServiceID: env.corte.ID, Date: day,
+		ServiceID: env.Corte.ID, Date: day,
 		Name: "  Lía  ", Email: "  LIA@Mail.com ", Phone: " 11 5555-1234 ",
 	})
 	if err != nil {
 		t.Fatalf("unirse: %v", err)
 	}
-	if !res.Created || res.Status != domain.WaitlistStatusWaiting || res.Date != day || res.ServiceID != env.corte.ID {
+	if !res.Created || res.Status != domain.WaitlistStatusWaiting || res.Date != day || res.ServiceID != env.Corte.ID {
 		t.Fatalf("resultado: %+v", res)
 	}
 	if env.entryCount() != 1 {
@@ -195,17 +197,17 @@ func TestWaitlistJoin_validaciones_no_escriben(t *testing.T) {
 	}{
 		{"sin servicio", waitlist.WaitlistJoinInput{Date: day, Name: "Lía", Email: "a@mail.com"}, domain.MsgWaitlistServiceInvalid},
 		{"servicio inexistente", waitlist.WaitlistJoinInput{ServiceID: "no-existe", Date: day, Name: "Lía", Email: "a@mail.com"}, domain.MsgWaitlistServiceInvalid},
-		{"servicio inactivo", waitlist.WaitlistJoinInput{ServiceID: env.viejo.ID, Date: day, Name: "Lía", Email: "a@mail.com"}, domain.MsgWaitlistServiceInvalid},
-		{"profesional ajena", waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, ProfessionalID: "prof9", Date: day, Name: "Lía", Email: "a@mail.com"}, domain.MsgWaitlistProfessionalInvalid},
-		{"fecha pasada", waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: "2020-01-01", Name: "Lía", Email: "a@mail.com"}, domain.MsgWaitlistDateRange},
-		{"fecha lejana", waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: "2099-01-01", Name: "Lía", Email: "a@mail.com"}, domain.MsgWaitlistDateRange},
-		{"fecha mal formada", waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: "24/11/2026", Name: "Lía", Email: "a@mail.com"}, domain.MsgWaitlistDate},
-		{"sin nombre", waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: day, Email: "a@mail.com"}, domain.MsgWaitlistNameRequired},
-		{"nombre con NUL", waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: day, Name: "Lía\x00", Email: "a@mail.com"}, domain.MsgWaitlistInvalidChars},
-		{"sin email", waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: day, Name: "Lía"}, domain.MsgWaitlistEmailRequired},
-		{"email inválido", waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: day, Name: "Lía", Email: "no-es"}, "Email inválido"},
-		{"email con NUL", waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: day, Name: "Lía", Email: "a@mail.com\x00"}, domain.MsgWaitlistInvalidChars},
-		{"teléfono largo", waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: day, Name: "Lía", Email: "a@mail.com", Phone: strings.Repeat("5", 41)}, domain.MsgWaitlistPhoneTooLong},
+		{"servicio inactivo", waitlist.WaitlistJoinInput{ServiceID: env.Viejo.ID, Date: day, Name: "Lía", Email: "a@mail.com"}, domain.MsgWaitlistServiceInvalid},
+		{"profesional ajena", waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, ProfessionalID: "prof9", Date: day, Name: "Lía", Email: "a@mail.com"}, domain.MsgWaitlistProfessionalInvalid},
+		{"fecha pasada", waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, Date: "2020-01-01", Name: "Lía", Email: "a@mail.com"}, domain.MsgWaitlistDateRange},
+		{"fecha lejana", waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, Date: "2099-01-01", Name: "Lía", Email: "a@mail.com"}, domain.MsgWaitlistDateRange},
+		{"fecha mal formada", waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, Date: "24/11/2026", Name: "Lía", Email: "a@mail.com"}, domain.MsgWaitlistDate},
+		{"sin nombre", waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, Date: day, Email: "a@mail.com"}, domain.MsgWaitlistNameRequired},
+		{"nombre con NUL", waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, Date: day, Name: "Lía\x00", Email: "a@mail.com"}, domain.MsgWaitlistInvalidChars},
+		{"sin email", waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, Date: day, Name: "Lía"}, domain.MsgWaitlistEmailRequired},
+		{"email inválido", waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, Date: day, Name: "Lía", Email: "no-es"}, "Email inválido"},
+		{"email con NUL", waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, Date: day, Name: "Lía", Email: "a@mail.com\x00"}, domain.MsgWaitlistInvalidChars},
+		{"teléfono largo", waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, Date: day, Name: "Lía", Email: "a@mail.com", Phone: strings.Repeat("5", 41)}, domain.MsgWaitlistPhoneTooLong},
 	}
 	for _, c := range cases {
 		_, err := env.svc.Join(waitlistSlug, c.in)
@@ -217,7 +219,7 @@ func TestWaitlistJoin_validaciones_no_escriben(t *testing.T) {
 		}
 	}
 	// Salón inexistente: 404.
-	if _, err := env.svc.Join("no-existe", waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: day, Name: "Lía", Email: "a@mail.com"}); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := env.svc.Join("no-existe", waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, Date: day, Name: "Lía", Email: "a@mail.com"}); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("slug inexistente: %v", err)
 	}
 }
@@ -228,7 +230,7 @@ func TestWaitlistJoin_409_con_horarios_libres(t *testing.T) {
 	env := newWaitlistEnv(t)
 	day, _ := wlDay(t, 2)
 
-	_, err := env.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: day, Name: "Lía", Email: "a@mail.com"})
+	_, err := env.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, Date: day, Name: "Lía", Email: "a@mail.com"})
 	if err == nil || !errors.Is(err, domain.ErrAlreadyExists) || err.Error() != domain.MsgWaitlistSlotsAvailable {
 		t.Fatalf("con horarios libres: %v", err)
 	}
@@ -237,7 +239,7 @@ func TestWaitlistJoin_409_con_horarios_libres(t *testing.T) {
 	}
 	// El mismo día, sin huecos, sí entra.
 	env.blockDay(t, day)
-	if _, err := env.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: day, Name: "Lía", Email: "a@mail.com"}); err != nil {
+	if _, err := env.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, Date: day, Name: "Lía", Email: "a@mail.com"}); err != nil {
 		t.Fatalf("sin horarios: %v", err)
 	}
 }
@@ -252,9 +254,9 @@ func TestWaitlistJoin_topes(t *testing.T) {
 	// Tres entradas activas del mismo email (días distintos, sembradas directo).
 	for i := 0; i < domain.MaxWaitlistActivePerEmail; i++ {
 		d, _ := wlDay(t, 3+i)
-		env.wlSeed(t, env.corte.ID, "", d, "Lía", "a@mail.com", now.Add(time.Duration(i)*time.Minute))
+		env.wlSeed(t, env.Corte.ID, "", d, "Lía", "a@mail.com", now.Add(time.Duration(i)*time.Minute))
 	}
-	_, err := env.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: day, Name: "Lía", Email: "a@mail.com"})
+	_, err := env.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, Date: day, Name: "Lía", Email: "a@mail.com"})
 	if err == nil || !errors.Is(err, domain.ErrAlreadyExists) || err.Error() != domain.MsgWaitlistEmailLimit {
 		t.Fatalf("tope por email: %v", err)
 	}
@@ -262,7 +264,7 @@ func TestWaitlistJoin_topes(t *testing.T) {
 		t.Fatalf("el 409 no puede escribir nada, hay %d", env.entryCount())
 	}
 	// Un email distinto sigue entrando.
-	if _, err := env.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: day, Name: "Ana", Email: "b@mail.com"}); err != nil {
+	if _, err := env.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, Date: day, Name: "Ana", Email: "b@mail.com"}); err != nil {
 		t.Fatalf("otro email: %v", err)
 	}
 
@@ -270,9 +272,9 @@ func TestWaitlistJoin_topes(t *testing.T) {
 	env2 := newWaitlistEnv(t)
 	env2.blockDay(t, day)
 	for i := 0; i < domain.MaxWaitlistActivePerSalon; i++ {
-		env2.wlSeed(t, env2.corte.ID, "", day, "N", "n"+strconv.Itoa(i)+"@mail.com", now)
+		env2.wlSeed(t, env2.Corte.ID, "", day, "N", "n"+strconv.Itoa(i)+"@mail.com", now)
 	}
-	_, err = env2.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{ServiceID: env2.corte.ID, Date: day, Name: "Lía", Email: "nueva@mail.com"})
+	_, err = env2.svc.Join(waitlistSlug, waitlist.WaitlistJoinInput{ServiceID: env2.Corte.ID, Date: day, Name: "Lía", Email: "nueva@mail.com"})
 	if err == nil || !errors.Is(err, domain.ErrAlreadyExists) || err.Error() != domain.MsgWaitlistSalonFull {
 		t.Fatalf("tope por salón: %v", err)
 	}
@@ -287,14 +289,14 @@ func TestWaitlistJoin_idempotente(t *testing.T) {
 	env := newWaitlistEnv(t)
 	day, _ := wlDay(t, 2)
 	env.blockDay(t, day)
-	in := waitlist.WaitlistJoinInput{ServiceID: env.corte.ID, Date: day, Name: "Lía", Email: "a@mail.com"}
+	in := waitlist.WaitlistJoinInput{ServiceID: env.Corte.ID, Date: day, Name: "Lía", Email: "a@mail.com"}
 
 	first, err := env.svc.Join(waitlistSlug, in)
 	if err != nil || !first.Created {
 		t.Fatalf("primera: %+v %v", first, err)
 	}
 	again, err := env.svc.Join(waitlistSlug, in)
-	if err != nil || again.Created || again.Status != domain.WaitlistStatusWaiting || again.Date != day || again.ServiceID != env.corte.ID {
+	if err != nil || again.Created || again.Status != domain.WaitlistStatusWaiting || again.Date != day || again.ServiceID != env.Corte.ID {
 		t.Fatalf("repetido: %+v %v", again, err)
 	}
 	if env.entryCount() != 1 {
@@ -304,7 +306,7 @@ func TestWaitlistJoin_idempotente(t *testing.T) {
 	now := time.Now()
 	for i := 1; i < domain.MaxWaitlistActivePerEmail; i++ {
 		d, _ := wlDay(t, 2+i)
-		env.wlSeed(t, env.corte.ID, "", d, "Lía", "a@mail.com", now.Add(time.Duration(i)*time.Minute))
+		env.wlSeed(t, env.Corte.ID, "", d, "Lía", "a@mail.com", now.Add(time.Duration(i)*time.Minute))
 	}
 	again, err = env.svc.Join(waitlistSlug, in)
 	if err != nil || again.Created {
@@ -317,7 +319,7 @@ func TestWaitlistJoin_idempotente(t *testing.T) {
 func TestWaitlistLeave(t *testing.T) {
 	env := newWaitlistEnv(t)
 	day, _ := wlDay(t, 2)
-	entry, token := env.wlSeed(t, env.corte.ID, "", day, "Lía", "a@mail.com", time.Now())
+	entry, token := env.wlSeed(t, env.Corte.ID, "", day, "Lía", "a@mail.com", time.Now())
 
 	if err := env.svc.Leave(token); err != nil {
 		t.Fatalf("baja: %v", err)
@@ -350,18 +352,18 @@ func TestWaitlistRunOnce_avisa_una_fifo(t *testing.T) {
 	env := newWaitlistEnv(t)
 	day, _ := wlDay(t, 2)
 	now := time.Now().UTC()
-	first, firstToken := env.wlSeed(t, env.corte.ID, "prof1", day, "Lía", "lia@mail.com", now.Add(-2*time.Minute))
-	second, _ := env.wlSeed(t, env.corte.ID, "prof1", day, "Ana", "ana@mail.com", now.Add(-time.Minute))
+	first, firstToken := env.wlSeed(t, env.Corte.ID, "prof1", day, "Lía", "lia@mail.com", now.Add(-2*time.Minute))
+	second, _ := env.wlSeed(t, env.Corte.ID, "prof1", day, "Ana", "ana@mail.com", now.Add(-time.Minute))
 
 	// Recién ahora el día tiene UN hueco: prof1 con la ventana de 09:00-10:00.
 	notified, failed := env.svc.RunOnce(context.Background(), now)
 	if notified != 1 || failed != 0 {
 		t.Fatalf("avisos=%d fallidos=%d", notified, failed)
 	}
-	if env.mailer.count() != 1 {
-		t.Fatalf("tenía que salir 1 email, salieron %d", env.mailer.count())
+	if env.Mailer.Count() != 1 {
+		t.Fatalf("tenía que salir 1 email, salieron %d", env.Mailer.Count())
 	}
-	msg := env.mailer.messages()[0]
+	msg := env.Mailer.Messages()[0]
 	if msg.To != "lia@mail.com" {
 		t.Fatalf("FIFO: tenía que ir a lia@mail.com, fue a %q", msg.To)
 	}
@@ -374,8 +376,8 @@ func TestWaitlistRunOnce_avisa_una_fifo(t *testing.T) {
 	}()
 	for _, want := range []string{
 		"Navajas de Oro", "Corte", label,
-		linkAppURL + "/salon/navajas-oro",
-		linkAppURL + "/lista-de-espera#",
+		testutil.LinkAppURL + "/salon/navajas-oro",
+		testutil.LinkAppURL + "/lista-de-espera#",
 		"te escribimos solo por esta lista; ya no recibirás más avisos de esta entrada",
 	} {
 		if !strings.Contains(msg.Text, want) {
@@ -403,15 +405,15 @@ func TestWaitlistRunOnce_avisa_una_fifo(t *testing.T) {
 	}
 
 	// Segundo tick: la retención de 2 h del aviso enviado ocupa el único hueco.
-	if notified, _ := env.svc.RunOnce(context.Background(), now); notified != 0 || env.mailer.count() != 1 {
-		t.Fatalf("segundo tick: avisos=%d emails=%d", notified, env.mailer.count())
+	if notified, _ := env.svc.RunOnce(context.Background(), now); notified != 0 || env.Mailer.Count() != 1 {
+		t.Fatalf("segundo tick: avisos=%d emails=%d", notified, env.Mailer.Count())
 	}
 	// Cuando la retención vence, la siguiente recibe su aviso (una sola vez).
 	env.ageClam(t, first.ID, domain.WaitlistRetention+time.Hour)
 	if notified, _ := env.svc.RunOnce(context.Background(), now); notified != 1 {
 		t.Fatalf("con la retención vencida tenía que avisar a la segunda, avisos=%d", notified)
 	}
-	if msgs := env.mailer.messages(); len(msgs) != 2 || msgs[1].To != "ana@mail.com" {
+	if msgs := env.Mailer.Messages(); len(msgs) != 2 || msgs[1].To != "ana@mail.com" {
 		t.Fatalf("segundo email: %+v", msgs)
 	}
 	// Una entrada sola se avisa UNA vez (re-unirse crea otra).
@@ -434,10 +436,10 @@ func TestWaitlistRunOnce_avisa_una_fifo(t *testing.T) {
 // con el tope de 3 intentos.
 func TestWaitlistRunOnce_reintento_tras_fallo(t *testing.T) {
 	env := newWaitlistEnv(t)
-	env.mailer.err = errors.New("smtp caído")
+	env.Mailer.Err = errors.New("smtp caído")
 	day, _ := wlDay(t, 2)
 	now := time.Now().UTC()
-	entry, _ := env.wlSeed(t, env.corte.ID, "prof1", day, "Lía", "lia@mail.com", now)
+	entry, _ := env.wlSeed(t, env.Corte.ID, "prof1", day, "Lía", "lia@mail.com", now)
 
 	if notified, failed := env.svc.RunOnce(context.Background(), now); notified != 0 || failed != 1 {
 		t.Fatalf("primer intento: avisos=%d fallidos=%d", notified, failed)
@@ -482,7 +484,7 @@ func TestWaitlistRunOnce_sin_mailer_no_reclama(t *testing.T) {
 	env := newWaitlistEnv(t)
 	env.svc.Mailer = nil
 	day, _ := wlDay(t, 2)
-	env.wlSeed(t, env.corte.ID, "prof1", day, "Lía", "lia@mail.com", time.Now().UTC())
+	env.wlSeed(t, env.Corte.ID, "prof1", day, "Lía", "lia@mail.com", time.Now().UTC())
 
 	notified, failed := env.svc.RunOnce(context.Background(), time.Now().UTC())
 	if notified != 0 || failed != 0 {
@@ -503,8 +505,8 @@ func TestWaitlistRunOnce_dos_pasadas_simultaneas_avisan_una(t *testing.T) {
 	env := newWaitlistEnv(t)
 	day, _ := wlDay(t, 2)
 	now := time.Now().UTC()
-	env.wlSeed(t, env.corte.ID, "prof1", day, "Lía", "lia@mail.com", now.Add(-2*time.Minute))
-	env.wlSeed(t, env.corte.ID, "prof1", day, "Ana", "ana@mail.com", now.Add(-time.Minute))
+	env.wlSeed(t, env.Corte.ID, "prof1", day, "Lía", "lia@mail.com", now.Add(-2*time.Minute))
+	env.wlSeed(t, env.Corte.ID, "prof1", day, "Ana", "ana@mail.com", now.Add(-time.Minute))
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -520,8 +522,8 @@ func TestWaitlistRunOnce_dos_pasadas_simultaneas_avisan_una(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if total != 1 || env.mailer.count() != 1 {
-		t.Fatalf("dos pasadas simultáneas: avisos=%d emails=%d", total, env.mailer.count())
+	if total != 1 || env.Mailer.Count() != 1 {
+		t.Fatalf("dos pasadas simultáneas: avisos=%d emails=%d", total, env.Mailer.Count())
 	}
 	if len(env.wl.locks) == 0 || env.wl.locks[0] != "waitlist-write:s1" {
 		t.Fatalf("locks pedidos: %v", env.wl.locks)
@@ -536,9 +538,9 @@ func TestWaitlistStaff_lista_y_baja(t *testing.T) {
 	tomorrow, _ := wlDay(t, 1)
 	yesterday, _ := wlDay(t, -1)
 	now := time.Now()
-	long, _ := env.wlSeed(t, env.corte.ID, "prof1", tomorrow, "Lía", "lia@mail.com", now)
-	old, _ := env.wlSeed(t, env.corte.ID, "", yesterday, "Vieja", "vieja@mail.com", now)
-	left, _ := env.wlSeed(t, env.corte.ID, "", today, "Baja", "baja@mail.com", now)
+	long, _ := env.wlSeed(t, env.Corte.ID, "prof1", tomorrow, "Lía", "lia@mail.com", now)
+	old, _ := env.wlSeed(t, env.Corte.ID, "", yesterday, "Vieja", "vieja@mail.com", now)
+	left, _ := env.wlSeed(t, env.Corte.ID, "", today, "Baja", "baja@mail.com", now)
 	if err := env.wl.Leave(left.TokenHash, now); err != nil {
 		t.Fatalf("baja: %v", err)
 	}
@@ -587,7 +589,7 @@ func TestWaitlistStaff_lista_y_baja(t *testing.T) {
 	}
 	// Una entrada de OTRO salón es el 404 del contrato (aislamiento por salón).
 	contact, _ := domain.NewWaitlistContact("Otra", "otra@mail.com", "")
-	foreign, err := domain.NewWaitlistEntry("s2", env.corte.ID, "", tomorrow, contact, now)
+	foreign, err := domain.NewWaitlistEntry("s2", env.Corte.ID, "", tomorrow, contact, now)
 	if err != nil {
 		t.Fatalf("entrada ajena: %v", err)
 	}

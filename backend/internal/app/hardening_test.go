@@ -17,7 +17,7 @@ import (
 
 // B-06: la clave se valida ANTES de hashear (8..72 bytes).
 func TestAuth_register_valida_clave(t *testing.T) {
-	svc := auth.AuthService{Users: &fakeUsers{}, Hasher: fakeHasher{}, Tokens: fakeTokens{}}
+	svc := auth.AuthService{Users: &testutil.FakeUsers{}, Hasher: testutil.FakeHasher{}, Tokens: testutil.FakeTokens{}}
 	for _, bad := range []string{"corta", strings.Repeat("x", domain.MaxPasswordBytes+1)} {
 		if _, err := svc.Register("Ana", "ana@mail.com", bad); !errors.Is(err, domain.ErrValidation) {
 			t.Fatalf("clave de %d bytes debe dar ErrValidation, dio %v", len(bad), err)
@@ -31,8 +31,8 @@ func TestAuth_register_valida_clave(t *testing.T) {
 // B-05: el email se normaliza antes de buscar, así el duplicado con mayúsculas
 // se detecta y el login funciona sin importar cómo se tipeó.
 func TestAuth_email_normalizado(t *testing.T) {
-	users := &fakeUsers{}
-	svc := auth.AuthService{Users: users, Hasher: fakeHasher{}, Tokens: fakeTokens{}}
+	users := &testutil.FakeUsers{}
+	svc := auth.AuthService{Users: users, Hasher: testutil.FakeHasher{}, Tokens: testutil.FakeTokens{}}
 	if _, err := svc.Register("Ana", "  Ana@Mail.COM ", "unaClaveLarga"); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestAuth_email_normalizado(t *testing.T) {
 // B-05: si el usuario no existe igual se gasta el trabajo de bcrypt.
 func TestAuth_login_usuario_inexistente_gasta_tiempo(t *testing.T) {
 	h := &countingHasher{}
-	svc := auth.AuthService{Users: &fakeUsers{}, Hasher: h, Tokens: fakeTokens{}}
+	svc := auth.AuthService{Users: &testutil.FakeUsers{}, Hasher: h, Tokens: testutil.FakeTokens{}}
 	if _, err := svc.Login("nadie@mail.com", "unaClaveLarga"); !errors.Is(err, domain.ErrUnauthorized) {
 		t.Fatalf("esperaba ErrUnauthorized, dio %v", err)
 	}
@@ -61,12 +61,12 @@ func TestAuth_login_usuario_inexistente_gasta_tiempo(t *testing.T) {
 func TestSaleService_precio_del_catalogo_y_servicio_activo(t *testing.T) {
 	sales := &testutil.FakeSales{}
 	services := &testutil.FakeServices{}
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	svc := pos.SaleService{Sales: sales, Services: services, Memberships: mems}
-	catalogo(t, services, "s1")
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	miembro(mems, "prof1", "s1", domain.RoleProfessional)
-	corte := svcIDByName(t, services, "s1", "Corte")
+	testutil.Catalogo(t, services, "s1")
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
+	testutil.Miembro(mems, "prof1", "s1", domain.RoleProfessional)
+	corte := testutil.SvcIDByName(t, services, "s1", "Corte")
 
 	// El cliente manda 1 centavo por un corte de 150000: se cobra el catálogo.
 	sale, err := svc.RegisterSale(recep, "s1", "prof1", "Lía", []domain.SaleItem{
@@ -109,11 +109,11 @@ func TestSaleService_precio_del_catalogo_y_servicio_activo(t *testing.T) {
 func TestSaleService_profesional_debe_ser_del_salon(t *testing.T) {
 	sales := &testutil.FakeSales{}
 	services := &testutil.FakeServices{}
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	svc := pos.SaleService{Sales: sales, Services: services, Memberships: mems}
-	catalogo(t, services, "s1")
-	recep := miembro(mems, "u-recep", "s1", domain.RoleReception)
-	corte := svcIDByName(t, services, "s1", "Corte")
+	testutil.Catalogo(t, services, "s1")
+	recep := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
+	corte := testutil.SvcIDByName(t, services, "s1", "Corte")
 	items := []domain.SaleItem{{ServiceID: corte, Qty: 1, UnitPriceCents: 150000}}
 
 	// Inexistente en el salón.
@@ -121,12 +121,12 @@ func TestSaleService_profesional_debe_ser_del_salon(t *testing.T) {
 		t.Fatalf("profesional inexistente debe dar ErrValidation, dio %v", err)
 	}
 	// Miembro del salón pero con rol que no atiende (recepción).
-	miembro(mems, "u-otra-recep", "s1", domain.RoleReception)
+	testutil.Miembro(mems, "u-otra-recep", "s1", domain.RoleReception)
 	if _, err := svc.RegisterSale(recep, "s1", "u-otra-recep", "Lía", items, domain.MethodCash); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("recepción no puede ser el profesional, dio %v", err)
 	}
 	// Profesional de OTRO salón: tampoco.
-	miembro(mems, "u-prof2", "s2", domain.RoleProfessional)
+	testutil.Miembro(mems, "u-prof2", "s2", domain.RoleProfessional)
 	if _, err := svc.RegisterSale(recep, "s1", "u-prof2", "Lía", items, domain.MethodCash); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("profesional de otro salón debe dar ErrValidation, dio %v", err)
 	}
@@ -147,15 +147,15 @@ func TestSaleService_profesional_debe_ser_del_salon(t *testing.T) {
 }
 
 func TestBookingService_profesional_debe_ser_del_salon(t *testing.T) {
-	mems := &fakeMemberships{}
-	svc := bkg.BookingService{Bookings: &fb{}, Memberships: mems}
-	rec := miembro(mems, "u-recep", "s1", domain.RoleReception)
+	mems := &testutil.FakeMemberships{}
+	svc := bkg.BookingService{Bookings: &testutil.FakeBookings{}, Memberships: mems}
+	rec := testutil.Miembro(mems, "u-recep", "s1", domain.RoleReception)
 	start := time.Now().UTC().Add(24 * time.Hour)
 
 	if _, err := svc.CreateBooking(rec, "s1", "fantasma", "Lía", "", start, start.Add(time.Hour)); !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("profesional inexistente debe dar ErrValidation, dio %v", err)
 	}
-	miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
 	if _, err := svc.CreateBooking(rec, "s1", "u-prof", "Lía", "", start, start.Add(time.Hour)); err != nil {
 		t.Fatalf("profesional del salón debe poder agendarse: %v", err)
 	}
@@ -165,12 +165,12 @@ func TestBookingService_profesional_debe_ser_del_salon(t *testing.T) {
 // cierre (producción siempre lo configura, los fakes de test pueden no hacerlo).
 func TestCashCloseService_usa_la_transaccion_con_lock(t *testing.T) {
 	sales := &testutil.FakeSales{}
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	closes := &testutil.FakeCashCloses{}
 	tx := &fakeSalonTx{closes: closes, sales: sales}
 	svc := pos.CashCloseService{CashCloses: closes, Sales: sales, Memberships: mems, Tx: tx}
-	owner := miembro(mems, "u-owner", "s1", domain.RoleOwner)
-	prof := miembro(mems, "u-prof", "s1", domain.RoleProfessional)
+	owner := testutil.Miembro(mems, "u-owner", "s1", domain.RoleOwner)
+	prof := testutil.Miembro(mems, "u-prof", "s1", domain.RoleProfessional)
 	_ = prof
 
 	sales.All = append(sales.All, domain.Sale{
@@ -195,9 +195,9 @@ func TestCashCloseService_usa_la_transaccion_con_lock(t *testing.T) {
 // --- Endpoints nuevos: /me, /staff, /public/salons/:slug ---
 
 func TestMeService(t *testing.T) {
-	users := &fakeUsers{}
-	salons := &fakeSalons{}
-	mems := &fakeMemberships{}
+	users := &testutil.FakeUsers{}
+	salons := &testutil.FakeSalons{}
+	mems := &testutil.FakeMemberships{}
 	svc := auth.MeService{Users: users, Salons: salons, Members: mems}
 
 	u := domain.User{ID: "u1", Name: "Ana", Email: "ana@mail.com"}
@@ -231,7 +231,7 @@ func TestStaffService(t *testing.T) {
 			{ID: "u-recep", Name: "Dani", Role: domain.RoleReception, Attends: true},
 		},
 	}}
-	mems := &fakeMemberships{}
+	mems := &testutil.FakeMemberships{}
 	svc := team.StaffService{Staff: staff, Memberships: mems}
 	_ = mems.Save(domain.Membership{UserID: "u-recep", SalonID: "s1", Role: domain.RoleReception})
 
@@ -249,7 +249,7 @@ func TestStaffService(t *testing.T) {
 }
 
 func TestPublicSalonService(t *testing.T) {
-	salons := &fakeSalons{}
+	salons := &testutil.FakeSalons{}
 	services := &testutil.FakeServices{}
 	svc := settings.PublicSalonService{Salons: salons, Services: services}
 	_ = salons.Save(domain.Salon{ID: "s1", Slug: "navajas", Name: "Navajas de Oro"})
