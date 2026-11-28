@@ -699,6 +699,20 @@ test('buildLanding shows the reviews section ONLY from the payload `reviews`, wi
   assert.deepEqual(model.nav.at(-1), { href: '#resenas', label: 'Reseñas' })
 })
 
+test('buildLanding offers the «Reseñas» nav entry even when no other section has data', () => {
+  const model = buildLanding(
+    parsed({
+      salon: { id: 's1', slug: 'x', name: 'Solo Nombre' },
+      services: [{ id: 'a', name: 'A', duration_min: 30, price_cents: 100 }],
+      reviews: { average: 5, count: 1, items: [{ rating: 5, comment: '', author: 'Ana P.', date: '' }] },
+    }),
+  )
+  assert.deepEqual(
+    model.nav.map((link) => link.href),
+    ['#servicios', '#resenas'],
+  )
+})
+
 test('buildLanding without `reviews` renders no reviews section and invents nothing', () => {
   for (const raw of [full, { ...full, reviews: null }]) {
     const model = buildLanding(parsed(raw))
