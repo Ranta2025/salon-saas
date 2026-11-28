@@ -101,19 +101,47 @@ func pgCode(err error) string {
 // D6: la migración 035 dos veces no toca datos previos (md5 de users,
 // memberships, sales y audit_events idénticos antes y después) y las tablas
 // quedan como el contrato.
+//
+// Hermético (H34(a)): la foto se limita a las filas que ESTE test creó (su salón
+// s-it-tf y sus dos usuarias u-it-tf*). Los demás paquetes de integración
+// escriben en estas mismas tablas a la vez (go test -p 4) y una foto de la tabla
+// ENTERA cambiaba sola: fallaba de vez en cuando con el mensaje engañoso «035
+// cambió datos previos» sin que la migración tocara nada.
 func TestTwoFactor_migrationTwiceKeepsData(t *testing.T) {
 	f := tfFixtures(t)
 	sql, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "035_two_factor.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	// El salón de este test cascadea memberships, sales y audit_events; después
+	// van los usuarios (que borra el cleanup de tfFixtures). Se limpia antes y
+	// después para que el test sea re-ejecutable tras un corte.
+	cleanup := func() {
+		_, _ = f.pool.Exec(context.Background(), `DELETE FROM salons WHERE id='s-it-tf'`)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+	// Datos previos propios en las cuatro tablas del contrato: las usuarias,
+	// una membresía, una venta y un evento de auditoría de su salón.
+	for _, q := range []string{
+		`INSERT INTO salons(id,slug,name) VALUES('s-it-tf','s-it-tf','Salón 2FA')`,
+		`INSERT INTO memberships(user_id,salon_id,role) VALUES('u-it-tf','s-it-tf','owner')`,
+		`INSERT INTO sales(id,salon_id,professional_id,client_name,total_cents,method)
+			VALUES('sale-it-tf','s-it-tf','u-it-tf','Lía',1000,'cash')`,
+		`INSERT INTO audit_events(id,salon_id,actor_user_id,actor_name,action,entity_id)
+			VALUES('aud-it-tf','s-it-tf','u-it-tf','Tefe Uno','member.update','m-1')`,
+	} {
+		if _, err := f.pool.Exec(f.ctx, q); err != nil {
+			t.Fatalf("datos previos: %v", err)
+		}
+	}
 	digest := func() string {
 		var out string
 		err := f.pool.QueryRow(f.ctx, `SELECT
-		  (SELECT md5(COALESCE(string_agg(u::text, '|' ORDER BY u.id), '')) FROM users u) || '/' ||
-		  (SELECT md5(COALESCE(string_agg(m::text, '|' ORDER BY m.user_id, m.salon_id), '')) FROM memberships m) || '/' ||
-		  (SELECT md5(COALESCE(string_agg(s::text, '|' ORDER BY s.id), '')) FROM sales s) || '/' ||
-		  (SELECT md5(COALESCE(string_agg(a::text, '|' ORDER BY a.id), '')) FROM audit_events a)`).Scan(&out)
+		  (SELECT md5(COALESCE(string_agg(u::text, '|' ORDER BY u.id), '')) FROM users u WHERE u.id LIKE 'u-it-tf%') || '/' ||
+		  (SELECT md5(COALESCE(string_agg(m::text, '|' ORDER BY m.user_id, m.salon_id), '')) FROM memberships m WHERE m.salon_id='s-it-tf') || '/' ||
+		  (SELECT md5(COALESCE(string_agg(s::text, '|' ORDER BY s.id), '')) FROM sales s WHERE s.salon_id='s-it-tf') || '/' ||
+		  (SELECT md5(COALESCE(string_agg(a::text, '|' ORDER BY a.id), '')) FROM audit_events a WHERE a.salon_id='s-it-tf')`).Scan(&out)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -134,7 +162,7 @@ func TestTwoFactor_migrationTwiceKeepsData(t *testing.T) {
 		t.Errorf("la re-aplicación tocó los códigos: %d", n)
 	}
 	// users cambió solo por el fixture? No: 035 no toca users; el digest de las 4
-	// tablas debe ser idéntico (la fila de tfUser2/tfUser ya estaba en `before`).
+	// tablas (las filas propias de este test) debe ser idéntico.
 	if after := digest(); after != before {
 		t.Errorf("035 cambió datos previos:\nantes   %s\ndespués %s", before, after)
 	}
