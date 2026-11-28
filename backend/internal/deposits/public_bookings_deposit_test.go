@@ -1,4 +1,4 @@
-package app
+package deposits_test
 
 import (
 	"errors"
