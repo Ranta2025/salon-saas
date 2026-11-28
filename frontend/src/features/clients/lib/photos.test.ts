@@ -18,11 +18,11 @@ test('accepts jpg, png and webp photos inside the 8 MB limit', () => {
 test('rejects any other format with a friendly message', () => {
   assert.deepEqual(validatePhotoFile({ type: 'image/gif', size: 1024 }), {
     ok: false,
-    message: 'Formato no admitido. Sube una imagen JPG, PNG o WebP.',
+    message: 'Formato no admitido. Subí una imagen JPG, PNG o WebP.',
   })
   assert.deepEqual(validatePhotoFile({ type: '', size: 1024 }), {
     ok: false,
-    message: 'Formato no admitido. Sube una imagen JPG, PNG o WebP.',
+    message: 'Formato no admitido. Subí una imagen JPG, PNG o WebP.',
   })
 })
 
@@ -30,18 +30,18 @@ test('rejects photos over 8 MB and names the actual weight and the limit', () =>
   const tooBig = MAX_PHOTO_BYTES + 1
   assert.deepEqual(validatePhotoFile({ type: 'image/webp', size: tooBig }), {
     ok: false,
-    message: 'La foto pesa 8 MB y el máximo es 8 MB. Elige una más ligera.',
+    message: 'La foto pesa 8 MB y el máximo es 8 MB. Elegí una más ligera.',
   })
   assert.deepEqual(validatePhotoFile({ type: 'image/jpeg', size: Math.round(9.2 * 1024 * 1024) }), {
     ok: false,
-    message: 'La foto pesa 9.2 MB y el máximo es 8 MB. Elige una más ligera.',
+    message: 'La foto pesa 9.2 MB y el máximo es 8 MB. Elegí una más ligera.',
   })
 })
 
 test('rejects empty files before uploading anything', () => {
   assert.deepEqual(validatePhotoFile({ type: 'image/png', size: 0 }), {
     ok: false,
-    message: 'La imagen está vacía. Elige otra foto.',
+    message: 'La imagen está vacía. Elegí otra foto.',
   })
 })
 

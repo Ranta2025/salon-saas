@@ -133,17 +133,17 @@ export function POSPanel({
     if (cart.length === 0 && productLines.length === 0) {
       setError(
         productCart === undefined
-          ? 'Agrega al menos un servicio a la venta.'
-          : 'Agrega al menos un servicio o un producto a la venta.',
+          ? 'Agregá al menos un servicio a la venta.'
+          : 'Agregá al menos un servicio o un producto a la venta.',
       )
       return
     }
     if (professionalId.trim() === '' || !staff.some((member) => member.id === professionalId)) {
-      setError('Elige al profesional que atendió la venta.')
+      setError('Elegí al profesional que atendió la venta.')
       return
     }
     if (clientName.trim() === '' && !pickedClient) {
-      setError('Escribe el nombre del cliente para el ticket.')
+      setError('Escribí el nombre del cliente para el ticket.')
       return
     }
     if (submitting.current) {
@@ -205,8 +205,8 @@ export function POSPanel({
       {cart.length === 0 && productLines.length === 0 ? (
         <p className="pos-panel__empty">
           {productCart === undefined
-            ? 'Elige servicios del catálogo para armar la venta.'
-            : 'Elige servicios o productos del catálogo para armar la venta.'}
+            ? 'Elegí servicios del catálogo para armar la venta.'
+            : 'Elegí servicios o productos del catálogo para armar la venta.'}
         </p>
       ) : null}
 
@@ -379,7 +379,7 @@ export function POSPanel({
             onChange={(event) => setProfessionalId(event.target.value)}
             disabled={staff.length === 0}
           >
-            <option value="">Elige a la persona</option>
+            <option value="">Elegí a la persona</option>
             {staff.map((member) => (
               <option key={member.id} value={member.id}>
                 {member.name} · {ROLE_LABEL[member.role]}
@@ -445,14 +445,14 @@ export function POSPanel({
               calculó <strong>{formatCents(receipt.outcome.server.total)}</strong>; la interfaz
               mostró {formatCents(receipt.uiTotal)}.
               {receipt.outcome.server.total !== receipt.uiTotal
-                ? ' El total del servidor es el que vale: revisa el catálogo.'
+                ? ' El total del servidor es el que vale: revisá el catálogo.'
                 : ''}
             </p>
           </div>
         ) : droppedReceipt ? (
           <div className="notice notice--error" role="alert">
             <p>
-              <strong>Esta venta no se registró.</strong> {dropReasonLabel(droppedReceipt)} Vuelve a
+              <strong>Esta venta no se registró.</strong> {dropReasonLabel(droppedReceipt)} Volvé a
               cobrarla corrigiendo el dato. Referencia{' '}
               <code>{droppedReceipt.client_op_id.slice(0, 8)}</code>.
             </p>

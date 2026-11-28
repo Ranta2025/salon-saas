@@ -221,7 +221,7 @@ export function MyCommissionsPage() {
           </div>
           {mine.sales_count === 0 ? (
             <p className="empty-state">
-              No tenés ventas en este período. Prueba con otro período o espera a que se registren
+              No tenés ventas en este período. Probá con otro período o esperá a que se registren
               ventas.
             </p>
           ) : null}

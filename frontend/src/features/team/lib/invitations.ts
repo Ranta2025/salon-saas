@@ -176,7 +176,7 @@ function byteLength(value: string): number {
 export function validateSignup(input: SignupDraft): SignupCheck {
   const name = input.name.trim()
   if (name === '') {
-    return { ok: false, field: 'name', message: 'Escribe tu nombre' }
+    return { ok: false, field: 'name', message: 'Escribí tu nombre' }
   }
   if ([...name].length > INVITATION_NAME_MAX) {
     return {

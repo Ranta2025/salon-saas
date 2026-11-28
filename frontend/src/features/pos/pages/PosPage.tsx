@@ -168,7 +168,7 @@ export function PosPage() {
           !online
             ? {
                 message:
-                  'Sin conexión: no pudimos traer las ventas del servidor. Puedes cobrar igual y la venta se sincroniza al volver la red.',
+                  'Sin conexión: no pudimos traer las ventas del servidor. Podés cobrar igual y la venta se sincroniza al volver la red.',
                 retryable: true,
               }
             : describeApiError(err, 'No pudimos cargar el punto de venta.'),

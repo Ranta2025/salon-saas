@@ -70,9 +70,9 @@ export function PackageSellForm({
         <p className="empty-state">
           No hay paquetes activos para vender.{' '}
           {canCreatePackages ? (
-            <Link to="/panel/paquetes">Crea uno en «Paquetes»</Link>
+            <Link to="/panel/paquetes">Creá uno en «Paquetes»</Link>
           ) : (
-            'Pídele a la administración que cree uno.'
+            'Pedile a la administración que cree uno.'
           )}
         </p>
         <div className="page-head__actions">

@@ -65,7 +65,7 @@ export function PhotoUploader({ onUpload, disabled = false }: PhotoUploaderProps
       setError(
         err instanceof Error && err.message !== ''
           ? err.message
-          : 'No pudimos subir la foto. Intenta de nuevo.',
+          : 'No pudimos subir la foto. Intentá de nuevo.',
       )
     } finally {
       setPending(false)
@@ -104,7 +104,7 @@ export function PhotoUploader({ onUpload, disabled = false }: PhotoUploaderProps
         </div>
       ) : (
         <p className="field__hint">
-          Elige una foto para verla aquí antes de enviarla al servidor.
+          Elegí una foto para verla aquí antes de enviarla al servidor.
         </p>
       )}
 

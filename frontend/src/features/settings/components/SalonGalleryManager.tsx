@@ -174,7 +174,7 @@ export function SalonGalleryManager({
     } catch (err: unknown) {
       // The list may have changed under us (another admin): show it again.
       onChanged()
-      throw new Error(describeApiError(err, 'No pudimos subir la foto. Intenta de nuevo.').message)
+      throw new Error(describeApiError(err, 'No pudimos subir la foto. Intentá de nuevo.').message)
     }
     onChanged()
   }
@@ -191,7 +191,7 @@ export function SalonGalleryManager({
 
       {full ? (
         <p className="notice notice--info" role="status">
-          {GALLERY_FULL_MESSAGE}. Elimina una para subir otra.
+          {GALLERY_FULL_MESSAGE}. Eliminá una para subir otra.
         </p>
       ) : null}
       <PhotoUploader onUpload={handleUpload} disabled={full} />

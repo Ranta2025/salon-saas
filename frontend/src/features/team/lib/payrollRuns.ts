@@ -65,11 +65,11 @@ export const DELETE_RUN_CONFIRM_NOTE =
 
 /** Client-side refusal of an amount the amount parser cannot read. */
 export const INVALID_ADJUSTMENT_MESSAGE =
-  'Escribe un ajuste válido en dólares, por ejemplo -500.00'
+  'Escribí un ajuste válido en dólares, por ejemplo -500.00'
 
 /** Polite copy of a failed download (S-F3.3-5). */
 export const EXPORT_ERROR_MESSAGE =
-  'No pudimos descargar el CSV. Revisa tu conexión e intenta de nuevo.'
+  'No pudimos descargar el CSV. Revisá tu conexión e intentá de nuevo.'
 
 /** Copy of the export button and of the empty list of runs. */
 export const EXPORT_ACTION = 'Exportar CSV'
@@ -636,7 +636,7 @@ export async function deletePayrollRun(salonId: string, runId: string): Promise<
 }
 
 async function exportErrorMessage(response: Response): Promise<string> {
-  const fallback = `El servidor respondió ${response.status}. Intenta nuevamente.`
+  const fallback = `El servidor respondió ${response.status}. Intentá nuevamente.`
   try {
     const body = await response.text()
     if (body.trim() === '') {

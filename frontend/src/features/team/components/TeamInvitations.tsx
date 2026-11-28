@@ -113,7 +113,7 @@ export function TeamInvitations({ salonId, actorRole, members }: TeamInvitations
     setNotice(null)
     const value = normalizeEmail(email)
     if (value === '') {
-      setFormError('Escribe el correo de la persona.')
+      setFormError('Escribí el correo de la persona.')
       return
     }
     if (!isValidEmail(value)) {

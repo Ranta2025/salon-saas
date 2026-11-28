@@ -35,7 +35,7 @@ export const EDIT_CLIENT_HINT =
   'Al guardar volvemos a pedir la ficha al servidor: la pantalla nunca muestra un dato sin guardar.'
 
 /** Client-side sentences: the same texts the API uses for the same rules. */
-export const CLIENT_NAME_REQUIRED_MESSAGE = 'Escribe el nombre de la clienta.'
+export const CLIENT_NAME_REQUIRED_MESSAGE = 'Escribí el nombre de la clienta.'
 export const CLIENT_NAME_LONG_MESSAGE = `El nombre no puede superar los ${MAX_NAME_LENGTH} caracteres`
 export const CLIENT_PHONE_LONG_MESSAGE = `El teléfono no puede superar los ${MAX_PHONE_LENGTH} caracteres`
 export const CLIENT_NOTES_LONG_MESSAGE = `Las notas no pueden superar los ${MAX_NOTES_LENGTH} caracteres`

@@ -12,7 +12,7 @@ export function WaitlistNotice({ role }: { role: Role | null }) {
       <h2>La lista de espera la ve la administración y la recepción</h2>
       <p>
         Tu rol ({roleLabel(role)}) no puede ver los avisos: son datos de contacto de personas que
-        pidieron que les avisen si se libera un turno. Si necesitás acceso, pídeselo a la dueña o
+        pidieron que les avisen si se libera un turno. Si necesitás acceso, pedíselo a la dueña o
         a la administración.
       </p>
     </div>

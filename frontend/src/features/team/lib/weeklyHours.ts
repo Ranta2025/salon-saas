@@ -42,7 +42,7 @@ export const HOURS_MESSAGES = {
   overlap: 'Los tramos de un mismo día no pueden solaparse',
   tooMany: 'Máximo 4 tramos por día',
   invalidDay: 'Día inválido',
-  format: 'Escribe la hora como HH:MM (por ejemplo 09:30)',
+  format: 'Escribí la hora como HH:MM (por ejemplo 09:30)',
 } as const
 
 /** One open day of the salon (`GET/PUT /salons/:id/hours`). */

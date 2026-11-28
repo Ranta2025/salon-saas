@@ -85,7 +85,7 @@ export function ClientsPage() {
     setFormError(null)
     setCreatedName(null)
     if (draft.name.trim() === '') {
-      setFormError('Escribe el nombre de la clienta.')
+      setFormError('Escribí el nombre de la clienta.')
       return
     }
     // Same rule and message as the server (and as the public booking form).
@@ -182,7 +182,7 @@ export function ClientsPage() {
             ) : null}
             {createdName ? (
               <p className="notice notice--success" role="status">
-                Ficha de {createdName} creada. Ya puedes abrirla para subir fotos de referencia.
+                Ficha de {createdName} creada. Ya podés abrirla para subir fotos de referencia.
               </p>
             ) : null}
             <button type="submit" className="btn btn--wine" disabled={saving}>

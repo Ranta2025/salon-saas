@@ -196,7 +196,7 @@ export function exportErrorMessage(error: unknown): string {
 }
 
 async function serverErrorMessage(response: Response): Promise<string> {
-  const fallback = `El servidor respondió ${response.status}. Intenta nuevamente.`
+  const fallback = `El servidor respondió ${response.status}. Intentá nuevamente.`
   try {
     const body = await response.text()
     if (body.trim() === '') {

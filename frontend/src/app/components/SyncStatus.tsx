@@ -50,10 +50,10 @@ export function OfflineBanner() {
       {paused || !online || pendingCount > 0 ? (
         <p className="offline-banner__text">
           {paused
-            ? 'Tu sesión venció. Vuelve a iniciar sesión: las operaciones guardadas no se perdieron ni gastaron intentos.'
+            ? 'Tu sesión venció. Volvé a iniciar sesión: las operaciones guardadas no se perdieron ni gastaron intentos.'
             : online
             ? `${pendingCount} ${pendingCount === 1 ? 'operación espera' : 'operaciones esperan'} al servidor.`
-            : 'Puedes seguir cobrando: las ventas se guardan en este dispositivo y se envían solas al volver la red.'}
+            : 'Podés seguir cobrando: las ventas se guardan en este dispositivo y se envían solas al volver la red.'}
           {!online && pendingCount > 0
             ? ` ${pendingCount} ${pendingCount === 1 ? 'operación pendiente' : 'operaciones pendientes'}.`
             : ''}

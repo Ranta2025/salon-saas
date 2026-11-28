@@ -11,7 +11,7 @@ export function ActivityNotice({ role }: { role: Role | null }) {
       <h2>La actividad la ve la administración</h2>
       <p>
         Tu rol ({roleLabel(role)}) no puede ver el registro de actividad del salón: dice quién
-        hizo qué en la gestión del negocio. Si necesitás acceso, pídeselo a la dueña o a la
+        hizo qué en la gestión del negocio. Si necesitás acceso, pedíselo a la dueña o a la
         administración.
       </p>
     </div>

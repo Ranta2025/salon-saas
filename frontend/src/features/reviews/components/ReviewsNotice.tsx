@@ -11,7 +11,7 @@ export function ReviewsNotice({ role }: { role: Role | null }) {
       <h2>Las reseñas las ven la administración y la recepción</h2>
       <p>
         Tu rol ({roleLabel(role)}) no puede ver las reseñas del salón: las escriben las clientas
-        después de un turno atendido. Si necesitás acceso, pídeselo a la dueña o a la
+        después de un turno atendido. Si necesitás acceso, pedíselo a la dueña o a la
         administración.
       </p>
     </div>

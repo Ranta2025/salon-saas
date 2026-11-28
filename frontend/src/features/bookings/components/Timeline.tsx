@@ -113,7 +113,7 @@ export function Timeline({
         ) : null}
         <p className="empty-state">
           {savedData
-            ? 'Sin conexión: la copia guardada de este día no tiene citas. Actualiza cuando vuelva la red.'
+            ? 'Sin conexión: la copia guardada de este día no tiene citas. Actualizá cuando vuelva la red.'
             : emptyLabel ?? 'No hay citas agendadas para este día. Las reservas nuevas aparecen aquí.'}
         </p>
       </>

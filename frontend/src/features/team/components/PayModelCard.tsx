@@ -24,7 +24,7 @@ type PayModelCardProps = {
   isSelf?: boolean
 }
 
-const INVALID_AMOUNT = 'Escribe un monto válido en dólares, por ejemplo 1500.00'
+const INVALID_AMOUNT = 'Escribí un monto válido en dólares, por ejemplo 1500.00'
 
 /**
  * Model of payment of one member (S-F3.2-5): fixed amount, the kind of period it

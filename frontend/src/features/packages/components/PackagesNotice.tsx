@@ -13,7 +13,7 @@ export function PackagesNotice({ role }: { role: Role | null }) {
       <h2>Los paquetes los ve la administración y la recepción</h2>
       <p>
         Tu rol ({roleLabel(role)}) no puede ver los paquetes ni los saldos de las clientas: llevan
-        precios y sesiones prepagas. Si necesitás acceso, pídeselo a la dueña o a la
+        precios y sesiones prepagas. Si necesitás acceso, pedíselo a la dueña o a la
         administración.
       </p>
     </div>

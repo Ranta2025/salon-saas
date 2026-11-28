@@ -129,13 +129,13 @@ function minutesOfDay(value: string): number {
 export function validateSettings(draft: SalonSettings): SettingsValidation {
   const timezone = draft.timezone.trim()
   if (timezone === '') {
-    return { ok: false, field: 'timezone', message: 'Elige la zona horaria del salón.' }
+    return { ok: false, field: 'timezone', message: 'Elegí la zona horaria del salón.' }
   }
   if (!isValidTimeZone(timezone)) {
     return {
       ok: false,
       field: 'timezone',
-      message: 'Esa zona horaria no existe. Elige una de la lista.',
+      message: 'Esa zona horaria no existe. Elegí una de la lista.',
     }
   }
   const openTime = draft.openTime.trim()
@@ -143,7 +143,7 @@ export function validateSettings(draft: SalonSettings): SettingsValidation {
     return {
       ok: false,
       field: 'openTime',
-      message: 'Escribe la hora de apertura como HH:MM (por ejemplo 09:30).',
+      message: 'Escribí la hora de apertura como HH:MM (por ejemplo 09:30).',
     }
   }
   const closeTime = draft.closeTime.trim()
@@ -151,7 +151,7 @@ export function validateSettings(draft: SalonSettings): SettingsValidation {
     return {
       ok: false,
       field: 'closeTime',
-      message: 'Escribe la hora de cierre como HH:MM (por ejemplo 19:00).',
+      message: 'Escribí la hora de cierre como HH:MM (por ejemplo 19:00).',
     }
   }
   if (minutesOfDay(closeTime) <= minutesOfDay(openTime)) {

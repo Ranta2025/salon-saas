@@ -131,7 +131,7 @@ export function BookingDetail({
       startsAt = toDateTimeIso(dateValue, timeValue, timeZone)
     } catch (err: unknown) {
       setRescheduleError(
-        err instanceof Error ? err.message : 'Elige una fecha y una hora válidas para mover el turno.',
+        err instanceof Error ? err.message : 'Elegí una fecha y una hora válidas para mover el turno.',
       )
       return
     }
@@ -424,7 +424,7 @@ export function BookingDetail({
       {!canReschedule(booking.status) ? (
         <p className="booking-detail__hint">
           {canAct
-            ? 'Un turno cerrado (atendido, cancelado o no asistió) no se reprograma: crea una reserva nueva.'
+            ? 'Un turno cerrado (atendido, cancelado o no asistió) no se reprograma: creá una reserva nueva.'
             : 'Este turno ya está cerrado y no se puede reprogramar.'}
         </p>
       ) : null}

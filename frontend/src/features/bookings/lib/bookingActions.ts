@@ -117,18 +117,18 @@ export async function patchBooking(
 export function describeBookingUpdateError(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 403) {
-      return 'Tu rol no permite cambiar este turno. Pídele a la administración del salón que lo haga.'
+      return 'Tu rol no permite cambiar este turno. Pedile a la administración del salón que lo haga.'
     }
     if (error.status === 404) {
-      return 'Ese turno ya no existe. Actualiza la agenda para ver el estado actual.'
+      return 'Ese turno ya no existe. Actualizá la agenda para ver el estado actual.'
     }
     if (error.status === 409) {
-      return 'Ese horario se cruza con otro turno de la misma persona. Elige otra hora.'
+      return 'Ese horario se cruza con otro turno de la misma persona. Elegí otra hora.'
     }
     return error.message
   }
   if (error instanceof NetworkError) {
     return error.message
   }
-  return 'No pudimos actualizar el turno. Intenta de nuevo.'
+  return 'No pudimos actualizar el turno. Intentá de nuevo.'
 }

@@ -20,7 +20,7 @@ export type PhotoFileLike = {
 
 export type PhotoValidation = { ok: true } | { ok: false; message: string }
 
-const FORMAT_MESSAGE = 'Formato no admitido. Sube una imagen JPG, PNG o WebP.'
+const FORMAT_MESSAGE = 'Formato no admitido. Subí una imagen JPG, PNG o WebP.'
 
 /** Renders a byte count with a readable unit (`1.5 MB`, `204 KB`, `812 B`). */
 export function formatBytes(bytes: number): string {
@@ -48,12 +48,12 @@ export function validatePhotoFile(file: PhotoFileLike): PhotoValidation {
     return { ok: false, message: FORMAT_MESSAGE }
   }
   if (!Number.isFinite(file.size) || file.size <= 0) {
-    return { ok: false, message: 'La imagen está vacía. Elige otra foto.' }
+    return { ok: false, message: 'La imagen está vacía. Elegí otra foto.' }
   }
   if (file.size > MAX_PHOTO_BYTES) {
     return {
       ok: false,
-      message: `La foto pesa ${formatBytes(file.size)} y el máximo es 8 MB. Elige una más ligera.`,
+      message: `La foto pesa ${formatBytes(file.size)} y el máximo es 8 MB. Elegí una más ligera.`,
     }
   }
   return { ok: true }

@@ -285,7 +285,7 @@ export function ClientDetailPage() {
         {loaded && photos.length === 0 ? (
           <div className="empty-state">
             <h2>Sin fotos todavía</h2>
-            <p>Sube una foto de referencia para que el equipo vea el resultado esperado.</p>
+            <p>Subí una foto de referencia para que el equipo vea el resultado esperado.</p>
           </div>
         ) : null}
 

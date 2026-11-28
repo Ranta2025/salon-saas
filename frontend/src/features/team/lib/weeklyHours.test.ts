@@ -89,7 +89,7 @@ test('validateDraft rejects a closing time that is not after the opening one', (
   assert.deepEqual(validateDraft(broken), {
     ok: false,
     weekday: 3,
-    message: 'Escribe la hora como HH:MM (por ejemplo 09:30)',
+    message: 'Escribí la hora como HH:MM (por ejemplo 09:30)',
   })
 
   const valid = setDraftDay(weekDraft([], DEFAULTS), 1, { closed: false, close: '18:00' })
@@ -180,7 +180,7 @@ test('validateSegments mirrors the server sentences', () => {
   assert.deepEqual(validateSegments([{ weekday: 1, start: '9:00', end: '13:00' }]), {
     ok: false,
     weekday: 1,
-    message: 'Escribe la hora como HH:MM (por ejemplo 09:30)',
+    message: 'Escribí la hora como HH:MM (por ejemplo 09:30)',
   })
   assert.deepEqual(
     validateSegments([

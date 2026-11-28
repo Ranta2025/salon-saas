@@ -378,7 +378,7 @@ export function MyAgendaPage() {
           {dayEntries.length === 0 ? (
               <p className="empty-state">
                 {showingSavedData
-                  ? 'Sin conexión: la copia guardada no tiene turnos para este día. Actualiza cuando vuelva la red.'
+                  ? 'Sin conexión: la copia guardada no tiene turnos para este día. Actualizá cuando vuelva la red.'
                   : isToday
                     ? 'No tenés turnos hoy.'
                     : 'No tenés turnos este día.'}

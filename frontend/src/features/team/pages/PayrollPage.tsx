@@ -200,7 +200,7 @@ export function PayrollPage() {
 
       {loaded && preview && lines.length === 0 ? (
         <p className="empty-state">
-          No hay ventas ni montos fijos en este período. Prueba con otro período o espera a que se
+          No hay ventas ni montos fijos en este período. Probá con otro período o esperá a que se
           registren ventas.
         </p>
       ) : null}

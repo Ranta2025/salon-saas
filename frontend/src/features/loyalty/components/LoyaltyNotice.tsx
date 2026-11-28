@@ -13,7 +13,7 @@ export function LoyaltyNotice({ role }: { role: Role | null }) {
       <h2>La fidelidad la ven la administración y la recepción</h2>
       <p>
         Tu rol ({roleLabel(role)}) no puede ver las visitas ni los premios de las clientas:
-        llevan datos de consumo. Si necesitás acceso, pídeselo a la dueña o a la
+        llevan datos de consumo. Si necesitás acceso, pedíselo a la dueña o a la
         administración.
       </p>
     </div>

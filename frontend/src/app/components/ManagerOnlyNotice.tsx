@@ -56,7 +56,7 @@ export function ManagerOnlyNotice({
     <div className="empty-state">
       <h2>Esta sección es de la administración</h2>
       <p>
-        Tu rol ({roleLabel(role)}) no puede ver {what}. Si necesitas acceso, pídeselo a la dueña
+        Tu rol ({roleLabel(role)}) no puede ver {what}. Si necesitás acceso, pedíselo a la dueña
         o a la administración.
       </p>
     </div>

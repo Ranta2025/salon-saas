@@ -148,7 +148,7 @@ function SalonSwitcher() {
           onChange={(event) => updateSalonId(event.target.value)}
           aria-label="Salón activo"
         >
-          {salonId === null ? <option value="">Elige un salón</option> : null}
+          {salonId === null ? <option value="">Elegí un salón</option> : null}
           {salons.map((salon) => (
             <option key={salon.id} value={salon.id}>
               {salon.name}

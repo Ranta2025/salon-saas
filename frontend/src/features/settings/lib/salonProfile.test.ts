@@ -282,7 +282,7 @@ test('an upload is checked before sending: type, size, empty file and the 12 pho
   assert.deepEqual(validateGalleryUpload(ok, 11), { ok: true })
   assert.deepEqual(validateGalleryUpload(ok, 12), { ok: false, message: 'La galería ya tiene 12 fotos' })
   const gif = validateGalleryUpload({ name: 'a.gif', type: 'image/gif', size: 10 }, 0)
-  assert.deepEqual(gif, { ok: false, message: 'Formato no admitido. Sube una imagen JPG, PNG o WebP.' })
+  assert.deepEqual(gif, { ok: false, message: 'Formato no admitido. Subí una imagen JPG, PNG o WebP.' })
   const big = validateGalleryUpload({ name: 'a.png', type: 'image/png', size: 8 * 1024 * 1024 + 1 }, 0)
   assert.equal(big.ok, false)
   if (!big.ok) {

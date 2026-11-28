@@ -343,7 +343,7 @@ export function TeamPage() {
     setNotice(null)
     const normalized = normalizeMemberEmail(email)
     if (!normalized.includes('@') || normalized.length < 5) {
-      setFormError('Escribe el correo con el que la persona inició sesión.')
+      setFormError('Escribí el correo con el que la persona inició sesión.')
       return
     }
     setSaving(true)
@@ -1120,7 +1120,7 @@ function MemberWorkCard({ member, services, onSaveTrade, onSaveServices }: Membe
           <legend>Servicios que hace</legend>
           {services.length === 0 ? (
             <p className="field__hint">
-              El salón todavía no tiene servicios activos. Crea uno en Servicios y vuelve acá.
+              El salón todavía no tiene servicios activos. Creá uno en Servicios y volvé acá.
             </p>
           ) : (
             <div className="check-group__list">
