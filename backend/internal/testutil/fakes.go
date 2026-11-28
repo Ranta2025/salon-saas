@@ -3,10 +3,9 @@
 // paquete no se pueden importar desde otro, así que los que usa más de una
 // funcionalidad viven acá con nombres exportados.
 //
-// Cada doble es una COPIA fiel del que hoy vive en `internal/app/*_fakes_test.go`
-// (misma semántica que pgstore: scope por salón, ErrNotFound, upsert por id). Las
-// copias se van a poder borrar cuando el paquete `app` se disuelva y sus tests se
-// muden a cada funcionalidad. Este paso es solo mover: no cambia comportamiento.
+// Cada doble es la copia fiel que vivía en `internal/app/*_fakes_test.go`
+// (misma semántica que pgstore: scope por salón, ErrNotFound, upsert por id). El
+// paquete `app` ya no existe: sus tests viven junto al módulo que prueban.
 package testutil
 
 import (
@@ -384,8 +383,7 @@ func (f *FakeEvents) Typed(t string) (ports.Event, int) {
 var _ ports.EventPublisher = (*FakeEvents)(nil)
 
 // FakeSalons es el repositorio de salones en memoria: índice por slug y búsqueda
-// por id (la copia exportada del `fakeSalons` de los tests de app, que sigue con
-// los tests del nudo de reservas).
+// por id (la copia exportada del `fakeSalons` de los tests de app).
 type FakeSalons struct{ BySlug map[string]domain.Salon }
 
 func (f *FakeSalons) Save(s domain.Salon) error {

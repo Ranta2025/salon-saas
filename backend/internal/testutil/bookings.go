@@ -8,7 +8,7 @@ import (
 )
 
 // FakeBookings es el repositorio de reservas en memoria (la copia exportada del
-// `fb` de los tests de app, que sigue con los tests del nudo de reservas).
+// `fb` de los tests del nudo de reservas).
 type FakeBookings struct{ All []domain.Booking }
 
 func (f *FakeBookings) Save(b domain.Booking) error {

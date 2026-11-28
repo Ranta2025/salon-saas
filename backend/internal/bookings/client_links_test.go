@@ -1,5 +1,6 @@
 // Vínculo de la ficha con turnos y ventas (F5, D3): los casos de uso del nudo y
-// del POS vinculan como best-effort. Viven en app porque prueban esos servicios.
+// del POS vinculan como best-effort. Viven con las reservas porque prueban esos
+// servicios.
 package bookings_test
 
 import (

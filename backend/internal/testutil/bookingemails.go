@@ -17,7 +17,7 @@ type SavedBookingEmail struct {
 
 // FakeBookingEmails es la cola del adaptador Postgres del email a clientes
 // (con la misma semántica de "enviado no vuelve"). Es la copia exportada del
-// fake de los tests de app.
+// fake que antes vivía en los tests del paquete app.
 type FakeBookingEmails struct {
 	Mu      sync.Mutex
 	Saved   []SavedBookingEmail
