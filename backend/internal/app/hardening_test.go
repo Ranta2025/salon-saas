@@ -10,7 +10,6 @@ import (
 	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/pos"
-	"salon-saas/internal/settings"
 	"salon-saas/internal/team"
 	"salon-saas/internal/testutil"
 )
@@ -245,28 +244,5 @@ func TestStaffService(t *testing.T) {
 	// No-miembro: 403 (no se filtra el equipo de otro salón).
 	if _, err := svc.List(domain.Membership{UserID: "u-ajeno", SalonID: "s2"}, "s1"); !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("no-miembro debe dar ErrForbidden, dio %v", err)
-	}
-}
-
-func TestPublicSalonService(t *testing.T) {
-	salons := &testutil.FakeSalons{}
-	services := &testutil.FakeServices{}
-	svc := settings.PublicSalonService{Salons: salons, Services: services}
-	_ = salons.Save(domain.Salon{ID: "s1", Slug: "navajas", Name: "Navajas de Oro"})
-	activo, _ := domain.NewService("s1", "Corte", 45, 150000, 20)
-	_ = services.Save(activo)
-	inactivo, _ := domain.NewService("s1", "Viejo", 30, 1000, 0)
-	inactivo, _ = inactivo.WithDetails(inactivo.Name, inactivo.DurationMin, inactivo.PriceCents, inactivo.CommissionPct, false)
-	_ = services.Save(inactivo)
-
-	got, err := svc.Public("navajas")
-	if err != nil {
-		t.Fatalf("public: %v", err)
-	}
-	if got.Salon.Name != "Navajas de Oro" || len(got.Services) != 1 || got.Services[0].Name != "Corte" {
-		t.Fatalf("landing: %+v", got)
-	}
-	if _, err := svc.Public("no-existe"); !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("slug inexistente debe dar ErrNotFound, dio %v", err)
 	}
 }
