@@ -25,7 +25,7 @@ type pastBooking struct {
 	Status      string
 }
 
-// stepFutureBookings arma la agenda de los próximos catorce días. Los primeros
+// stepFutureBookings arma la agenda de HOY y de los próximos catorce días. Los primeros
 // turnos entran por la reserva PÚBLICA (la que valida horarios y crea la seña en
 // el banco simulado); el resto, por SQL con estado `booked` para no gastar el
 // límite por IP de las escrituras sin sesión con treinta pedidos seguidos.
@@ -99,11 +99,13 @@ type bookingCandidate struct {
 	start time.Time
 }
 
-// futureCandidates arma la lista de huecos posibles para los próximos `days`
-// días, ya despegados por profesional (sin solapes), en orden cronológico.
+// futureCandidates arma la lista de huecos posibles desde HOY hasta dentro de
+// `days` días, ya despegados por profesional (sin solapes), en orden
+// cronológico. Incluye hoy a propósito: si el seed corre temprano, la agenda de
+// hoy queda con turnos por delante y el panel no arranca vacío.
 func (s *Seed) futureCandidates(days int) ([]bookingCandidate, error) {
 	var out []bookingCandidate
-	for offset := 1; offset <= days; offset++ {
+	for offset := 0; offset <= days; offset++ {
 		day := s.clk.daysAhead(offset)
 		wd := weekday(day)
 		for _, pro := range s.staff {
@@ -127,8 +129,9 @@ func (s *Seed) futureCandidates(days int) ([]bookingCandidate, error) {
 		}
 	}
 	// Sin solapes por profesional: si dos huecos del mismo día se pisan, queda el
-	// primero (los turnos son de 30 a 120 minutos).
-	kept := out[:0]
+	// primero (los turnos son de 30 a 120 minutos). Se arma una lista nueva: usar
+	// out[:0] pisaría las entradas que faltan leer.
+	kept := make([]bookingCandidate, 0, len(out))
 	for _, cand := range out {
 		overlap := false
 		for _, previous := range kept {
