@@ -289,6 +289,13 @@
     left: 0;
     right: 0;
     display: grid;
+    /* El pie va DESPUÉS de la lista, en su propia fila: sin estas áreas los dos
+       nombres (`nav` y `foot`) apuntaban a líneas implícitas inexistentes y el
+       pie se pintaba encima de «Reseñas»/«Clientes». */
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'nav'
+      'foot';
     gap: var(--space-3);
     max-height: calc(100dvh - 4.5rem);
     overflow-y: auto;
@@ -2232,9 +2239,10 @@
 
   .shell__nav {
     grid-area: nav;
-    /* Si hay muchas pestañas, la lista hace scroll en vez de empujar el contenido. */
-    max-height: 40vh;
-    overflow-y: auto;
+    /* La lista crece con su contenido y es el PANEL el que hace scroll cuando no
+       entra en el alto de la pantalla, así el pie queda siempre debajo de ella. */
+    max-height: none;
+    overflow: visible;
     overscroll-behavior: contain;
   }
 
@@ -2267,25 +2275,49 @@
   /* The top bar keeps one compact row: the currency note is repeated on the
      pages that show amounts, and dropping it here gives the wrapped menu room. */
   .shell__topbar {
-    flex-wrap: nowrap;
+    /* Dos filas: el salón arriba y las acciones debajo. El salón ya no compite
+       por el ancho con el aviso de sincronización ni con la campana. */
+    flex-wrap: wrap;
+    row-gap: 0.4rem;
     padding: 0.4rem 0.75rem;
   }
 
   .shell__topbar-main {
-    flex-wrap: nowrap;
-    overflow: hidden;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    overflow: visible;
   }
 
-  /* A long salon name truncates instead of pushing the bell off screen. */
+  /* El salón activo ocupa la primera fila entera: el nombre se lee completo y
+     envuelve en dos líneas en vez de recortarse como «Salo…». */
   .shell__topbar .shell__salon {
+    flex: 1 1 100%;
     min-width: 0;
-    overflow: hidden;
+    max-width: 100%;
+    overflow: visible;
+  }
+
+  .shell__salon-label {
+    flex: 0 0 auto;
   }
 
   .shell__salon-value {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* El selector se mide por su contenido hasta el ancho disponible (nunca menos
+     de 8.5rem, nunca más de 22rem o del 100 %) y envuelve si no entra. */
+  .shell__salon--select {
+    flex-wrap: wrap;
+  }
+
+  .shell__salon-select {
+    flex: 0 1 auto;
+    width: auto;
+    min-width: 8.5rem;
+    max-width: min(100%, 22rem);
   }
 
   .shell__hint {
