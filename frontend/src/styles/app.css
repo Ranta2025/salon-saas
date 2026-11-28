@@ -247,9 +247,12 @@
     overflow: hidden;
   }
 
+  /* Dos líneas en el teléfono: el nombre del salón es el título del panel y se
+     lee entero; el encabezado sigue siendo corto (una sola fila de marca y
+     menú, sin el pie de acciones, que vive dentro del panel de navegación). */
   .shell__brand-name {
-    -webkit-line-clamp: 1;
-    font-size: 1.25rem;
+    -webkit-line-clamp: 2;
+    font-size: 1.2rem;
   }
 
   .shell__brand-kicker {
