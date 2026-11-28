@@ -60,6 +60,15 @@ Lo transversal:
   publica `BookingCanceller`, `BookingNoticeRepository` y `BookingLinkRepository`.
 - `cmd/api` es el único lugar que conoce adaptadores concretos.
 
+## Datos de demo
+
+`backend/cmd/seed` es el **otro** binario del módulo (no de la API): un one-shot
+de desarrollo que carga un salón completo para ver el panel y la landing con
+datos. Va por el camino inverso al resto del código: usa la API real (HTTP) para
+todo lo que la API sabe crear y, cuando la fecha tiene que ser pasada, escribe
+por SQL con ids deterministas. No es una migración ni toca el esquema; los
+seguros y el detalle están en [ops/demo-seed.md](ops/demo-seed.md).
+
 ## Composition root
 
 `backend/cmd/api` es la fábrica:

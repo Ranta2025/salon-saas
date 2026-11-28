@@ -4,7 +4,7 @@
 # Sin Docker: levantar postgres/redis, exportar DATABASE_URL y `make api`.
 # Todos los targets corren desde la raíz del repo.
 
-.PHONY: up down logs dev demo seed api test test-it lint web-build
+.PHONY: up down logs dev demo seed seed-reset api test test-it lint web-build
 
 # ─── Docker Compose ──────────────────────────────────────────────────────────
 up:
@@ -19,17 +19,24 @@ logs:
 # Alias histórico: mismo stack completo en segundo plano.
 dev: up
 
-# Todo junto para probar: reconstruye las imagenes (para no ver una version vieja),
-# levanta el stack y carga un salon de demo. Web en http://localhost:8081
+# Todo junto para probar: reconstruye las imagenes y levanta el stack. El
+# servicio `seed` espera a que la API este sana y carga la demo solo (es
+# idempotente: si ya esta sembrada no escribe nada). Web en http://localhost:8081
 demo:
 	docker compose up -d --build
-	@echo "Esperando a la API..."
-	@for i in $$(seq 1 60); do curl -fsS http://localhost:8080/health >/dev/null 2>&1 && break; sleep 2; done
-	bash scripts/seed-demo.sh
+	@echo "La demo se carga sola: seguí el progreso con  make logs  (servicio seed)."
 
-# Solo cargar (o recargar) los datos de demo en una API que ya corre.
+# Solo cargar (o recargar) los datos de demo sobre un stack que ya corre.
+# --rm: el contenedor es de una sola vez. Con el stack levantado, el seed entra
+# por la red del compose (SEED_API_URL=http://api:8080).
 seed:
-	bash scripts/seed-demo.sh
+	docker compose up -d --build postgres api
+	docker compose run --rm seed
+
+# Igual que `seed` pero por la API del host, sin Docker (necesita Go y
+# DATABASE_URL exportada: ver docs/ops/demo-seed.md).
+seed-local:
+	cd backend && SEED_DEMO=true go run ./cmd/seed
 
 # ─── Desarrollo sin Docker ───────────────────────────────────────────────────
 # Necesita DATABASE_URL (por defecto postgres local) y JWT_SECRET exportados.

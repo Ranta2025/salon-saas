@@ -1,0 +1,7 @@
+# Contexto de build: ./backend. Nada de lo que se genera en local entra a la
+# imagen; el seed de demo (cmd/seed) SÍ, porque la imagen lo compila.
+media/
+api
+seed
+*.test
+cmd/seed/assets/

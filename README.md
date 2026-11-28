@@ -106,8 +106,28 @@ Servicios y puertos por defecto (todos configurables en `.env`):
 | `mailpit` | http://localhost:8025 | SMTP en `localhost:1025` |
 | `minio` (opcional) | http://localhost:9001 | solo con `--profile files` |
 
-Comandos útiles: `make logs`, `make down`, `make test`, `make test-it`,
-`make lint`, `make web-build`.
+Comandos útiles: `make demo`, `make seed`, `make logs`, `make down`, `make test`,
+`make test-it`, `make lint`, `make web-build`.
+
+### Datos de demo
+
+`make demo` levanta el stack y el servicio `seed` carga solo un salón completo
+(agenda de los últimos 60 días y de los próximos 14, clientas, ventas, caja,
+gastos, nómina, paquetes, fidelidad, lista de espera, señas y reseñas) para que
+todas las pantallas y la landing se vean con datos. Es idempotente: si ya está
+sembrado no escribe nada. Detalle, seguros y reset: [docs/ops/demo-seed.md](docs/ops/demo-seed.md).
+
+| Rol | Email | Clave |
+|---|---|---|
+| dueña | `dueno@salon.local` | `SalonDemo2026!` |
+| administración | `admin@salon.local` | `SalonDemo2026!` |
+| recepción | `recepcion@salon.local` | `SalonDemo2026!` |
+| profesional | `camila@salon.local` · `lucia@salon.local` · `marcos@salon.local` · `sofia@salon.local` | `SalonDemo2026!` |
+
+La landing pública queda en `http://localhost:8081/salon/aurelia` y el panel en
+`/login`. **Son datos de demo:** las clientas son ficticias, la clave es pública
+y el seed nunca corre en producción (exige `SEED_DEMO=true` y una base local).
+Para volver a empezar de cero: `docker compose down -v` y `make demo` otra vez.
 
 MinIO es **opcional** y no lo usa la app todavía (las fotos van al volumen
 local). Se levanta con:
@@ -164,6 +184,7 @@ Compose arma `DATABASE_URL` solo con las piezas `POSTGRES_*`; las variables de
 | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | `salonminio` / placeholder | Compose (`files`) | credenciales de MinIO |
 | `MINIO_PORT`, `MINIO_CONSOLE_PORT` | `9000`, `9001` | Compose (`files`) | API S3 y consola web |
 | `SALON_IT` | sin definir | tests | `1` habilita los tests de integración |
+| `SEED_DEMO`, `SEED_API_URL`, `SEED_ASSETS_DIR`, `SEED_FORCE`, `SEED_RNG_SEED`, `SEED_TIMEOUT` | `true` en Compose | seed de demo | habilitar el seed, a dónde hablarle, dónde están las fotos, pisar el control de host, semilla del dataset y corte de la corrida (ver `docs/ops/demo-seed.md`) |
 
 ## Tests
 
@@ -194,7 +215,7 @@ antes de correr la integración.
 
 Contrato detallado en `docs/api/`:
 
-- `docs/api/pos-servicios.md` — servicios, ventas, cierre de caja, dashboard.
+- `docs/ops/demo-seed.md` — datos de demo (logins, qué crea, cómo resetear) — servicios, ventas, cierre de caja, dashboard.
 - `docs/api/notificaciones-clientes.md` — notificaciones, websocket, clientes,
   fotos y subida de adjuntos.
 

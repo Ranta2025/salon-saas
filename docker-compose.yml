@@ -84,6 +84,39 @@ services:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
+  # Seed de DEMO (Fase 6): servicio de UNA SOLA VEZ que carga los datos con los
+  # que se ven todas las pantallas. Corre solo cuando la API está sana, escribe
+  # por la API real (y por SQL para lo que la API no puede crear con fecha
+  # pasada) y termina: `restart: "no"` para que `docker compose up` no lo repita.
+  #
+  # Es SOLO para desarrollo: los tres seguros del binario son SEED_DEMO=true,
+  # una base local (o SEED_FORCE=1) y nunca una migración. Todo lo que hace, los
+  # logins y cómo resetearlo están en docs/ops/demo-seed.md.
+  seed:
+    build:
+      context: ./backend
+    entrypoint: ["/seed"]
+    environment:
+      SEED_DEMO: ${SEED_DEMO:-true}
+      # La misma base que la API, con las mismas piezas que usa el servicio postgres.
+      DATABASE_URL: postgres://${POSTGRES_USER:-salon}:${POSTGRES_PASSWORD:-salon}@postgres:5432/${POSTGRES_DB:-salon}?sslmode=disable
+      SEED_API_URL: http://api:${PORT:-8080}
+      # Las fotos viven en scripts/demo-assets (versionadas) y se montan:
+      # el contexto de build de la imagen es ./backend, así que no pueden
+      # hornearse sin duplicarlas dentro del repo.
+      SEED_ASSETS_DIR: /assets
+      SEED_FORCE: ${SEED_FORCE:-}
+      SEED_RNG_SEED: ${SEED_RNG_SEED:-}
+      SEED_TIMEOUT: ${SEED_TIMEOUT:-10m}
+    volumes:
+      - ./scripts/demo-assets:/assets:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   web:
     build:
       context: ./frontend
