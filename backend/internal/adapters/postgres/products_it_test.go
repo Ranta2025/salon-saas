@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
+	pospostgres "salon-saas/internal/pos/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
@@ -229,7 +230,7 @@ func TestMigration029_overData_IT(t *testing.T) {
 	if err != nil {
 		t.Fatalf("venta: %v", err)
 	}
-	if err := (pgstore.Sales{Pool: pool}).Save(sale); err != nil {
+	if err := (pospostgres.Sales{Pool: pool}).Save(sale); err != nil {
 		t.Fatalf("guardar venta: %v", err)
 	}
 	if err := (pgstore.Products{Pool: pool}).Create(mustProduct(t, "s-it-prod", "Previo 029", 100, 1, 0), nil); err != nil {

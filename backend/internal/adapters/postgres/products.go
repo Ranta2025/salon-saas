@@ -24,9 +24,12 @@ type Products struct {
 	TxTimeout time.Duration
 }
 
-const productColumns = `id,salon_id,name,price_cents,stock,low_stock_threshold,active,created_at`
+// ProductColumns es la proyección única del producto; la usa también la
+// venta de productos (`internal/pos/postgres`).
+const ProductColumns = `id,salon_id,name,price_cents,stock,low_stock_threshold,active,created_at`
 
-func scanProduct(scan func(dest ...any) error) (domain.Product, error) {
+// ScanProduct lee una fila con la proyección única (Query y QueryRow).
+func ScanProduct(scan func(dest ...any) error) (domain.Product, error) {
 	var p domain.Product
 	if err := scan(&p.ID, &p.SalonID, &p.Name, &p.PriceCents, &p.Stock,
 		&p.LowStockThreshold, &p.Active, &p.CreatedAt); err != nil {
@@ -53,7 +56,7 @@ func (r Products) Create(p domain.Product, initial *domain.StockMovement) error 
 		return pgError(err)
 	}
 	if initial != nil {
-		if err := insertStockMovement(ctx, tx, *initial); err != nil {
+		if err := InsertStockMovement(ctx, tx, *initial); err != nil {
 			return err
 		}
 	}
@@ -78,8 +81,8 @@ func (r Products) Save(p domain.Product) error {
 
 func (r Products) FindByID(salonID, id string) (domain.Product, error) {
 	row := r.Pool.QueryRow(context.Background(),
-		`SELECT `+productColumns+` FROM products WHERE salon_id=$1 AND id=$2`, salonID, id)
-	p, err := scanProduct(row.Scan)
+		`SELECT `+ProductColumns+` FROM products WHERE salon_id=$1 AND id=$2`, salonID, id)
+	p, err := ScanProduct(row.Scan)
 	if err != nil {
 		return domain.Product{}, notFound(err)
 	}
@@ -89,14 +92,14 @@ func (r Products) FindByID(salonID, id string) (domain.Product, error) {
 // List trae activos e inactivos ordenados por nombre (el POS filtra los activos).
 func (r Products) List(salonID string) ([]domain.Product, error) {
 	rows, err := r.Pool.Query(context.Background(),
-		`SELECT `+productColumns+` FROM products WHERE salon_id=$1 ORDER BY lower(name), id`, salonID)
+		`SELECT `+ProductColumns+` FROM products WHERE salon_id=$1 ORDER BY lower(name), id`, salonID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := make([]domain.Product, 0, 8)
 	for rows.Next() {
-		p, err := scanProduct(rows.Scan)
+		p, err := ScanProduct(rows.Scan)
 		if err != nil {
 			return nil, err
 		}
@@ -120,16 +123,16 @@ func (r Products) Adjust(salonID, productID string, delta int, reason domain.Sto
 	row := tx.QueryRow(ctx,
 		`UPDATE products SET stock = stock + $3
 		 WHERE salon_id=$1 AND id=$2 AND stock + $3 >= 0 AND stock + $3 <= 1000000
-		 RETURNING `+productColumns,
+		 RETURNING `+ProductColumns,
 		salonID, productID, delta)
-	updated, err := scanProduct(row.Scan)
+	updated, err := ScanProduct(row.Scan)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Product{}, r.explainFailedAdjust(ctx, tx, salonID, productID, delta)
 		}
 		return domain.Product{}, pgError(err)
 	}
-	if err := insertStockMovement(ctx, tx, domain.StockMovement{
+	if err := InsertStockMovement(ctx, tx, domain.StockMovement{
 		ID:        domain.NewID(),
 		SalonID:   salonID,
 		ProductID: productID,
@@ -196,9 +199,11 @@ func (r Products) ListMovements(salonID, productID string, limit int) ([]domain.
 	return out, rows.Err()
 }
 
-// insertStockMovement escribe una fila del libro (append-only). sale_id y
+// InsertStockMovement escribe una fila del libro (append-only). sale_id y
 // created_by van como NULL cuando no hay valor ("" en Go).
-func insertStockMovement(ctx context.Context, q querier, m domain.StockMovement) error {
+// InsertStockMovement escribe un movimiento de stock dentro de la transacción
+// del llamador; la venta de productos de `internal/pos/postgres` lo reusa.
+func InsertStockMovement(ctx context.Context, q querier, m domain.StockMovement) error {
 	_, err := q.Exec(ctx,
 		`INSERT INTO stock_movements(id,salon_id,product_id,delta,reason,note,sale_id,created_by)
 		 VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),NULLIF($8,''))`,

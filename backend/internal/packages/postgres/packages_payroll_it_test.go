@@ -21,6 +21,7 @@ import (
 	"salon-saas/internal/domain"
 	"salon-saas/internal/payroll"
 	payrollpostgres "salon-saas/internal/payroll/postgres"
+	pospostgres "salon-saas/internal/pos/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
@@ -158,7 +159,7 @@ func TestPackagesPayrollIT_ventas_excludes_package_sales(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT total_cents, packages_cents FROM sales WHERE id=$1`, order.Sale.ID).Scan(&total, &pkgCents); err != nil || total != 60000 || pkgCents != 60000 {
 		t.Fatalf("la venta del paquete: %d/%d %v", total, pkgCents, err)
 	}
-	if sum, err := (pgstore.Sales{Pool: pool}).SumCents("s-it-pkg", from, to, ""); err != nil || sum != 30000+5000+7000+60000 {
+	if sum, err := (pospostgres.Sales{Pool: pool}).SumCents("s-it-pkg", from, to, ""); err != nil || sum != 30000+5000+7000+60000 {
 		t.Fatalf("SumCents (caja/dashboard) debe incluir el paquete: %d %v", sum, err)
 	}
 }

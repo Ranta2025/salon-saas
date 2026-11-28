@@ -16,6 +16,7 @@ import (
 	pgstore "salon-saas/internal/adapters/postgres"
 	clientspostgres "salon-saas/internal/clients/postgres"
 	"salon-saas/internal/domain"
+	pospostgres "salon-saas/internal/pos/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
@@ -408,7 +409,7 @@ func TestPackagesIT_purchase_replay_by_op(t *testing.T) {
 		t.Fatalf("op de otro salón: %v", err)
 	}
 	// Una venta del POS (sin paquete) con ese op id: el id ya se usó para OTRA cosa.
-	if err := (pgstore.Sales{Pool: f.pool}).Save(domain.Sale{
+	if err := (pospostgres.Sales{Pool: f.pool}).Save(domain.Sale{
 		ID: domain.NewID(), SalonID: "s-it-pkg", ProfessionalID: "u-it-pkg-prof", ClientName: "Mostrador",
 		Items: []domain.SaleItem{{ServiceID: f.svcA.ID, Qty: 1, UnitPriceCents: 100}}, TotalCents: 100,
 		Method: domain.MethodCash, ClientOpID: "op-pos", CreatedAt: now,

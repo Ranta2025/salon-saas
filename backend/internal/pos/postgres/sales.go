@@ -1,10 +1,11 @@
-package pgstore
+package postgres
 
 import (
 	"context"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 )
 
@@ -24,7 +25,7 @@ func (r Sales) Save(s domain.Sale) error {
 		`INSERT INTO sales(id,salon_id,professional_id,client_name,total_cents,method,client_op_id,created_at)
 		 VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
 		s.ID, s.SalonID, s.ProfessionalID, s.ClientName, s.TotalCents, string(s.Method), s.ClientOpID, s.CreatedAt); err != nil {
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	for _, it := range s.Items {
 		// commission_pct viaja como NULL cuando la línea no tiene foto (F3.1):
@@ -33,7 +34,7 @@ func (r Sales) Save(s domain.Sale) error {
 			`INSERT INTO sale_items(id,sale_id,service_id,qty,unit_price_cents,commission_pct)
 			 VALUES($1,$2,$3,$4,$5,$6)`,
 			domain.NewID(), s.ID, it.ServiceID, it.Qty, it.UnitPriceCents, it.CommissionPct); err != nil {
-			return pgError(err)
+			return pgstore.PGError(err)
 		}
 	}
 	return tx.Commit(ctx)
@@ -50,7 +51,7 @@ func (r Sales) FindByClientOpID(salonID, clientOpID string) (domain.Sale, error)
 		salonID, clientOpID).Scan(&s.ID, &s.SalonID, &s.ProfessionalID, &s.ClientName,
 		&s.TotalCents, &method, &s.ClientOpID, &s.CreatedAt)
 	if err != nil {
-		return domain.Sale{}, notFound(err)
+		return domain.Sale{}, pgstore.NotFound(err)
 	}
 	s.Method = domain.PaymentMethod(method)
 	s.CreatedAt = s.CreatedAt.UTC()
@@ -149,7 +150,7 @@ func (r Sales) SumCents(salonID string, from, to time.Time, method domain.Paymen
 	return total, nil
 }
 
-func (r Sales) sumCents(ctx context.Context, q querier, salonID string, from, to time.Time, method domain.PaymentMethod) (int, error) {
+func (r Sales) sumCents(ctx context.Context, q pgstore.Querier, salonID string, from, to time.Time, method domain.PaymentMethod) (int, error) {
 	var total int64
 	var err error
 	if method == "" {
@@ -164,9 +165,9 @@ func (r Sales) sumCents(ctx context.Context, q querier, salonID string, from, to
 			salonID, from, to, string(method)).Scan(&total)
 	}
 	if err != nil {
-		return 0, pgError(err)
+		return 0, pgstore.PGError(err)
 	}
-	return bigintToInt(total, "el total de la ventana")
+	return pgstore.BigintToInt(total, "el total de la ventana")
 }
 
 // TopServices: ranking por cantidad vendida; el ingreso del servicio desempata.
@@ -197,7 +198,7 @@ func (r Sales) TopServices(salonID string, from, to time.Time, limit int) ([]dom
 		}
 		// El ingreso de un servicio puede superar el techo de una venta suelta:
 		// se baja a int con guarda, sin truncar.
-		t.RevenueCents, err = bigintToInt(revenue, "el ingreso del servicio")
+		t.RevenueCents, err = pgstore.BigintToInt(revenue, "el ingreso del servicio")
 		if err != nil {
 			return nil, err
 		}

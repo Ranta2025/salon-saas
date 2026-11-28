@@ -52,6 +52,7 @@ import (
 	"salon-saas/internal/ports"
 	"salon-saas/internal/pos"
 	poshttpapi "salon-saas/internal/pos/httpapi"
+	pospostgres "salon-saas/internal/pos/postgres"
 	"salon-saas/internal/products"
 	productshttpapi "salon-saas/internal/products/httpapi"
 	"salon-saas/internal/reviews"
@@ -265,12 +266,12 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	sessionGate := authpostgres.SessionGate{Pool: pool}
 	tenSvc := team.TenantService{Salons: salons, Memberships: mems}
 	bookingRepo := bookingspostgres.Bookings{Pool: pool}
-	salesRepo := pgstore.Sales{Pool: pool}
+	salesRepo := pospostgres.Sales{Pool: pool}
 	// F6: catálogo de productos (con su libro de stock) y la venta CON productos
 	// en una sola transacción con tope de tiempo. Una venta sin productos sigue
 	// por salesRepo.Save, intacto.
 	productsRepo := pgstore.Products{Pool: pool}
-	saleProductsRepo := pgstore.SaleProducts{Pool: pool}
+	saleProductsRepo := pospostgres.SaleProducts{Pool: pool}
 	// F8: catálogo de paquetes y paquetes comprados por cada clienta (con su libro
 	// de saldo). Comprar escribe la venta, el paquete y el movimiento en UNA
 	// transacción; consumir es un UPDATE condicional más su movimiento.
@@ -282,7 +283,7 @@ func buildRouter(cfg config, pool *pgxpool.Pool) (*gin.Engine, httpapi.Deps, boo
 	// F10: registro de auditoría (migración 034). Lo escribe el middleware
 	// `Audit(action)` de las rutas sensibles; es append-only y de mejor esfuerzo.
 	auditRepo := auditpostgres.Audit{Pool: pool}
-	closesRepo := pgstore.CashCloses{Pool: pool}
+	closesRepo := pospostgres.CashCloses{Pool: pool}
 	servicesRepo := pgstore.Services{Pool: pool}
 	// F2c: qué servicios hace cada quien (disponibilidad, reserva pública y
 	// pantalla de equipo).

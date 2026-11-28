@@ -9,7 +9,7 @@
 // duplica la foto, que dos ventas simultáneas con un cambio de porcentaje en
 // medio guardan un valor coherente, y que una línea que falla no deja venta ni
 // foto parcial.
-package pgstore
+package pgstore_test
 
 import (
 	"context"
@@ -19,17 +19,20 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/pos"
+	pospostgres "salon-saas/internal/pos/postgres"
+	"salon-saas/internal/testutil/itdb"
 )
 
 // commissionFixtures migra, limpia y deja un salón con recepción + profesional.
 func commissionFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 	t.Helper()
-	pool := itPool(t)
+	pool := itdb.Pool(t)
 	t.Cleanup(pool.Close)
 	ctx := context.Background()
-	applyMigrations(t, pool)
+	itdb.ApplyMigrations(t, pool)
 
 	for _, q := range []string{
 		`DELETE FROM salons WHERE id LIKE 's-it-foto%'`,
@@ -48,7 +51,7 @@ func commissionFixtures(t *testing.T) (*pgxpool.Pool, context.Context) {
 			t.Fatalf("fixture: %v", err)
 		}
 	}
-	mems := Memberships{Pool: pool}
+	mems := pgstore.Memberships{Pool: pool}
 	for _, m := range []domain.Membership{
 		{UserID: "u-it-foto-recep", SalonID: "s-it-foto", Role: domain.RoleReception},
 		{UserID: "u-it-foto-prof", SalonID: "s-it-foto", Role: domain.RoleProfessional, Attends: true},
@@ -88,15 +91,15 @@ func foto(t *testing.T, ctx context.Context, pool *pgxpool.Pool, saleID string) 
 // saleService arma el caso de uso REAL contra la DB real.
 func saleService(pool *pgxpool.Pool) pos.SaleService {
 	return pos.SaleService{
-		Sales:       Sales{Pool: pool},
-		Services:    Services{Pool: pool},
-		Memberships: Memberships{Pool: pool},
+		Sales:       pospostgres.Sales{Pool: pool},
+		Services:    pgstore.Services{Pool: pool},
+		Memberships: pgstore.Memberships{Pool: pool},
 	}
 }
 
 func TestSaleCommissionSnapshot_IT(t *testing.T) {
 	pool, ctx := commissionFixtures(t)
-	services := Services{Pool: pool}
+	services := pgstore.Services{Pool: pool}
 	svc := saleService(pool)
 
 	corte, _ := domain.NewService("s-it-foto", "Corte Foto", 45, 150000, 30)
@@ -106,7 +109,7 @@ func TestSaleCommissionSnapshot_IT(t *testing.T) {
 			t.Fatalf("catálogo: %v", err)
 		}
 	}
-	recep, err := Memberships{Pool: pool}.Find("u-it-foto-recep", "s-it-foto")
+	recep, err := pgstore.Memberships{Pool: pool}.Find("u-it-foto-recep", "s-it-foto")
 	if err != nil {
 		t.Fatalf("actor: %v", err)
 	}
@@ -201,8 +204,8 @@ func TestSaleCommissionSnapshot_IT(t *testing.T) {
 // y acá lo que importa es la transacción de la DB.
 func TestSaleCommissionSnapshot_item_fallido_no_deja_nada_IT(t *testing.T) {
 	pool, ctx := commissionFixtures(t)
-	services := Services{Pool: pool}
-	repo := Sales{Pool: pool}
+	services := pgstore.Services{Pool: pool}
+	repo := pospostgres.Sales{Pool: pool}
 
 	ok, _ := domain.NewService("s-it-foto", "Corte Rollback", 45, 150000, 40)
 	if err := services.Save(ok); err != nil {
@@ -236,7 +239,7 @@ func TestSaleCommissionSnapshot_item_fallido_no_deja_nada_IT(t *testing.T) {
 // dos posibles. La foto se copia con el UPDATE del catálogo concurrente.
 func TestSaleCommissionSnapshot_concurrente_con_cambio_de_tarifa_IT(t *testing.T) {
 	pool, ctx := commissionFixtures(t)
-	services := Services{Pool: pool}
+	services := pgstore.Services{Pool: pool}
 	svc := saleService(pool)
 
 	const viejo, nuevo = 25, 75
@@ -244,7 +247,7 @@ func TestSaleCommissionSnapshot_concurrente_con_cambio_de_tarifa_IT(t *testing.T
 	if err := services.Save(corte); err != nil {
 		t.Fatalf("catálogo: %v", err)
 	}
-	recep, err := Memberships{Pool: pool}.Find("u-it-foto-recep", "s-it-foto")
+	recep, err := pgstore.Memberships{Pool: pool}.Find("u-it-foto-recep", "s-it-foto")
 	if err != nil {
 		t.Fatalf("actor: %v", err)
 	}
@@ -296,8 +299,8 @@ func TestSaleCommissionSnapshot_concurrente_con_cambio_de_tarifa_IT(t *testing.T
 // distinguir "sin foto" de "comisión 0".
 func TestSaleCommissionSnapshot_legacy_null_se_lee_sin_foto_IT(t *testing.T) {
 	pool, ctx := commissionFixtures(t)
-	services := Services{Pool: pool}
-	repo := Sales{Pool: pool}
+	services := pgstore.Services{Pool: pool}
+	repo := pospostgres.Sales{Pool: pool}
 
 	viejo, _ := domain.NewService("s-it-foto", "Corte Viejo", 45, 150000, 20)
 	if err := services.Save(viejo); err != nil {

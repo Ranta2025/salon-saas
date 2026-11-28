@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	pgstore "salon-saas/internal/adapters/postgres"
+	pospostgres "salon-saas/internal/pos/postgres"
 	"testing"
 	"time"
 
@@ -128,7 +129,7 @@ func TestServices_IT(t *testing.T) {
 func TestSales_IT(t *testing.T) {
 	pool, _ := posFixtures(t)
 	services := pgstore.Services{Pool: pool}
-	repo := pgstore.Sales{Pool: pool}
+	repo := pospostgres.Sales{Pool: pool}
 
 	corte, _ := domain.NewService("s-it-pos", "Corte IT", 45, 150000, 30)
 	brushing, _ := domain.NewService("s-it-pos", "Brushing IT", 30, 80000, 20)
@@ -226,7 +227,7 @@ func TestSales_IT(t *testing.T) {
 
 func TestCashCloses_IT(t *testing.T) {
 	pool, _ := posFixtures(t)
-	repo := pgstore.CashCloses{Pool: pool}
+	repo := pospostgres.CashCloses{Pool: pool}
 
 	if _, err := repo.Last("s-it-pos"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("sin cierres debe dar ErrNotFound, dio %v", err)

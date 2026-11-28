@@ -15,7 +15,7 @@
 // Un 40P01/40001 se traduce a 409 (la transacción ya se deshizo: reintentar es
 // seguro), como en F2e. El índice único de client_op_id es la garantía de la
 // idempotencia: el pedido que pierde también deshace su descuento (D4).
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -26,6 +26,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -38,13 +39,13 @@ type SaleProducts struct {
 }
 
 func (r SaleProducts) SaveWithProducts(s domain.SaleWithProducts) ([]domain.Product, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rollbackTx(tx)
+	defer pgstore.RollbackTx(tx)
 
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO sales(id,salon_id,professional_id,client_name,total_cents,method,client_op_id,created_at,products_cents)
@@ -77,16 +78,16 @@ func (r SaleProducts) SaveWithProducts(s domain.SaleWithProducts) ([]domain.Prod
 		row := tx.QueryRow(ctx,
 			`UPDATE products SET stock = stock - $3
 			 WHERE id=$1 AND salon_id=$2 AND active AND stock >= $3
-			 RETURNING `+productColumns,
+			 RETURNING `+pgstore.ProductColumns,
 			l.ProductID, s.SalonID, l.Qty)
-		after, err := scanProduct(row.Scan)
+		after, err := pgstore.ScanProduct(row.Scan)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, failedProductSale(ctx, tx, s.SalonID, l.ProductID, l.Qty)
 			}
 			return nil, saleWriteError(err)
 		}
-		if err := insertStockMovement(ctx, tx, domain.StockMovement{
+		if err := pgstore.InsertStockMovement(ctx, tx, domain.StockMovement{
 			ID:        domain.NewID(),
 			SalonID:   s.SalonID,
 			ProductID: l.ProductID,
@@ -113,7 +114,7 @@ func (r SaleProducts) SaveWithProducts(s domain.SaleWithProducts) ([]domain.Prod
 // failedProductSale explica por qué el descuento no afectó filas: producto
 // inexistente o inactivo (400 «Producto inválido») o stock insuficiente (409
 // con el nombre). El rollback lo hace quien llama.
-func failedProductSale(ctx context.Context, q querier, salonID, productID string, qty int) error {
+func failedProductSale(ctx context.Context, q pgstore.Querier, salonID, productID string, qty int) error {
 	var name string
 	var active bool
 	err := q.QueryRow(ctx,
@@ -123,7 +124,7 @@ func failedProductSale(ctx context.Context, q querier, salonID, productID string
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.NewMessage(domain.ErrValidation, domain.MsgProductInvalid)
 		}
-		return pgError(err)
+		return pgstore.PGError(err)
 	}
 	if !active {
 		return domain.NewMessage(domain.ErrValidation, domain.MsgProductInvalid)
@@ -139,7 +140,7 @@ func saleWriteError(err error) error {
 	if errors.As(err, &pg) && (pg.Code == "40P01" || pg.Code == "40001") {
 		return domain.NewMessage(domain.ErrAlreadyExists, domain.MsgProductBusy)
 	}
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 var _ ports.SaleProductsRepository = SaleProducts{}

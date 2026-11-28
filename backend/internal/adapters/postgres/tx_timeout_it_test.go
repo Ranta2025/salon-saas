@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	pgstore "salon-saas/internal/adapters/postgres"
 	bookingspostgres "salon-saas/internal/bookings/postgres"
 	"salon-saas/internal/ports"
+	pospostgres "salon-saas/internal/pos/postgres"
 	"salon-saas/internal/testutil/itdb"
 )
 
@@ -68,7 +68,7 @@ func TestCashCloses_InSalonTx_lock_wait_is_bounded(t *testing.T) {
 		t.Fatalf("tomar el lock: %v", err)
 	}
 
-	repo := pgstore.CashCloses{Pool: pool, TxTimeout: 300 * time.Millisecond}
+	repo := pospostgres.CashCloses{Pool: pool, TxTimeout: 300 * time.Millisecond}
 	done := make(chan error, 1)
 	go func() {
 		done <- repo.InSalonTx("s-h7", func(ports.CashCloseTx) error { return nil })
@@ -93,7 +93,7 @@ func TestInSalonTx_normal_work_still_commits(t *testing.T) {
 		t.Fatalf("reservas: ran=%v err=%v", ran, err)
 	}
 	ran = false
-	if err := (pgstore.CashCloses{Pool: pool}).InSalonTx("s-h7-ok", func(ports.CashCloseTx) error { ran = true; return nil }); err != nil || !ran {
+	if err := (pospostgres.CashCloses{Pool: pool}).InSalonTx("s-h7-ok", func(ports.CashCloseTx) error { ran = true; return nil }); err != nil || !ran {
 		t.Fatalf("caja: ran=%v err=%v", ran, err)
 	}
 }

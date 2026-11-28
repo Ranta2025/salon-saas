@@ -1,4 +1,4 @@
-package pgstore
+package postgres
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgstore "salon-saas/internal/adapters/postgres"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/ports"
 )
@@ -39,7 +40,7 @@ func (r CashCloses) Save(c domain.CashClose) error {
 		 ON CONFLICT (id) DO NOTHING`,
 		c.ID, c.SalonID, c.OpenedAt, c.ClosedAt, c.SystemCashCents,
 		c.CountedCents, c.DifferenceCents, c.Note)
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 func (r CashCloses) Last(salonID string) (domain.CashClose, error) {
@@ -48,7 +49,7 @@ func (r CashCloses) Last(salonID string) (domain.CashClose, error) {
 		 WHERE salon_id=$1 ORDER BY closed_at DESC, id DESC LIMIT 1`, salonID)
 	c, err := scanCashClose(row.Scan)
 	if err != nil {
-		return domain.CashClose{}, notFound(err)
+		return domain.CashClose{}, pgstore.NotFound(err)
 	}
 	return c, nil
 }
@@ -85,13 +86,13 @@ func (r CashCloses) List(salonID string) ([]domain.CashClose, error) {
 func (r CashCloses) InSalonTx(salonID string, fn func(tx ports.CashCloseTx) error) error {
 	// H7: mismo tope que en las reservas, para que un cierre trabado no deje a
 	// los demás cierres del salón esperando el lock para siempre.
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout(r.TxTimeout))
+	ctx, cancel := context.WithTimeout(context.Background(), pgstore.TxTimeout(r.TxTimeout))
 	defer cancel()
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer rollbackTx(tx) // no-op si ya commiteó
+	defer pgstore.RollbackTx(tx) // no-op si ya commiteó
 
 	// hashtext(salon_id) da una clave de 32 bits estable por salón: salones
 	// distintos no se esperan entre sí.
@@ -117,7 +118,7 @@ func (c cashCloseTx) Save(close domain.CashClose) error {
 		 ON CONFLICT (id) DO NOTHING`,
 		close.ID, close.SalonID, close.OpenedAt, close.ClosedAt, close.SystemCashCents,
 		close.CountedCents, close.DifferenceCents, close.Note)
-	return pgError(err)
+	return pgstore.PGError(err)
 }
 
 func (c cashCloseTx) Last(salonID string) (domain.CashClose, error) {
@@ -126,7 +127,7 @@ func (c cashCloseTx) Last(salonID string) (domain.CashClose, error) {
 		 WHERE salon_id=$1 ORDER BY closed_at DESC, id DESC LIMIT 1`, salonID)
 	close, err := scanCashClose(row.Scan)
 	if err != nil {
-		return domain.CashClose{}, notFound(err)
+		return domain.CashClose{}, pgstore.NotFound(err)
 	}
 	return close, nil
 }

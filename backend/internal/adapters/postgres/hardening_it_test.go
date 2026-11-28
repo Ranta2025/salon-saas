@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	pgstore "salon-saas/internal/adapters/postgres"
+	pospostgres "salon-saas/internal/pos/postgres"
 	"sync"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ import (
 // ::int Postgres devolvía 22003 y el dashboard quedaba roto para siempre.
 func TestSales_IT_sumas_grandes_no_rompen(t *testing.T) {
 	pool, _ := posFixtures(t)
-	repo := pgstore.Sales{Pool: pool}
+	repo := pospostgres.Sales{Pool: pool}
 	services := pgstore.Services{Pool: pool}
 	corte, err := domain.NewService("s-it-pos", "Corte grande", 45, domain.MaxSaleUnitPriceCents, 0)
 	if err != nil {
@@ -91,9 +92,9 @@ func TestSales_IT_sumas_grandes_no_rompen(t *testing.T) {
 // mismo esperado, y el salón cierra el doble de lo que había en el cajón.
 func TestCashCloses_IT_concurrentes_cuentan_una_vez(t *testing.T) {
 	pool, ctx := posFixtures(t)
-	repo := pgstore.Sales{Pool: pool}
+	repo := pospostgres.Sales{Pool: pool}
 	services := pgstore.Services{Pool: pool}
-	cashRepo := pgstore.CashCloses{Pool: pool}
+	cashRepo := pospostgres.CashCloses{Pool: pool}
 	mems := pgstore.Memberships{Pool: pool}
 
 	corte, err := domain.NewService("s-it-pos", "Corte caja", 30, 100000, 0)
