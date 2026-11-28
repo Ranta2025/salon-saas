@@ -229,12 +229,24 @@ Implementado y con tests:
 - Landing pública del salón con fotos, dashboard del día y shell responsive.
 - Docker Compose completo, CI y documentación de operación.
 
-Próximo (roadmap):
+Estado de la fase 6 (hoja de ruta completa, con contratos y pendientes:
+[odd/tasks/fase6-roadmap.md](odd/tasks/fase6-roadmap.md)):
 
-1. Reserva pública real (`availability` + `POST /public/salons/:slug/bookings`).
-2. Editar / cancelar / marcar no-show de un turno desde el calendario.
-3. Gestión de equipo (altas de miembros y roles desde la UI).
-4. MinIO/S3 como adaptador de `ports.PhotoStorage` (hoy volumen local).
+- **Turnos (F1-F2):** enlace firmado de un solo uso para cancelar o reprogramar,
+  un rol por persona, oficio y servicios por profesional, puestos con capacidad,
+  horario semanal y ausencias, cubrir ausencias, altas por invitación y baja que
+  conserva el historial.
+- **Dinero (F3-F4):** comisión congelada por venta, modelo de pago por miembro,
+  liquidaciones con CSV, gastos, ganancia neta y exportes de ventas, cierres y clientas.
+- **Clientas y venta (F5-F9):** ficha con historial y alergias, productos con stock
+  en el POS, lista de espera con aviso al liberarse un hueco, paquetes prepagos y
+  fidelidad con vales.
+- **Cuenta y confianza (F10, F15):** auditoría de las rutas sensibles, 2FA TOTP
+  opcional, recuperación de contraseña y verificación de email.
+- **Pago y web pública (F11, F13, F16):** seña online contra un banco simulado
+  detrás de `PaymentGateway`, reseñas posvisita y una landing que lee todo del panel.
+- **Descartadas (F12, F14):** recordatorios por WhatsApp (exige verificar la empresa
+  en Meta) y varias sucursales, moneda y marca por salón (un salón por cuenta).
 
 ## Licencia y atribución
 
