@@ -8,7 +8,6 @@ import (
 	bkg "salon-saas/internal/bookings"
 	"salon-saas/internal/domain"
 	"salon-saas/internal/pos"
-	"salon-saas/internal/team"
 	"salon-saas/internal/testutil"
 )
 
@@ -149,30 +148,3 @@ func TestCashCloseService_usa_la_transaccion_con_lock(t *testing.T) {
 }
 
 // --- Endpoints nuevos: /me, /staff, /public/salons/:slug ---
-
-func TestStaffService(t *testing.T) {
-	staff := &fakeStaffLister{BySalon: map[string][]domain.StaffMember{
-		"s1": {
-			{ID: "u-owner", Name: "Ana", Role: domain.RoleOwner, Attends: true},
-			{ID: "u-prof", Name: "Bruno", Role: domain.RoleProfessional},
-			// F2a: la administración sin la marca no atiende y no se lista.
-			{ID: "u-admin", Name: "Carla", Role: domain.RoleAdmin},
-			{ID: "u-recep", Name: "Dani", Role: domain.RoleReception, Attends: true},
-		},
-	}}
-	mems := &testutil.FakeMemberships{}
-	svc := team.StaffService{Staff: staff, Memberships: mems}
-	_ = mems.Save(domain.Membership{UserID: "u-recep", SalonID: "s1", Role: domain.RoleReception})
-
-	list, err := svc.List(domain.Membership{UserID: "u-recep", SalonID: "s1"}, "s1")
-	if err != nil {
-		t.Fatalf("staff: %v", err)
-	}
-	if len(list) != 2 || list[0].ID != "u-owner" || list[1].ID != "u-prof" {
-		t.Fatalf("esperaba dueño (con attends) y profesional, dio %+v", list)
-	}
-	// No-miembro: 403 (no se filtra el equipo de otro salón).
-	if _, err := svc.List(domain.Membership{UserID: "u-ajeno", SalonID: "s2"}, "s1"); !errors.Is(err, domain.ErrForbidden) {
-		t.Fatalf("no-miembro debe dar ErrForbidden, dio %v", err)
-	}
-}

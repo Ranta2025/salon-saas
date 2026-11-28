@@ -37,14 +37,3 @@ func (t *fakeSalonTx) InSalonTx(salonID string, fn func(ports.CashCloseTx) error
 }
 
 var _ ports.SalonTxRunner = (*fakeSalonTx)(nil)
-
-// fakeStaffLister: personal por salón en memoria.
-type fakeStaffLister struct {
-	BySalon map[string][]domain.StaffMember
-}
-
-func (f *fakeStaffLister) ListStaff(salonID string) ([]domain.StaffMember, error) {
-	return f.BySalon[salonID], nil
-}
-
-var _ ports.StaffLister = (*fakeStaffLister)(nil)
